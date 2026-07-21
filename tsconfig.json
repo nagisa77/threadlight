@@ -5,6 +5,7 @@
     { "path": "./packages/agent-loop" },
     { "path": "./packages/builtin-tools" },
     { "path": "./packages/app-server" },
-    { "path": "./packages/client" }
+    { "path": "./packages/client" },
+    { "path": "./packages/ui" }
   ]
 }

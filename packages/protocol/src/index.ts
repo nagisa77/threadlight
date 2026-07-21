@@ -116,6 +116,15 @@ export interface ThreadlightMethodMap {
   };
 }
 
+export const THREADLIGHT_METHODS = [
+  "initialize",
+  "thread/start",
+  "thread/resume",
+  "turn/start",
+  "turn/interrupt",
+  "approval/resolve",
+] as const satisfies readonly (keyof ThreadlightMethodMap)[];
+
 export type ThreadlightMethod = keyof ThreadlightMethodMap;
 export type MethodParams<Method extends ThreadlightMethod> =
   ThreadlightMethodMap[Method]["params"];

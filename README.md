@@ -2,20 +2,22 @@
 
 Threadlight 是一个小而清晰的 TypeScript Agent Runtime：让模型的每个 thread、turn 和 tool event 都可见、可控、可扩展。
 
-它包含五个模块：
+它包含以下模块和应用：
 
 - `@threadlight/agent-loop`：模型调用、工具循环、审批钩子、取消、事件和会话状态。
 - `@threadlight/builtin-tools`：内置的命令执行和互联网搜索工具。
 - `@threadlight/protocol`：客户端与 app-server 共享的 JSON-RPC 类型。
 - `@threadlight/app-server`：JSON-RPC 2.0、thread/turn 管理、流式事件、审批恢复和 stdio transport。
 - `@threadlight/client`：transport-neutral 的类型安全客户端、请求关联和事件订阅。
+- `@threadlight/ui`：可供 Electron 和未来 Web UI 复用的 React 会话界面。
+- `@threadlight/desktop`：安全 IPC、app-server 子进程和 Electron 窗口壳。
 
 ## 架构
 
 ```text
-CLI / Desktop / IDE
-        │ @threadlight/client
-        │ JSON-RPC over pluggable transport
+Electron / Web UI / IDE
+        │ @threadlight/ui
+        │ @threadlight/client + pluggable transport
         ▼
 @threadlight/app-server
         │
@@ -45,6 +47,26 @@ await client.startTurn(threadId, "现在几点？");
 
 桌面端可以实现 JSONL/stdio transport，Web UI 可以实现 WebSocket transport，
 上层调用方式保持不变。
+
+## Electron 客户端
+
+开发模式会先构建 workspace packages，再启动 Electron 和 renderer HMR：
+
+```bash
+export OPENAI_API_KEY="..."
+# 可选；设置后启用 web_search
+export BRAVE_SEARCH_API_KEY="..."
+npm run desktop:dev
+```
+
+构建并预览 production bundle：
+
+```bash
+npm run desktop:preview
+```
+
+Electron renderer 保持浏览器环境，不启用 Node integration。preload 只暴露受限的
+Threadlight JSON-RPC bridge；app-server 作为独立子进程运行。
 
 ## 开始使用
 
