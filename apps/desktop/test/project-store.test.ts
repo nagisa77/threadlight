@@ -121,20 +121,4 @@ describe("ProjectStore", () => {
       .projects[0].conversations).toEqual([]);
   });
 
-  it("migrates the legacy conversation map to the project map", () => {
-    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
-    directories.push(root);
-    const legacyPath = join(root, "conversation-map.json");
-    const mapPath = join(root, "project-map.json");
-    writeFileSync(
-      legacyPath,
-      `${JSON.stringify({ version: 1, projects: [] })}\n`,
-    );
-
-    const snapshot = new ProjectStore(mapPath, { legacyPath }).snapshot();
-
-    expect(snapshot.projects).toEqual([]);
-    expect(existsSync(mapPath)).toBe(true);
-    expect(existsSync(legacyPath)).toBe(false);
-  });
 });

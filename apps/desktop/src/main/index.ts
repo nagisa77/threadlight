@@ -284,10 +284,7 @@ app.whenReady().then(() => {
         safeStorage.decryptString(Buffer.from(value, "base64")),
     },
   );
-  projectStore = new ProjectStore(
-    join(threadlightHome, "project-map.json"),
-    { legacyPath: join(threadlightHome, "conversation-map.json") },
-  );
+  projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
   const initialWorkspace = process.env.THREADLIGHT_WORKSPACE;
   if (initialWorkspace) projectStore.register(initialWorkspace);
   ipcMain.on(DESKTOP_REQUEST_CHANNEL, handleRequest);

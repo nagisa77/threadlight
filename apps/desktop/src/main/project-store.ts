@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -33,7 +32,6 @@ const EMPTY_PROJECT_MAP: StoredProjectMap = { version: 1, projects: [] };
 
 export interface ProjectStoreOptions {
   createId?: () => string;
-  legacyPath?: string;
   now?: () => Date;
 }
 
@@ -47,7 +45,6 @@ export class ProjectStore {
   ) {
     this.createId = options.createId ?? randomUUID;
     this.now = options.now ?? (() => new Date());
-    if (options.legacyPath) this.migrateLegacyMap(options.legacyPath);
   }
 
   snapshot(): DesktopProjectsSnapshot {
@@ -196,17 +193,6 @@ export class ProjectStore {
     }
   }
 
-  private migrateLegacyMap(legacyPath: string): void {
-    if (
-      legacyPath === this.path ||
-      existsSync(this.path) ||
-      !existsSync(legacyPath)
-    ) {
-      return;
-    }
-    mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
-    renameSync(legacyPath, this.path);
-  }
 }
 
 function conversationPath(basePath: string, threadId: string): string {
