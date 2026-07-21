@@ -6,7 +6,7 @@ export interface ToolActivity {
   id: string;
   name: string;
   status: "running" | "completed" | "failed";
-  output?: string;
+  detail?: string;
 }
 
 export interface ConversationMessage {
@@ -101,7 +101,12 @@ function reduceAgentEvent(
         ...state,
         activities: [
           ...state.activities,
-          { id: event.call.id, name: event.call.name, status: "running" },
+          {
+            id: event.call.id,
+            name: event.call.name,
+            status: "running",
+            detail: toolInput(event.call),
+          },
         ],
       };
     case "tool.completed":
@@ -112,7 +117,10 @@ function reduceAgentEvent(
             ? {
                 ...activity,
                 status: event.result.isError ? "failed" : "completed",
-                output: truncate(event.result.output),
+                detail:
+                  activity.name === "exec_command"
+                    ? activity.detail
+                    : truncate(event.result.output),
               }
             : activity,
         ),
@@ -157,6 +165,16 @@ function completeTurn(
 
 function truncate(value: string, limit = 1_200): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function toolInput(call: ToolCallData): string | undefined {
+  if (call.name !== "exec_command" || !isObject(call.arguments)) return;
+  const command = call.arguments.command;
+  return typeof command === "string" ? `$ ${command}` : undefined;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {

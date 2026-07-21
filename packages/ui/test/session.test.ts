@@ -7,7 +7,7 @@ import {
 } from "../src/index.js";
 
 describe("sessionReducer", () => {
-  it("keeps tool activity with the completed assistant message", () => {
+  it("keeps the exec command with the completed assistant message", () => {
     let state: SessionState = {
       ...initialSessionState,
       connection: "ready",
@@ -24,7 +24,11 @@ describe("sessionReducer", () => {
       event: {
         type: "tool.started",
         runId: "run-1",
-        call: { id: "call-1", name: "exec_command", arguments: {} },
+        call: {
+          id: "call-1",
+          name: "exec_command",
+          arguments: { command: "npm test" },
+        },
       },
     });
     state = sessionReducer(state, {
@@ -55,10 +59,35 @@ describe("sessionReducer", () => {
           id: "call-1",
           name: "exec_command",
           status: "completed",
-          output: "10 tests passed",
+          detail: "$ npm test",
         },
       ],
     });
+  });
+
+  it("keeps results for non-command tools", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: {
+        type: "tool.started",
+        runId: "run-1",
+        call: { id: "call-1", name: "web_search", arguments: {} },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "call-1",
+          name: "web_search",
+          output: "search result",
+        },
+      },
+    });
+
+    expect(state.activities[0].detail).toBe("search result");
   });
 
   it("tracks and clears approval requests", () => {

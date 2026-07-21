@@ -16,6 +16,7 @@ import {
   type PendingApproval,
   type ToolActivity,
 } from "./session.js";
+import { MarkdownContent } from "./markdown.js";
 import { isNearBottom } from "./scroll.js";
 
 export interface ThreadlightAppProps {
@@ -145,16 +146,15 @@ export function ThreadlightApp({ client }: ThreadlightAppProps) {
                     className={`message ${message.role} ${message.error ? "error" : ""}`}
                     key={message.id}
                   >
-                    {message.role === "assistant" && (
-                      <div className="assistant-mark" aria-hidden="true">
-                        <Sparkles size={14} />
-                      </div>
-                    )}
                     <div className="message-body">
                       {message.activities && message.activities.length > 0 && (
                         <ActivityList activities={message.activities} />
                       )}
-                      <p>{message.text}</p>
+                      {message.role === "assistant" ? (
+                        <MarkdownContent>{message.text}</MarkdownContent>
+                      ) : (
+                        <p>{message.text}</p>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -278,7 +278,7 @@ function ActivityList({
           <ActivityStatus status={activity.status} />
           <div>
             <code>{activity.name}</code>
-            {activity.output && <pre>{activity.output}</pre>}
+            {activity.detail && <pre>{activity.detail}</pre>}
           </div>
         </div>
       ))}
