@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { AgentLoop } from "../src/agent-loop.js";
 import { defineAgent, defineTool } from "../src/types.js";
 import type {
+  AgentEvent,
   ModelProvider,
   ModelRequest,
   ModelTurn,
@@ -36,6 +37,7 @@ describe("AgentLoop", () => {
   it("executes a tool and feeds its result back to the model", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);
+    const events: AgentEvent[] = [];
     const tool = defineTool({
       name: "double",
       description: "Double a number",
@@ -58,11 +60,30 @@ describe("AgentLoop", () => {
         tools: [tool],
       }),
       "Double 21",
+      { onEvent: (event) => events.push(event) },
     );
 
     expect(result.output).toBe("The answer is 42");
     expect(result.steps).toBe(2);
     expect(provider.requests[1]?.toolResults?.[0]?.output).toBe("42");
+    expect(
+      events.filter((event) => event.type === "model.completed"),
+    ).toMatchObject([
+      {
+        type: "model.completed",
+        step: 1,
+        text: "",
+        toolCalls: [
+          { id: "call_1", name: "double", arguments: { value: 21 } },
+        ],
+      },
+      {
+        type: "model.completed",
+        step: 2,
+        text: "The answer is 42",
+        toolCalls: [],
+      },
+    ]);
   });
 
   it("waits for approval before protected tools", async () => {

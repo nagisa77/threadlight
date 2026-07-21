@@ -70,6 +70,14 @@ export interface ApprovalRequest {
 export type AgentEvent =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
+  | {
+      type: "model.completed";
+      runId: string;
+      step: number;
+      text: string;
+      toolCalls: readonly ToolCall[];
+      usage?: Partial<TokenUsage>;
+    }
   | { type: "approval.requested"; request: ApprovalRequest }
   | {
       type: "approval.resolved";

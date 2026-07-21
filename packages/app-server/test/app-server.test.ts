@@ -54,5 +54,25 @@ describe("AppServer", () => {
       method: "turn/completed",
       params: { threadId, output: "Hello from Threadlight" },
     });
+
+    const modelCompleted = messages.find(
+      (message) =>
+        "method" in message &&
+        message.method === "agent/event" &&
+        (message.params as { event?: { type?: string } }).event?.type ===
+          "model.completed",
+    );
+    expect(modelCompleted).toMatchObject({
+      method: "agent/event",
+      params: {
+        threadId,
+        event: {
+          type: "model.completed",
+          step: 1,
+          text: "Hello from Threadlight",
+          toolCalls: [],
+        },
+      },
+    });
   });
 });

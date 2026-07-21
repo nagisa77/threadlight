@@ -4,8 +4,11 @@ import {
   AgentLoop,
   OpenAIResponsesProvider,
   defineAgent,
-  defineTool,
 } from "@threadlight/agent-loop";
+import {
+  createExecCommandTool,
+  createWebSearchTool,
+} from "@threadlight/builtin-tools";
 
 import { AppServer } from "./app-server.js";
 import { jsonLineSender, serveJsonLines } from "./stdio.js";
@@ -15,30 +18,34 @@ if (!process.env.OPENAI_API_KEY) {
   process.exit(1);
 }
 
-const currentTime = defineTool({
-  name: "current_time",
-  description: "Return the current ISO-8601 timestamp.",
-  parameters: {
-    type: "object",
-    properties: {},
-    required: [],
-    additionalProperties: false,
-  },
-  async execute() {
-    return new Date().toISOString();
-  },
-});
-
 const provider = new OpenAIResponsesProvider({
   defaultModel: process.env.THREADLIGHT_MODEL ?? "gpt-5.6-sol",
 });
 
 const loop = new AgentLoop(provider);
+const tools = [
+  createExecCommandTool({
+    workspaceRoot: process.cwd(),
+  }),
+];
+
+if (process.env.BRAVE_SEARCH_API_KEY) {
+  tools.push(
+    createWebSearchTool({
+      apiKey: process.env.BRAVE_SEARCH_API_KEY,
+    }),
+  );
+} else {
+  process.stderr.write(
+    "BRAVE_SEARCH_API_KEY is not set; web_search is disabled\n",
+  );
+}
+
 const agent = defineAgent({
   name: "threadlight",
   instructions:
     "Answer directly. Use tools when they provide evidence needed for the task.",
-  tools: [currentTime],
+  tools,
 });
 
 const send = jsonLineSender(process.stdout);

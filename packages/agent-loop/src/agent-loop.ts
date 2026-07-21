@@ -68,6 +68,15 @@ export class AgentLoop {
         signal: options.signal,
       });
 
+      emit({
+        type: "model.completed",
+        runId,
+        step,
+        text: turn.text,
+        toolCalls: turn.toolCalls,
+        usage: turn.usage,
+      });
+
       state = turn.state;
       addUsage(usage, turn.usage);
 
