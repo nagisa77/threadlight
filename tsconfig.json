@@ -1,8 +1,10 @@
 {
   "files": [],
   "references": [
+    { "path": "./packages/protocol" },
     { "path": "./packages/agent-loop" },
     { "path": "./packages/builtin-tools" },
-    { "path": "./packages/app-server" }
+    { "path": "./packages/app-server" },
+    { "path": "./packages/client" }
   ]
 }

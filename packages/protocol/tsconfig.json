@@ -6,11 +6,6 @@
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
-  "references": [
-    { "path": "../agent-loop" },
-    { "path": "../builtin-tools" },
-    { "path": "../protocol" }
-  ],
   "include": [
     "src/**/*.ts"
   ]

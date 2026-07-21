@@ -2,17 +2,20 @@
 
 Threadlight 是一个小而清晰的 TypeScript Agent Runtime：让模型的每个 thread、turn 和 tool event 都可见、可控、可扩展。
 
-它包含三个模块：
+它包含五个模块：
 
 - `@threadlight/agent-loop`：模型调用、工具循环、审批钩子、取消、事件和会话状态。
 - `@threadlight/builtin-tools`：内置的命令执行和互联网搜索工具。
+- `@threadlight/protocol`：客户端与 app-server 共享的 JSON-RPC 类型。
 - `@threadlight/app-server`：JSON-RPC 2.0、thread/turn 管理、流式事件、审批恢复和 stdio transport。
+- `@threadlight/client`：transport-neutral 的类型安全客户端、请求关联和事件订阅。
 
 ## 架构
 
 ```text
 CLI / Desktop / IDE
-        │ JSON-RPC over JSONL/stdio
+        │ @threadlight/client
+        │ JSON-RPC over pluggable transport
         ▼
 @threadlight/app-server
         │
@@ -23,6 +26,25 @@ CLI / Desktop / IDE
 ```
 
 `agent-loop` 不依赖 app-server；app-server 只是它的一个客户端协议适配层。
+client 和 app-server 不互相依赖，二者只共享 protocol。
+
+## Client API
+
+客户端只要求 transport 能发送请求并订阅服务端消息：
+
+```ts
+import { ThreadlightClient } from "@threadlight/client";
+
+const client = new ThreadlightClient(transport);
+await client.initialize();
+
+const { threadId } = await client.startThread();
+client.on("turn/completed", ({ output }) => console.log(output));
+await client.startTurn(threadId, "现在几点？");
+```
+
+桌面端可以实现 JSONL/stdio transport，Web UI 可以实现 WebSocket transport，
+上层调用方式保持不变。
 
 ## 开始使用
 

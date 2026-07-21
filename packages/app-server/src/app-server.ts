@@ -12,6 +12,8 @@ import type {
   JsonRpcOutgoing,
   JsonRpcRequest,
   SendMessage,
+  ThreadlightNotificationMap,
+  ThreadlightNotificationMethod,
 } from "./protocol.js";
 
 interface ThreadState {
@@ -218,7 +220,10 @@ export class AppServer {
     }
   }
 
-  private notify(method: string, params: unknown): void {
+  private notify<Method extends ThreadlightNotificationMethod>(
+    method: Method,
+    params: ThreadlightNotificationMap[Method],
+  ): void {
     this.send({ jsonrpc: "2.0", method, params });
   }
 
