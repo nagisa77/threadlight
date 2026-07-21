@@ -3,6 +3,71 @@ import { defineTool, type Tool } from "@threadlight/agent-loop";
 const DEFAULT_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 const DEFAULT_COUNT = 5;
 const DEFAULT_TIMEOUT_MS = 10_000;
+const BRAVE_SEARCH_LANGUAGES = [
+  "ar",
+  "eu",
+  "bn",
+  "bg",
+  "ca",
+  "zh-hans",
+  "zh-hant",
+  "hr",
+  "cs",
+  "da",
+  "nl",
+  "en",
+  "en-gb",
+  "et",
+  "fi",
+  "fr",
+  "gl",
+  "de",
+  "gu",
+  "he",
+  "hi",
+  "hu",
+  "is",
+  "it",
+  "jp",
+  "kn",
+  "ko",
+  "lv",
+  "lt",
+  "ms",
+  "ml",
+  "mr",
+  "nb",
+  "pl",
+  "pt-br",
+  "pt-pt",
+  "pa",
+  "ro",
+  "ru",
+  "sr",
+  "sk",
+  "sl",
+  "es",
+  "sv",
+  "ta",
+  "te",
+  "th",
+  "tr",
+  "uk",
+  "vi",
+] as const;
+
+type BraveSearchLanguage = (typeof BRAVE_SEARCH_LANGUAGES)[number];
+
+const BRAVE_SEARCH_LANGUAGE_SET = new Set<string>(BRAVE_SEARCH_LANGUAGES);
+const SEARCH_LANGUAGE_ALIASES: Readonly<Record<string, BraveSearchLanguage>> = {
+  ja: "jp",
+  zh: "zh-hans",
+  "zh-cn": "zh-hans",
+  "zh-sg": "zh-hans",
+  "zh-hk": "zh-hant",
+  "zh-mo": "zh-hant",
+  "zh-tw": "zh-hant",
+};
 
 type Fetch = typeof fetch;
 
@@ -30,7 +95,7 @@ interface WebSearchArguments {
   query: string;
   count: number;
   country?: string;
-  search_lang?: string;
+  search_lang?: BraveSearchLanguage;
   freshness?: "pd" | "pw" | "pm" | "py";
 }
 
@@ -78,8 +143,9 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
         },
         search_lang: {
           type: ["string", "null"],
-          minLength: 2,
-          description: "Optional search-result language code.",
+          enum: [...BRAVE_SEARCH_LANGUAGES, null],
+          description:
+            "Optional Brave search-result language code. Use zh-hans for Simplified Chinese or zh-hant for Traditional Chinese.",
         },
         freshness: {
           type: ["string", "null"],
@@ -140,7 +206,7 @@ function parseArguments(value: unknown, defaultCount: number): WebSearchArgument
     throw new Error("country must be a two-letter code");
   }
 
-  const searchLang = optionalString(value.search_lang, "search_lang");
+  const searchLang = parseSearchLanguage(value.search_lang);
   const freshness = value.freshness;
   if (
     freshness !== undefined &&
@@ -160,6 +226,21 @@ function parseArguments(value: unknown, defaultCount: number): WebSearchArgument
     search_lang: searchLang,
     freshness: freshness ?? undefined,
   };
+}
+
+function parseSearchLanguage(value: unknown): BraveSearchLanguage | undefined {
+  const searchLang = optionalString(value, "search_lang");
+  if (searchLang === undefined) return undefined;
+
+  const normalized = searchLang.trim().toLowerCase().replaceAll("_", "-");
+  const canonical = SEARCH_LANGUAGE_ALIASES[normalized] ?? normalized;
+  if (!BRAVE_SEARCH_LANGUAGE_SET.has(canonical)) {
+    throw new Error(
+      "search_lang must be a language supported by Brave Search (for Chinese, use zh-hans or zh-hant)",
+    );
+  }
+
+  return canonical as BraveSearchLanguage;
 }
 
 function parseResponse(query: string, value: unknown): WebSearchResult {

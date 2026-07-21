@@ -1,5 +1,6 @@
 # Threadlight contributor guide
 
+- Follow the [`emilkowalski/skills`](https://github.com/emilkowalski/skills) design-engineering guidance for all product UI and interaction work.
 - Keep `agent-loop` provider-neutral; provider-specific wire formats stay in adapters.
 - Keep `app-server` transport and protocol concerns out of the loop.
 - Preserve opaque model state across tool turns so reasoning and call linkage survive.

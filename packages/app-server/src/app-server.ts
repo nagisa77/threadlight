@@ -17,6 +17,7 @@ import type {
 } from "./protocol.js";
 
 interface ThreadState {
+  agent: Agent;
   modelState?: unknown;
   activeTurn?: {
     id: string;
@@ -29,24 +30,34 @@ interface PendingApproval {
   resolve: (approved: boolean) => void;
 }
 
-export interface AppServerOptions {
+interface SharedAppServerOptions {
   loop: AgentLoop;
-  agent: Agent;
   send: SendMessage;
+  autoApproveAll?: boolean;
 }
+
+export type AgentFactory = () => Agent | Promise<Agent>;
+
+export type AppServerOptions = SharedAppServerOptions &
+  (
+    | { agent: Agent; agentFactory?: never }
+    | { agent?: never; agentFactory: AgentFactory }
+  );
 
 export class AppServer {
   private readonly loop: AgentLoop;
-  private readonly agent: Agent;
+  private readonly agentFactory: AgentFactory;
   private readonly send: SendMessage;
+  private readonly autoApproveAll: boolean;
   private readonly threads = new Map<string, ThreadState>();
   private readonly approvals = new Map<string, PendingApproval>();
   private initialized = false;
 
   constructor(options: AppServerOptions) {
     this.loop = options.loop;
-    this.agent = options.agent;
+    this.agentFactory = options.agentFactory ?? (() => options.agent);
     this.send = options.send;
+    this.autoApproveAll = options.autoApproveAll ?? false;
   }
 
   async receive(message: JsonRpcRequest): Promise<void> {
@@ -94,9 +105,10 @@ export class AppServer {
     }
   }
 
-  private startThread(): { threadId: string } {
+  private async startThread(): Promise<{ threadId: string }> {
+    const agent = await this.agentFactory();
     const threadId = randomUUID();
-    this.threads.set(threadId, {});
+    this.threads.set(threadId, { agent });
     return { threadId };
   }
 
@@ -169,11 +181,14 @@ export class AppServer {
     this.notify("turn/started", { threadId, turnId });
 
     try {
-      const result = await this.loop.run(this.agent, input, {
+      const result = await this.loop.run(thread.agent, input, {
         modelState: thread.modelState,
         signal: controller.signal,
         onEvent: (event) => this.forwardEvent(threadId, turnId, event),
-        approve: (request) => this.waitForApproval(turnId, request),
+        approve: (request) =>
+          this.autoApproveAll
+            ? Promise.resolve(true)
+            : this.waitForApproval(turnId, request),
       });
 
       thread.modelState = result.modelState;

@@ -3,9 +3,11 @@ import type { ThreadlightClient } from "@threadlight/client";
 import {
   ArrowUp,
   Check,
+  ChevronRight,
   CircleStop,
   LoaderCircle,
   Plus,
+  Settings,
   Sparkles,
   Terminal,
   X,
@@ -18,9 +20,11 @@ import {
 } from "./session.js";
 import { MarkdownContent } from "./markdown.js";
 import { isNearBottom } from "./scroll.js";
+import { SettingsPage, type SettingsAdapter } from "./settings.js";
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
+  settings?: SettingsAdapter;
 }
 
 const suggestions = [
@@ -29,9 +33,10 @@ const suggestions = [
   "帮我规划下一个功能",
 ];
 
-export function ThreadlightApp({ client }: ThreadlightAppProps) {
+export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
   const { state, retry, newThread, send, interrupt, resolveApproval } =
     useThreadlightSession(client);
+  const [view, setView] = useState<"thread" | "settings">("thread");
   const [input, setInput] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
   const conversation = useRef<HTMLElement>(null);
@@ -74,7 +79,10 @@ export function ThreadlightApp({ client }: ThreadlightAppProps) {
 
         <button
           className="new-thread-button pressable"
-          onClick={() => void newThread()}
+          onClick={() => {
+            setView("thread");
+            void newThread();
+          }}
           disabled={state.isRunning || state.connection !== "ready"}
         >
           <Plus size={15} strokeWidth={2.2} />
@@ -95,133 +103,154 @@ export function ThreadlightApp({ client }: ThreadlightAppProps) {
           )}
         </nav>
 
-        <div className="sidebar-status">
-          <span className={`status-dot ${state.connection}`} />
-          <span>{connectionLabel(state.connection)}</span>
-          <span className="status-mode">本地</span>
+        <div className="sidebar-footer">
+          {settings && (
+            <button
+              type="button"
+              className={`settings-nav-button pressable ${view === "settings" ? "active" : ""}`}
+              aria-current={view === "settings" ? "page" : undefined}
+              onClick={() => setView("settings")}
+            >
+              <Settings size={15} />
+              设置
+            </button>
+          )}
+          <div className="sidebar-status">
+            <span className={`status-dot ${state.connection}`} />
+            <span>{connectionLabel(state.connection)}</span>
+            <span className="status-mode">本地</span>
+          </div>
         </div>
       </aside>
 
       <main className="workspace">
-        <header className="workspace-header">
-          <div>
-            <h1>{state.messages[0]?.text || "新任务"}</h1>
-            <p>Agent runtime · {shortId(state.threadId)}</p>
-          </div>
-          {state.isRunning && (
-            <span className="running-badge">
-              <LoaderCircle size={13} /> 正在运行
-            </span>
-          )}
-        </header>
+        {view === "settings" && settings ? (
+          <SettingsPage adapter={settings} onRuntimeRestart={retry} />
+        ) : (
+          <>
+            <header className="workspace-header">
+              <div>
+                <h1>{state.messages[0]?.text || "新任务"}</h1>
+                <p>Agent runtime · {shortId(state.threadId)}</p>
+              </div>
+              {state.isRunning && (
+                <span className="running-badge">
+                  <LoaderCircle size={13} /> 正在运行
+                </span>
+              )}
+            </header>
 
-        <section
-          ref={conversation}
-          className="conversation"
-          aria-live="polite"
-          onScroll={(event) => {
-            followOutput.current = isNearBottom(event.currentTarget);
-          }}
-        >
-          <div className="conversation-inner">
-            {state.connection === "error" && (
-              <ConnectionError
-                message={state.connectionError ?? "无法连接 app-server"}
-                onRetry={() => void retry()}
-              />
-            )}
+            <section
+              ref={conversation}
+              className="conversation"
+              aria-live="polite"
+              onScroll={(event) => {
+                followOutput.current = isNearBottom(event.currentTarget);
+              }}
+            >
+              <div className="conversation-inner">
+                {state.connection === "error" && (
+                  <ConnectionError
+                    message={state.connectionError ?? "无法连接 app-server"}
+                    onRetry={() => void retry()}
+                    onOpenSettings={settings ? () => setView("settings") : undefined}
+                  />
+                )}
 
-            {state.messages.length === 0 && state.connection !== "error" ? (
-              <EmptyState
-                connecting={state.connection === "connecting"}
-                onSelect={(value) => {
-                  setInput(value);
-                  textarea.current?.focus();
-                }}
-              />
-            ) : (
-              <div className="message-list">
-                {state.messages.map((message) => (
-                  <article
-                    className={`message ${message.role} ${message.error ? "error" : ""}`}
-                    key={message.id}
-                  >
-                    <div className="message-body">
-                      {message.activities && message.activities.length > 0 && (
-                        <ActivityList activities={message.activities} />
-                      )}
-                      {message.role === "assistant" ? (
-                        <MarkdownContent>{message.text}</MarkdownContent>
-                      ) : (
-                        <p>{message.text}</p>
-                      )}
-                    </div>
-                  </article>
-                ))}
+                {state.messages.length === 0 && state.connection !== "error" ? (
+                  <EmptyState
+                    connecting={state.connection === "connecting"}
+                    onSelect={(value) => {
+                      setInput(value);
+                      textarea.current?.focus();
+                    }}
+                  />
+                ) : (
+                  <div className="message-list">
+                    {state.messages.map((message) => (
+                      <article
+                        className={`message ${message.role} ${message.error ? "error" : ""}`}
+                        key={message.id}
+                      >
+                        <div className="message-body">
+                          {message.activities && message.activities.length > 0 && (
+                            <ActivityList activities={message.activities} />
+                          )}
+                          {message.role === "assistant" ? (
+                            <MarkdownContent>{message.text}</MarkdownContent>
+                          ) : (
+                            <p>{message.text}</p>
+                          )}
+                        </div>
+                      </article>
+                    ))}
 
-                {(state.activities.length > 0 || state.isRunning) && (
-                  <div className="live-run">
-                    {state.activities.length > 0 ? (
-                      <ActivityList activities={state.activities} live />
-                    ) : (
-                      <div className="thinking-row">
-                        <LoaderCircle size={15} />
-                        正在思考…
+                    {(state.activities.length > 0 || state.isThinking) && (
+                      <div className="live-run">
+                        {state.activities.length > 0 && (
+                          <ActivityList activities={state.activities} live />
+                        )}
+                        {state.isThinking && (
+                          <div className="thinking-row">
+                            <LoaderCircle size={15} />
+                            正在思考…
+                          </div>
+                        )}
                       </div>
+                    )}
+
+                    {state.approval && (
+                      <ApprovalCard
+                        approval={state.approval}
+                        onResolve={(approved) => void resolveApproval(approved)}
+                      />
                     )}
                   </div>
                 )}
+              </div>
+            </section>
 
-                {state.approval && (
-                  <ApprovalCard
-                    approval={state.approval}
-                    onResolve={(approved) => void resolveApproval(approved)}
-                  />
+            <footer className="composer-wrap">
+              <div className="composer">
+                <textarea
+                  ref={textarea}
+                  value={input}
+                  rows={1}
+                  placeholder="向 Threadlight 提问…"
+                  disabled={state.connection !== "ready"}
+                  onChange={(event) => setInput(event.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onInput={(event) => {
+                    event.currentTarget.style.height = "auto";
+                    event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
+                  }}
+                  aria-label="消息"
+                />
+                {state.isRunning ? (
+                  <button
+                    className="composer-action stop pressable"
+                    onClick={() => void interrupt()}
+                    aria-label="停止运行"
+                    title="停止"
+                  >
+                    <CircleStop size={18} />
+                  </button>
+                ) : (
+                  <button
+                    className="composer-action send pressable"
+                    onClick={() => void submit()}
+                    disabled={!input.trim() || state.connection !== "ready"}
+                    aria-label="发送消息"
+                    title="发送"
+                  >
+                    <ArrowUp size={18} strokeWidth={2.4} />
+                  </button>
                 )}
               </div>
-            )}
-          </div>
-        </section>
-
-        <footer className="composer-wrap">
-          <div className="composer">
-            <textarea
-              ref={textarea}
-              value={input}
-              rows={1}
-              placeholder="向 Threadlight 提问…"
-              disabled={state.connection !== "ready"}
-              onChange={(event) => setInput(event.target.value)}
-              onKeyDown={handleKeyDown}
-              onInput={(event) => {
-                event.currentTarget.style.height = "auto";
-                event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
-              }}
-              aria-label="消息"
-            />
-            {state.isRunning ? (
-              <button
-                className="composer-action stop pressable"
-                onClick={() => void interrupt()}
-                aria-label="停止运行"
-                title="停止"
-              >
-                <CircleStop size={18} />
-              </button>
-            ) : (
-              <button
-                className="composer-action send pressable"
-                onClick={() => void submit()}
-                disabled={!input.trim() || state.connection !== "ready"}
-                aria-label="发送消息"
-                title="发送"
-              >
-                <ArrowUp size={18} strokeWidth={2.4} />
-              </button>
-            )}
-          </div>
-          <p className="composer-hint">Enter 发送 · Shift + Enter 换行</p>
-        </footer>
+              <p className="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+            </footer>
+          </>
+        )}
       </main>
     </div>
   );
@@ -259,30 +288,39 @@ function EmptyState({
   );
 }
 
-function ActivityList({
+export function ActivityList({
   activities,
   live = false,
 }: {
   activities: readonly ToolActivity[];
   live?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(live);
+
   return (
-    <div className={`activity-list ${live ? "live" : ""}`}>
-      <div className="activity-heading">
+    <details
+      className={live ? "activity-list live" : "activity-list"}
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="activity-heading">
         <Terminal size={14} />
         <span>{live ? "执行中" : "执行记录"}</span>
         <span className="activity-count">{activities.length}</span>
-      </div>
-      {activities.map((activity) => (
-        <div className="activity-item" key={activity.id}>
-          <ActivityStatus status={activity.status} />
-          <div>
-            <code>{activity.name}</code>
+        <ChevronRight className="activity-chevron" size={13} aria-hidden="true" />
+      </summary>
+      <div className="activity-content">
+        {activities.map((activity) => (
+          <div className="activity-item" key={activity.id}>
+            <div className="activity-summary">
+              <ActivityStatus status={activity.status} />
+              <code>{activity.name}</code>
+            </div>
             {activity.detail && <pre>{activity.detail}</pre>}
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -324,9 +362,11 @@ function ApprovalCard({
 function ConnectionError({
   message,
   onRetry,
+  onOpenSettings,
 }: {
   message: string;
   onRetry(): void;
+  onOpenSettings?(): void;
 }) {
   return (
     <div className="connection-error">
@@ -336,10 +376,17 @@ function ConnectionError({
       <div>
         <strong>无法连接到运行时</strong>
         <p>{message}</p>
-        <p className="error-help">确认启动环境已设置 OPENAI_API_KEY；必要时重启客户端。</p>
-        <button className="secondary pressable" onClick={onRetry}>
-          重新连接
-        </button>
+        <p className="error-help">请在设置中配置 OpenAI API Key，然后重新连接。</p>
+        <div className="connection-actions">
+          {onOpenSettings && (
+            <button className="primary pressable" onClick={onOpenSettings}>
+              打开设置
+            </button>
+          )}
+          <button className="secondary pressable" onClick={onRetry}>
+            重新连接
+          </button>
+        </div>
       </div>
     </div>
   );

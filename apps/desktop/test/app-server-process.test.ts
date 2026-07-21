@@ -52,4 +52,32 @@ describe("AppServerProcess", () => {
       error: { code: -32010, message: "App server stopped" },
     });
   });
+
+  it("applies updated settings when restarting the process", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    let deliver: ((message: JsonRpcOutgoing) => void) | undefined;
+    const response = new Promise<JsonRpcOutgoing>((resolve) => {
+      deliver = resolve;
+    });
+    const server = new AppServerProcess({
+      entry,
+      cwd: process.cwd(),
+      send: (message) => {
+        messages.push(message);
+        deliver?.(message);
+      },
+    });
+
+    server.start();
+    server.restart({ THREADLIGHT_TEST_SETTING: "updated" });
+    server.send({ jsonrpc: "2.0", id: 3, method: "environment" });
+
+    await expect(response).resolves.toEqual({
+      jsonrpc: "2.0",
+      id: 3,
+      result: { configured: "updated" },
+    });
+    expect(messages).toHaveLength(1);
+    server.stop();
+  });
 });

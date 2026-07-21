@@ -1,10 +1,13 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import {
   app,
   BrowserWindow,
   ipcMain,
   type IpcMainEvent,
+  type IpcMainInvokeEvent,
+  safeStorage,
+  shell,
 } from "electron";
 import {
   THREADLIGHT_METHODS,
@@ -14,13 +17,19 @@ import {
 } from "@threadlight/protocol";
 
 import { AppServerProcess } from "./app-server-process.js";
+import { createExternalWindowHandler } from "./external-links.js";
+import { runtimeEnvironment, SettingsStore } from "./settings-store.js";
 import {
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
+  DESKTOP_SETTINGS_GET_CHANNEL,
+  DESKTOP_SETTINGS_UPDATE_CHANNEL,
+  type DesktopSettingsUpdate,
 } from "../shared/desktop-api.js";
 
 let mainWindow: BrowserWindow | null = null;
 let appServer: AppServerProcess | null = null;
+let settingsStore: SettingsStore | null = null;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -41,7 +50,9 @@ function createWindow(): void {
   });
   mainWindow = window;
 
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.setWindowOpenHandler(
+    createExternalWindowHandler((url) => shell.openExternal(url)),
+  );
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
@@ -56,6 +67,9 @@ function createWindow(): void {
       resolve(app.getAppPath(), "../../packages/app-server/dist/bin.js"),
     cwd:
       process.env.THREADLIGHT_WORKSPACE ?? resolve(app.getAppPath(), "../.."),
+    environment: runtimeEnvironment(
+      settingsStore?.runtimeSettings() ?? { autoApproveAll: false },
+    ),
     send: (message) => sendToRenderer(window, message),
   });
   appServer.start();
@@ -90,6 +104,61 @@ function handleRequest(event: IpcMainEvent, value: unknown): void {
   appServer?.send(value);
 }
 
+function handleSettingsGet(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!settingsStore) throw new Error("Settings are not available");
+  return settingsStore.snapshot();
+}
+
+function handleSettingsUpdate(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!settingsStore) throw new Error("Settings are not available");
+
+  const update = parseSettingsUpdate(value);
+  const snapshot = settingsStore.update(update);
+  appServer?.restart(runtimeEnvironment(settingsStore.runtimeSettings()));
+  return snapshot;
+}
+
+function requireTrustedSender(event: IpcMainInvokeEvent): void {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== mainWindow.webContents.mainFrame
+  ) {
+    throw new Error("Settings request came from an untrusted frame");
+  }
+}
+
+function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid settings update");
+  }
+  const update = value as Record<string, unknown>;
+  if (typeof update.autoApproveAll !== "boolean") {
+    throw new Error("autoApproveAll must be a boolean");
+  }
+  if (!isOptionalSecret(update.openAIApiKey)) {
+    throw new Error("openAIApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.searchApiKey)) {
+    throw new Error("searchApiKey must be a string or null");
+  }
+  return {
+    autoApproveAll: update.autoApproveAll,
+    ...(update.openAIApiKey !== undefined
+      ? { openAIApiKey: update.openAIApiKey }
+      : {}),
+    ...(update.searchApiKey !== undefined
+      ? { searchApiKey: update.searchApiKey }
+      : {}),
+  } as DesktopSettingsUpdate;
+}
+
+function isOptionalSecret(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
+}
+
 function sendToRenderer(window: BrowserWindow, message: JsonRpcOutgoing): void {
   if (!window.isDestroyed()) {
     window.webContents.send(DESKTOP_MESSAGE_CHANNEL, message);
@@ -113,7 +182,17 @@ function extractId(value: unknown): string | number | null | undefined {
 }
 
 app.whenReady().then(() => {
+  settingsStore = new SettingsStore(
+    join(app.getPath("userData"), "settings.json"),
+    {
+      encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
+      decrypt: (value) =>
+        safeStorage.decryptString(Buffer.from(value, "base64")),
+    },
+  );
   ipcMain.on(DESKTOP_REQUEST_CHANNEL, handleRequest);
+  ipcMain.handle(DESKTOP_SETTINGS_GET_CHANNEL, handleSettingsGet);
+  ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);
   createWindow();
 
   app.on("activate", () => {

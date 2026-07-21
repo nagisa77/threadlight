@@ -66,6 +66,17 @@ describe("AgentLoop", () => {
     expect(result.output).toBe("The answer is 42");
     expect(result.steps).toBe(2);
     expect(provider.requests[1]?.toolResults?.[0]?.output).toBe("42");
+    expect(events.map((event) => event.type)).toEqual([
+      "run.started",
+      "model.started",
+      "model.completed",
+      "tool.started",
+      "tool.completed",
+      "model.started",
+      "model.completed",
+      "message.completed",
+      "run.completed",
+    ]);
     expect(
       events.filter((event) => event.type === "model.completed"),
     ).toMatchObject([

@@ -6,6 +6,7 @@ export {
   useThreadlightSession,
 } from "./session.js";
 export { isNearBottom } from "./scroll.js";
+export { SettingsPage, createSettingsUpdate } from "./settings.js";
 
 export type { ThreadlightAppProps } from "./app.js";
 export type { MarkdownContentProps } from "./markdown.js";
@@ -17,3 +18,9 @@ export type {
   ToolActivity,
 } from "./session.js";
 export type { ScrollMetrics } from "./scroll.js";
+export type {
+  SettingsAdapter,
+  SecretDraft,
+  SettingsSnapshot,
+  SettingsUpdate,
+} from "./settings.js";

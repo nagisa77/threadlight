@@ -3,7 +3,6 @@
 import {
   AgentLoop,
   OpenAIResponsesProvider,
-  defineAgent,
 } from "@threadlight/agent-loop";
 import {
   createExecCommandTool,
@@ -12,6 +11,7 @@ import {
 
 import { AppServer } from "./app-server.js";
 import { jsonLineSender, serveJsonLines } from "./stdio.js";
+import { createWorkspaceAgentFactory } from "./workspace-agent.js";
 
 if (!process.env.OPENAI_API_KEY) {
   process.stderr.write("OPENAI_API_KEY is required\n");
@@ -23,9 +23,10 @@ const provider = new OpenAIResponsesProvider({
 });
 
 const loop = new AgentLoop(provider);
+const workspaceRoot = process.cwd();
 const tools = [
   createExecCommandTool({
-    workspaceRoot: process.cwd(),
+    workspaceRoot,
   }),
 ];
 
@@ -41,15 +42,20 @@ if (process.env.BRAVE_SEARCH_API_KEY) {
   );
 }
 
-const agent = defineAgent({
-  name: "threadlight",
-  instructions:
-    "Answer directly. Use tools when they provide evidence needed for the task.",
+const agentFactory = createWorkspaceAgentFactory({
+  workspaceRoot,
+  baseInstructions:
+    "Answer directly. Follow the supplied workspace instructions and use the project context before answering or acting. Use tools when they provide evidence needed for the task.",
   tools,
 });
 
 const send = jsonLineSender(process.stdout);
-const server = new AppServer({ loop, agent, send });
+const server = new AppServer({
+  loop,
+  agentFactory,
+  send,
+  autoApproveAll: process.env.THREADLIGHT_AUTO_APPROVE === "1",
+});
 
 serveJsonLines(server, process.stdin, (error) => {
   process.stderr.write(`Invalid JSON-RPC input: ${String(error)}\n`);

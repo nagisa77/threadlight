@@ -90,6 +90,53 @@ describe("sessionReducer", () => {
     expect(state.activities[0].detail).toBe("search result");
   });
 
+  it("returns to thinking after a tool result is sent to the model", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "Search and summarize",
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.completed",
+        runId: "run-1",
+        step: 1,
+        text: "",
+        toolCalls: [{ id: "call-1", name: "web_search", arguments: {} }],
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.started",
+        runId: "run-1",
+        call: { id: "call-1", name: "web_search", arguments: {} },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "call-1",
+          name: "web_search",
+          output: "search result",
+        },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: { type: "model.started", runId: "run-1", step: 2 },
+    });
+
+    expect(state.isThinking).toBe(true);
+    expect(state.activities).toMatchObject([
+      { id: "call-1", status: "completed" },
+    ]);
+  });
+
   it("tracks and clears approval requests", () => {
     const request = {
       id: "approval-1",

@@ -12,6 +12,7 @@ const APP_SERVER_UNAVAILABLE = -32010;
 export interface AppServerProcessOptions {
   entry: string;
   cwd: string;
+  environment?: NodeJS.ProcessEnv;
   send(message: JsonRpcOutgoing): void;
 }
 
@@ -19,15 +20,22 @@ export class AppServerProcess {
   private child?: ChildProcessWithoutNullStreams;
   private lines?: ReadlineInterface;
   private readonly pending = new Set<JsonRpcId>();
+  private environment: NodeJS.ProcessEnv;
 
-  constructor(private readonly options: AppServerProcessOptions) {}
+  constructor(private readonly options: AppServerProcessOptions) {
+    this.environment = options.environment ?? {};
+  }
 
   start(): void {
     if (this.child) return;
 
     const child = spawn(process.execPath, [this.options.entry], {
       cwd: this.options.cwd,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+      env: {
+        ...process.env,
+        ...this.environment,
+        ELECTRON_RUN_AS_NODE: "1",
+      },
       stdio: "pipe",
     });
     this.child = child;
@@ -38,11 +46,13 @@ export class AppServerProcess {
       process.stderr.write(`[app-server] ${data.toString()}`);
     });
     child.on("error", (error) => {
-      if (this.child === child) this.child = undefined;
+      if (this.child !== child) return;
+      this.child = undefined;
       this.failAll(error.message);
     });
     child.on("exit", (code, signal) => {
-      if (this.child === child) this.child = undefined;
+      if (this.child !== child) return;
+      this.child = undefined;
       const reason = signal ? `signal ${signal}` : `code ${code ?? "unknown"}`;
       this.failAll(`App server stopped with ${reason}`);
     });
@@ -59,6 +69,12 @@ export class AppServerProcess {
     child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
       if (error) this.fail(message.id, error.message);
     });
+  }
+
+  restart(environment: NodeJS.ProcessEnv): void {
+    this.stop();
+    this.environment = environment;
+    this.start();
   }
 
   stop(): void {

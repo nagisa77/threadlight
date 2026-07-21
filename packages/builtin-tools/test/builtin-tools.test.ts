@@ -127,7 +127,7 @@ describe("builtin tools", () => {
         query: "threadlight runtime",
         count: 3,
         country: "us",
-        search_lang: null,
+        search_lang: "zh",
         freshness: null,
       },
     });
@@ -141,7 +141,10 @@ describe("builtin tools", () => {
         query: { type: "string" },
         count: { type: ["integer", "null"] },
         country: { type: ["string", "null"] },
-        search_lang: { type: ["string", "null"] },
+        search_lang: {
+          type: ["string", "null"],
+          enum: expect.arrayContaining(["en", "zh-hans", "zh-hant", null]),
+        },
         freshness: {
           type: ["string", "null"],
           enum: ["pd", "pw", "pm", "py", null],
@@ -167,6 +170,7 @@ describe("builtin tools", () => {
     expect(requestUrl?.searchParams.get("q")).toBe("threadlight runtime");
     expect(requestUrl?.searchParams.get("count")).toBe("3");
     expect(requestUrl?.searchParams.get("country")).toBe("US");
+    expect(requestUrl?.searchParams.get("search_lang")).toBe("zh-hans");
     expect(requestHeaders?.get("X-Subscription-Token")).toBe(
       "test-search-key",
     );
@@ -181,5 +185,60 @@ describe("builtin tools", () => {
         },
       ],
     });
+  });
+
+  it.each([
+    ["zh_CN", "zh-hans"],
+    ["zh-TW", "zh-hant"],
+    ["JA", "jp"],
+  ])("normalizes search language %s to %s", async (input, expected) => {
+    let requestUrl: URL | undefined;
+    const fetchMock = vi.fn<typeof fetch>(async (request) => {
+      requestUrl = new URL(request.toString());
+      return new Response(JSON.stringify({ web: { results: [] } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    const tool = createWebSearchTool({
+      apiKey: "test-search-key",
+      fetch: fetchMock,
+    });
+
+    await tool.execute(
+      {
+        query: "language normalization",
+        count: null,
+        country: null,
+        search_lang: input,
+        freshness: null,
+      },
+      { runId: "run_search", signal: new AbortController().signal },
+    );
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(requestUrl?.searchParams.get("search_lang")).toBe(expected);
+  });
+
+  it("rejects unsupported search languages before calling Brave", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    const tool = createWebSearchTool({
+      apiKey: "test-search-key",
+      fetch: fetchMock,
+    });
+
+    await expect(
+      tool.execute(
+        {
+          query: "unsupported language",
+          count: null,
+          country: null,
+          search_lang: "not-a-language",
+          freshness: null,
+        },
+        { runId: "run_search", signal: new AbortController().signal },
+      ),
+    ).rejects.toThrow("search_lang must be a language supported by Brave Search");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -31,4 +31,25 @@ const ready = true;
 
     expect(html).not.toContain("<script>");
   });
+
+  it("marks web links to open outside the app", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent>
+        {`[Threadlight](https://example.com/docs)`}
+      </MarkdownContent>,
+    );
+
+    expect(html).toContain('href="https://example.com/docs"');
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer noopener"');
+  });
+
+  it("does not mark non-web links as external web pages", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent>{`[Email](mailto:hello@example.com)`}</MarkdownContent>,
+    );
+
+    expect(html).toContain('href="mailto:hello@example.com"');
+    expect(html).not.toContain('target="_blank"');
+  });
 });

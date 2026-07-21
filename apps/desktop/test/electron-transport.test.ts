@@ -11,6 +11,8 @@ describe("ElectronTransport", () => {
     const unsubscribe = vi.fn();
     const api: DesktopApi = {
       send: vi.fn(),
+      getSettings: vi.fn(),
+      updateSettings: vi.fn(),
       onMessage(listener) {
         receive = listener;
         return unsubscribe;

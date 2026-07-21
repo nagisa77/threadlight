@@ -27,6 +27,7 @@ export interface SessionState {
   connectionError?: string;
   threadId?: string;
   isRunning: boolean;
+  isThinking: boolean;
   messages: readonly ConversationMessage[];
   activities: readonly ToolActivity[];
   approval?: PendingApproval;
@@ -45,6 +46,7 @@ export type SessionAction =
 export const initialSessionState: SessionState = {
   connection: "connecting",
   isRunning: false,
+  isThinking: false,
   messages: [],
   activities: [],
 };
@@ -68,11 +70,13 @@ export function sessionReducer(
         connection: "error",
         connectionError: action.error,
         isRunning: false,
+        isThinking: false,
       };
     case "message.sent":
       return {
         ...state,
         isRunning: true,
+        isThinking: true,
         activities: [],
         approval: undefined,
         messages: [
@@ -81,7 +85,7 @@ export function sessionReducer(
         ],
       };
     case "turn.started":
-      return { ...state, isRunning: true };
+      return { ...state, isRunning: true, isThinking: true };
     case "turn.completed":
       return completeTurn(state, action.id, action.output);
     case "turn.failed":
@@ -96,9 +100,14 @@ function reduceAgentEvent(
   event: AgentEventData,
 ): SessionState {
   switch (event.type) {
+    case "model.started":
+      return { ...state, isThinking: true };
+    case "model.completed":
+      return { ...state, isThinking: false };
     case "tool.started":
       return {
         ...state,
+        isThinking: false,
         activities: [
           ...state.activities,
           {
@@ -128,8 +137,12 @@ function reduceAgentEvent(
     case "approval.requested":
       return {
         ...state,
+        isThinking: false,
         approval: { id: event.request.id, call: event.request.call },
       };
+    case "run.completed":
+    case "run.failed":
+      return { ...state, isThinking: false };
     case "approval.resolved":
       return state.approval?.id === event.request.id
         ? { ...state, approval: undefined }
@@ -148,6 +161,7 @@ function completeTurn(
   return {
     ...state,
     isRunning: false,
+    isThinking: false,
     activities: [],
     approval: undefined,
     messages: [
