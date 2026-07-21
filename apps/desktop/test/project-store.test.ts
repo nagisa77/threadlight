@@ -23,12 +23,12 @@ afterEach(() => {
 });
 
 describe("ProjectStore", () => {
-  it("persists the global conversation map and prepares project storage", () => {
+  it("persists the global project map and prepares project storage", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);
     const projectPath = join(root, "sample-project");
     mkdirSync(projectPath);
-    const mapPath = join(root, "home", ".threadlight", "conversation-map.json");
+    const mapPath = join(root, "home", ".threadlight", "project-map.json");
     let now = new Date("2026-07-21T08:00:00.000Z");
     const store = new ProjectStore(mapPath, {
       createId: () => "project-1",
@@ -73,7 +73,7 @@ describe("ProjectStore", () => {
     mkdirSync(first);
     mkdirSync(second);
     const ids = ["project-1", "project-2"];
-    const store = new ProjectStore(join(root, "conversation-map.json"), {
+    const store = new ProjectStore(join(root, "project-map.json"), {
       createId: () => ids.shift() ?? "unexpected",
     });
 
@@ -88,12 +88,12 @@ describe("ProjectStore", () => {
     expect(store.activate("project-1").activeProjectId).toBe("project-1");
   });
 
-  it("removes a task from its project conversation map", () => {
+  it("removes a task from its project map", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);
     const projectPath = join(root, "sample-project");
     mkdirSync(projectPath);
-    const store = new ProjectStore(join(root, "conversation-map.json"), {
+    const store = new ProjectStore(join(root, "project-map.json"), {
       createId: () => "project-1",
     });
     store.register(projectPath);
@@ -117,7 +117,24 @@ describe("ProjectStore", () => {
 
     expect(snapshot.projects[0].conversations).toEqual([]);
     expect(existsSync(conversationPath)).toBe(false);
-    expect(new ProjectStore(join(root, "conversation-map.json")).snapshot()
+    expect(new ProjectStore(join(root, "project-map.json")).snapshot()
       .projects[0].conversations).toEqual([]);
+  });
+
+  it("migrates the legacy conversation map to the project map", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const legacyPath = join(root, "conversation-map.json");
+    const mapPath = join(root, "project-map.json");
+    writeFileSync(
+      legacyPath,
+      `${JSON.stringify({ version: 1, projects: [] })}\n`,
+    );
+
+    const snapshot = new ProjectStore(mapPath, { legacyPath }).snapshot();
+
+    expect(snapshot.projects).toEqual([]);
+    expect(existsSync(mapPath)).toBe(true);
+    expect(existsSync(legacyPath)).toBe(false);
   });
 });

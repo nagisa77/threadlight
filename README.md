@@ -71,7 +71,7 @@ Threadlight JSON-RPC bridge；app-server 作为独立子进程运行。
 桌面端的全局数据统一保存在 `~/.threadlight/`：
 
 - `settings.json`：使用系统安全存储加密过的密钥与用户偏好。
-- `conversation-map.json`：项目、base 路径和对话摘要索引。
+- `project-map.json`：项目、base 路径和对话摘要索引。
 
 对话正文与 provider-neutral 的 opaque model state 保存在对应项目的
 `.threadlight/conversations/<threadId>.json`。切换项目时桌面端会以该项目的 base

@@ -285,7 +285,8 @@ app.whenReady().then(() => {
     },
   );
   projectStore = new ProjectStore(
-    join(threadlightHome, "conversation-map.json"),
+    join(threadlightHome, "project-map.json"),
+    { legacyPath: join(threadlightHome, "conversation-map.json") },
   );
   const initialWorkspace = process.env.THREADLIGHT_WORKSPACE;
   if (initialWorkspace) projectStore.register(initialWorkspace);
