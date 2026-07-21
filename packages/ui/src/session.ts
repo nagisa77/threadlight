@@ -1,6 +1,10 @@
-import { useCallback, useEffect, useReducer } from "react";
-import type { ThreadlightClient } from "@threadlight/client";
-import type { AgentEventData, ToolCallData } from "@threadlight/protocol";
+import { useCallback, useEffect, useReducer, useRef } from "react";
+import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
+import type {
+  AgentEventData,
+  ConversationMessageData,
+  ToolCallData,
+} from "@threadlight/protocol";
 
 export interface ToolActivity {
   id: string;
@@ -35,7 +39,11 @@ export interface SessionState {
 
 export type SessionAction =
   | { type: "connection.connecting" }
-  | { type: "connection.ready"; threadId: string }
+  | {
+      type: "connection.ready";
+      threadId: string;
+      messages?: readonly ConversationMessageData[];
+    }
   | { type: "connection.failed"; error: string }
   | { type: "message.sent"; id: string; text: string }
   | { type: "turn.started" }
@@ -63,6 +71,7 @@ export function sessionReducer(
         ...initialSessionState,
         connection: "ready",
         threadId: action.threadId,
+        messages: action.messages ?? [],
       };
     case "connection.failed":
       return {
@@ -195,47 +204,102 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function useThreadlightSession(client: ThreadlightClient) {
+export function useThreadlightSession(
+  client: ThreadlightClient,
+  options: { autoConnect?: boolean } = {},
+) {
   const [state, dispatch] = useReducer(sessionReducer, initialSessionState);
+  const activeThreadId = useRef<string | undefined>(undefined);
 
-  const connect = useCallback(async () => {
+  const openThread = useCallback(async (threadId?: string) => {
     dispatch({ type: "connection.connecting" });
     try {
       await client.initialize();
-      const { threadId } = await client.startThread();
-      dispatch({ type: "connection.ready", threadId });
+      let opened: {
+        threadId: string;
+        messages?: readonly ConversationMessageData[];
+      };
+      if (threadId) {
+        try {
+          opened = await client.resumeThread(threadId);
+        } catch (error) {
+          if (!(error instanceof RpcResponseError) || error.code !== -32001) {
+            throw error;
+          }
+          opened = await client.startThread();
+        }
+      } else {
+        opened = await client.startThread();
+      }
+      activeThreadId.current = opened.threadId;
+      dispatch({
+        type: "connection.ready",
+        threadId: opened.threadId,
+        messages: opened.messages,
+      });
+      return opened.threadId;
     } catch (error) {
       dispatch({ type: "connection.failed", error: errorMessage(error) });
+      return;
     }
   }, [client]);
 
   useEffect(() => {
     const subscriptions = [
-      client.on("turn/started", () => dispatch({ type: "turn.started" })),
-      client.on("turn/completed", ({ output }) =>
-        dispatch({ type: "turn.completed", id: crypto.randomUUID(), output }),
-      ),
-      client.on("turn/failed", ({ error }) =>
-        dispatch({ type: "turn.failed", id: crypto.randomUUID(), error }),
-      ),
-      client.on("agent/event", ({ event }) =>
-        dispatch({ type: "agent.event", event }),
-      ),
+      client.on("turn/started", ({ threadId }) => {
+        if (threadId === activeThreadId.current) {
+          dispatch({ type: "turn.started" });
+        }
+      }),
+      client.on("turn/completed", ({ threadId, output }) => {
+        if (threadId === activeThreadId.current) {
+          dispatch({ type: "turn.completed", id: crypto.randomUUID(), output });
+        }
+      }),
+      client.on("turn/failed", ({ threadId, error }) => {
+        if (threadId === activeThreadId.current) {
+          dispatch({ type: "turn.failed", id: crypto.randomUUID(), error });
+        }
+      }),
+      client.on("agent/event", ({ threadId, event }) => {
+        if (threadId === activeThreadId.current) {
+          dispatch({ type: "agent.event", event });
+        }
+      }),
     ];
 
-    void connect();
+    if (options.autoConnect !== false) void openThread();
     return () => subscriptions.forEach((unsubscribe) => unsubscribe());
-  }, [client, connect]);
+  }, [client, openThread, options.autoConnect]);
 
   const newThread = useCallback(async () => {
     if (state.isRunning) return;
     try {
       const { threadId } = await client.startThread();
+      activeThreadId.current = threadId;
       dispatch({ type: "connection.ready", threadId });
+      return threadId;
     } catch (error) {
       dispatch({ type: "connection.failed", error: errorMessage(error) });
     }
   }, [client, state.isRunning]);
+
+  const deleteThread = useCallback(
+    async (threadId: string) => {
+      if (state.isRunning) return false;
+      const { deleted } = await client.deleteThread(threadId);
+      if (activeThreadId.current === threadId) {
+        activeThreadId.current = undefined;
+      }
+      return deleted;
+    },
+    [client, state.isRunning],
+  );
+
+  const retry = useCallback(
+    () => openThread(activeThreadId.current),
+    [openThread],
+  );
 
   const send = useCallback(
     async (value: string) => {
@@ -280,8 +344,10 @@ export function useThreadlightSession(client: ThreadlightClient) {
 
   return {
     state,
-    retry: connect,
+    retry,
+    openThread,
     newThread,
+    deleteThread,
     send,
     interrupt,
     resolveApproval,

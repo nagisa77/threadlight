@@ -97,6 +97,10 @@ export class ThreadlightClient {
     return this.request("thread/resume", { threadId });
   }
 
+  deleteThread(threadId: string) {
+    return this.request("thread/delete", { threadId });
+  }
+
   startTurn(threadId: string, input: string) {
     return this.request("turn/start", { threadId, input });
   }

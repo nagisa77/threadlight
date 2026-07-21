@@ -7,7 +7,7 @@ Threadlight 是一个小而清晰的 TypeScript Agent Runtime：让模型的每�
 - `@threadlight/agent-loop`：模型调用、工具循环、审批钩子、取消、事件和会话状态。
 - `@threadlight/builtin-tools`：内置的命令执行和互联网搜索工具。
 - `@threadlight/protocol`：客户端与 app-server 共享的 JSON-RPC 类型。
-- `@threadlight/app-server`：JSON-RPC 2.0、thread/turn 管理、流式事件、审批恢复和 stdio transport。
+- `@threadlight/app-server`：JSON-RPC 2.0、thread/turn 管理、项目内会话持久化、流式事件、审批恢复和 stdio transport。
 - `@threadlight/client`：transport-neutral 的类型安全客户端、请求关联和事件订阅。
 - `@threadlight/ui`：可供 Electron 和未来 Web UI 复用的 React 会话界面。
 - `@threadlight/desktop`：安全 IPC、app-server 子进程和 Electron 窗口壳。
@@ -67,6 +67,16 @@ npm run desktop:preview
 
 Electron renderer 保持浏览器环境，不启用 Node integration。preload 只暴露受限的
 Threadlight JSON-RPC bridge；app-server 作为独立子进程运行。
+
+桌面端的全局数据统一保存在 `~/.threadlight/`：
+
+- `settings.json`：使用系统安全存储加密过的密钥与用户偏好。
+- `conversation-map.json`：项目、base 路径和对话摘要索引。
+
+对话正文与 provider-neutral 的 opaque model state 保存在对应项目的
+`.threadlight/conversations/<threadId>.json`。切换项目时桌面端会以该项目的 base
+路径重启 app-server；空白会话不会进入任务列表或写入会话文件，首次输入后才会保存
+为任务。`.threadlight/` 默认应被项目的版本控制忽略。
 
 ## 开始使用
 
@@ -134,6 +144,7 @@ console.log(result.output);
 - `initialize`
 - `thread/start`
 - `thread/resume`
+- `thread/delete`
 - `turn/start`
 - `turn/interrupt`
 - `approval/resolve`
@@ -146,9 +157,9 @@ console.log(result.output);
 
 这是有意保持精简的第一版：
 
-- 会话存放在内存中，服务重启后不会恢复。
+- 文件会话存储由 app-server 注入，默认 CLI 使用项目内存储；`agent-loop` 不感知文件路径或存储格式。
 - `exec_command` 会限制工作目录、执行时间和输出大小，并默认要求审批；它不是操作系统 sandbox，获批的命令仍拥有当前用户权限。
 - `web_search` 使用 Brave Search API，密钥只从运行时配置注入。
 - stdio transport 已与核心协议解耦，之后可以增加 WebSocket。
 
-适合下一步扩展的模块依次是持久化 SessionStore、JSON Schema 本地校验、Git worktree 工具和 Docker sandbox。
+适合下一步扩展的模块依次是 JSON Schema 本地校验、Git worktree 工具和 Docker sandbox。

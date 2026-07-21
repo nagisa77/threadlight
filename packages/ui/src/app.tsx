@@ -1,15 +1,25 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import type { ThreadlightClient } from "@threadlight/client";
 import {
   ArrowUp,
   Check,
   ChevronRight,
   CircleStop,
+  Folder,
+  FolderOpen,
+  FolderPlus,
   LoaderCircle,
   Plus,
   Settings,
   Sparkles,
   Terminal,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -21,10 +31,18 @@ import {
 import { MarkdownContent } from "./markdown.js";
 import { isNearBottom } from "./scroll.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
+import {
+  activeProject,
+  type ConversationSummary,
+  type ProjectSummary,
+  type ProjectsAdapter,
+  type ProjectsSnapshot,
+} from "./projects.js";
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
   settings?: SettingsAdapter;
+  projects?: ProjectsAdapter;
 }
 
 const suggestions = [
@@ -33,14 +51,67 @@ const suggestions = [
   "帮我规划下一个功能",
 ];
 
-export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
-  const { state, retry, newThread, send, interrupt, resolveApproval } =
-    useThreadlightSession(client);
+export function ThreadlightApp({
+  client,
+  settings,
+  projects,
+}: ThreadlightAppProps) {
+  const {
+    state,
+    retry,
+    openThread,
+    newThread,
+    deleteThread,
+    send,
+    interrupt,
+    resolveApproval,
+  } = useThreadlightSession(client, { autoConnect: !projects });
   const [view, setView] = useState<"thread" | "settings">("thread");
   const [input, setInput] = useState("");
+  const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
+  const [projectError, setProjectError] = useState<string>();
+  const [switchingProject, setSwitchingProject] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{
+    projectId: string;
+    conversation: ConversationSummary;
+  }>();
+  const [deleteError, setDeleteError] = useState<string>();
+  const [deletingConversation, setDeletingConversation] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const conversation = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
+  const currentProject = activeProject(projectSnapshot);
+
+  const connectProject = useCallback(
+    async (snapshot: ProjectsSnapshot, preferredThreadId?: string) => {
+      if (!projects) return;
+      const project = activeProject(snapshot);
+      if (!project) return;
+
+      const requestedThreadId =
+        preferredThreadId ?? project.conversations[0]?.id;
+      await openThread(requestedThreadId);
+    },
+    [openThread, projects],
+  );
+
+  useEffect(() => {
+    if (!projects) return;
+    let active = true;
+    void projects
+      .load()
+      .then(async (snapshot) => {
+        if (!active) return;
+        setProjectSnapshot(snapshot);
+        await connectProject(snapshot);
+      })
+      .catch((error) => {
+        if (active) setProjectError(errorMessage(error));
+      });
+    return () => {
+      active = false;
+    };
+  }, [connectProject, projects]);
 
   useEffect(() => {
     const element = conversation.current;
@@ -49,10 +120,110 @@ export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
 
   async function submit(value = input) {
     followOutput.current = true;
+    const shouldNameConversation = !hasUserInput(state.messages);
     if (await send(value)) {
       setInput("");
       if (textarea.current) textarea.current.style.height = "auto";
+      if (projects && currentProject && state.threadId) {
+        try {
+          const existingTitle = currentProject.conversations.find(
+            (conversation) => conversation.id === state.threadId,
+          )?.title;
+          const snapshot = await projects.upsertConversation({
+            projectId: currentProject.id,
+            id: state.threadId,
+            title: shouldNameConversation
+              ? conversationTitle(value)
+              : (existingTitle ??
+                conversationTitle(state.messages[0]?.text ?? value)),
+          });
+          setProjectSnapshot(snapshot);
+        } catch (error) {
+          setProjectError(errorMessage(error));
+        }
+      }
     }
+  }
+
+  async function createThread() {
+    if (!currentProject) return;
+    setView("thread");
+    if (!hasUserInput(state.messages)) {
+      textarea.current?.focus();
+      return;
+    }
+    await newThread();
+  }
+
+  async function openProjectFolder() {
+    if (!projects || state.isRunning || switchingProject) return;
+    setSwitchingProject(true);
+    setProjectError(undefined);
+    try {
+      const snapshot = await projects.openFolder();
+      setProjectSnapshot(snapshot);
+      setView("thread");
+      if (snapshot.activeProjectId === projectSnapshot?.activeProjectId) return;
+      await connectProject(snapshot);
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setSwitchingProject(false);
+    }
+  }
+
+  async function selectConversation(projectId: string, threadId?: string) {
+    if (!projects || state.isRunning || switchingProject) return;
+    setSwitchingProject(true);
+    setProjectError(undefined);
+    try {
+      let snapshot = projectSnapshot;
+      if (projectId !== projectSnapshot?.activeProjectId) {
+        snapshot = await projects.activate(projectId);
+        setProjectSnapshot(snapshot);
+      }
+      if (!snapshot) return;
+      setView("thread");
+      await connectProject(snapshot, threadId);
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setSwitchingProject(false);
+    }
+  }
+
+  async function confirmDeleteConversation() {
+    if (!projects || !pendingDelete || deletingConversation) return;
+    const target = pendingDelete;
+    const deletingActiveConversation =
+      target.projectId === projectSnapshot?.activeProjectId &&
+      target.conversation.id === state.threadId;
+    setDeletingConversation(true);
+    setDeleteError(undefined);
+
+    try {
+      if (target.projectId === projectSnapshot?.activeProjectId) {
+        await deleteThread(target.conversation.id);
+      }
+      const snapshot = await projects.deleteConversation({
+        projectId: target.projectId,
+        id: target.conversation.id,
+      });
+      setProjectSnapshot(snapshot);
+      setPendingDelete(undefined);
+      if (deletingActiveConversation) {
+        setView("thread");
+        await connectProject(snapshot);
+      }
+    } catch (error) {
+      setDeleteError(errorMessage(error));
+    } finally {
+      setDeletingConversation(false);
+    }
+  }
+
+  async function reconnectRuntime() {
+    if (currentProject || !projects) await retry();
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -79,27 +250,70 @@ export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
 
         <button
           className="new-thread-button pressable"
-          onClick={() => {
-            setView("thread");
-            void newThread();
-          }}
-          disabled={state.isRunning || state.connection !== "ready"}
+          onClick={() => void createThread()}
+          disabled={
+            !currentProject ||
+            state.isRunning ||
+            state.connection !== "ready" ||
+            switchingProject
+          }
         >
           <Plus size={15} strokeWidth={2.2} />
           新建任务
         </button>
 
-        <nav className="thread-list" aria-label="任务列表">
-          <p className="section-label">当前</p>
-          {state.threadId ? (
-            <div className="thread-item active" aria-current="page">
-              <span className="thread-title">
-                {state.messages[0]?.text || "新任务"}
-              </span>
-              <span className="thread-id">{shortId(state.threadId)}</span>
-            </div>
+        <nav className="thread-list" aria-label="项目与任务列表">
+          {projects ? (
+            <>
+              <div className="project-list-heading">
+                <p className="section-label">项目</p>
+                <button
+                  className="icon-button pressable"
+                  type="button"
+                  title="通过文件夹打开项目"
+                  aria-label="通过文件夹打开项目"
+                  disabled={state.isRunning || switchingProject}
+                  onClick={() => void openProjectFolder()}
+                >
+                  <FolderPlus size={15} />
+                </button>
+              </div>
+              <div className="project-list-scroll">
+                {projectSnapshot?.projects.map((project) => (
+                  <ProjectGroup
+                    key={project.id}
+                    project={project}
+                    active={project.id === projectSnapshot.activeProjectId}
+                    activeThreadId={state.threadId}
+                    disabled={state.isRunning || switchingProject}
+                    onSelect={(threadId) =>
+                      void selectConversation(project.id, threadId)
+                    }
+                    onDelete={(conversation) => {
+                      setDeleteError(undefined);
+                      setPendingDelete({ projectId: project.id, conversation });
+                    }}
+                  />
+                ))}
+                {projectSnapshot?.projects.length === 0 && (
+                  <div className="thread-placeholder">打开一个文件夹开始</div>
+                )}
+              </div>
+            </>
           ) : (
-            <div className="thread-placeholder">正在准备任务…</div>
+            <>
+              <p className="section-label">当前</p>
+              {state.threadId ? (
+                <div className="thread-item active" aria-current="page">
+                  <span className="thread-title">
+                    {state.messages[0]?.text || "新任务"}
+                  </span>
+                  <span className="thread-id">{shortId(state.threadId)}</span>
+                </div>
+              ) : (
+                <div className="thread-placeholder">正在准备任务…</div>
+              )}
+            </>
           )}
         </nav>
 
@@ -116,8 +330,14 @@ export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
             </button>
           )}
           <div className="sidebar-status">
-            <span className={`status-dot ${state.connection}`} />
-            <span>{connectionLabel(state.connection)}</span>
+            <span
+              className={`status-dot ${currentProject || !projects ? state.connection : "idle"}`}
+            />
+            <span>
+              {currentProject || !projects
+                ? connectionLabel(state.connection)
+                : "未打开项目"}
+            </span>
             <span className="status-mode">本地</span>
           </div>
         </div>
@@ -125,13 +345,25 @@ export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
 
       <main className="workspace">
         {view === "settings" && settings ? (
-          <SettingsPage adapter={settings} onRuntimeRestart={retry} />
+          <SettingsPage
+            adapter={settings}
+            onRuntimeRestart={reconnectRuntime}
+          />
+        ) : projects && !currentProject ? (
+          <ProjectEmptyState
+            error={projectError}
+            opening={switchingProject}
+            onOpen={() => void openProjectFolder()}
+          />
         ) : (
           <>
             <header className="workspace-header">
               <div>
                 <h1>{state.messages[0]?.text || "新任务"}</h1>
-                <p>Agent runtime · {shortId(state.threadId)}</p>
+                <p>
+                  {currentProject?.basePath ?? "Agent runtime"} ·{" "}
+                  {shortId(state.threadId)}
+                </p>
               </div>
               {state.isRunning && (
                 <span className="running-badge">
@@ -252,6 +484,227 @@ export function ThreadlightApp({ client, settings }: ThreadlightAppProps) {
           </>
         )}
       </main>
+      {pendingDelete && (
+        <DeleteConversationDialog
+          conversation={pendingDelete.conversation}
+          deleting={deletingConversation}
+          error={deleteError}
+          onCancel={() => {
+            setPendingDelete(undefined);
+            setDeleteError(undefined);
+          }}
+          onConfirm={() => void confirmDeleteConversation()}
+        />
+      )}
+    </div>
+  );
+}
+
+export function ProjectGroup({
+  project,
+  active,
+  activeThreadId,
+  disabled,
+  onSelect,
+  onDelete,
+}: {
+  project: ProjectSummary;
+  active: boolean;
+  activeThreadId?: string;
+  disabled: boolean;
+  onSelect(threadId?: string): void;
+  onDelete?(conversation: ConversationSummary): void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  function toggleExpanded() {
+    const nextExpanded = !expanded;
+    setExpanded(nextExpanded);
+    if (nextExpanded && !active) onSelect(project.conversations[0]?.id);
+  }
+
+  return (
+    <section className="project-group" aria-label={project.name}>
+      <button
+        type="button"
+        className="project-row pressable"
+        aria-current={active ? "location" : undefined}
+        aria-expanded={expanded}
+        disabled={disabled}
+        title={project.basePath}
+        onClick={toggleExpanded}
+      >
+        {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+        <span>{project.name}</span>
+        <ChevronRight className="project-chevron" size={14} />
+      </button>
+      {expanded && (
+        <div className="project-conversations">
+          {project.conversations.map((conversation) => (
+            <ProjectConversationItem
+              key={conversation.id}
+              conversation={conversation}
+              active={active && conversation.id === activeThreadId}
+              disabled={disabled}
+              onSelect={() => onSelect(conversation.id)}
+              onDelete={onDelete ? () => onDelete(conversation) : undefined}
+            />
+          ))}
+          {project.conversations.length === 0 && (
+            <span className="project-empty-label">暂无任务</span>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+export function ProjectConversationItem({
+  conversation,
+  active,
+  disabled,
+  onSelect,
+  onDelete,
+}: {
+  conversation: ConversationSummary;
+  active: boolean;
+  disabled: boolean;
+  onSelect(): void;
+  onDelete?(): void;
+}) {
+  return (
+    <div className={`thread-item ${active ? "active" : ""}`}>
+      <button
+        type="button"
+        className="thread-item-select pressable"
+        aria-current={active ? "page" : undefined}
+        disabled={disabled}
+        title={conversation.title}
+        onClick={onSelect}
+      >
+        <span className="thread-title">{conversation.title}</span>
+      </button>
+      {onDelete && (
+        <button
+          type="button"
+          className="thread-delete-button pressable"
+          disabled={disabled}
+          title={`删除“${conversation.title}”`}
+          aria-label={`删除任务“${conversation.title}”`}
+          onClick={onDelete}
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function DeleteConversationDialog({
+  conversation,
+  deleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  conversation: ConversationSummary;
+  deleting: boolean;
+  error?: string;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelButton.current?.focus();
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !deleting) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [deleting, onCancel]);
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !deleting) onCancel();
+      }}
+    >
+      <section
+        className="delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <span className="delete-dialog-icon" aria-hidden="true">
+          <Trash2 size={18} />
+        </span>
+        <div className="delete-dialog-copy">
+          <h2 id="delete-dialog-title">删除任务？</h2>
+          <p id="delete-dialog-description">
+            “{conversation.title}”及其对话记录将被永久删除，此操作无法撤销。
+          </p>
+          {error && <p className="delete-dialog-error">{error}</p>}
+        </div>
+        <div className="delete-dialog-actions">
+          <button
+            ref={cancelButton}
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={deleting}
+            onClick={onCancel}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            className="dialog-button danger pressable"
+            disabled={deleting}
+            onClick={onConfirm}
+          >
+            {deleting && <LoaderCircle className="spin" size={14} />}
+            {deleting ? "正在删除…" : "删除任务"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ProjectEmptyState({
+  error,
+  opening,
+  onOpen,
+}: {
+  error?: string;
+  opening: boolean;
+  onOpen(): void;
+}) {
+  return (
+    <div className="project-empty-state">
+      <span className="project-empty-icon" aria-hidden="true">
+        <FolderOpen size={23} />
+      </span>
+      <h1>打开一个项目</h1>
+      <p>
+        选择项目文件夹后，任务会按项目整理，运行时也会以该目录为 base 地址。
+      </p>
+      {error && <p className="project-open-error">{error}</p>}
+      <button
+        type="button"
+        className="project-open-button pressable"
+        disabled={opening}
+        onClick={onOpen}
+      >
+        {opening ? (
+          <LoaderCircle className="spin" size={15} />
+        ) : (
+          <FolderPlus size={15} />
+        )}
+        {opening ? "正在打开…" : "通过文件夹打开"}
+      </button>
     </div>
   );
 }
@@ -408,4 +861,19 @@ function formatArguments(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function conversationTitle(value: string): string {
+  const title = value.trim().replace(/\s+/g, " ");
+  return title.length > 56 ? `${title.slice(0, 56)}…` : title || "新任务";
+}
+
+export function hasUserInput(
+  messages: readonly { role: "user" | "assistant" }[],
+): boolean {
+  return messages.some((message) => message.role === "user");
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

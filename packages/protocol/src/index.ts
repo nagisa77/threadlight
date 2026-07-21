@@ -66,6 +66,21 @@ export interface ApprovalRequestData {
   call: ToolCallData;
 }
 
+export interface ConversationActivityData {
+  id: string;
+  name: string;
+  status: "running" | "completed" | "failed";
+  detail?: string;
+}
+
+export interface ConversationMessageData {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  error?: boolean;
+  activities?: readonly ConversationActivityData[];
+}
+
 export type AgentEventData =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
@@ -100,7 +115,14 @@ export interface ThreadlightMethodMap {
   };
   "thread/resume": {
     params: { threadId: string };
-    result: { threadId: string };
+    result: {
+      threadId: string;
+      messages: readonly ConversationMessageData[];
+    };
+  };
+  "thread/delete": {
+    params: { threadId: string };
+    result: { deleted: boolean };
   };
   "turn/start": {
     params: { threadId: string; input: string };
@@ -120,6 +142,7 @@ export const THREADLIGHT_METHODS = [
   "initialize",
   "thread/start",
   "thread/resume",
+  "thread/delete",
   "turn/start",
   "turn/interrupt",
   "approval/resolve",

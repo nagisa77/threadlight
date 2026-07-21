@@ -1,4 +1,5 @@
 export { ThreadlightApp } from "./app.js";
+export { activeProject } from "./projects.js";
 export { MarkdownContent } from "./markdown.js";
 export {
   initialSessionState,
@@ -9,6 +10,14 @@ export { isNearBottom } from "./scroll.js";
 export { SettingsPage, createSettingsUpdate } from "./settings.js";
 
 export type { ThreadlightAppProps } from "./app.js";
+export type {
+  ConversationSummary,
+  ConversationSummaryTarget,
+  ConversationSummaryUpdate,
+  ProjectSummary,
+  ProjectsAdapter,
+  ProjectsSnapshot,
+} from "./projects.js";
 export type { MarkdownContentProps } from "./markdown.js";
 export type {
   ConversationMessage,

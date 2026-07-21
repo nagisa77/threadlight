@@ -223,7 +223,7 @@ export function SettingsPage({
                   <Check size={13} /> 已保存并重新连接
                 </span>
               ) : (
-                <span>保存后会重启运行时并开始一个新任务。</span>
+                <span>保存后会重启当前项目运行时，并恢复当前任务。</span>
               )}
             </div>
             <button

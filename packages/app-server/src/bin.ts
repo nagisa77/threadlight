@@ -8,8 +8,10 @@ import {
   createExecCommandTool,
   createWebSearchTool,
 } from "@threadlight/builtin-tools";
+import { resolve } from "node:path";
 
 import { AppServer } from "./app-server.js";
+import { FileConversationStore } from "./conversation-store.js";
 import { jsonLineSender, serveJsonLines } from "./stdio.js";
 import { createWorkspaceAgentFactory } from "./workspace-agent.js";
 
@@ -54,6 +56,9 @@ const server = new AppServer({
   loop,
   agentFactory,
   send,
+  conversationStore: new FileConversationStore(
+    resolve(workspaceRoot, ".threadlight", "conversations"),
+  ),
   autoApproveAll: process.env.THREADLIGHT_AUTO_APPROVE === "1",
 });
 

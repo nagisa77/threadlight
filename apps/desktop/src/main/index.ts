@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -19,17 +20,26 @@ import {
 import { AppServerProcess } from "./app-server-process.js";
 import { createExternalWindowHandler } from "./external-links.js";
 import { runtimeEnvironment, SettingsStore } from "./settings-store.js";
+import { ProjectStore } from "./project-store.js";
 import {
+  DESKTOP_CONVERSATION_DELETE_CHANNEL,
+  DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
+  DESKTOP_PROJECT_ACTIVATE_CHANNEL,
+  DESKTOP_PROJECT_OPEN_CHANNEL,
+  DESKTOP_PROJECTS_GET_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
+  type DesktopConversationTarget,
   type DesktopSettingsUpdate,
+  type DesktopConversationUpdate,
 } from "../shared/desktop-api.js";
 
 let mainWindow: BrowserWindow | null = null;
 let appServer: AppServerProcess | null = null;
 let settingsStore: SettingsStore | null = null;
+let projectStore: ProjectStore | null = null;
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -61,18 +71,8 @@ function createWindow(): void {
     appServer = null;
   });
 
-  appServer = new AppServerProcess({
-    entry:
-      process.env.THREADLIGHT_APP_SERVER_PATH ??
-      resolve(app.getAppPath(), "../../packages/app-server/dist/bin.js"),
-    cwd:
-      process.env.THREADLIGHT_WORKSPACE ?? resolve(app.getAppPath(), "../.."),
-    environment: runtimeEnvironment(
-      settingsStore?.runtimeSettings() ?? { autoApproveAll: false },
-    ),
-    send: (message) => sendToRenderer(window, message),
-  });
-  appServer.start();
+  const activeProject = projectStore?.activeProject();
+  if (activeProject) startAppServer(window, activeProject.basePath);
 
   const developmentUrl = process.env.ELECTRON_RENDERER_URL;
   if (developmentUrl) {
@@ -80,6 +80,21 @@ function createWindow(): void {
   } else {
     void window.loadFile(resolve(import.meta.dirname, "../renderer/index.html"));
   }
+}
+
+function startAppServer(window: BrowserWindow, cwd: string): void {
+  appServer?.stop();
+  appServer = new AppServerProcess({
+    entry:
+      process.env.THREADLIGHT_APP_SERVER_PATH ??
+      resolve(app.getAppPath(), "../../packages/app-server/dist/bin.js"),
+    cwd,
+    environment: runtimeEnvironment(
+      settingsStore?.runtimeSettings() ?? { autoApproveAll: false },
+    ),
+    send: (message) => sendToRenderer(window, message),
+  });
+  appServer.start();
 }
 
 function handleRequest(event: IpcMainEvent, value: unknown): void {
@@ -116,8 +131,59 @@ function handleSettingsUpdate(event: IpcMainInvokeEvent, value: unknown) {
 
   const update = parseSettingsUpdate(value);
   const snapshot = settingsStore.update(update);
-  appServer?.restart(runtimeEnvironment(settingsStore.runtimeSettings()));
+  const activeProject = projectStore?.activeProject();
+  if (mainWindow && activeProject) {
+    startAppServer(mainWindow, activeProject.basePath);
+  }
   return snapshot;
+}
+
+function handleProjectsGet(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  return projectStore.snapshot();
+}
+
+async function handleProjectOpen(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!projectStore || !mainWindow) {
+    throw new Error("Projects are not available");
+  }
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "打开项目文件夹",
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (result.canceled || !result.filePaths[0]) return projectStore.snapshot();
+
+  const snapshot = projectStore.register(result.filePaths[0]);
+  const activeProject = projectStore.activeProject();
+  if (activeProject) startAppServer(mainWindow, activeProject.basePath);
+  return snapshot;
+}
+
+function handleProjectActivate(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!projectStore || !mainWindow) {
+    throw new Error("Projects are not available");
+  }
+  if (typeof value !== "string" || !value) throw new Error("Invalid project id");
+
+  const snapshot = projectStore.activate(value);
+  const activeProject = projectStore.activeProject();
+  if (activeProject) startAppServer(mainWindow, activeProject.basePath);
+  return snapshot;
+}
+
+function handleConversationUpsert(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  return projectStore.upsertConversation(parseConversationUpdate(value));
+}
+
+function handleConversationDelete(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  return projectStore.deleteConversation(parseConversationTarget(value));
 }
 
 function requireTrustedSender(event: IpcMainInvokeEvent): void {
@@ -126,7 +192,7 @@ function requireTrustedSender(event: IpcMainInvokeEvent): void {
     event.sender !== mainWindow.webContents ||
     event.senderFrame !== mainWindow.webContents.mainFrame
   ) {
-    throw new Error("Settings request came from an untrusted frame");
+    throw new Error("Desktop request came from an untrusted frame");
   }
 }
 
@@ -159,6 +225,32 @@ function isOptionalSecret(value: unknown): value is string | null | undefined {
   return value === undefined || value === null || typeof value === "string";
 }
 
+function parseConversationUpdate(value: unknown): DesktopConversationUpdate {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid conversation update");
+  }
+  const update = value as Record<string, unknown>;
+  if (
+    typeof update.projectId !== "string" ||
+    typeof update.id !== "string" ||
+    typeof update.title !== "string"
+  ) {
+    throw new Error("Invalid conversation update");
+  }
+  return { projectId: update.projectId, id: update.id, title: update.title };
+}
+
+function parseConversationTarget(value: unknown): DesktopConversationTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid conversation target");
+  }
+  const target = value as Record<string, unknown>;
+  if (typeof target.projectId !== "string" || typeof target.id !== "string") {
+    throw new Error("Invalid conversation target");
+  }
+  return { projectId: target.projectId, id: target.id };
+}
+
 function sendToRenderer(window: BrowserWindow, message: JsonRpcOutgoing): void {
   if (!window.isDestroyed()) {
     window.webContents.send(DESKTOP_MESSAGE_CHANNEL, message);
@@ -182,17 +274,35 @@ function extractId(value: unknown): string | number | null | undefined {
 }
 
 app.whenReady().then(() => {
+  const threadlightHome =
+    process.env.THREADLIGHT_HOME ?? join(app.getPath("home"), ".threadlight");
   settingsStore = new SettingsStore(
-    join(app.getPath("userData"), "settings.json"),
+    join(threadlightHome, "settings.json"),
     {
       encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
       decrypt: (value) =>
         safeStorage.decryptString(Buffer.from(value, "base64")),
     },
   );
+  projectStore = new ProjectStore(
+    join(threadlightHome, "conversation-map.json"),
+  );
+  const initialWorkspace = process.env.THREADLIGHT_WORKSPACE;
+  if (initialWorkspace) projectStore.register(initialWorkspace);
   ipcMain.on(DESKTOP_REQUEST_CHANNEL, handleRequest);
   ipcMain.handle(DESKTOP_SETTINGS_GET_CHANNEL, handleSettingsGet);
   ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);
+  ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
+  ipcMain.handle(DESKTOP_PROJECT_OPEN_CHANNEL, handleProjectOpen);
+  ipcMain.handle(DESKTOP_PROJECT_ACTIVATE_CHANNEL, handleProjectActivate);
+  ipcMain.handle(
+    DESKTOP_CONVERSATION_UPSERT_CHANNEL,
+    handleConversationUpsert,
+  );
+  ipcMain.handle(
+    DESKTOP_CONVERSATION_DELETE_CHANNEL,
+    handleConversationDelete,
+  );
   createWindow();
 
   app.on("activate", () => {

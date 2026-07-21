@@ -3,6 +3,11 @@ import type { JsonRpcOutgoing } from "@threadlight/protocol";
 
 import {
   DESKTOP_MESSAGE_CHANNEL,
+  DESKTOP_CONVERSATION_DELETE_CHANNEL,
+  DESKTOP_CONVERSATION_UPSERT_CHANNEL,
+  DESKTOP_PROJECT_ACTIVATE_CHANNEL,
+  DESKTOP_PROJECT_OPEN_CHANNEL,
+  DESKTOP_PROJECTS_GET_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
@@ -25,6 +30,21 @@ const api: DesktopApi = {
   },
   updateSettings(update) {
     return ipcRenderer.invoke(DESKTOP_SETTINGS_UPDATE_CHANNEL, update);
+  },
+  getProjects() {
+    return ipcRenderer.invoke(DESKTOP_PROJECTS_GET_CHANNEL);
+  },
+  openProject() {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_OPEN_CHANNEL);
+  },
+  activateProject(projectId) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_ACTIVATE_CHANNEL, projectId);
+  },
+  upsertConversation(update) {
+    return ipcRenderer.invoke(DESKTOP_CONVERSATION_UPSERT_CHANNEL, update);
+  },
+  deleteConversation(target) {
+    return ipcRenderer.invoke(DESKTOP_CONVERSATION_DELETE_CHANNEL, target);
   },
 };
 

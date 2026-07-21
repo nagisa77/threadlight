@@ -8,6 +8,8 @@ import type {
 } from "@threadlight/agent-loop";
 
 import type {
+  ConversationActivityData,
+  ConversationMessageData,
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -15,10 +17,16 @@ import type {
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
 } from "./protocol.js";
+import {
+  MemoryConversationStore,
+  type ConversationStore,
+  type StoredConversation,
+} from "./conversation-store.js";
 
 interface ThreadState {
   agent: Agent;
-  modelState?: unknown;
+  conversation: StoredConversation;
+  activities: ConversationActivityData[];
   activeTurn?: {
     id: string;
     controller: AbortController;
@@ -34,6 +42,8 @@ interface SharedAppServerOptions {
   loop: AgentLoop;
   send: SendMessage;
   autoApproveAll?: boolean;
+  conversationStore?: ConversationStore;
+  now?: () => Date;
 }
 
 export type AgentFactory = () => Agent | Promise<Agent>;
@@ -49,6 +59,8 @@ export class AppServer {
   private readonly agentFactory: AgentFactory;
   private readonly send: SendMessage;
   private readonly autoApproveAll: boolean;
+  private readonly conversationStore: ConversationStore;
+  private readonly now: () => Date;
   private readonly threads = new Map<string, ThreadState>();
   private readonly approvals = new Map<string, PendingApproval>();
   private initialized = false;
@@ -58,6 +70,9 @@ export class AppServer {
     this.agentFactory = options.agentFactory ?? (() => options.agent);
     this.send = options.send;
     this.autoApproveAll = options.autoApproveAll ?? false;
+    this.conversationStore =
+      options.conversationStore ?? new MemoryConversationStore();
+    this.now = options.now ?? (() => new Date());
   }
 
   async receive(message: JsonRpcRequest): Promise<void> {
@@ -94,6 +109,8 @@ export class AppServer {
         return this.startThread();
       case "thread/resume":
         return this.resumeThread(params);
+      case "thread/delete":
+        return this.deleteThread(params);
       case "turn/start":
         return this.startTurn(params);
       case "turn/interrupt":
@@ -108,21 +125,59 @@ export class AppServer {
   private async startThread(): Promise<{ threadId: string }> {
     const agent = await this.agentFactory();
     const threadId = randomUUID();
-    this.threads.set(threadId, { agent });
+    const timestamp = this.now().toISOString();
+    const conversation: StoredConversation = {
+      version: 1,
+      threadId,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      messages: [],
+    };
+    this.threads.set(threadId, { agent, conversation, activities: [] });
     return { threadId };
   }
 
-  private resumeThread(params: unknown): { threadId: string } {
+  private async resumeThread(
+    params: unknown,
+  ): Promise<{ threadId: string; messages: readonly ConversationMessageData[] }> {
     const { threadId } = objectParams(params);
     requireString(threadId, "threadId");
 
-    if (!this.threads.has(threadId)) {
+    let thread = this.threads.get(threadId);
+    if (!thread) {
+      const conversation = await this.conversationStore.load(threadId);
+      if (conversation) {
+        thread = {
+          agent: await this.agentFactory(),
+          conversation,
+          activities: [],
+        };
+        this.threads.set(threadId, thread);
+      }
+    }
+    if (!thread) {
       throw new RpcError(-32001, `Unknown thread: ${threadId}`);
     }
-    return { threadId };
+    return { threadId, messages: thread.conversation.messages };
   }
 
-  private startTurn(params: unknown): { turnId: string } {
+  private async deleteThread(
+    params: unknown,
+  ): Promise<{ deleted: boolean }> {
+    const { threadId } = objectParams(params);
+    requireString(threadId, "threadId");
+
+    const thread = this.threads.get(threadId);
+    if (thread?.activeTurn) {
+      throw new RpcError(-32003, "Cannot delete a thread with an active turn");
+    }
+
+    const deletedFromStore = await this.conversationStore.delete(threadId);
+    this.threads.delete(threadId);
+    return { deleted: !!thread || deletedFromStore };
+  }
+
+  private async startTurn(params: unknown): Promise<{ turnId: string }> {
     const { threadId, input } = objectParams(params);
     requireString(threadId, "threadId");
     requireString(input, "input");
@@ -136,6 +191,22 @@ export class AppServer {
     const turnId = randomUUID();
     const controller = new AbortController();
     thread.activeTurn = { id: turnId, controller };
+    thread.activities = [];
+    const startedConversation = this.updateConversation(thread.conversation, [
+      ...thread.conversation.messages,
+      {
+        id: randomUUID(),
+        role: "user",
+        text: input,
+      },
+    ]);
+    try {
+      await this.conversationStore.save(startedConversation);
+      thread.conversation = startedConversation;
+    } catch (error) {
+      if (thread.activeTurn?.id === turnId) thread.activeTurn = undefined;
+      throw error;
+    }
 
     queueMicrotask(() => {
       void this.runTurn(threadId, turnId, input, thread, controller);
@@ -182,16 +253,32 @@ export class AppServer {
 
     try {
       const result = await this.loop.run(thread.agent, input, {
-        modelState: thread.modelState,
+        modelState: thread.conversation.modelState,
         signal: controller.signal,
-        onEvent: (event) => this.forwardEvent(threadId, turnId, event),
+        onEvent: (event) => this.forwardEvent(threadId, turnId, thread, event),
         approve: (request) =>
           this.autoApproveAll
             ? Promise.resolve(true)
             : this.waitForApproval(turnId, request),
       });
 
-      thread.modelState = result.modelState;
+      const completedConversation = this.updateConversation(
+        thread.conversation,
+        [
+          ...thread.conversation.messages,
+          {
+            id: randomUUID(),
+            role: "assistant",
+            text: result.output,
+            ...(thread.activities.length > 0
+              ? { activities: [...thread.activities] }
+              : {}),
+          },
+        ],
+        { modelState: result.modelState },
+      );
+      await this.conversationStore.save(completedConversation);
+      thread.conversation = completedConversation;
       this.notify("turn/completed", {
         threadId,
         turnId,
@@ -199,10 +286,30 @@ export class AppServer {
         usage: result.usage,
       });
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      thread.conversation = this.updateConversation(thread.conversation, [
+        ...thread.conversation.messages,
+        {
+          id: randomUUID(),
+          role: "assistant",
+          text: message,
+          error: true,
+          ...(thread.activities.length > 0
+            ? { activities: [...thread.activities] }
+            : {}),
+        },
+      ]);
+      try {
+        await this.conversationStore.save(thread.conversation);
+      } catch (persistenceError) {
+        process.stderr.write(
+          `Could not persist failed conversation ${threadId}: ${String(persistenceError)}\n`,
+        );
+      }
       this.notify("turn/failed", {
         threadId,
         turnId,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
     } finally {
       if (thread.activeTurn?.id === turnId) thread.activeTurn = undefined;
@@ -213,9 +320,26 @@ export class AppServer {
   private forwardEvent(
     threadId: string,
     turnId: string,
+    thread: ThreadState,
     event: AgentEvent,
   ): void {
+    updateActivities(thread.activities, event);
     this.notify("agent/event", { threadId, turnId, event });
+  }
+
+  private updateConversation(
+    conversation: StoredConversation,
+    messages: readonly ConversationMessageData[],
+    options?: { modelState: unknown },
+  ): StoredConversation {
+    const { modelState: _previousModelState, ...stored } = conversation;
+    const modelState = options ? options.modelState : conversation.modelState;
+    return {
+      ...stored,
+      updatedAt: this.now().toISOString(),
+      messages,
+      ...(modelState === undefined ? {} : { modelState }),
+    };
   }
 
   private waitForApproval(
@@ -276,4 +400,44 @@ function requireString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || value.length === 0) {
     throw new RpcError(-32602, `${name} must be a non-empty string`);
   }
+}
+
+function updateActivities(
+  activities: ConversationActivityData[],
+  event: AgentEvent,
+): void {
+  if (event.type === "tool.started") {
+    const detail = toolDetail(event.call.name, event.call.arguments);
+    activities.push({
+      id: event.call.id,
+      name: event.call.name,
+      status: "running",
+      ...(detail ? { detail } : {}),
+    });
+    return;
+  }
+  if (event.type !== "tool.completed") return;
+
+  const activity = activities.find(
+    (candidate) => candidate.id === event.result.callId,
+  );
+  if (!activity) return;
+  activity.status = event.result.isError ? "failed" : "completed";
+  if (activity.name !== "exec_command") {
+    activity.detail = truncate(event.result.output);
+  }
+}
+
+function toolDetail(name: string, arguments_: unknown): string | undefined {
+  if (name !== "exec_command" || !isObject(arguments_)) return;
+  const command = arguments_.command;
+  return typeof command === "string" ? `$ ${command}` : undefined;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function truncate(value: string, limit = 1_200): string {
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }

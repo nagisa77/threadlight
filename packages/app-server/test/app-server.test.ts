@@ -149,4 +149,46 @@ describe("AppServer", () => {
     });
     expect(executions).toBe(1);
   });
+
+  it("refuses to delete a task while its turn is running", async () => {
+    let finishGeneration!: () => void;
+    const generationPending = new Promise<void>((resolve) => {
+      finishGeneration = resolve;
+    });
+    const provider: ModelProvider = {
+      async generate() {
+        await generationPending;
+        return { text: "done", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "test", instructions: "Reply" }),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadResponse = messages.find(
+      (message) => "id" in message && message.id === 2,
+    );
+    const threadId = (threadResponse?.result as { threadId: string }).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Wait" },
+    });
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/delete",
+      params: { threadId },
+    });
+
+    expect(messages.find((message) => "id" in message && message.id === 4))
+      .toMatchObject({ error: { code: -32003 } });
+    finishGeneration();
+  });
 });

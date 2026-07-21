@@ -54,7 +54,7 @@ summary:focus-visible {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 276px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -159,9 +159,140 @@ button:disabled {
 }
 
 .thread-list {
+  display: flex;
   min-height: 0;
   flex: 1;
+  flex-direction: column;
   margin-top: 26px;
+}
+
+.project-list-heading {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  padding-right: 3px;
+}
+
+.project-list-heading .section-label {
+  margin-bottom: 0;
+}
+
+.icon-button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.project-list-scroll {
+  min-height: 0;
+  margin-top: 5px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.project-group + .project-group {
+  margin-top: 8px;
+}
+
+.project-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: #4d4c46;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 610;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-row svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.project-row span {
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-chevron {
+  flex: 0 0 auto;
+}
+
+.project-row[aria-expanded="true"] .project-chevron {
+  transform: rotate(90deg);
+}
+
+.project-conversations {
+  display: grid;
+  gap: 1px;
+  padding: 3px 3px 2px 28px;
+}
+
+.project-conversations .thread-item {
+  position: relative;
+  min-height: 31px;
+  padding: 0;
+}
+
+.thread-item-select {
+  display: flex;
+  min-width: 0;
+  min-height: 31px;
+  flex: 1;
+  align-items: center;
+  padding: 6px 32px 6px 8px;
+  border: 0;
+  border-radius: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thread-delete-button {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.thread-delete-button:active:not(:disabled) {
+  transform: translateY(-50%) scale(0.94);
+}
+
+.project-empty-label {
+  padding: 6px 8px;
+  color: var(--subtle);
+  font-size: 10px;
 }
 
 .section-label {
@@ -191,6 +322,119 @@ button:disabled {
 .thread-item.active {
   background: rgb(255 255 255 / 66%);
   box-shadow: inset 0 0 0 1px rgb(215 213 205 / 74%);
+}
+
+.project-conversations .thread-item.active {
+  color: var(--ink);
+  background: rgb(255 255 255 / 76%);
+  box-shadow: none;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: rgb(36 36 32 / 26%);
+  backdrop-filter: blur(2px);
+  opacity: 1;
+  transition: opacity 180ms var(--ease-out);
+}
+
+.delete-dialog {
+  display: grid;
+  width: min(400px, 100%);
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 13px;
+  padding: 20px;
+  border: 1px solid rgb(207 205 196 / 86%);
+  border-radius: 13px;
+  background: var(--panel);
+  box-shadow:
+    0 18px 48px rgb(35 33 29 / 18%),
+    0 3px 10px rgb(35 33 29 / 8%);
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+@starting-style {
+  .dialog-backdrop,
+  .delete-dialog {
+    opacity: 0;
+  }
+
+  .delete-dialog {
+    transform: scale(0.96);
+  }
+}
+
+.delete-dialog-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 11%, white);
+}
+
+.delete-dialog-copy h2 {
+  margin: 1px 0 7px;
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.delete-dialog-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+}
+
+.delete-dialog-copy .delete-dialog-error {
+  margin-top: 8px;
+  color: var(--danger);
+}
+
+.delete-dialog-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.dialog-button {
+  display: inline-flex;
+  min-width: 72px;
+  height: 33px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.dialog-button.secondary {
+  border: 1px solid var(--line-strong);
+  background: white;
+}
+
+.dialog-button.danger {
+  border: 1px solid #9f3d37;
+  color: white;
+  background: var(--danger);
+  box-shadow: 0 1px 2px rgb(93 30 27 / 18%);
 }
 
 .thread-title {
@@ -308,10 +552,73 @@ button:disabled {
 }
 
 .workspace-header p {
+  max-width: min(620px, 62vw);
+  overflow: hidden;
   margin: 4px 0 0;
   color: var(--subtle);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-empty-state {
+  display: flex;
+  grid-row: 1 / -1;
+  align-items: center;
+  align-self: stretch;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px;
+  text-align: center;
+}
+
+.project-empty-icon {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  color: var(--accent);
+  background: #fffdf9;
+  box-shadow: 0 8px 24px rgb(70 61 52 / 5%);
+}
+
+.project-empty-state h1 {
+  margin: 20px 0 8px;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.project-empty-state > p {
+  max-width: 410px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.project-empty-state .project-open-error {
+  margin-top: 10px;
+  color: var(--danger);
+}
+
+.project-open-button {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  gap: 7px;
+  margin-top: 22px;
+  padding: 0 13px;
+  border: 1px solid #292824;
+  border-radius: 9px;
+  color: white;
+  background: #292824;
+  font-size: 11px;
+  font-weight: 620;
+  cursor: pointer;
 }
 
 .running-badge {
@@ -1293,9 +1600,38 @@ button:disabled {
 @media (hover: hover) and (pointer: fine) {
   .new-thread-button:hover,
   .secondary:hover,
-  .settings-nav-button:hover {
+  .settings-nav-button:hover,
+  .project-row:hover:not(:disabled) {
     border-color: #bab7ad;
     background: #fff;
+  }
+
+
+  .icon-button:hover:not(:disabled),
+  .project-conversations .thread-item:hover {
+    color: var(--ink);
+    background: rgb(255 255 255 / 72%);
+  }
+
+  .thread-delete-button {
+    pointer-events: none;
+    opacity: 0;
+    transition:
+      color 140ms ease,
+      background-color 140ms ease,
+      opacity 140ms ease,
+      transform 140ms var(--ease-out);
+  }
+
+  .thread-item:hover .thread-delete-button,
+  .thread-item:focus-within .thread-delete-button {
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  .thread-delete-button:hover:not(:disabled) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
   }
 
   .suggestion:hover {
@@ -1319,11 +1655,20 @@ button:disabled {
   .settings-save-button:hover:not(:disabled) {
     background: #3a3934;
   }
+
+  .dialog-button.danger:hover:not(:disabled) {
+    background: #a9433c;
+  }
+
+
+  .project-open-button:hover:not(:disabled) {
+    background: #3a3934;
+  }
 }
 
 @media (max-width: 920px) {
   .app-shell {
-    grid-template-columns: 210px minmax(0, 1fr);
+    grid-template-columns: 230px minmax(0, 1fr);
   }
 
   .conversation-inner {
@@ -1347,9 +1692,20 @@ button:disabled {
     transition-duration: 0ms;
   }
 
+  .dialog-backdrop,
+  .delete-dialog,
+  .thread-delete-button {
+    transition-duration: 0ms;
+  }
+
   .approval-card,
   .connection-error,
   .settings-warning {
+    transform: none;
+  }
+
+
+  .delete-dialog {
     transform: none;
   }
 }

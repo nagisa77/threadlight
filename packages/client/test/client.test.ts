@@ -79,6 +79,24 @@ describe("ThreadlightClient", () => {
     expect(events).toEqual(["done"]);
   });
 
+  it("sends a typed task deletion request", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const deleted = client.deleteThread("thread-1");
+    expect(transport.sent[0]).toMatchObject({
+      method: "thread/delete",
+      params: { threadId: "thread-1" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: { deleted: true },
+    });
+
+    await expect(deleted).resolves.toEqual({ deleted: true });
+  });
+
   it("rejects RPC errors and pending requests on disposal", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);
