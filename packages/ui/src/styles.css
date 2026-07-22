@@ -36,7 +36,8 @@ body,
 
 button,
 textarea,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -47,6 +48,7 @@ button {
 button:focus-visible,
 textarea:focus-visible,
 input:focus-visible,
+select:focus-visible,
 summary:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
   outline-offset: 2px;
@@ -1682,6 +1684,48 @@ button:disabled {
   font-family:
     Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+}
+
+.model-select-wrap {
+  position: relative;
+  display: flex;
+  height: 38px;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(31 30 27 / 3%);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.model-select-wrap:focus-within {
+  border-color: #aaa69b;
+  box-shadow:
+    0 0 0 3px rgb(213 106 58 / 9%),
+    0 1px 2px rgb(31 30 27 / 4%);
+}
+
+.model-select-wrap select {
+  width: 100%;
+  height: 100%;
+  padding: 0 38px 0 11px;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 570;
+  appearance: none;
+  cursor: pointer;
+}
+
+.model-select-wrap svg {
+  position: absolute;
+  right: 11px;
+  color: var(--subtle);
+  pointer-events: none;
 }
 
 .secret-action,

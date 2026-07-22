@@ -1,24 +1,67 @@
 import { useEffect, useState } from "react";
 import {
   Check,
+  ChevronDown,
   Eye,
   EyeOff,
   KeyRound,
   LoaderCircle,
   Search,
   ShieldCheck,
+  Sparkles,
   TriangleAlert,
 } from "lucide-react";
+
+export const MODEL_OPTIONS = [
+  {
+    value: "gpt-5.6-sol",
+    label: "GPT-5.6 Sol",
+    qualifier: "性能优先",
+    description: "适合复杂推理和编程任务，优先获得最佳质量。",
+  },
+  {
+    value: "gpt-5.6-terra",
+    label: "GPT-5.6 Terra",
+    qualifier: "均衡",
+    description: "在能力、速度和成本之间取得平衡。",
+  },
+  {
+    value: "gpt-5.6-luna",
+    label: "GPT-5.6 Luna",
+    qualifier: "成本优先",
+    description: "适合成本敏感的高频和轻量任务。",
+  },
+  {
+    value: "gpt-5.4-mini",
+    label: "GPT-5.4 mini",
+    qualifier: "强力 mini",
+    description: "更快的编程和工具调用模型，兼顾能力与成本。",
+  },
+  {
+    value: "gpt-5-mini",
+    label: "GPT-5 mini",
+    qualifier: "经济 mini",
+    description: "适合目标清晰、低延迟和高吞吐的任务。",
+  },
+  {
+    value: "gpt-4.1-mini",
+    label: "GPT-4.1 mini",
+    qualifier: "低延迟 mini",
+    description: "无额外推理步骤，擅长指令遵循和工具调用。",
+  },
+] as const;
 
 export interface SettingsSnapshot {
   openAIApiKeyConfigured: boolean;
   searchApiKeyConfigured: boolean;
+  model: string;
   autoApproveAll: boolean;
 }
 
 export interface SettingsUpdate {
   openAIApiKey?: string | null;
   searchApiKey?: string | null;
+  model: string;
   autoApproveAll: boolean;
 }
 
@@ -44,6 +87,7 @@ export function SettingsPage({
   const [settings, setSettings] = useState<SettingsSnapshot>();
   const [openAIKey, setOpenAIKey] = useState<SecretDraft>(EMPTY_SECRET);
   const [searchKey, setSearchKey] = useState<SecretDraft>(EMPTY_SECRET);
+  const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
   const [autoApproveAll, setAutoApproveAll] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -56,6 +100,7 @@ export function SettingsPage({
       .then((snapshot) => {
         if (!active) return;
         setSettings(snapshot);
+        setModel(snapshot.model);
         setAutoApproveAll(snapshot.autoApproveAll);
       })
       .catch((reason) => {
@@ -71,6 +116,7 @@ export function SettingsPage({
       openAIKey.cleared ||
       searchKey.value.trim().length > 0 ||
       searchKey.cleared ||
+      model !== settings.model ||
       autoApproveAll !== settings.autoApproveAll
     : false;
 
@@ -91,7 +137,7 @@ export function SettingsPage({
 
     try {
       const snapshot = await adapter.save(
-        createSettingsUpdate(openAIKey, searchKey, autoApproveAll),
+        createSettingsUpdate(openAIKey, searchKey, model, autoApproveAll),
       );
       setSettings(snapshot);
       setOpenAIKey(EMPTY_SECRET);
@@ -127,6 +173,53 @@ export function SettingsPage({
             </div>
           ) : (
             <>
+              <section
+                className="settings-section"
+                aria-labelledby="model-title"
+              >
+                <div className="settings-section-heading">
+                  <span className="settings-section-icon">
+                    <Sparkles size={16} />
+                  </span>
+                  <div>
+                    <h3 id="model-title">模型</h3>
+                    <p>选择新任务和后续回复使用的 OpenAI 模型。</p>
+                  </div>
+                </div>
+
+                <div className="settings-fields">
+                  <div className="settings-field model-field">
+                    <div className="settings-field-label">
+                      <div>
+                        <label htmlFor="model-select">默认模型</label>
+                        <p>{modelDescription(model)}</p>
+                      </div>
+                    </div>
+                    <div className="model-select-wrap">
+                      <select
+                        id="model-select"
+                        value={model}
+                        onChange={(event) => {
+                          setModel(event.target.value);
+                          setSaved(false);
+                          setError(undefined);
+                        }}
+                      >
+                        {!isKnownModel(model) && (
+                          <option value={model}>{model}（当前配置）</option>
+                        )}
+                        {MODEL_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label} — {option.qualifier}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown size={14} aria-hidden="true" />
+                    </div>
+                  </div>
+                </div>
+              </section>
+
               <section className="settings-section" aria-labelledby="api-title">
                 <div className="settings-section-heading">
                   <span className="settings-section-icon">
@@ -316,13 +409,26 @@ function SecretField({
 export function createSettingsUpdate(
   openAIKey: SecretDraft,
   searchKey: SecretDraft,
+  model: string,
   autoApproveAll: boolean,
 ): SettingsUpdate {
   return {
+    model,
     autoApproveAll,
     ...secretUpdate("openAIApiKey", openAIKey),
     ...secretUpdate("searchApiKey", searchKey),
   };
+}
+
+function isKnownModel(model: string): boolean {
+  return MODEL_OPTIONS.some((option) => option.value === model);
+}
+
+function modelDescription(model: string): string {
+  return (
+    MODEL_OPTIONS.find((option) => option.value === model)?.description ??
+    "当前模型由外部配置提供；选择其他模型后将覆盖它。"
+  );
 }
 
 function secretUpdate(

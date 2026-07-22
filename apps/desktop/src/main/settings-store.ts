@@ -16,6 +16,7 @@ interface StoredSettings {
   version: 1;
   encryptedOpenAIApiKey?: string;
   encryptedSearchApiKey?: string;
+  model?: string;
   autoApproveAll: boolean;
 }
 
@@ -27,8 +28,11 @@ export interface SecretCodec {
 export interface RuntimeSettings {
   openAIApiKey?: string;
   searchApiKey?: string;
+  model: string;
   autoApproveAll: boolean;
 }
+
+export const DEFAULT_MODEL = "gpt-5.6-sol";
 
 const EMPTY_SETTINGS: StoredSettings = {
   version: 1,
@@ -46,6 +50,7 @@ export class SettingsStore {
     return {
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       searchApiKeyConfigured: Boolean(settings.searchApiKey),
+      model: settings.model,
       autoApproveAll: settings.autoApproveAll,
     };
   }
@@ -57,6 +62,7 @@ export class SettingsStore {
     const current = this.read();
     const next: StoredSettings = {
       ...current,
+      model: requireNonEmpty(update.model, "Model"),
       autoApproveAll: update.autoApproveAll,
     };
 
@@ -88,6 +94,10 @@ export class SettingsStore {
       searchApiKey:
         decryptOptional(stored.encryptedSearchApiKey, this.codec) ??
         nonEmpty(environment.BRAVE_SEARCH_API_KEY),
+      model:
+        nonEmpty(stored.model) ??
+        nonEmpty(environment.THREADLIGHT_MODEL) ??
+        DEFAULT_MODEL,
       autoApproveAll: stored.autoApproveAll,
     };
   }
@@ -134,6 +144,7 @@ export function runtimeEnvironment(
     ...(settings.searchApiKey
       ? { BRAVE_SEARCH_API_KEY: settings.searchApiKey }
       : {}),
+    THREADLIGHT_MODEL: settings.model,
     THREADLIGHT_AUTO_APPROVE: settings.autoApproveAll ? "1" : "0",
   };
 }
@@ -174,8 +185,15 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     settings.version === 1 &&
     typeof settings.autoApproveAll === "boolean" &&
     optionalString(settings.encryptedOpenAIApiKey) &&
-    optionalString(settings.encryptedSearchApiKey)
+    optionalString(settings.encryptedSearchApiKey) &&
+    optionalString(settings.model)
   );
+}
+
+function requireNonEmpty(value: string, label: string): string {
+  const normalized = nonEmpty(value);
+  if (!normalized) throw new Error(`${label} cannot be empty`);
+  return normalized;
 }
 
 function optionalString(value: unknown): boolean {

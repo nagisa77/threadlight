@@ -38,6 +38,7 @@ describe("SettingsStore", () => {
       {
         openAIApiKey: "  sk-test-openai  ",
         searchApiKey: "search-test-key",
+        model: "  gpt-5.6-terra  ",
         autoApproveAll: true,
       },
       {},
@@ -46,6 +47,7 @@ describe("SettingsStore", () => {
     expect(snapshot).toEqual({
       openAIApiKeyConfigured: true,
       searchApiKeyConfigured: true,
+      model: "gpt-5.6-terra",
       autoApproveAll: true,
     });
     expect(readFileSync(path, "utf8")).not.toContain("sk-test-openai");
@@ -53,6 +55,7 @@ describe("SettingsStore", () => {
     expect(store.runtimeSettings({})).toEqual({
       openAIApiKey: "sk-test-openai",
       searchApiKey: "search-test-key",
+      model: "gpt-5.6-terra",
       autoApproveAll: true,
     });
   });
@@ -60,12 +63,20 @@ describe("SettingsStore", () => {
   it("keeps unchanged keys, supports clearing, and falls back to environment", () => {
     const { store } = createStore();
     store.update(
-      { openAIApiKey: "stored-key", autoApproveAll: false },
+      {
+        openAIApiKey: "stored-key",
+        model: "gpt-5.6-sol",
+        autoApproveAll: false,
+      },
       {},
     );
 
     store.update(
-      { openAIApiKey: null, autoApproveAll: false },
+      {
+        openAIApiKey: null,
+        model: "gpt-5.6-luna",
+        autoApproveAll: false,
+      },
       { OPENAI_API_KEY: "environment-key" },
     );
 
@@ -74,6 +85,7 @@ describe("SettingsStore", () => {
     ).toEqual({
       openAIApiKey: "environment-key",
       searchApiKey: undefined,
+      model: "gpt-5.6-luna",
       autoApproveAll: false,
     });
   });
@@ -83,12 +95,23 @@ describe("SettingsStore", () => {
       runtimeEnvironment({
         openAIApiKey: "openai",
         searchApiKey: "search",
+        model: "gpt-5.6-terra",
         autoApproveAll: true,
       }),
     ).toEqual({
       OPENAI_API_KEY: "openai",
       BRAVE_SEARCH_API_KEY: "search",
+      THREADLIGHT_MODEL: "gpt-5.6-terra",
       THREADLIGHT_AUTO_APPROVE: "1",
     });
+  });
+
+  it("uses an environment model before falling back to the default", () => {
+    const { store } = createStore();
+
+    expect(store.snapshot({ THREADLIGHT_MODEL: "gpt-5.6-luna" }).model).toBe(
+      "gpt-5.6-luna",
+    );
+    expect(store.snapshot({}).model).toBe("gpt-5.6-sol");
   });
 });

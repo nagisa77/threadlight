@@ -20,7 +20,11 @@ import { ProjectMemoryStore } from "@threadlight/project-memory";
 
 import { AppServerProcess } from "./app-server-process.js";
 import { createExternalWindowHandler } from "./external-links.js";
-import { runtimeEnvironment, SettingsStore } from "./settings-store.js";
+import {
+  DEFAULT_MODEL,
+  runtimeEnvironment,
+  SettingsStore,
+} from "./settings-store.js";
 import { ProjectStore } from "./project-store.js";
 import {
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
@@ -98,7 +102,10 @@ function startAppServer(window: BrowserWindow, cwd: string): void {
       resolve(app.getAppPath(), "../../packages/app-server/dist/bin.js"),
     cwd,
     environment: runtimeEnvironment(
-      settingsStore?.runtimeSettings() ?? { autoApproveAll: false },
+      settingsStore?.runtimeSettings() ?? {
+        model: DEFAULT_MODEL,
+        autoApproveAll: false,
+      },
     ),
     send: (message) => sendToRenderer(window, message),
   });
@@ -251,7 +258,11 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (!isOptionalSecret(update.searchApiKey)) {
     throw new Error("searchApiKey must be a string or null");
   }
+  if (typeof update.model !== "string" || !update.model.trim()) {
+    throw new Error("model must be a non-empty string");
+  }
   return {
+    model: update.model.trim(),
     autoApproveAll: update.autoApproveAll,
     ...(update.openAIApiKey !== undefined
       ? { openAIApiKey: update.openAIApiKey }

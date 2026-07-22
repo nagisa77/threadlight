@@ -34,6 +34,36 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("forwards the selected model through every scripted model turn", async () => {
+    const provider = new ScriptedProvider();
+    const loop = new AgentLoop(provider);
+
+    await loop.run(
+      defineAgent({
+        name: "test",
+        instructions: "Use the tool",
+        model: "gpt-5.6-terra",
+        tools: [
+          defineTool({
+            name: "double",
+            description: "Double a number",
+            parameters: { type: "object" },
+            async execute() {
+              return 42;
+            },
+          }),
+        ],
+      }),
+      "Double 21",
+    );
+
+    expect(provider.requests).toHaveLength(2);
+    expect(provider.requests.map((request) => request.model)).toEqual([
+      "gpt-5.6-terra",
+      "gpt-5.6-terra",
+    ]);
+  });
+
   it("forwards text deltas before the model turn completes", async () => {
     let finishGeneration!: () => void;
     const generationPending = new Promise<void>((resolve) => {

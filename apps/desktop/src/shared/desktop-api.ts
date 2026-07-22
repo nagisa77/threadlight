@@ -22,12 +22,14 @@ export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
 export interface DesktopSettingsSnapshot {
   openAIApiKeyConfigured: boolean;
   searchApiKeyConfigured: boolean;
+  model: string;
   autoApproveAll: boolean;
 }
 
 export interface DesktopSettingsUpdate {
   openAIApiKey?: string | null;
   searchApiKey?: string | null;
+  model: string;
   autoApproveAll: boolean;
 }
 

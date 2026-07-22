@@ -58,7 +58,10 @@ describe("OpenAIResponsesProvider", () => {
     const signal = new AbortController().signal;
     const deltas: string[] = [];
 
-    const result = await new OpenAIResponsesProvider({ client }).generate(
+    const result = await new OpenAIResponsesProvider({
+      client,
+      defaultModel: "gpt-5.6-terra",
+    }).generate(
       {
         instructions: "Reply",
         input: "Hello",
@@ -83,7 +86,7 @@ describe("OpenAIResponsesProvider", () => {
 
     expect(stream).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: "gpt-5.6-sol",
+        model: "gpt-5.6-terra",
         instructions: "Reply",
         input: [
           {
