@@ -13,11 +13,17 @@ export interface ToolActivity {
   detail?: string;
 }
 
+export interface ConversationProgress {
+  text: string;
+  activities: readonly ToolActivity[];
+}
+
 export interface ConversationMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
   error?: boolean;
+  progress?: readonly ConversationProgress[];
   activities?: readonly ToolActivity[];
 }
 
@@ -33,7 +39,8 @@ export interface SessionState {
   isRunning: boolean;
   isThinking: boolean;
   messages: readonly ConversationMessage[];
-  activities: readonly ToolActivity[];
+  progress: readonly ConversationProgress[];
+  streamingText: string;
   approval?: PendingApproval;
 }
 
@@ -56,7 +63,8 @@ export const initialSessionState: SessionState = {
   isRunning: false,
   isThinking: false,
   messages: [],
-  activities: [],
+  progress: [],
+  streamingText: "",
 };
 
 export function sessionReducer(
@@ -86,7 +94,8 @@ export function sessionReducer(
         ...state,
         isRunning: true,
         isThinking: true,
-        activities: [],
+        progress: [],
+        streamingText: "",
         approval: undefined,
         messages: [
           ...state.messages,
@@ -110,38 +119,55 @@ function reduceAgentEvent(
 ): SessionState {
   switch (event.type) {
     case "model.started":
-      return { ...state, isThinking: true };
+      return { ...state, isThinking: true, streamingText: "" };
+    case "model.output_text.delta":
+      return {
+        ...state,
+        isThinking: false,
+        streamingText: state.streamingText + event.delta,
+      };
     case "model.completed":
-      return { ...state, isThinking: false };
+      return {
+        ...state,
+        isThinking: false,
+        streamingText: event.toolCalls.length > 0 ? "" : event.text,
+        progress:
+          event.toolCalls.length > 0
+            ? [
+                ...state.progress,
+                { text: event.text, activities: [] },
+              ]
+            : state.progress,
+      };
     case "tool.started":
       return {
         ...state,
         isThinking: false,
-        activities: [
-          ...state.activities,
-          {
-            id: event.call.id,
-            name: event.call.name,
-            status: "running",
-            detail: toolInput(event.call),
-          },
-        ],
+        progress: appendActivity(state.progress, {
+          id: event.call.id,
+          name: event.call.name,
+          status: "running",
+          detail: toolInput(event.call),
+        }),
       };
     case "tool.completed":
       return {
         ...state,
-        activities: state.activities.map((activity) =>
-          activity.id === event.result.callId
-            ? {
-                ...activity,
-                status: event.result.isError ? "failed" : "completed",
-                detail:
-                  activity.name === "exec_command"
-                    ? activity.detail
-                    : truncate(event.result.output),
-              }
-            : activity,
-        ),
+        progress: state.progress.map((step) => ({
+          ...step,
+          activities: step.activities.map((activity) =>
+            activity.id === event.result.callId
+              ? {
+                  ...activity,
+                  status: event.result.isError ? "failed" : "completed",
+                  detail:
+                    activity.name === "exec_command"
+                      ? activity.detail
+                      : truncate(event.result.output),
+                }
+              : activity,
+          ),
+        })),
       };
     case "approval.requested":
       return {
@@ -171,7 +197,8 @@ function completeTurn(
     ...state,
     isRunning: false,
     isThinking: false,
-    activities: [],
+    progress: [],
+    streamingText: "",
     approval: undefined,
     messages: [
       ...state.messages,
@@ -180,10 +207,25 @@ function completeTurn(
         role: "assistant",
         text,
         error,
-        activities: state.activities,
+        ...(state.progress.length > 0 ? { progress: state.progress } : {}),
       },
     ],
   };
+}
+
+function appendActivity(
+  progress: readonly ConversationProgress[],
+  activity: ToolActivity,
+): ConversationProgress[] {
+  if (progress.length === 0) {
+    return [{ text: "", activities: [activity] }];
+  }
+
+  return progress.map((step, index) =>
+    index === progress.length - 1
+      ? { ...step, activities: [...step.activities, activity] }
+      : step,
+  );
 }
 
 function truncate(value: string, limit = 1_200): string {

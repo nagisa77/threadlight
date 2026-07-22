@@ -43,7 +43,15 @@ class LoopbackTransport implements ClientTransport {
 describe("client and app-server integration", () => {
   it("runs a turn through the shared protocol", async () => {
     const provider: ModelProvider = {
-      async generate() {
+      async generate(_request, options) {
+        options?.onEvent?.({
+          type: "output_text.delta",
+          delta: "Hello from ",
+        });
+        options?.onEvent?.({
+          type: "output_text.delta",
+          delta: "Threadlight",
+        });
         return { text: "Hello from Threadlight", toolCalls: [] };
       },
     };
@@ -56,8 +64,17 @@ describe("client and app-server integration", () => {
     transport.connect((message) => server.receive(message));
 
     const client = new ThreadlightClient(transport);
+    const eventOrder: string[] = [];
+    client.on("agent/event", ({ event }) => {
+      if (event.type === "model.output_text.delta") {
+        eventOrder.push(`delta:${event.delta}`);
+      }
+    });
     const completed = new Promise<string>((resolve) => {
-      client.on("turn/completed", ({ output }) => resolve(output));
+      client.on("turn/completed", ({ output }) => {
+        eventOrder.push("completed");
+        resolve(output);
+      });
     });
 
     await client.initialize();
@@ -66,5 +83,10 @@ describe("client and app-server integration", () => {
 
     await expect(completed).resolves.toBe("Hello from Threadlight");
     expect(turnId).toEqual(expect.any(String));
+    expect(eventOrder).toEqual([
+      "delta:Hello from ",
+      "delta:Threadlight",
+      "completed",
+    ]);
   });
 });

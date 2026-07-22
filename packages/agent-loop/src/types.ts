@@ -57,8 +57,20 @@ export interface ModelTurn {
   usage?: Partial<TokenUsage>;
 }
 
+export type ModelStreamEvent = {
+  type: "output_text.delta";
+  delta: string;
+};
+
+export interface ModelGenerateOptions {
+  onEvent?: (event: ModelStreamEvent) => void;
+}
+
 export interface ModelProvider {
-  generate(request: ModelRequest): Promise<ModelTurn>;
+  generate(
+    request: ModelRequest,
+    options?: ModelGenerateOptions,
+  ): Promise<ModelTurn>;
 }
 
 export interface ApprovalRequest {
@@ -70,6 +82,12 @@ export interface ApprovalRequest {
 export type AgentEvent =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
+  | {
+      type: "model.output_text.delta";
+      runId: string;
+      step: number;
+      delta: string;
+    }
   | {
       type: "model.completed";
       runId: string;

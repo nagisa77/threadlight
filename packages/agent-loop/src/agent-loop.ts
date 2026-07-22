@@ -58,15 +58,29 @@ export class AgentLoop {
       options.signal?.throwIfAborted();
       emit({ type: "model.started", runId, step });
 
-      const turn = await this.provider.generate({
-        model: agent.model,
-        instructions: agent.instructions,
-        input: step === 1 ? input : undefined,
-        state,
-        toolResults,
-        tools,
-        signal: options.signal,
-      });
+      const turn = await this.provider.generate(
+        {
+          model: agent.model,
+          instructions: agent.instructions,
+          input: step === 1 ? input : undefined,
+          state,
+          toolResults,
+          tools,
+          signal: options.signal,
+        },
+        {
+          onEvent: (event) => {
+            if (event.type === "output_text.delta") {
+              emit({
+                type: "model.output_text.delta",
+                runId,
+                step,
+                delta: event.delta,
+              });
+            }
+          },
+        },
+      );
 
       emit({
         type: "model.completed",

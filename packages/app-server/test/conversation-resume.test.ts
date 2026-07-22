@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   AgentLoop,
   defineAgent,
+  defineTool,
   type ModelProvider,
   type ModelRequest,
 } from "@threadlight/agent-loop";
@@ -23,6 +24,78 @@ afterEach(() => {
 });
 
 describe("persistent conversations", () => {
+  it("persists commentary before every tool in a multi-tool batch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-progress-"));
+    directories.push(root);
+    const store = new FileConversationStore(
+      join(root, ".threadlight", "conversations"),
+    );
+    let generation = 0;
+    const provider: ModelProvider = {
+      async generate() {
+        generation += 1;
+        return generation === 1
+          ? {
+              text: "I’ll inspect both files first.",
+              toolCalls: [
+                { id: "call-1", name: "inspect", arguments: { file: "a" } },
+                { id: "call-2", name: "inspect", arguments: { file: "b" } },
+              ],
+            }
+          : { text: "Both files are ready.", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = notification(messages, "turn/completed");
+    const appServer = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Explain tool calls",
+        tools: [
+          defineTool({
+            name: "inspect",
+            description: "Inspect a file",
+            parameters: { type: "object" },
+            async execute(arguments_) {
+              return `inspected ${(arguments_ as { file: string }).file}`;
+            },
+          }),
+        ],
+      }),
+      conversationStore: store,
+      send(message) {
+        messages.push(message);
+        completed.receive(message);
+      },
+    });
+
+    await appServer.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await appServer.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Inspect both files" },
+    });
+    await completed.promise;
+
+    expect(store.load(threadId)?.messages.at(-1)).toMatchObject({
+      role: "assistant",
+      text: "Both files are ready.",
+      progress: [
+        {
+          text: "I’ll inspect both files first.",
+          activities: [
+            { id: "call-1", name: "inspect", status: "completed" },
+            { id: "call-2", name: "inspect", status: "completed" },
+          ],
+        },
+      ],
+    });
+  });
+
   it("resumes messages and provider-neutral opaque state after a server restart", async () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-resume-"));
     directories.push(root);

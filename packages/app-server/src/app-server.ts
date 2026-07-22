@@ -10,6 +10,7 @@ import type {
 import type {
   ConversationActivityData,
   ConversationMessageData,
+  ConversationProgressData,
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -26,11 +27,16 @@ import {
 interface ThreadState {
   agent: Agent;
   conversation: StoredConversation;
-  activities: ConversationActivityData[];
+  progress: MutableConversationProgress[];
   activeTurn?: {
     id: string;
     controller: AbortController;
   };
+}
+
+interface MutableConversationProgress {
+  text: string;
+  activities: ConversationActivityData[];
 }
 
 interface PendingApproval {
@@ -133,7 +139,7 @@ export class AppServer {
       updatedAt: timestamp,
       messages: [],
     };
-    this.threads.set(threadId, { agent, conversation, activities: [] });
+    this.threads.set(threadId, { agent, conversation, progress: [] });
     return { threadId };
   }
 
@@ -150,7 +156,7 @@ export class AppServer {
         thread = {
           agent: await this.agentFactory(),
           conversation,
-          activities: [],
+          progress: [],
         };
         this.threads.set(threadId, thread);
       }
@@ -191,7 +197,7 @@ export class AppServer {
     const turnId = randomUUID();
     const controller = new AbortController();
     thread.activeTurn = { id: turnId, controller };
-    thread.activities = [];
+    thread.progress = [];
     const startedConversation = this.updateConversation(thread.conversation, [
       ...thread.conversation.messages,
       {
@@ -270,8 +276,8 @@ export class AppServer {
             id: randomUUID(),
             role: "assistant",
             text: result.output,
-            ...(thread.activities.length > 0
-              ? { activities: [...thread.activities] }
+            ...(thread.progress.length > 0
+              ? { progress: snapshotProgress(thread.progress) }
               : {}),
           },
         ],
@@ -294,8 +300,8 @@ export class AppServer {
           role: "assistant",
           text: message,
           error: true,
-          ...(thread.activities.length > 0
-            ? { activities: [...thread.activities] }
+          ...(thread.progress.length > 0
+            ? { progress: snapshotProgress(thread.progress) }
             : {}),
         },
       ]);
@@ -323,7 +329,7 @@ export class AppServer {
     thread: ThreadState,
     event: AgentEvent,
   ): void {
-    updateActivities(thread.activities, event);
+    updateProgress(thread.progress, event);
     this.notify("agent/event", { threadId, turnId, event });
   }
 
@@ -402,13 +408,23 @@ function requireString(value: unknown, name: string): asserts value is string {
   }
 }
 
-function updateActivities(
-  activities: ConversationActivityData[],
+function updateProgress(
+  progress: MutableConversationProgress[],
   event: AgentEvent,
 ): void {
+  if (event.type === "model.completed" && event.toolCalls.length > 0) {
+    progress.push({ text: event.text, activities: [] });
+    return;
+  }
+
   if (event.type === "tool.started") {
+    let step = progress.at(-1);
+    if (!step) {
+      step = { text: "", activities: [] };
+      progress.push(step);
+    }
     const detail = toolDetail(event.call.name, event.call.arguments);
-    activities.push({
+    step.activities.push({
       id: event.call.id,
       name: event.call.name,
       status: "running",
@@ -418,9 +434,9 @@ function updateActivities(
   }
   if (event.type !== "tool.completed") return;
 
-  const activity = activities.find(
-    (candidate) => candidate.id === event.result.callId,
-  );
+  const activity = progress
+    .flatMap((step) => step.activities)
+    .find((candidate) => candidate.id === event.result.callId);
   if (!activity) return;
   activity.status = event.result.isError ? "failed" : "completed";
   if (
@@ -429,6 +445,15 @@ function updateActivities(
   ) {
     activity.detail = truncate(event.result.output);
   }
+}
+
+function snapshotProgress(
+  progress: readonly MutableConversationProgress[],
+): ConversationProgressData[] {
+  return progress.map((step) => ({
+    text: step.text,
+    activities: step.activities.map((activity) => ({ ...activity })),
+  }));
 }
 
 function toolDetail(name: string, arguments_: unknown): string | undefined {

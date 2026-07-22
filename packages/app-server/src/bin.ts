@@ -52,7 +52,7 @@ if (process.env.BRAVE_SEARCH_API_KEY) {
 const agentFactory = createWorkspaceAgentFactory({
   workspaceRoot,
   baseInstructions:
-    "Answer directly. Follow the supplied workspace instructions and use the project context before answering or acting. Use tools when they provide evidence needed for the task. Project memory is durable context, not an enforcement layer. When the user explicitly asks you to remember a project fact, or you discover a stable project-specific fact that will materially help future tasks, update .threadlight/MEMORY.md with project_memory. Read it immediately before writing, revise stale or duplicate entries, keep it concise and specific, and never store secrets, transient task state, chat transcripts, or unverified assumptions.",
+    "Answer directly. Before each group of tool calls, briefly tell the user what you are about to do in the same response; keep it concrete and never return tool calls silently. Follow the supplied workspace instructions and use the project context before answering or acting. Use tools when they provide evidence needed for the task. Project memory is durable context, not an enforcement layer. When the user explicitly asks you to remember a project fact, or you discover a stable project-specific fact that will materially help future tasks, update .threadlight/MEMORY.md with project_memory. Read it immediately before writing, revise stale or duplicate entries, keep it concise and specific, and never store secrets, transient task state, chat transcripts, or unverified assumptions.",
   tools,
 });
 

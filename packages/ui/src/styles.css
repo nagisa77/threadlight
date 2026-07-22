@@ -774,6 +774,28 @@ button:disabled {
   margin-left: 0;
 }
 
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.message-body > .progress-list {
+  margin-bottom: 18px;
+}
+
+.progress-copy + .activity-list {
+  margin-top: 10px;
+}
+
+.progress-step > .activity-list {
+  margin-bottom: 0;
+}
+
+.progress-list + .streaming-copy {
+  margin-top: 18px;
+}
+
 .markdown-content {
   color: #36352f;
   font-size: 13px;
@@ -937,6 +959,10 @@ button:disabled {
 }
 
 .activity-list.live + .thinking-row {
+  margin-top: 10px;
+}
+
+.progress-list + .thinking-row {
   margin-top: 10px;
 }
 

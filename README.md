@@ -162,8 +162,10 @@ console.log(result.output);
 - `approval/resolve`
 
 运行期间使用 `agent/event` 通知转发 Agent Loop 事件。每次模型调用后会发送
-`model.completed`，其中包含该次返回的 `text`、`toolCalls` 和 token usage；最终发送
-`turn/completed` 或 `turn/failed`。opaque model state 不会写入事件。
+`model.output_text.delta`，把 provider 返回的真实文本增量立即送到客户端；随后发送
+`model.completed`，其中包含该次返回的完整 `text`、`toolCalls` 和 token usage。最终发送
+`turn/completed` 或 `turn/failed`。delta 是临时显示数据，完整响应仍是持久化与 opaque
+model state 更新的提交边界；opaque model state 不会写入事件。
 
 ## 当前边界
 

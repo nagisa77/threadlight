@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 
 import type {
+  ModelGenerateOptions,
   ModelProvider,
   ModelRequest,
   ModelTurn,
@@ -25,9 +26,12 @@ export class OpenAIResponsesProvider implements ModelProvider {
     this.defaultModel = options.defaultModel ?? "gpt-5.6-sol";
   }
 
-  async generate(request: ModelRequest): Promise<ModelTurn> {
+  async generate(
+    request: ModelRequest,
+    options: ModelGenerateOptions = {},
+  ): Promise<ModelTurn> {
     const input: OpenAI.Responses.ResponseInput = Array.isArray(request.state)
-      ? [...(request.state as OpenAI.Responses.ResponseInput)]
+      ? sanitizeResponseInput(request.state)
       : [];
 
     if (request.input) {
@@ -50,16 +54,24 @@ export class OpenAIResponsesProvider implements ModelProvider {
       strict: true,
     }));
 
-    const params: OpenAI.Responses.ResponseCreateParamsNonStreaming = {
+    const params = {
       model: request.model ?? this.defaultModel,
       instructions: request.instructions,
       input,
       tools,
     };
 
-    const response = request.signal
-      ? await this.client.responses.create(params, { signal: request.signal })
-      : await this.client.responses.create(params);
+    const stream = request.signal
+      ? this.client.responses.stream(params, { signal: request.signal })
+      : this.client.responses.stream(params);
+    stream.on("response.output_text.delta", (event) => {
+      options.onEvent?.({
+        type: "output_text.delta",
+        delta: event.delta,
+      });
+    });
+    const response = await stream.finalResponse();
+    const output = sanitizeResponseInput(response.output);
 
     return {
       text: response.output_text,
@@ -70,7 +82,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
           name: item.name,
           arguments: JSON.parse(item.arguments) as unknown,
         })),
-      state: [...input, ...response.output],
+      state: [...input, ...output],
       usage: response.usage
         ? {
             inputTokens: response.usage.input_tokens,
@@ -80,4 +92,36 @@ export class OpenAIResponsesProvider implements ModelProvider {
         : undefined,
     };
   }
+}
+
+function sanitizeResponseInput(
+  items: readonly unknown[],
+): OpenAI.Responses.ResponseInput {
+  return items.map((item) => {
+    if (!isObject(item)) return item;
+
+    if (item.type === "function_call") {
+      const { parsed_arguments: _parsedArguments, ...wireItem } = item;
+      return wireItem;
+    }
+
+    if (item.type === "message" && Array.isArray(item.content)) {
+      return {
+        ...item,
+        content: item.content.map((content) => {
+          if (!isObject(content) || content.type !== "output_text") {
+            return content;
+          }
+          const { parsed: _parsed, ...wireContent } = content;
+          return wireContent;
+        }),
+      };
+    }
+
+    return item;
+  }) as OpenAI.Responses.ResponseInput;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }

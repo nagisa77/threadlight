@@ -26,6 +26,7 @@ export type {
 } from "./memory.js";
 export type {
   ConversationMessage,
+  ConversationProgress,
   PendingApproval,
   SessionAction,
   SessionState,

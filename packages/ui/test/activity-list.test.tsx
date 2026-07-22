@@ -1,9 +1,33 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ActivityList } from "../src/app.js";
+import { ActivityList, ProgressList } from "../src/app.js";
 
 describe("ActivityList", () => {
+  it("renders commentary before every tool in the batch", () => {
+    const html = renderToStaticMarkup(
+      <ProgressList
+        live
+        progress={[
+          {
+            text: "我先检查配置和测试。",
+            activities: [
+              { id: "call-1", name: "read_config", status: "running" },
+              { id: "call-2", name: "run_tests", status: "running" },
+            ],
+          },
+        ]}
+      />,
+    );
+
+    const commentary = html.indexOf("我先检查配置和测试。");
+    const firstTool = html.indexOf("read_config");
+    const secondTool = html.indexOf("run_tests");
+    expect(commentary).toBeGreaterThan(-1);
+    expect(commentary).toBeLessThan(firstTool);
+    expect(firstTool).toBeLessThan(secondTool);
+  });
+
   it("starts completed execution records collapsed", () => {
     const html = renderToStaticMarkup(
       <ActivityList

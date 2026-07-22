@@ -7,6 +7,87 @@ import {
 } from "../src/index.js";
 
 describe("sessionReducer", () => {
+  it("accumulates real model deltas and commits one completed message", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "Hello",
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: { type: "model.started", runId: "run-1", step: 1 },
+    });
+    for (const delta of ["Hello", " world"]) {
+      state = sessionReducer(state, {
+        type: "agent.event",
+        event: {
+          type: "model.output_text.delta",
+          runId: "run-1",
+          step: 1,
+          delta,
+        },
+      });
+    }
+
+    expect(state.streamingText).toBe("Hello world");
+    expect(state.isThinking).toBe(false);
+    expect(state.messages).toHaveLength(1);
+
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.completed",
+        runId: "run-1",
+        step: 1,
+        text: "Hello world",
+        toolCalls: [],
+      },
+    });
+    state = sessionReducer(state, {
+      type: "turn.completed",
+      id: "message-2",
+      output: "Hello world",
+    });
+
+    expect(state.streamingText).toBe("");
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[1]).toMatchObject({
+      role: "assistant",
+      text: "Hello world",
+    });
+  });
+
+  it("moves streamed model commentary into its tool progress step", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: { type: "model.started", runId: "run-1", step: 1 },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.output_text.delta",
+        runId: "run-1",
+        step: 1,
+        delta: "我先检查配置。",
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.completed",
+        runId: "run-1",
+        step: 1,
+        text: "我先检查配置。",
+        toolCalls: [{ id: "call-1", name: "read_config", arguments: {} }],
+      },
+    });
+
+    expect(state.streamingText).toBe("");
+    expect(state.progress).toEqual([
+      { text: "我先检查配置。", activities: [] },
+    ]);
+  });
+
   it("keeps the exec command with the completed assistant message", () => {
     let state: SessionState = {
       ...initialSessionState,
@@ -50,16 +131,21 @@ describe("sessionReducer", () => {
     });
 
     expect(state.isRunning).toBe(false);
-    expect(state.activities).toEqual([]);
+    expect(state.progress).toEqual([]);
     expect(state.messages[1]).toMatchObject({
       role: "assistant",
       text: "Everything passes.",
-      activities: [
+      progress: [
         {
-          id: "call-1",
-          name: "exec_command",
-          status: "completed",
-          detail: "$ npm test",
+          text: "",
+          activities: [
+            {
+              id: "call-1",
+              name: "exec_command",
+              status: "completed",
+              detail: "$ npm test",
+            },
+          ],
         },
       ],
     });
@@ -87,7 +173,47 @@ describe("sessionReducer", () => {
       },
     });
 
-    expect(state.activities[0].detail).toBe("search result");
+    expect(state.progress[0]?.activities[0]?.detail).toBe("search result");
+  });
+
+  it("keeps model commentary before every multi-tool batch", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: {
+        type: "model.completed",
+        runId: "run-1",
+        step: 1,
+        text: "我先检查配置和测试。",
+        toolCalls: [
+          { id: "call-1", name: "read_config", arguments: {} },
+          { id: "call-2", name: "run_tests", arguments: {} },
+        ],
+      },
+    });
+
+    for (const call of [
+      { id: "call-1", name: "read_config" },
+      { id: "call-2", name: "run_tests" },
+    ]) {
+      state = sessionReducer(state, {
+        type: "agent.event",
+        event: {
+          type: "tool.started",
+          runId: "run-1",
+          call: { ...call, arguments: {} },
+        },
+      });
+    }
+
+    expect(state.progress).toMatchObject([
+      {
+        text: "我先检查配置和测试。",
+        activities: [
+          { id: "call-1", name: "read_config" },
+          { id: "call-2", name: "run_tests" },
+        ],
+      },
+    ]);
   });
 
   it("returns to thinking after a tool result is sent to the model", () => {
@@ -132,7 +258,7 @@ describe("sessionReducer", () => {
     });
 
     expect(state.isThinking).toBe(true);
-    expect(state.activities).toMatchObject([
+    expect(state.progress[0]?.activities).toMatchObject([
       { id: "call-1", status: "completed" },
     ]);
   });

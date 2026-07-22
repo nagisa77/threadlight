@@ -26,6 +26,7 @@ import {
 
 import {
   useThreadlightSession,
+  type ConversationProgress,
   type PendingApproval,
   type ToolActivity,
 } from "./session.js";
@@ -123,7 +124,12 @@ export function ThreadlightApp({
   useEffect(() => {
     const element = conversation.current;
     if (element && followOutput.current) element.scrollTop = element.scrollHeight;
-  }, [state.messages.length, state.activities.length, state.approval]);
+  }, [
+    state.messages.length,
+    state.progress,
+    state.streamingText,
+    state.approval,
+  ]);
 
   async function submit(value = input) {
     followOutput.current = true;
@@ -431,7 +437,12 @@ export function ThreadlightApp({
                         key={message.id}
                       >
                         <div className="message-body">
-                          {message.activities && message.activities.length > 0 && (
+                          {message.progress && message.progress.length > 0 && (
+                            <ProgressList progress={message.progress} />
+                          )}
+                          {(!message.progress || message.progress.length === 0) &&
+                            message.activities &&
+                            message.activities.length > 0 && (
                             <ActivityList activities={message.activities} />
                           )}
                           {message.role === "assistant" ? (
@@ -443,10 +454,17 @@ export function ThreadlightApp({
                       </article>
                     ))}
 
-                    {(state.activities.length > 0 || state.isThinking) && (
+                    {(state.progress.length > 0 ||
+                      state.streamingText.length > 0 ||
+                      state.isThinking) && (
                       <div className="live-run">
-                        {state.activities.length > 0 && (
-                          <ActivityList activities={state.activities} live />
+                        {state.progress.length > 0 && (
+                          <ProgressList progress={state.progress} live />
+                        )}
+                        {state.streamingText.length > 0 && (
+                          <div className="streaming-copy" aria-busy="true">
+                            <MarkdownContent>{state.streamingText}</MarkdownContent>
+                          </div>
                         )}
                         {state.isThinking && (
                           <div className="thinking-row">
@@ -767,6 +785,31 @@ function EmptyState({
   );
 }
 
+export function ProgressList({
+  progress,
+  live = false,
+}: {
+  progress: readonly ConversationProgress[];
+  live?: boolean;
+}) {
+  return (
+    <div className="progress-list">
+      {progress.map((step, index) => (
+        <div className="progress-step" key={index}>
+          {step.text.trim() && (
+            <div className="progress-copy">
+              <MarkdownContent>{step.text}</MarkdownContent>
+            </div>
+          )}
+          {step.activities.length > 0 && (
+            <ActivityList activities={step.activities} live={live} />
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ActivityList({
   activities,
   live = false,
@@ -775,6 +818,9 @@ export function ActivityList({
   live?: boolean;
 }) {
   const [expanded, setExpanded] = useState(live);
+  const hasRunningActivity = activities.some(
+    (activity) => activity.status === "running",
+  );
 
   return (
     <details
@@ -784,7 +830,9 @@ export function ActivityList({
     >
       <summary className="activity-heading">
         <Terminal size={14} />
-        <span>{live ? "执行中" : "执行记录"}</span>
+        <span>
+          {live ? (hasRunningActivity ? "执行中" : "已执行") : "执行记录"}
+        </span>
         <span className="activity-count">{activities.length}</span>
         <ChevronRight className="activity-chevron" size={13} aria-hidden="true" />
       </summary>

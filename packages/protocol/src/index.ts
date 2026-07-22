@@ -73,17 +73,30 @@ export interface ConversationActivityData {
   detail?: string;
 }
 
+export interface ConversationProgressData {
+  text: string;
+  activities: readonly ConversationActivityData[];
+}
+
 export interface ConversationMessageData {
   id: string;
   role: "user" | "assistant";
   text: string;
   error?: boolean;
+  progress?: readonly ConversationProgressData[];
+  /** @deprecated Kept for conversations written before ordered progress. */
   activities?: readonly ConversationActivityData[];
 }
 
 export type AgentEventData =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
+  | {
+      type: "model.output_text.delta";
+      runId: string;
+      step: number;
+      delta: string;
+    }
   | {
       type: "model.completed";
       runId: string;

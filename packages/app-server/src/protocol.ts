@@ -1,6 +1,7 @@
 export type {
   ConversationActivityData,
   ConversationMessageData,
+  ConversationProgressData,
   JsonRpcId,
   JsonRpcNotification,
   JsonRpcOutgoing,

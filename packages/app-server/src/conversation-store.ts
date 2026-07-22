@@ -143,7 +143,18 @@ function isConversationMessage(value: unknown): boolean {
     (message.role === "user" || message.role === "assistant") &&
     typeof message.text === "string" &&
     (message.error === undefined || typeof message.error === "boolean") &&
+    (message.progress === undefined ||
+      (Array.isArray(message.progress) &&
+        message.progress.every(isConversationProgress))) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isConversationProgress(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const progress = value as Record<string, unknown>;
+  return (
+    typeof progress.text === "string" && Array.isArray(progress.activities)
   );
 }
 
