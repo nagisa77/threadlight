@@ -81,55 +81,6 @@ summary:focus-visible {
   -webkit-app-region: drag;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 32px;
-  padding: 0 8px;
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.brand-mark {
-  position: relative;
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  border-radius: 7px;
-  background: var(--ink);
-  box-shadow: 0 1px 2px rgb(31 30 27 / 18%);
-}
-
-.brand-mark::before,
-.brand-mark::after,
-.brand-mark span {
-  position: absolute;
-  width: 2px;
-  border-radius: 4px;
-  background: #fffaf4;
-  content: "";
-  transform: rotate(28deg);
-}
-
-.brand-mark::before {
-  height: 6px;
-  transform: translate(-4px, 3px) rotate(28deg);
-  opacity: 0.52;
-}
-
-.brand-mark span {
-  height: 11px;
-}
-
-.brand-mark::after {
-  height: 6px;
-  transform: translate(4px, -3px) rotate(28deg);
-  background: #f5a06f;
-}
-
 .pressable {
   transition: transform 140ms var(--ease-out);
 }
@@ -139,7 +90,7 @@ summary:focus-visible {
 }
 
 .new-thread-button {
-  margin-top: 18px;
+  margin-top: 0;
 }
 
 button:disabled {
@@ -152,7 +103,7 @@ button:disabled {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  margin-top: 18px;
+  margin-top: 10px;
 }
 
 .project-list-heading {
@@ -1309,6 +1260,14 @@ button:disabled {
     0 10px 32px rgb(40 36 31 / 7%);
 }
 
+.composer.is-recording,
+.composer.is-recording:focus-within {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--line-strong));
+  box-shadow:
+    0 1px 2px rgb(30 29 26 / 5%),
+    0 10px 32px rgb(184 74 66 / 8%);
+}
+
 .composer textarea {
   min-width: 0;
   min-height: 30px;
@@ -1345,6 +1304,23 @@ button:disabled {
   background: #292824;
 }
 
+.composer-action.voice {
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.composer-action.voice.recording {
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
 .composer-action.stop {
   border: 1px solid #dcc0bc;
   color: var(--danger);
@@ -1352,10 +1328,15 @@ button:disabled {
 }
 
 .composer-hint {
+  min-height: 14px;
   margin: 7px auto 0;
   color: var(--subtle);
   font-size: 9px;
   text-align: center;
+}
+
+.composer-hint.error {
+  color: var(--danger);
 }
 
 .memory-open-button {
@@ -2026,6 +2007,11 @@ button:disabled {
 
   .settings-save-button:hover:not(:disabled) {
     background: #3a3934;
+  }
+
+  .composer-action.voice:hover:not(:disabled):not(.recording) {
+    color: var(--ink);
+    background: rgb(239 238 233 / 74%);
   }
 
   .dialog-button.danger:hover:not(:disabled) {

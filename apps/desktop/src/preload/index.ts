@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { JsonRpcOutgoing } from "@threadlight/protocol";
 
 import {
+  DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
@@ -53,6 +54,9 @@ const api: DesktopApi = {
   },
   openProjectMemory(projectId) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, projectId);
+  },
+  transcribeAudio(request) {
+    return ipcRenderer.invoke(DESKTOP_AUDIO_TRANSCRIBE_CHANNEL, request);
   },
 };
 

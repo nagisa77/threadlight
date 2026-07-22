@@ -38,7 +38,7 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     label: "OpenAI",
     description: "使用 OpenAI Responses API，适合 GPT 系列模型。",
     keyLabel: "OpenAI API Key",
-    keyDescription: "用于 OpenAI 模型请求，通常以 sk- 开头。",
+    keyDescription: "用于 OpenAI 模型请求和语音输入转写，通常以 sk- 开头。",
     defaultModel: "gpt-5.6-sol",
     models: [
       {
@@ -235,18 +235,21 @@ export function SettingsPage({
     setError(undefined);
   }
 
-  function editProviderKey(value: string) {
+  function editProviderSecret(
+    targetProvider: ModelProviderId,
+    value: string,
+  ) {
     setProviderKeys((drafts) => ({
       ...drafts,
-      [provider]: { value, cleared: false },
+      [targetProvider]: { value, cleared: false },
     }));
     markEdited();
   }
 
-  function clearProviderKey() {
+  function clearProviderSecret(targetProvider: ModelProviderId) {
     setProviderKeys((drafts) => ({
       ...drafts,
-      [provider]: { value: "", cleared: true },
+      [targetProvider]: { value: "", cleared: true },
     }));
     markEdited();
   }
@@ -362,7 +365,7 @@ export function SettingsPage({
                   </span>
                   <div>
                     <h3 id="api-title">连接与 API 密钥</h3>
-                    <p>配置 {providerOption.label} 和联网搜索所需的凭据。</p>
+                    <p>配置模型、语音输入和联网搜索所需的凭据。</p>
                   </div>
                 </div>
 
@@ -374,9 +377,20 @@ export function SettingsPage({
                     description={providerOption.keyDescription}
                     configured={providerKeyConfigured(settings, provider)}
                     draft={providerKey}
-                    onChange={editProviderKey}
-                    onClear={clearProviderKey}
+                    onChange={(value) => editProviderSecret(provider, value)}
+                    onClear={() => clearProviderSecret(provider)}
                   />
+                  {provider !== "openai" && (
+                    <SecretField
+                      id="voice-openai-api-key"
+                      label="OpenAI API Key（语音输入）"
+                      description={`仅用于把录音转成文字；当前对话仍使用 ${providerOption.label}。`}
+                      configured={providerKeyConfigured(settings, "openai")}
+                      draft={providerKeys.openai}
+                      onChange={(value) => editProviderSecret("openai", value)}
+                      onClear={() => clearProviderSecret("openai")}
+                    />
+                  )}
                   {provider === "qwen" && (
                     <TextField
                       id="qwen-base-url"

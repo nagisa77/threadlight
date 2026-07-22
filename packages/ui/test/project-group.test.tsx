@@ -1,3 +1,4 @@
+import { ThreadlightClient } from "@threadlight/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,7 +7,35 @@ import {
   hasUserInput,
   ProjectConversationItem,
   ProjectGroup,
+  ThreadlightApp,
 } from "../src/app.js";
+
+describe("ThreadlightApp", () => {
+  it("starts the sidebar with the new task action instead of a brand row", () => {
+    const client = new ThreadlightClient({
+      send: vi.fn(),
+      onMessage: () => () => undefined,
+    });
+    const emptySnapshot = { projects: [] };
+    const projects = {
+      load: vi.fn(async () => emptySnapshot),
+      openFolder: vi.fn(async () => emptySnapshot),
+      activate: vi.fn(async () => emptySnapshot),
+      upsertConversation: vi.fn(async () => emptySnapshot),
+      deleteConversation: vi.fn(async () => emptySnapshot),
+    };
+
+    const html = renderToStaticMarkup(
+      <ThreadlightApp client={client} projects={projects} />,
+    );
+
+    expect(html).toContain(
+      '<div class="window-drag-region"></div><button class="new-thread-button project-row pressable"',
+    );
+    expect(html).not.toContain('class="brand"');
+    client.dispose();
+  });
+});
 
 describe("ProjectGroup", () => {
   it("only treats a session with user input as an established task", () => {

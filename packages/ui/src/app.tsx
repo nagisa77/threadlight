@@ -15,10 +15,12 @@ import {
   FolderOpen,
   FolderPlus,
   LoaderCircle,
+  Mic,
   NotebookText,
   Settings,
   Sparkles,
   SquarePen,
+  Square,
   Terminal,
   Trash2,
   X,
@@ -38,6 +40,13 @@ import {
 import { isNearBottom } from "./scroll.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
 import {
+  MAX_VOICE_AUDIO_BYTES,
+  appendVoiceTranscript,
+  preferredRecordingMimeType,
+  voiceInputErrorMessage,
+  type VoiceInputAdapter,
+} from "./voice-input.js";
+import {
   activeProject,
   type ConversationSummary,
   type ProjectSummary,
@@ -50,7 +59,14 @@ export interface ThreadlightAppProps {
   settings?: SettingsAdapter;
   projects?: ProjectsAdapter;
   memory?: ProjectMemoryAdapter;
+  voiceInput?: VoiceInputAdapter;
 }
+
+type VoiceInputStatus =
+  | "idle"
+  | "requesting"
+  | "recording"
+  | "transcribing";
 
 const suggestions = [
   "解释这个代码库的架构",
@@ -63,6 +79,7 @@ export function ThreadlightApp({
   settings,
   projects,
   memory,
+  voiceInput,
 }: ThreadlightAppProps) {
   const {
     state,
@@ -86,10 +103,37 @@ export function ThreadlightApp({
   }>();
   const [deleteError, setDeleteError] = useState<string>();
   const [deletingConversation, setDeletingConversation] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceInputStatus>("idle");
+  const [voiceError, setVoiceError] = useState<string>();
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
+  const mediaStream = useRef<MediaStream | undefined>(undefined);
+  const recordedChunks = useRef<Blob[]>([]);
+  const voiceOperation = useRef(0);
   const conversation = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const currentProject = activeProject(projectSnapshot);
+
+  const releaseVoiceCapture = useCallback(() => {
+    const recorder = mediaRecorder.current;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      if (recorder.state !== "inactive") recorder.stop();
+    }
+    mediaRecorder.current = undefined;
+    for (const track of mediaStream.current?.getTracks() ?? []) track.stop();
+    mediaStream.current = undefined;
+    recordedChunks.current = [];
+  }, []);
+
+  const cancelVoiceInput = useCallback(() => {
+    voiceOperation.current += 1;
+    releaseVoiceCapture();
+    setVoiceStatus("idle");
+    setVoiceError(undefined);
+  }, [releaseVoiceCapture]);
 
   const connectProject = useCallback(
     async (snapshot: ProjectsSnapshot, preferredThreadId?: string) => {
@@ -132,7 +176,133 @@ export function ThreadlightApp({
     state.approval,
   ]);
 
+  useEffect(
+    () => () => {
+      voiceOperation.current += 1;
+      releaseVoiceCapture();
+    },
+    [releaseVoiceCapture],
+  );
+
+  async function startVoiceInput() {
+    if (!voiceInput || voiceStatus !== "idle") return;
+    const operation = ++voiceOperation.current;
+    setVoiceError(undefined);
+    setVoiceStatus("requesting");
+
+    try {
+      await voiceInput.prepare?.();
+      if (operation !== voiceOperation.current) return;
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("当前环境不支持麦克风录音。");
+      }
+      if (typeof MediaRecorder === "undefined") {
+        throw new Error("当前环境不支持语音输入。");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      if (operation !== voiceOperation.current) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+      mediaStream.current = stream;
+      const mimeType = preferredRecordingMimeType((candidate) =>
+        MediaRecorder.isTypeSupported(candidate),
+      );
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
+      mediaRecorder.current = recorder;
+      recordedChunks.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) recordedChunks.current.push(event.data);
+      };
+      recorder.onerror = () => {
+        if (operation !== voiceOperation.current) return;
+        releaseVoiceCapture();
+        setVoiceStatus("idle");
+        setVoiceError("录音意外中断，请重试。");
+      };
+      recorder.onstop = () => {
+        void finishVoiceInput(recorder, operation);
+      };
+      recorder.start();
+      setVoiceStatus("recording");
+    } catch (error) {
+      if (operation !== voiceOperation.current) return;
+      releaseVoiceCapture();
+      setVoiceStatus("idle");
+      setVoiceError(voiceInputErrorMessage(error));
+    }
+  }
+
+  function stopVoiceInput() {
+    const recorder = mediaRecorder.current;
+    if (!recorder || voiceStatus !== "recording") return;
+    setVoiceStatus("transcribing");
+    if (recorder.state === "inactive") {
+      void finishVoiceInput(recorder, voiceOperation.current);
+    } else {
+      recorder.stop();
+    }
+  }
+
+  async function finishVoiceInput(
+    recorder: MediaRecorder,
+    operation: number,
+  ) {
+    if (
+      !voiceInput ||
+      operation !== voiceOperation.current ||
+      recorder !== mediaRecorder.current
+    ) {
+      return;
+    }
+    setVoiceStatus("transcribing");
+    const chunks = recordedChunks.current;
+    const mimeType = recorder.mimeType || chunks[0]?.type || "audio/webm";
+    mediaRecorder.current = undefined;
+    for (const track of mediaStream.current?.getTracks() ?? []) track.stop();
+    mediaStream.current = undefined;
+    recordedChunks.current = [];
+
+    try {
+      const recording = new Blob(chunks, { type: mimeType });
+      if (recording.size === 0) throw new Error("没有录到声音，请重试。");
+      if (recording.size > MAX_VOICE_AUDIO_BYTES) {
+        throw new Error("录音超过 25 MB，请缩短后重试。");
+      }
+      const transcript = await voiceInput.transcribe({
+        audio: await recording.arrayBuffer(),
+        mimeType,
+      });
+      if (operation !== voiceOperation.current) return;
+      setInput((value) => appendVoiceTranscript(value, transcript));
+      requestAnimationFrame(() => {
+        const element = textarea.current;
+        if (!element) return;
+        element.style.height = "auto";
+        element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+        element.focus();
+      });
+    } catch (error) {
+      if (operation === voiceOperation.current) {
+        setVoiceError(voiceInputErrorMessage(error));
+      }
+    } finally {
+      if (operation === voiceOperation.current) setVoiceStatus("idle");
+    }
+  }
+
   async function submit(value = input) {
+    if (voiceStatus !== "idle") return;
     followOutput.current = true;
     const shouldNameConversation = !hasUserInput(state.messages);
     if (await send(value)) {
@@ -160,7 +330,7 @@ export function ThreadlightApp({
   }
 
   async function createThread() {
-    if (!currentProject) return;
+    if (!currentProject || voiceStatus !== "idle") return;
     setView("thread");
     if (!hasUserInput(state.messages)) {
       textarea.current?.focus();
@@ -170,7 +340,14 @@ export function ThreadlightApp({
   }
 
   async function openProjectFolder() {
-    if (!projects || state.isRunning || switchingProject) return;
+    if (
+      !projects ||
+      state.isRunning ||
+      switchingProject ||
+      voiceStatus !== "idle"
+    ) {
+      return;
+    }
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
@@ -187,7 +364,14 @@ export function ThreadlightApp({
   }
 
   async function selectConversation(projectId: string, threadId?: string) {
-    if (!projects || state.isRunning || switchingProject) return;
+    if (
+      !projects ||
+      state.isRunning ||
+      switchingProject ||
+      voiceStatus !== "idle"
+    ) {
+      return;
+    }
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
@@ -241,10 +425,16 @@ export function ThreadlightApp({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Escape" && voiceStatus === "recording") {
+      event.preventDefault();
+      cancelVoiceInput();
+      return;
+    }
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
-      !event.nativeEvent.isComposing
+      !event.nativeEvent.isComposing &&
+      voiceStatus === "idle"
     ) {
       event.preventDefault();
       void submit();
@@ -255,13 +445,6 @@ export function ThreadlightApp({
     <div className="app-shell">
       <aside className="sidebar">
         <div className="window-drag-region" />
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <span />
-          </span>
-          <span>Threadlight</span>
-        </div>
-
         <button
           className="new-thread-button project-row pressable"
           onClick={() => void createThread()}
@@ -269,7 +452,8 @@ export function ThreadlightApp({
             !currentProject ||
             state.isRunning ||
             state.connection !== "ready" ||
-            switchingProject
+            switchingProject ||
+            voiceStatus !== "idle"
           }
         >
           <SquarePen size={16} />
@@ -288,9 +472,12 @@ export function ThreadlightApp({
                       className={`icon-button pressable ${view === "memory" ? "active" : ""}`}
                       aria-current={view === "memory" ? "page" : undefined}
                       aria-label={`${currentProject.name} 的项目记忆`}
-                      disabled={switchingProject}
+                      disabled={switchingProject || voiceStatus !== "idle"}
                       title={`${currentProject.name} 的项目记忆`}
-                      onClick={() => setView("memory")}
+                      onClick={() => {
+                        cancelVoiceInput();
+                        setView("memory");
+                      }}
                     >
                       <NotebookText size={15} />
                     </button>
@@ -300,7 +487,11 @@ export function ThreadlightApp({
                     type="button"
                     title="通过文件夹打开项目"
                     aria-label="通过文件夹打开项目"
-                    disabled={state.isRunning || switchingProject}
+                    disabled={
+                      state.isRunning ||
+                      switchingProject ||
+                      voiceStatus !== "idle"
+                    }
                     onClick={() => void openProjectFolder()}
                   >
                     <FolderPlus size={15} />
@@ -314,7 +505,11 @@ export function ThreadlightApp({
                     project={project}
                     active={project.id === projectSnapshot.activeProjectId}
                     activeThreadId={state.threadId}
-                    disabled={state.isRunning || switchingProject}
+                    disabled={
+                      state.isRunning ||
+                      switchingProject ||
+                      voiceStatus !== "idle"
+                    }
                     onSelect={(threadId) =>
                       void selectConversation(project.id, threadId)
                     }
@@ -352,7 +547,10 @@ export function ThreadlightApp({
               type="button"
               className={`settings-nav-button pressable ${view === "settings" ? "active" : ""}`}
               aria-current={view === "settings" ? "page" : undefined}
-              onClick={() => setView("settings")}
+              onClick={() => {
+                cancelVoiceInput();
+                setView("settings");
+              }}
             >
               <Settings size={15} />
               设置
@@ -500,21 +698,66 @@ export function ThreadlightApp({
             </section>
 
             <footer className="composer-wrap">
-              <div className="composer">
+              <div
+                className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
+              >
                 <textarea
                   ref={textarea}
                   value={input}
                   rows={1}
-                  placeholder="向 Threadlight 提问…"
+                  placeholder={
+                    voiceStatus === "recording"
+                      ? "正在聆听…"
+                      : "向 Threadlight 提问…"
+                  }
                   disabled={state.connection !== "ready"}
-                  onChange={(event) => setInput(event.target.value)}
+                  onChange={(event) => {
+                    setInput(event.target.value);
+                    setVoiceError(undefined);
+                  }}
                   onKeyDown={handleKeyDown}
                   onInput={(event) => {
                     event.currentTarget.style.height = "auto";
                     event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
                   }}
                   aria-label="消息"
+                  aria-describedby="composer-hint"
                 />
+                {voiceInput && !state.isRunning && (
+                  <button
+                    type="button"
+                    className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
+                    onClick={() => {
+                      if (voiceStatus === "recording") stopVoiceInput();
+                      else void startVoiceInput();
+                    }}
+                    disabled={
+                      state.connection !== "ready" ||
+                      voiceStatus === "requesting" ||
+                      voiceStatus === "transcribing"
+                    }
+                    aria-label={
+                      voiceStatus === "recording"
+                        ? "结束录音"
+                        : voiceStatus === "requesting"
+                          ? "正在请求麦克风权限"
+                        : voiceStatus === "transcribing"
+                          ? "正在转写语音"
+                          : "语音输入"
+                    }
+                    aria-pressed={voiceStatus === "recording"}
+                    title={voiceStatus === "recording" ? "结束录音" : "语音输入"}
+                  >
+                    {voiceStatus === "requesting" ||
+                    voiceStatus === "transcribing" ? (
+                      <LoaderCircle className="spin" size={17} />
+                    ) : voiceStatus === "recording" ? (
+                      <Square size={12} fill="currentColor" strokeWidth={0} />
+                    ) : (
+                      <Mic size={17} />
+                    )}
+                  </button>
+                )}
                 {state.isRunning ? (
                   <button
                     className="composer-action stop pressable"
@@ -528,7 +771,11 @@ export function ThreadlightApp({
                   <button
                     className="composer-action send pressable"
                     onClick={() => void submit()}
-                    disabled={!input.trim() || state.connection !== "ready"}
+                    disabled={
+                      !input.trim() ||
+                      state.connection !== "ready" ||
+                      voiceStatus !== "idle"
+                    }
                     aria-label="发送消息"
                     title="发送"
                   >
@@ -536,7 +783,13 @@ export function ThreadlightApp({
                   </button>
                 )}
               </div>
-              <p className="composer-hint">Enter 发送 · Shift + Enter 换行</p>
+              <p
+                id="composer-hint"
+                className={`composer-hint ${voiceError ? "error" : ""}`}
+                aria-live="polite"
+              >
+                {voiceInputHint(voiceStatus, voiceError)}
+              </p>
             </footer>
           </>
         )}
@@ -1025,6 +1278,17 @@ function connectionLabel(connection: string): string {
   if (connection === "ready") return "运行时已连接";
   if (connection === "error") return "运行时离线";
   return "正在连接";
+}
+
+function voiceInputHint(
+  status: VoiceInputStatus,
+  error?: string,
+): string {
+  if (error) return error;
+  if (status === "requesting") return "正在请求麦克风权限…";
+  if (status === "recording") return "正在聆听 · 点击红色按钮完成 · Esc 取消";
+  if (status === "transcribing") return "正在将语音转成文字…";
+  return "Enter 发送 · Shift + Enter 换行";
 }
 
 function formatArguments(value: unknown): string {

@@ -19,6 +19,10 @@ import {
 import { ProjectMemoryStore } from "@threadlight/project-memory";
 
 import { AppServerProcess } from "./app-server-process.js";
+import {
+  parseAudioTranscriptionRequest,
+  transcribeAudio,
+} from "./audio-transcription.js";
 import { createExternalWindowHandler } from "./external-links.js";
 import {
   DEFAULT_MODEL,
@@ -28,6 +32,7 @@ import {
 } from "./settings-store.js";
 import { ProjectStore } from "./project-store.js";
 import {
+  DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
@@ -72,6 +77,27 @@ function createWindow(): void {
     },
   });
   mainWindow = window;
+
+  window.webContents.session.setPermissionCheckHandler(
+    (webContents, permission, _requestingOrigin, details) =>
+      webContents === window.webContents &&
+      permission === "media" &&
+      details.isMainFrame &&
+      details.mediaType === "audio",
+  );
+  window.webContents.session.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      const mediaTypes =
+        "mediaTypes" in details ? details.mediaTypes : undefined;
+      callback(
+        webContents === window.webContents &&
+          permission === "media" &&
+          details.isMainFrame &&
+          !!mediaTypes?.length &&
+          mediaTypes.every((type) => type === "audio"),
+      );
+    },
+  );
 
   window.webContents.setWindowOpenHandler(
     createExternalWindowHandler((url) => shell.openExternal(url)),
@@ -227,6 +253,19 @@ async function handleProjectMemoryOpen(
   const snapshot = await new ProjectMemoryStore(project.basePath).read();
   const error = await shell.openPath(snapshot.absolutePath);
   if (error) throw new Error(error);
+}
+
+async function handleAudioTranscription(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): Promise<string> {
+  requireTrustedSender(event);
+  if (!settingsStore) throw new Error("Settings are not available");
+  const apiKey = settingsStore.runtimeSettings().openAIApiKey;
+  if (!apiKey) {
+    throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+  }
+  return transcribeAudio(parseAudioTranscriptionRequest(value), { apiKey });
 }
 
 function requireProject(value: unknown) {
@@ -386,6 +425,7 @@ app.whenReady().then(() => {
   );
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_GET_CHANNEL, handleProjectMemoryGet);
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, handleProjectMemoryOpen);
+  ipcMain.handle(DESKTOP_AUDIO_TRANSCRIBE_CHANNEL, handleAudioTranscription);
   createWindow();
 
   app.on("activate", () => {

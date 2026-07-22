@@ -9,6 +9,11 @@ export {
 } from "./session.js";
 export { isNearBottom } from "./scroll.js";
 export { SettingsPage, createSettingsUpdate } from "./settings.js";
+export {
+  appendVoiceTranscript,
+  preferredRecordingMimeType,
+  voiceInputErrorMessage,
+} from "./voice-input.js";
 
 export type { ThreadlightAppProps } from "./app.js";
 export type {
@@ -41,3 +46,4 @@ export type {
   SettingsSnapshot,
   SettingsUpdate,
 } from "./settings.js";
+export type { VoiceInputAdapter, VoiceRecording } from "./voice-input.js";

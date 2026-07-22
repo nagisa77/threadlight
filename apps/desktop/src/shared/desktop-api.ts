@@ -18,6 +18,8 @@ export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
   "threadlight:project-memory:get";
 export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
   "threadlight:project-memory:open";
+export const DESKTOP_AUDIO_TRANSCRIBE_CHANNEL =
+  "threadlight:audio:transcribe";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 
@@ -80,6 +82,11 @@ export interface DesktopProjectMemorySnapshot {
   revision: string;
 }
 
+export interface DesktopAudioTranscriptionRequest {
+  audio: ArrayBuffer;
+  mimeType: string;
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -98,4 +105,7 @@ export interface DesktopApi {
   ): Promise<DesktopProjectsSnapshot>;
   getProjectMemory(projectId: string): Promise<DesktopProjectMemorySnapshot>;
   openProjectMemory(projectId: string): Promise<void>;
+  transcribeAudio(
+    request: DesktopAudioTranscriptionRequest,
+  ): Promise<string>;
 }
