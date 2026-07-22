@@ -1,5 +1,5 @@
 {
-  "name": "@threadlight/builtin-tools",
+  "name": "@threadlight/project-memory",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,5 @@
   },
   "files": [
     "dist"
-  ],
-  "dependencies": {
-    "@threadlight/agent-loop": "0.1.0",
-    "@threadlight/project-memory": "0.1.0"
-  }
+  ]
 }

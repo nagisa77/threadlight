@@ -1250,6 +1250,216 @@ button:disabled {
   text-align: center;
 }
 
+.memory-open-button {
+  display: inline-flex;
+  height: 31px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: #56554e;
+  background: rgb(255 255 255 / 68%);
+  font-size: 10px;
+  font-weight: 610;
+  cursor: pointer;
+}
+
+.memory-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.memory-page {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  padding: 46px 38px 42px;
+}
+
+.memory-intro {
+  margin-bottom: 24px;
+}
+
+.memory-intro h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+
+.memory-intro p {
+  max-width: 620px;
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.memory-loading {
+  display: flex;
+  height: 118px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--muted);
+  background: rgb(255 255 255 / 52%);
+  font-size: 12px;
+}
+
+.memory-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  border: 1px solid #e6c7c3;
+  border-radius: 9px;
+  color: var(--danger);
+  background: #fbf1ef;
+}
+
+.memory-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.memory-error strong {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.memory-error p {
+  margin: 3px 0 0;
+  color: #856a66;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.memory-retry-button {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: white;
+  font-size: 11px;
+  font-weight: 610;
+  cursor: pointer;
+}
+
+.memory-document {
+  overflow: hidden;
+  border: 1px solid rgb(207 205 196 / 82%);
+  border-radius: 13px;
+  background: rgb(255 255 255 / 76%);
+  box-shadow:
+    0 1px 2px rgb(31 30 27 / 3%),
+    0 12px 38px rgb(56 49 42 / 4%);
+}
+
+.memory-document-toolbar {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 10px 7px 14px;
+  border-bottom: 1px solid rgb(223 222 215 / 82%);
+  background: rgb(245 244 239 / 72%);
+}
+
+.memory-file-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: #5b5a53;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.memory-file-label svg {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.memory-file-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-document-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.memory-mode-switch {
+  display: flex;
+  padding: 2px;
+  border: 1px solid #dad8d0;
+  border-radius: 7px;
+  background: #ebeae5;
+}
+
+.memory-mode-switch button {
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 9px;
+  font-weight: 610;
+  cursor: pointer;
+}
+
+.memory-mode-switch button[aria-selected="true"] {
+  color: var(--ink);
+  background: white;
+  box-shadow: 0 1px 2px rgb(31 30 27 / 10%);
+}
+
+.memory-refresh-button {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.memory-document-body {
+  min-height: 380px;
+  padding: 30px 32px 36px;
+}
+
+.memory-document-body .markdown-content {
+  font-size: 12px;
+  line-height: 1.75;
+}
+
+.memory-source {
+  margin: 0;
+  overflow-x: auto;
+  color: #4f4e47;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .settings-header p {
   font-family: inherit;
   font-size: 10px;
@@ -1601,6 +1811,8 @@ button:disabled {
   .new-thread-button:hover,
   .secondary:hover,
   .settings-nav-button:hover,
+  .memory-open-button:hover:not(:disabled),
+  .memory-retry-button:hover,
   .project-row:hover:not(:disabled) {
     border-color: #bab7ad;
     background: #fff;
@@ -1608,6 +1820,7 @@ button:disabled {
 
 
   .icon-button:hover:not(:disabled),
+  .memory-refresh-button:hover:not(:disabled),
   .project-conversations .thread-item:hover {
     color: var(--ink);
     background: rgb(255 255 255 / 72%);
@@ -1676,6 +1889,10 @@ button:disabled {
   }
 
   .settings-page {
+    padding-inline: 28px;
+  }
+
+  .memory-page {
     padding-inline: 28px;
   }
 }

@@ -9,6 +9,7 @@
   "references": [
     { "path": "../agent-loop" },
     { "path": "../builtin-tools" },
+    { "path": "../project-memory" },
     { "path": "../protocol" }
   ],
   "include": [

@@ -14,6 +14,10 @@ export const DESKTOP_CONVERSATION_UPSERT_CHANNEL =
   "threadlight:conversation:upsert";
 export const DESKTOP_CONVERSATION_DELETE_CHANNEL =
   "threadlight:conversation:delete";
+export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
+  "threadlight:project-memory:get";
+export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
+  "threadlight:project-memory:open";
 
 export interface DesktopSettingsSnapshot {
   openAIApiKeyConfigured: boolean;
@@ -58,6 +62,12 @@ export interface DesktopConversationTarget {
   id: string;
 }
 
+export interface DesktopProjectMemorySnapshot {
+  path: string;
+  content: string;
+  revision: string;
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -74,4 +84,6 @@ export interface DesktopApi {
   deleteConversation(
     target: DesktopConversationTarget,
   ): Promise<DesktopProjectsSnapshot>;
+  getProjectMemory(projectId: string): Promise<DesktopProjectMemorySnapshot>;
+  openProjectMemory(projectId: string): Promise<void>;
 }

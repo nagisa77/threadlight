@@ -1,6 +1,7 @@
 export { ThreadlightApp } from "./app.js";
 export { activeProject } from "./projects.js";
 export { MarkdownContent } from "./markdown.js";
+export { MemoryDocument, ProjectMemoryPage } from "./memory.js";
 export {
   initialSessionState,
   sessionReducer,
@@ -19,6 +20,10 @@ export type {
   ProjectsSnapshot,
 } from "./projects.js";
 export type { MarkdownContentProps } from "./markdown.js";
+export type {
+  ProjectMemoryAdapter,
+  ProjectMemorySnapshot,
+} from "./memory.js";
 export type {
   ConversationMessage,
   PendingApproval,

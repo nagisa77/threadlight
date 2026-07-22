@@ -15,6 +15,7 @@ import {
   FolderOpen,
   FolderPlus,
   LoaderCircle,
+  NotebookText,
   Plus,
   Settings,
   Sparkles,
@@ -29,6 +30,10 @@ import {
   type ToolActivity,
 } from "./session.js";
 import { MarkdownContent } from "./markdown.js";
+import {
+  ProjectMemoryPage,
+  type ProjectMemoryAdapter,
+} from "./memory.js";
 import { isNearBottom } from "./scroll.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
 import {
@@ -43,6 +48,7 @@ export interface ThreadlightAppProps {
   client: ThreadlightClient;
   settings?: SettingsAdapter;
   projects?: ProjectsAdapter;
+  memory?: ProjectMemoryAdapter;
 }
 
 const suggestions = [
@@ -55,6 +61,7 @@ export function ThreadlightApp({
   client,
   settings,
   projects,
+  memory,
 }: ThreadlightAppProps) {
   const {
     state,
@@ -66,7 +73,7 @@ export function ThreadlightApp({
     interrupt,
     resolveApproval,
   } = useThreadlightSession(client, { autoConnect: !projects });
-  const [view, setView] = useState<"thread" | "settings">("thread");
+  const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
   const [input, setInput] = useState("");
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
@@ -318,6 +325,19 @@ export function ThreadlightApp({
         </nav>
 
         <div className="sidebar-footer">
+          {memory && currentProject && (
+            <button
+              type="button"
+              className={`settings-nav-button pressable ${view === "memory" ? "active" : ""}`}
+              aria-current={view === "memory" ? "page" : undefined}
+              disabled={switchingProject}
+              title={`${currentProject.name} 的项目记忆`}
+              onClick={() => setView("memory")}
+            >
+              <NotebookText size={15} />
+              项目记忆
+            </button>
+          )}
           {settings && (
             <button
               type="button"
@@ -344,7 +364,13 @@ export function ThreadlightApp({
       </aside>
 
       <main className="workspace">
-        {view === "settings" && settings ? (
+        {view === "memory" && memory && currentProject ? (
+          <ProjectMemoryPage
+            adapter={memory}
+            projectId={currentProject.id}
+            projectName={currentProject.name}
+          />
+        ) : view === "settings" && settings ? (
           <SettingsPage
             adapter={settings}
             onRuntimeRestart={reconnectRuntime}

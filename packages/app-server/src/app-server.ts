@@ -423,15 +423,26 @@ function updateActivities(
   );
   if (!activity) return;
   activity.status = event.result.isError ? "failed" : "completed";
-  if (activity.name !== "exec_command") {
+  if (
+    activity.name !== "exec_command" &&
+    activity.name !== "project_memory"
+  ) {
     activity.detail = truncate(event.result.output);
   }
 }
 
 function toolDetail(name: string, arguments_: unknown): string | undefined {
-  if (name !== "exec_command" || !isObject(arguments_)) return;
-  const command = arguments_.command;
-  return typeof command === "string" ? `$ ${command}` : undefined;
+  if (!isObject(arguments_)) return;
+  if (name === "exec_command") {
+    const command = arguments_.command;
+    return typeof command === "string" ? `$ ${command}` : undefined;
+  }
+  if (name === "project_memory") {
+    return arguments_.action === "write"
+      ? "Update .threadlight/MEMORY.md"
+      : "Read .threadlight/MEMORY.md";
+  }
+  return;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

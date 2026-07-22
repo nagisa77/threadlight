@@ -5,7 +5,8 @@ Threadlight 是一个小而清晰的 TypeScript Agent Runtime：让模型的每�
 它包含以下模块和应用：
 
 - `@threadlight/agent-loop`：模型调用、工具循环、审批钩子、取消、事件和会话状态。
-- `@threadlight/builtin-tools`：内置的命令执行和互联网搜索工具。
+- `@threadlight/project-memory`：项目记忆的安全路径、原子 Markdown 存储和版本校验。
+- `@threadlight/builtin-tools`：内置的项目记忆、命令执行和互联网搜索工具。
 - `@threadlight/protocol`：客户端与 app-server 共享的 JSON-RPC 类型。
 - `@threadlight/app-server`：JSON-RPC 2.0、thread/turn 管理、项目内会话持久化、流式事件、审批恢复和 stdio transport。
 - `@threadlight/client`：transport-neutral 的类型安全客户端、请求关联和事件订阅。
@@ -77,6 +78,17 @@ Threadlight JSON-RPC bridge；app-server 作为独立子进程运行。
 `.threadlight/conversations/<threadId>.json`。切换项目时桌面端会以该项目的 base
 路径重启 app-server；空白会话不会进入任务列表或写入会话文件，首次输入后才会保存
 为任务。`.threadlight/` 默认应被项目的版本控制忽略。
+
+## 项目记忆
+
+每个项目的长期记忆保存在明文 `.threadlight/MEMORY.md`。文件会在运行时或首次查看时自动创建，用户可以在桌面端查看渲染结果、核对 Markdown 源码，或用默认编辑器打开。
+
+Threadlight 在创建新任务时把记忆作为上下文快照载入；已有任务不会被外部编辑悄悄改变。agent 通过 provider-neutral 的 `project_memory` 工具先读后写，写入时携带 revision，因此并发修改不会静默覆盖。工具写入限制为 25,000 字符，并遵循以下约定：
+
+- 只保留跨任务仍然有用的项目事实、架构决定、约定、命令和已验证的坑。
+- 内容保持简短、具体、可验证；修改已有条目，避免重复堆积。
+- 不记录密钥、临时任务状态、聊天转录或未经验证的推测。
+- 记忆是辅助上下文，不会覆盖 `AGENTS.md` 等项目指令；可能过期的事实仍需对照工作区验证。
 
 ## 开始使用
 

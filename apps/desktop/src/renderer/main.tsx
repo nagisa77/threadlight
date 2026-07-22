@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { ThreadlightClient } from "@threadlight/client";
 import {
   ThreadlightApp,
+  type ProjectMemoryAdapter,
   type ProjectsAdapter,
   type SettingsAdapter,
 } from "@threadlight/ui";
@@ -24,10 +25,19 @@ const projects: ProjectsAdapter = {
   deleteConversation: (target) =>
     window.threadlightDesktop.deleteConversation(target),
 };
+const memory: ProjectMemoryAdapter = {
+  load: (projectId) => window.threadlightDesktop.getProjectMemory(projectId),
+  open: (projectId) => window.threadlightDesktop.openProjectMemory(projectId),
+};
 const root = document.getElementById("root");
 
 if (!root) throw new Error("Missing root element");
 
 createRoot(root).render(
-  <ThreadlightApp client={client} settings={settings} projects={projects} />,
+  <ThreadlightApp
+    client={client}
+    settings={settings}
+    projects={projects}
+    memory={memory}
+  />,
 );

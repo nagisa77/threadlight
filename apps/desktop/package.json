@@ -7,11 +7,13 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build",
+    "icon:render": "electron scripts/render-app-icon.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@threadlight/client": "0.1.0",
+    "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0",
     "@threadlight/ui": "0.1.0",
     "react": "^19.2.7",

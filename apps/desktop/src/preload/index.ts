@@ -6,6 +6,8 @@ import {
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
+  DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
+  DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
   DESKTOP_PROJECTS_GET_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
@@ -45,6 +47,12 @@ const api: DesktopApi = {
   },
   deleteConversation(target) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_DELETE_CHANNEL, target);
+  },
+  getProjectMemory(projectId) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_MEMORY_GET_CHANNEL, projectId);
+  },
+  openProjectMemory(projectId) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, projectId);
   },
 };
 

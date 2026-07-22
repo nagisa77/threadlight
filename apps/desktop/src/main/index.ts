@@ -16,6 +16,7 @@ import {
   type JsonRpcRequest,
   type ThreadlightMethod,
 } from "@threadlight/protocol";
+import { ProjectMemoryStore } from "@threadlight/project-memory";
 
 import { AppServerProcess } from "./app-server-process.js";
 import { createExternalWindowHandler } from "./external-links.js";
@@ -26,6 +27,8 @@ import {
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
+  DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
+  DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
   DESKTOP_PROJECTS_GET_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
@@ -40,6 +43,10 @@ let mainWindow: BrowserWindow | null = null;
 let appServer: AppServerProcess | null = null;
 let settingsStore: SettingsStore | null = null;
 let projectStore: ProjectStore | null = null;
+const appIconPath = resolve(
+  import.meta.dirname,
+  "../../resources/app-icon.png",
+);
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -49,6 +56,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     title: "Threadlight",
+    icon: appIconPath,
     backgroundColor: "#f7f6f2",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -186,6 +194,39 @@ function handleConversationDelete(event: IpcMainInvokeEvent, value: unknown) {
   return projectStore.deleteConversation(parseConversationTarget(value));
 }
 
+async function handleProjectMemoryGet(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const project = requireProject(value);
+  const snapshot = await new ProjectMemoryStore(project.basePath).read();
+  return {
+    path: snapshot.path,
+    content: snapshot.content,
+    revision: snapshot.revision,
+  };
+}
+
+async function handleProjectMemoryOpen(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): Promise<void> {
+  requireTrustedSender(event);
+  const project = requireProject(value);
+  const snapshot = await new ProjectMemoryStore(project.basePath).read();
+  const error = await shell.openPath(snapshot.absolutePath);
+  if (error) throw new Error(error);
+}
+
+function requireProject(value: unknown) {
+  if (!projectStore) throw new Error("Projects are not available");
+  if (typeof value !== "string" || !value) throw new Error("Invalid project id");
+  const project = projectStore.project(value);
+  if (!project) throw new Error(`Unknown project: ${value}`);
+  return project;
+}
+
 function requireTrustedSender(event: IpcMainInvokeEvent): void {
   if (
     !mainWindow ||
@@ -274,6 +315,8 @@ function extractId(value: unknown): string | number | null | undefined {
 }
 
 app.whenReady().then(() => {
+  if (process.platform === "darwin") app.dock?.setIcon(appIconPath);
+
   const threadlightHome =
     process.env.THREADLIGHT_HOME ?? join(app.getPath("home"), ".threadlight");
   settingsStore = new SettingsStore(
@@ -301,6 +344,8 @@ app.whenReady().then(() => {
     DESKTOP_CONVERSATION_DELETE_CHANNEL,
     handleConversationDelete,
   );
+  ipcMain.handle(DESKTOP_PROJECT_MEMORY_GET_CHANNEL, handleProjectMemoryGet);
+  ipcMain.handle(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, handleProjectMemoryOpen);
   createWindow();
 
   app.on("activate", () => {

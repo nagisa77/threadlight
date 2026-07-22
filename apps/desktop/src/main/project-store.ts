@@ -160,6 +160,10 @@ export class ProjectStore {
     );
   }
 
+  project(projectId: string): DesktopProject | undefined {
+    return this.snapshot().projects.find((project) => project.id === projectId);
+  }
+
   private read(): StoredProjectMap {
     let source: string;
     try {
