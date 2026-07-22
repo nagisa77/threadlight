@@ -1,8 +1,12 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { defineTool, type Tool } from "@threadlight/agent-loop";
+
+import {
+  ProcessManager,
+  type ManagedProcessSnapshot,
+} from "./process-manager.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_TIMEOUT_MS = 120_000;
@@ -17,16 +21,11 @@ export interface ExecCommandToolOptions {
   shell?: string;
   environment?: NodeJS.ProcessEnv;
   needsApproval?: Tool["needsApproval"];
+  processManager?: ProcessManager;
 }
 
-export interface ExecCommandResult {
-  cwd: string;
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
+export interface ExecCommandResult extends ManagedProcessSnapshot {
   timedOut: boolean;
-  stdout: string;
-  stderr: string;
-  truncated: boolean;
 }
 
 interface ExecCommandArguments {
@@ -51,6 +50,7 @@ export function createExecCommandTool(
     options.maxOutputChars ?? DEFAULT_MAX_OUTPUT_CHARS,
     "maxOutputChars",
   );
+  const processManager = options.processManager ?? new ProcessManager();
 
   if (defaultTimeoutMs > maxTimeoutMs) {
     throw new Error("defaultTimeoutMs cannot exceed maxTimeoutMs");
@@ -77,7 +77,8 @@ export function createExecCommandTool(
           type: ["integer", "null"],
           minimum: 1,
           maximum: maxTimeoutMs,
-          description: "Optional command timeout in milliseconds.",
+          description:
+            "How long to wait before returning a managed process session.",
         },
       },
       required: ["command", "cwd", "timeout_ms"],
@@ -92,11 +93,23 @@ export function createExecCommandTool(
         options.allowOutsideWorkspace ?? false,
       );
 
-      return runCommand(parsed.command, cwd, parsed.timeout_ms, context.signal, {
+      const sessionId = processManager.start(parsed.command, {
+        cwd,
         shell: options.shell,
         environment: options.environment ?? safeEnvironment(),
         maxOutputChars,
       });
+      try {
+        const result = await processManager.wait(
+          sessionId,
+          parsed.timeout_ms,
+          context.signal,
+        );
+        return { ...result, timedOut: result.status === "running" };
+      } catch (error) {
+        await processManager.kill(sessionId);
+        throw error;
+      }
     },
   });
 }
@@ -162,139 +175,6 @@ function isWithin(root: string, candidate: string): boolean {
     path === "" ||
     (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path))
   );
-}
-
-interface RunCommandOptions {
-  shell?: string;
-  environment: NodeJS.ProcessEnv;
-  maxOutputChars: number;
-}
-
-async function runCommand(
-  command: string,
-  cwd: string,
-  timeoutMs: number,
-  signal: AbortSignal,
-  options: RunCommandOptions,
-): Promise<ExecCommandResult> {
-  signal.throwIfAborted();
-
-  const invocation = shellInvocation(command, options.shell);
-  const child = spawn(invocation.file, invocation.arguments, {
-    cwd,
-    env: options.environment,
-    stdio: ["ignore", "pipe", "pipe"],
-    detached: process.platform !== "win32",
-  });
-
-  let stdout = "";
-  let stderr = "";
-  let remaining = options.maxOutputChars;
-  let truncated = false;
-  let timedOut = false;
-  let forceKillTimer: NodeJS.Timeout | undefined;
-
-  const capture = (target: "stdout" | "stderr", chunk: string): void => {
-    if (remaining === 0) {
-      truncated = true;
-      return;
-    }
-
-    const captured = chunk.slice(0, remaining);
-    remaining -= captured.length;
-    truncated ||= captured.length < chunk.length;
-    if (target === "stdout") stdout += captured;
-    else stderr += captured;
-  };
-
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => capture("stdout", chunk));
-  child.stderr.on("data", (chunk: string) => capture("stderr", chunk));
-
-  return new Promise<ExecCommandResult>((resolvePromise, reject) => {
-    let settled = false;
-
-    const cleanup = (): void => {
-      clearTimeout(timeout);
-      if (forceKillTimer) clearTimeout(forceKillTimer);
-      signal.removeEventListener("abort", handleAbort);
-    };
-
-    const finish = (
-      error: unknown,
-      result?: ExecCommandResult,
-    ): void => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      if (error !== undefined) reject(error);
-      else resolvePromise(result as ExecCommandResult);
-    };
-
-    const terminate = (): void => {
-      terminateProcess(child, "SIGTERM");
-      forceKillTimer = setTimeout(() => terminateProcess(child, "SIGKILL"), 1_000);
-      forceKillTimer.unref();
-    };
-
-    const handleAbort = (): void => terminate();
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      terminate();
-    }, timeoutMs);
-    timeout.unref();
-
-    signal.addEventListener("abort", handleAbort, { once: true });
-    if (signal.aborted) handleAbort();
-
-    child.once("error", (error) => finish(error));
-    child.once("close", (exitCode, exitSignal) => {
-      if (signal.aborted) {
-        finish(signal.reason ?? new Error("Command aborted"));
-        return;
-      }
-
-      finish(undefined, {
-        cwd,
-        exitCode,
-        signal: exitSignal,
-        timedOut,
-        stdout,
-        stderr,
-        truncated,
-      });
-    });
-  });
-}
-
-function shellInvocation(
-  command: string,
-  configuredShell: string | undefined,
-): { file: string; arguments: string[] } {
-  if (process.platform === "win32") {
-    return {
-      file: configuredShell ?? process.env.ComSpec ?? "cmd.exe",
-      arguments: ["/d", "/s", "/c", command],
-    };
-  }
-
-  return {
-    file: configuredShell ?? "/bin/sh",
-    arguments: ["-c", command],
-  };
-}
-
-function terminateProcess(child: ChildProcess, signal: NodeJS.Signals): void {
-  if (child.pid === undefined) return;
-
-  try {
-    if (process.platform === "win32") child.kill(signal);
-    else process.kill(-child.pid, signal);
-  } catch {
-    child.kill(signal);
-  }
 }
 
 function safeEnvironment(): NodeJS.ProcessEnv {

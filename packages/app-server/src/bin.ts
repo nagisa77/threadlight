@@ -6,8 +6,13 @@ import {
 } from "@threadlight/agent-loop";
 import {
   createExecCommandTool,
+  createProcessKillTool,
+  createProcessReadTool,
+  createProcessStatusTool,
+  createProcessWaitTool,
   createProjectMemoryTool,
   createWebSearchTool,
+  ProcessManager,
 } from "@threadlight/builtin-tools";
 import { ProjectMemoryStore } from "@threadlight/project-memory";
 import { resolve } from "node:path";
@@ -29,12 +34,18 @@ const provider = new OpenAIResponsesProvider({
 const loop = new AgentLoop(provider);
 const workspaceRoot = process.cwd();
 const projectMemory = new ProjectMemoryStore(workspaceRoot);
+const processManager = new ProcessManager();
 await projectMemory.ensure();
 const tools = [
   createProjectMemoryTool({ store: projectMemory }),
   createExecCommandTool({
     workspaceRoot,
+    processManager,
   }),
+  createProcessStatusTool({ processManager }),
+  createProcessReadTool({ processManager }),
+  createProcessWaitTool({ processManager }),
+  createProcessKillTool({ processManager }),
 ];
 
 if (process.env.BRAVE_SEARCH_API_KEY) {
@@ -52,7 +63,7 @@ if (process.env.BRAVE_SEARCH_API_KEY) {
 const agentFactory = createWorkspaceAgentFactory({
   workspaceRoot,
   baseInstructions:
-    "Answer directly. Before each group of tool calls, briefly tell the user what you are about to do in the same response; keep it concrete and never return tool calls silently. Follow the supplied workspace instructions and use the project context before answering or acting. Use tools when they provide evidence needed for the task. Project memory is durable context, not an enforcement layer. When the user explicitly asks you to remember a project fact, or you discover a stable project-specific fact that will materially help future tasks, update .threadlight/MEMORY.md with project_memory. Read it immediately before writing, revise stale or duplicate entries, keep it concise and specific, and never store secrets, transient task state, chat transcripts, or unverified assumptions.",
+    "Answer directly. Before each group of tool calls, briefly tell the user what you are about to do in the same response; keep it concrete and never return tool calls silently. Follow the supplied workspace instructions and use the project context before answering or acting. Use tools when they provide evidence needed for the task. exec_command returns an opaque sessionId when a command is still running; use process_status, process_read, process_wait, and process_kill to manage it, and never construct shell background jobs or manage operating-system PIDs directly. Project memory is durable context, not an enforcement layer. When the user explicitly asks you to remember a project fact, or you discover a stable project-specific fact that will materially help future tasks, update .threadlight/MEMORY.md with project_memory. Read it immediately before writing, revise stale or duplicate entries, keep it concise and specific, and never store secrets, transient task state, chat transcripts, or unverified assumptions.",
   tools,
 });
 
@@ -64,6 +75,7 @@ const server = new AppServer({
   conversationStore: new FileConversationStore(
     resolve(workspaceRoot, ".threadlight", "conversations"),
   ),
+  processes: processManager,
   autoApproveAll: process.env.THREADLIGHT_AUTO_APPROVE === "1",
 });
 
@@ -72,3 +84,9 @@ serveJsonLines(server, process.stdin, (error) => {
 });
 
 process.stderr.write("Threadlight app-server is listening on stdio\n");
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void processManager.dispose().finally(() => process.exit(0));
+  });
+}

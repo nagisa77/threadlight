@@ -10,7 +10,11 @@ export {
   renderWorkspaceContext,
 } from "./workspace-context.js";
 
-export type { AgentFactory, AppServerOptions } from "./app-server.js";
+export type {
+  AgentFactory,
+  AppServerOptions,
+  ProcessController,
+} from "./app-server.js";
 export type {
   ConversationStore,
   StoredConversation,
@@ -28,5 +32,6 @@ export type {
   JsonRpcOutgoing,
   JsonRpcRequest,
   JsonRpcResponse,
+  ProcessSnapshotData,
   SendMessage,
 } from "./protocol.js";

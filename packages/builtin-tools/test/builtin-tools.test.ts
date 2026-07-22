@@ -13,6 +13,13 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { createExecCommandTool } from "../src/exec-command.js";
+import { ProcessManager } from "../src/process-manager.js";
+import {
+  createProcessKillTool,
+  createProcessReadTool,
+  createProcessStatusTool,
+  createProcessWaitTool,
+} from "../src/process-tools.js";
 import { createWebSearchTool } from "../src/web-search.js";
 
 class ScriptedToolProvider implements ModelProvider {
@@ -28,6 +35,93 @@ class ScriptedToolProvider implements ModelProvider {
 
     return {
       text: request.toolResults?.[0]?.output ?? "missing tool result",
+      toolCalls: [],
+    };
+  }
+}
+
+class ScriptedProcessProvider implements ModelProvider {
+  readonly requests: ModelRequest[] = [];
+
+  constructor(private readonly command: string) {}
+
+  async generate(request: ModelRequest): Promise<ModelTurn> {
+    this.requests.push(request);
+    if (this.requests.length === 1) {
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_exec",
+            name: "exec_command",
+            arguments: { command: this.command, cwd: null, timeout_ms: 80 },
+          },
+        ],
+      };
+    }
+
+    const process = JSON.parse(request.toolResults?.[0]?.output ?? "{}") as {
+      sessionId?: string;
+      status?: string;
+      timedOut?: boolean;
+    };
+    if (!process.sessionId) throw new Error("missing managed process session");
+
+    if (this.requests.length === 2) {
+      expect(process).toMatchObject({ status: "running", timedOut: true });
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_status",
+            name: "process_status",
+            arguments: { session_id: process.sessionId },
+          },
+        ],
+      };
+    }
+    if (this.requests.length === 3) {
+      expect(process.status).toBe("running");
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_read",
+            name: "process_read",
+            arguments: { session_id: process.sessionId },
+          },
+        ],
+      };
+    }
+    if (this.requests.length === 4) {
+      expect(process.status).toBe("running");
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_wait",
+            name: "process_wait",
+            arguments: { session_id: process.sessionId, timeout_ms: 20 },
+          },
+        ],
+      };
+    }
+    if (this.requests.length === 5) {
+      expect(process.status).toBe("running");
+      return {
+        text: "",
+        toolCalls: [
+          {
+            id: "call_kill",
+            name: "process_kill",
+            arguments: { session_id: process.sessionId },
+          },
+        ],
+      };
+    }
+
+    return {
+      text: JSON.stringify(process),
       toolCalls: [],
     };
   }
@@ -96,6 +190,58 @@ describe("builtin tools", () => {
         { runId: "run_1", signal: new AbortController().signal },
       ),
     ).rejects.toThrow("cwd must stay within the configured workspace root");
+  });
+
+  it("returns an opaque session and manages it through process tools", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-process-"));
+    const processManager = new ProcessManager({
+      createSessionId: () => "session_opaque_1",
+    });
+    const command = `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+      "process.stdout.write('started\\n'); setInterval(() => {}, 1000)",
+    )}`;
+    const provider = new ScriptedProcessProvider(command);
+    const tools = [
+      createExecCommandTool({
+        workspaceRoot,
+        defaultTimeoutMs: 20,
+        maxTimeoutMs: 1_000,
+        processManager,
+      }),
+      createProcessStatusTool({ processManager }),
+      createProcessReadTool({ processManager }),
+      createProcessWaitTool({ processManager }),
+      createProcessKillTool({ processManager }),
+    ];
+    let approvals = 0;
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "managed-process-test",
+        instructions: "Use managed process tools",
+        tools,
+      }),
+      "Run a managed command",
+      {
+        async approve() {
+          approvals += 1;
+          return true;
+        },
+      },
+    );
+
+    expect(approvals).toBe(2);
+    expect(JSON.parse(result.output)).toMatchObject({
+      sessionId: "session_opaque_1",
+      status: "terminated",
+      stdout: "started\n",
+    });
+    await expect(
+      tools[3]?.execute(
+        { session_id: "session_opaque_1", timeout_ms: 50 },
+        { runId: "wait_after_kill", signal: new AbortController().signal },
+      ),
+    ).resolves.toMatchObject({ status: "terminated" });
   });
 
   it("searches through an injected fetch and returns results to the model", async () => {

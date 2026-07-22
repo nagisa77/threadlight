@@ -176,6 +176,64 @@ describe("sessionReducer", () => {
     expect(state.progress[0]?.activities[0]?.detail).toBe("search result");
   });
 
+  it("tracks managed command output and a user-terminated state", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: {
+        type: "tool.started",
+        runId: "run-1",
+        call: {
+          id: "call-1",
+          name: "exec_command",
+          arguments: { command: "sleep 1000" },
+        },
+      },
+    });
+    const running = {
+      sessionId: "session-1",
+      command: "sleep 1000",
+      cwd: "/workspace",
+      status: "running" as const,
+      exitCode: null,
+      signal: null,
+      stdout: "started\n",
+      stderr: "",
+      truncated: false,
+      startedAt: "2026-07-22T08:00:00.000Z",
+    };
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "call-1",
+          name: "exec_command",
+          output: JSON.stringify({ ...running, timedOut: true }),
+        },
+      },
+    });
+
+    expect(state.progress[0]?.activities[0]).toMatchObject({
+      status: "running",
+      process: { sessionId: "session-1", stdout: "started\n" },
+    });
+
+    state = sessionReducer(state, {
+      type: "process.updated",
+      process: {
+        ...running,
+        status: "terminated",
+        signal: "SIGTERM",
+        completedAt: "2026-07-22T08:00:01.000Z",
+      },
+    });
+    expect(state.progress[0]?.activities[0]).toMatchObject({
+      status: "terminated",
+      process: { status: "terminated", signal: "SIGTERM" },
+    });
+  });
+
   it("keeps model commentary before every multi-tool batch", () => {
     let state = sessionReducer(initialSessionState, {
       type: "agent.event",

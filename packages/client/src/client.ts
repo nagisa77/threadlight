@@ -109,6 +109,22 @@ export class ThreadlightClient {
     return this.request("turn/interrupt", { threadId });
   }
 
+  processStatus(sessionId: string) {
+    return this.request("process/status", { sessionId });
+  }
+
+  readProcess(sessionId: string) {
+    return this.request("process/read", { sessionId });
+  }
+
+  waitForProcess(sessionId: string, timeoutMs?: number) {
+    return this.request("process/wait", { sessionId, timeoutMs });
+  }
+
+  killProcess(sessionId: string) {
+    return this.request("process/kill", { sessionId });
+  }
+
   resolveApproval(requestId: string, approved: boolean) {
     return this.request("approval/resolve", { requestId, approved });
   }

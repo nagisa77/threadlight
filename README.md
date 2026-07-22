@@ -108,7 +108,9 @@ export BRAVE_SEARCH_API_KEY="..."
 npm start
 ```
 
-默认注册 `exec_command`；它在执行前会请求客户端审批。设置
+默认注册 `exec_command`；它在执行前会请求客户端审批。命令在等待时限内未结束时
+会继续作为受管进程运行并返回不透明 `sessionId`，可通过 `process_status`、
+`process_read`、`process_wait` 和 `process_kill` 查询输出、等待或终止。设置
 `BRAVE_SEARCH_API_KEY` 后还会注册基于 Brave Search API 的 `web_search`。
 
 app-server 使用 stdout 发送 JSONL 协议消息，日志只写入 stderr。启动后可以逐行发送：
@@ -159,6 +161,10 @@ console.log(result.output);
 - `thread/delete`
 - `turn/start`
 - `turn/interrupt`
+- `process/status`
+- `process/read`
+- `process/wait`
+- `process/kill`
 - `approval/resolve`
 
 运行期间使用 `agent/event` 通知转发 Agent Loop 事件。每次模型调用后会发送
@@ -172,7 +178,7 @@ model state 更新的提交边界；opaque model state 不会写入事件。
 这是有意保持精简的第一版：
 
 - 文件会话存储由 app-server 注入，默认 CLI 使用项目内存储；`agent-loop` 不感知文件路径或存储格式。
-- `exec_command` 会限制工作目录、执行时间和输出大小，并默认要求审批；它不是操作系统 sandbox，获批的命令仍拥有当前用户权限。
+- `exec_command` 会限制工作目录、前台等待时间和输出大小，并默认要求审批；超出等待时间的命令由进程会话继续托管。它不是操作系统 sandbox，获批的命令仍拥有当前用户权限。
 - `web_search` 使用 Brave Search API，密钥只从运行时配置注入。
 - stdio transport 已与核心协议解耦，之后可以增加 WebSocket。
 

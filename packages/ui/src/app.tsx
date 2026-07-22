@@ -16,9 +16,9 @@ import {
   FolderPlus,
   LoaderCircle,
   NotebookText,
-  Plus,
   Settings,
   Sparkles,
+  SquarePen,
   Terminal,
   Trash2,
   X,
@@ -72,6 +72,7 @@ export function ThreadlightApp({
     deleteThread,
     send,
     interrupt,
+    terminateProcess,
     resolveApproval,
   } = useThreadlightSession(client, { autoConnect: !projects });
   const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
@@ -262,7 +263,7 @@ export function ThreadlightApp({
         </div>
 
         <button
-          className="new-thread-button pressable"
+          className="new-thread-button project-row pressable"
           onClick={() => void createThread()}
           disabled={
             !currentProject ||
@@ -271,8 +272,8 @@ export function ThreadlightApp({
             switchingProject
           }
         >
-          <Plus size={15} strokeWidth={2.2} />
-          新建任务
+          <SquarePen size={16} />
+          <span>新建任务</span>
         </button>
 
         <nav className="thread-list" aria-label="项目与任务列表">
@@ -280,16 +281,31 @@ export function ThreadlightApp({
             <>
               <div className="project-list-heading">
                 <p className="section-label">项目</p>
-                <button
-                  className="icon-button pressable"
-                  type="button"
-                  title="通过文件夹打开项目"
-                  aria-label="通过文件夹打开项目"
-                  disabled={state.isRunning || switchingProject}
-                  onClick={() => void openProjectFolder()}
-                >
-                  <FolderPlus size={15} />
-                </button>
+                <div className="project-heading-actions">
+                  {memory && currentProject && (
+                    <button
+                      type="button"
+                      className={`icon-button pressable ${view === "memory" ? "active" : ""}`}
+                      aria-current={view === "memory" ? "page" : undefined}
+                      aria-label={`${currentProject.name} 的项目记忆`}
+                      disabled={switchingProject}
+                      title={`${currentProject.name} 的项目记忆`}
+                      onClick={() => setView("memory")}
+                    >
+                      <NotebookText size={15} />
+                    </button>
+                  )}
+                  <button
+                    className="icon-button pressable"
+                    type="button"
+                    title="通过文件夹打开项目"
+                    aria-label="通过文件夹打开项目"
+                    disabled={state.isRunning || switchingProject}
+                    onClick={() => void openProjectFolder()}
+                  >
+                    <FolderPlus size={15} />
+                  </button>
+                </div>
               </div>
               <div className="project-list-scroll">
                 {projectSnapshot?.projects.map((project) => (
@@ -331,19 +347,6 @@ export function ThreadlightApp({
         </nav>
 
         <div className="sidebar-footer">
-          {memory && currentProject && (
-            <button
-              type="button"
-              className={`settings-nav-button pressable ${view === "memory" ? "active" : ""}`}
-              aria-current={view === "memory" ? "page" : undefined}
-              disabled={switchingProject}
-              title={`${currentProject.name} 的项目记忆`}
-              onClick={() => setView("memory")}
-            >
-              <NotebookText size={15} />
-              项目记忆
-            </button>
-          )}
           {settings && (
             <button
               type="button"
@@ -438,12 +441,18 @@ export function ThreadlightApp({
                       >
                         <div className="message-body">
                           {message.progress && message.progress.length > 0 && (
-                            <ProgressList progress={message.progress} />
+                            <ProgressList
+                              progress={message.progress}
+                              onTerminateProcess={terminateProcess}
+                            />
                           )}
                           {(!message.progress || message.progress.length === 0) &&
                             message.activities &&
                             message.activities.length > 0 && (
-                            <ActivityList activities={message.activities} />
+                            <ActivityList
+                              activities={message.activities}
+                              onTerminateProcess={terminateProcess}
+                            />
                           )}
                           {message.role === "assistant" ? (
                             <MarkdownContent>{message.text}</MarkdownContent>
@@ -459,7 +468,11 @@ export function ThreadlightApp({
                       state.isThinking) && (
                       <div className="live-run">
                         {state.progress.length > 0 && (
-                          <ProgressList progress={state.progress} live />
+                          <ProgressList
+                            progress={state.progress}
+                            live
+                            onTerminateProcess={terminateProcess}
+                          />
                         )}
                         {state.streamingText.length > 0 && (
                           <div className="streaming-copy" aria-busy="true">
@@ -788,9 +801,11 @@ function EmptyState({
 export function ProgressList({
   progress,
   live = false,
+  onTerminateProcess,
 }: {
   progress: readonly ConversationProgress[];
   live?: boolean;
+  onTerminateProcess?(sessionId: string): Promise<unknown>;
 }) {
   return (
     <div className="progress-list">
@@ -802,7 +817,11 @@ export function ProgressList({
             </div>
           )}
           {step.activities.length > 0 && (
-            <ActivityList activities={step.activities} live={live} />
+            <ActivityList
+              activities={step.activities}
+              live={live}
+              onTerminateProcess={onTerminateProcess}
+            />
           )}
         </div>
       ))}
@@ -813,9 +832,11 @@ export function ProgressList({
 export function ActivityList({
   activities,
   live = false,
+  onTerminateProcess,
 }: {
   activities: readonly ToolActivity[];
   live?: boolean;
+  onTerminateProcess?(sessionId: string): Promise<unknown>;
 }) {
   const [expanded, setExpanded] = useState(live);
   const hasRunningActivity = activities.some(
@@ -842,8 +863,19 @@ export function ActivityList({
             <div className="activity-summary">
               <ActivityStatus status={activity.status} />
               <code>{activity.name}</code>
+              {activity.name === "exec_command" &&
+                activity.process?.status === "running" &&
+                onTerminateProcess && (
+                  <TerminateProcessButton
+                    sessionId={activity.process.sessionId}
+                    onTerminate={onTerminateProcess}
+                  />
+                )}
             </div>
             {activity.detail && <pre>{activity.detail}</pre>}
+            {activity.name === "exec_command" && activity.process && (
+              <CommandOutput process={activity.process} />
+            )}
           </div>
         ))}
       </div>
@@ -854,7 +886,73 @@ export function ActivityList({
 function ActivityStatus({ status }: Pick<ToolActivity, "status">) {
   if (status === "running") return <LoaderCircle className="spin" size={14} />;
   if (status === "failed") return <X className="failed" size={14} />;
+  if (status === "terminated") {
+    return <CircleStop className="terminated" size={14} />;
+  }
   return <Check className="completed" size={14} />;
+}
+
+function CommandOutput({ process }: Pick<ToolActivity, "process">) {
+  if (!process) return null;
+  const output = [
+    process.stdout,
+    process.stderr ? `stderr\n${process.stderr}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <details className="command-output">
+      <summary>
+        <ChevronRight size={12} aria-hidden="true" />
+        <span>命令行输出</span>
+        {process.truncated && <span className="output-note">已截断</span>}
+      </summary>
+      <pre>{output || "暂无输出"}</pre>
+    </details>
+  );
+}
+
+function TerminateProcessButton({
+  sessionId,
+  onTerminate,
+}: {
+  sessionId: string;
+  onTerminate(sessionId: string): Promise<unknown>;
+}) {
+  const [terminating, setTerminating] = useState(false);
+  const [error, setError] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        className="process-terminate-button pressable"
+        disabled={terminating}
+        title="结束该命令"
+        aria-label="结束该命令"
+        onClick={() => {
+          setTerminating(true);
+          setError(false);
+          void onTerminate(sessionId).catch(() => {
+            setTerminating(false);
+            setError(true);
+          });
+        }}
+      >
+        {terminating ? (
+          <LoaderCircle className="spin" size={12} />
+        ) : (
+          <CircleStop size={12} />
+        )}
+        {terminating ? "正在结束" : "结束"}
+      </button>
+      {error && (
+        <span className="process-action-error" role="status">
+          结束失败
+        </span>
+      )}
+    </>
+  );
 }
 
 function ApprovalCard({

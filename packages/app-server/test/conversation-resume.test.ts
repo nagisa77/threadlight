@@ -96,6 +96,124 @@ describe("persistent conversations", () => {
     });
   });
 
+  it("persists managed command output and a user-terminated state", async () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-managed-process-"));
+    directories.push(root);
+    const store = new FileConversationStore(
+      join(root, ".threadlight", "conversations"),
+    );
+    const running = {
+      sessionId: "session-1",
+      command: "long-running-command",
+      cwd: root,
+      status: "running" as const,
+      exitCode: null,
+      signal: null,
+      stdout: "partial output\n",
+      stderr: "",
+      truncated: false,
+      startedAt: "2026-07-22T08:00:00.000Z",
+    };
+    const terminated = {
+      ...running,
+      status: "terminated" as const,
+      signal: "SIGTERM",
+      completedAt: "2026-07-22T08:00:01.000Z",
+    };
+    let generation = 0;
+    const provider: ModelProvider = {
+      async generate() {
+        generation += 1;
+        return generation === 1
+          ? {
+              text: "I’ll start the command.",
+              toolCalls: [
+                {
+                  id: "call-exec",
+                  name: "exec_command",
+                  arguments: { command: running.command },
+                },
+              ],
+            }
+          : { text: "The command is running.", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = notification(messages, "turn/completed");
+    const appServer = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Manage the process",
+        tools: [
+          defineTool({
+            name: "exec_command",
+            description: "Start a command",
+            parameters: { type: "object" },
+            async execute() {
+              return { ...running, timedOut: true };
+            },
+          }),
+        ],
+      }),
+      conversationStore: store,
+      processes: {
+        status: () => running,
+        read: () => running,
+        wait: () => running,
+        kill: () => terminated,
+      },
+      autoApproveAll: true,
+      send(message) {
+        messages.push(message);
+        completed.receive(message);
+      },
+    });
+
+    await appServer.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await appServer.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Start it" },
+    });
+    await completed.promise;
+    expect(store.load(threadId)?.messages.at(-1)).toMatchObject({
+      progress: [
+        {
+          activities: [
+            {
+              name: "exec_command",
+              status: "running",
+              process: { sessionId: "session-1", stdout: "partial output\n" },
+            },
+          ],
+        },
+      ],
+    });
+
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "process/kill",
+      params: { sessionId: "session-1" },
+    });
+    expect(store.load(threadId)?.messages.at(-1)).toMatchObject({
+      progress: [
+        {
+          activities: [
+            {
+              status: "terminated",
+              process: { status: "terminated", signal: "SIGTERM" },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("resumes messages and provider-neutral opaque state after a server restart", async () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-resume-"));
     directories.push(root);

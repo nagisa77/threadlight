@@ -97,6 +97,38 @@ describe("ThreadlightClient", () => {
     await expect(deleted).resolves.toEqual({ deleted: true });
   });
 
+  it("sends a typed managed-process termination request", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+    const killed = client.killProcess("session-1");
+    expect(transport.sent[0]).toMatchObject({
+      method: "process/kill",
+      params: { sessionId: "session-1" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        sessionId: "session-1",
+        command: "sleep 10",
+        cwd: "/workspace",
+        status: "terminated",
+        exitCode: null,
+        signal: "SIGTERM",
+        stdout: "",
+        stderr: "",
+        truncated: false,
+        startedAt: "2026-07-22T08:00:00.000Z",
+        completedAt: "2026-07-22T08:00:01.000Z",
+      },
+    });
+
+    await expect(killed).resolves.toMatchObject({
+      sessionId: "session-1",
+      status: "terminated",
+    });
+  });
+
   it("rejects RPC errors and pending requests on disposal", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

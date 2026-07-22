@@ -88,4 +88,39 @@ describe("ActivityList", () => {
     expect(html).toContain('class="lucide lucide-x failed"');
     expect(html).toContain("</svg><code>web_search</code></div><pre>");
   });
+
+  it("renders command output collapsed with a termination action", () => {
+    const html = renderToStaticMarkup(
+      <ActivityList
+        activities={[
+          {
+            id: "managed-command",
+            name: "exec_command",
+            status: "running",
+            detail: "$ npm test",
+            process: {
+              sessionId: "session-1",
+              command: "npm test",
+              cwd: "/workspace",
+              status: "running",
+              exitCode: null,
+              signal: null,
+              stdout: "test output\n",
+              stderr: "warning\n",
+              truncated: false,
+              startedAt: "2026-07-22T08:00:00.000Z",
+            },
+          },
+        ]}
+        onTerminateProcess={async () => {}}
+      />,
+    );
+
+    expect(html).toContain('<details class="command-output">');
+    expect(html).not.toContain('<details class="command-output" open="">');
+    expect(html).toContain("命令行输出");
+    expect(html).toContain("test output");
+    expect(html).toContain("stderr\nwarning");
+    expect(html).toContain("结束该命令");
+  });
 });

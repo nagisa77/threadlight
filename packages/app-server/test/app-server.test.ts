@@ -268,4 +268,52 @@ describe("AppServer", () => {
       .toMatchObject({ error: { code: -32003 } });
     finishGeneration();
   });
+
+  it("terminates a managed process through the app-server protocol", async () => {
+    const snapshot = {
+      sessionId: "session-1",
+      command: "long-running-command",
+      cwd: "/workspace",
+      status: "terminated" as const,
+      exitCode: null,
+      signal: "SIGTERM",
+      stdout: "partial output\n",
+      stderr: "",
+      truncated: false,
+      startedAt: "2026-07-22T08:00:00.000Z",
+      completedAt: "2026-07-22T08:00:01.000Z",
+    };
+    const killed: string[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate() {
+          return { text: "done", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({ name: "test", instructions: "Reply" }),
+      processes: {
+        status: () => snapshot,
+        read: () => snapshot,
+        wait: () => snapshot,
+        kill(sessionId) {
+          killed.push(sessionId);
+          return snapshot;
+        },
+      },
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "process/kill",
+      params: { sessionId: "session-1" },
+    });
+
+    expect(killed).toEqual(["session-1"]);
+    expect(messages.find((message) => "id" in message && message.id === 2))
+      .toMatchObject({ result: snapshot });
+  });
 });

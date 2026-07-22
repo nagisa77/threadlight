@@ -3,14 +3,17 @@ import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
 import type {
   AgentEventData,
   ConversationMessageData,
+  ProcessSnapshotData,
   ToolCallData,
+  ToolResultData,
 } from "@threadlight/protocol";
 
 export interface ToolActivity {
   id: string;
   name: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "terminated";
   detail?: string;
+  process?: ProcessSnapshotData;
 }
 
 export interface ConversationProgress {
@@ -56,7 +59,8 @@ export type SessionAction =
   | { type: "turn.started" }
   | { type: "turn.completed"; id: string; output: string }
   | { type: "turn.failed"; id: string; error: string }
-  | { type: "agent.event"; event: AgentEventData };
+  | { type: "agent.event"; event: AgentEventData }
+  | { type: "process.updated"; process: ProcessSnapshotData };
 
 export const initialSessionState: SessionState = {
   connection: "connecting",
@@ -110,6 +114,8 @@ export function sessionReducer(
       return completeTurn(state, action.id, action.error, true);
     case "agent.event":
       return reduceAgentEvent(state, action.event);
+    case "process.updated":
+      return updateSessionProcess(state, action.process);
   }
 }
 
@@ -151,24 +157,7 @@ function reduceAgentEvent(
         }),
       };
     case "tool.completed":
-      return {
-        ...state,
-        progress: state.progress.map((step) => ({
-          ...step,
-          activities: step.activities.map((activity) =>
-            activity.id === event.result.callId
-              ? {
-                  ...activity,
-                  status: event.result.isError ? "failed" : "completed",
-                  detail:
-                    activity.name === "exec_command"
-                      ? activity.detail
-                      : truncate(event.result.output),
-                }
-              : activity,
-          ),
-        })),
-      };
+      return completeTool(state, event.result);
     case "approval.requested":
       return {
         ...state,
@@ -226,6 +215,140 @@ function appendActivity(
       ? { ...step, activities: [...step.activities, activity] }
       : step,
   );
+}
+
+function completeTool(
+  state: SessionState,
+  result: ToolResultData,
+): SessionState {
+  const process = parseProcessSnapshot(result.output);
+  const progress = updateProgressProcess(state.progress, process);
+  return {
+    ...state,
+    progress: progress.map((step) => ({
+      ...step,
+      activities: step.activities.map((activity) => {
+        if (activity.id !== result.callId) return activity;
+        const isExecCommand = activity.name === "exec_command";
+        return {
+          ...activity,
+          status: result.isError
+            ? "failed"
+            : isExecCommand && process
+              ? processActivityStatus(process)
+              : "completed",
+          detail: isExecCommand
+            ? activity.detail
+            : process
+              ? `${process.status} · ${process.sessionId}`
+              : truncate(result.output),
+          ...(isExecCommand && process ? { process } : {}),
+        };
+      }),
+    })),
+  };
+}
+
+function updateSessionProcess(
+  state: SessionState,
+  process: ProcessSnapshotData,
+): SessionState {
+  return {
+    ...state,
+    progress: updateProgressProcess(state.progress, process),
+    messages: state.messages.map((message) => ({
+      ...message,
+      ...(message.progress
+        ? { progress: updateProgressProcess(message.progress, process) }
+        : {}),
+      ...(message.activities
+        ? {
+            activities: updateActivitiesProcess(message.activities, process),
+          }
+        : {}),
+    })),
+  };
+}
+
+function updateProgressProcess(
+  progress: readonly ConversationProgress[],
+  process: ProcessSnapshotData | undefined,
+): ConversationProgress[] {
+  if (!process) return [...progress];
+  return progress.map((step) => ({
+    ...step,
+    activities: updateActivitiesProcess(step.activities, process),
+  }));
+}
+
+function updateActivitiesProcess(
+  activities: readonly ToolActivity[],
+  process: ProcessSnapshotData,
+): ToolActivity[] {
+  return activities.map((activity) =>
+    activity.process?.sessionId === process.sessionId
+      ? {
+          ...activity,
+          status: processActivityStatus(process),
+          process,
+        }
+      : activity,
+  );
+}
+
+function parseProcessSnapshot(value: string): ProcessSnapshotData | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return;
+  }
+  if (!isObject(parsed)) return;
+  const status = parsed.status;
+  if (
+    typeof parsed.sessionId !== "string" ||
+    typeof parsed.command !== "string" ||
+    typeof parsed.cwd !== "string" ||
+    (status !== "running" &&
+      status !== "completed" &&
+      status !== "failed" &&
+      status !== "terminated") ||
+    (parsed.exitCode !== null && typeof parsed.exitCode !== "number") ||
+    (parsed.signal !== null && typeof parsed.signal !== "string") ||
+    typeof parsed.stdout !== "string" ||
+    typeof parsed.stderr !== "string" ||
+    typeof parsed.truncated !== "boolean" ||
+    typeof parsed.startedAt !== "string" ||
+    (parsed.completedAt !== undefined && typeof parsed.completedAt !== "string")
+  ) {
+    return;
+  }
+  return parsed as unknown as ProcessSnapshotData;
+}
+
+function processActivityStatus(
+  process: ProcessSnapshotData,
+): ToolActivity["status"] {
+  return process.status;
+}
+
+function runningProcessSessionIds(state: SessionState): string[] {
+  const activities = [
+    ...state.progress.flatMap((step) => step.activities),
+    ...state.messages.flatMap((message) => [
+      ...(message.progress?.flatMap((step) => step.activities) ?? []),
+      ...(message.activities ?? []),
+    ]),
+  ];
+  return [
+    ...new Set(
+      activities.flatMap((activity) =>
+        activity.process?.status === "running"
+          ? [activity.process.sessionId]
+          : [],
+      ),
+    ),
+  ].sort();
 }
 
 function truncate(value: string, limit = 1_200): string {
@@ -314,6 +437,31 @@ export function useThreadlightSession(
     return () => subscriptions.forEach((unsubscribe) => unsubscribe());
   }, [client, openThread, options.autoConnect]);
 
+  const runningProcessKey = runningProcessSessionIds(state).join("\u0000");
+  useEffect(() => {
+    if (!runningProcessKey) return;
+    const sessionIds = runningProcessKey.split("\u0000");
+    let active = true;
+    const poll = (): void => {
+      for (const sessionId of sessionIds) {
+        void client
+          .processStatus(sessionId)
+          .then((process) => {
+            if (active) dispatch({ type: "process.updated", process });
+          })
+          .catch(() => {
+            // A runtime restart invalidates in-memory process sessions. The
+            // stored execution record remains available for inspection.
+          });
+      }
+    };
+    const timer = setInterval(poll, 1_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [client, runningProcessKey]);
+
   const newThread = useCallback(async () => {
     if (state.isRunning) return;
     try {
@@ -384,6 +532,15 @@ export function useThreadlightSession(
     [client, state.approval],
   );
 
+  const terminateProcess = useCallback(
+    async (sessionId: string) => {
+      const process = await client.killProcess(sessionId);
+      dispatch({ type: "process.updated", process });
+      return process;
+    },
+    [client],
+  );
+
   return {
     state,
     retry,
@@ -392,6 +549,7 @@ export function useThreadlightSession(
     deleteThread,
     send,
     interrupt,
+    terminateProcess,
     resolveApproval,
   };
 }

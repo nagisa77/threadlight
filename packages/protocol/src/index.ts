@@ -66,11 +66,26 @@ export interface ApprovalRequestData {
   call: ToolCallData;
 }
 
+export interface ProcessSnapshotData {
+  sessionId: string;
+  command: string;
+  cwd: string;
+  status: "running" | "completed" | "failed" | "terminated";
+  exitCode: number | null;
+  signal: string | null;
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+  startedAt: string;
+  completedAt?: string;
+}
+
 export interface ConversationActivityData {
   id: string;
   name: string;
-  status: "running" | "completed" | "failed";
+  status: "running" | "completed" | "failed" | "terminated";
   detail?: string;
+  process?: ProcessSnapshotData;
 }
 
 export interface ConversationProgressData {
@@ -145,6 +160,22 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: { interrupted: boolean };
   };
+  "process/status": {
+    params: { sessionId: string };
+    result: ProcessSnapshotData;
+  };
+  "process/read": {
+    params: { sessionId: string };
+    result: ProcessSnapshotData;
+  };
+  "process/wait": {
+    params: { sessionId: string; timeoutMs?: number };
+    result: ProcessSnapshotData;
+  };
+  "process/kill": {
+    params: { sessionId: string };
+    result: ProcessSnapshotData;
+  };
   "approval/resolve": {
     params: { requestId: string; approved: boolean };
     result: { resolved: boolean };
@@ -158,6 +189,10 @@ export const THREADLIGHT_METHODS = [
   "thread/delete",
   "turn/start",
   "turn/interrupt",
+  "process/status",
+  "process/read",
+  "process/wait",
+  "process/kill",
   "approval/resolve",
 ] as const satisfies readonly (keyof ThreadlightMethodMap)[];
 

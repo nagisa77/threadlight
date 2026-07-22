@@ -14,6 +14,7 @@ import type {
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
+  ProcessSnapshotData,
   SendMessage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
@@ -44,11 +45,22 @@ interface PendingApproval {
   resolve: (approved: boolean) => void;
 }
 
+export interface ProcessController {
+  status(sessionId: string): ProcessSnapshotData | Promise<ProcessSnapshotData>;
+  read(sessionId: string): ProcessSnapshotData | Promise<ProcessSnapshotData>;
+  wait(
+    sessionId: string,
+    timeoutMs?: number,
+  ): ProcessSnapshotData | Promise<ProcessSnapshotData>;
+  kill(sessionId: string): ProcessSnapshotData | Promise<ProcessSnapshotData>;
+}
+
 interface SharedAppServerOptions {
   loop: AgentLoop;
   send: SendMessage;
   autoApproveAll?: boolean;
   conversationStore?: ConversationStore;
+  processes?: ProcessController;
   now?: () => Date;
 }
 
@@ -66,6 +78,7 @@ export class AppServer {
   private readonly send: SendMessage;
   private readonly autoApproveAll: boolean;
   private readonly conversationStore: ConversationStore;
+  private readonly processes?: ProcessController;
   private readonly now: () => Date;
   private readonly threads = new Map<string, ThreadState>();
   private readonly approvals = new Map<string, PendingApproval>();
@@ -78,6 +91,7 @@ export class AppServer {
     this.autoApproveAll = options.autoApproveAll ?? false;
     this.conversationStore =
       options.conversationStore ?? new MemoryConversationStore();
+    this.processes = options.processes;
     this.now = options.now ?? (() => new Date());
   }
 
@@ -121,6 +135,14 @@ export class AppServer {
         return this.startTurn(params);
       case "turn/interrupt":
         return this.interruptTurn(params);
+      case "process/status":
+        return this.processRequest(params, "status");
+      case "process/read":
+        return this.processRequest(params, "read");
+      case "process/wait":
+        return this.processRequest(params, "wait");
+      case "process/kill":
+        return this.processRequest(params, "kill");
       case "approval/resolve":
         return this.resolveApproval(params);
       default:
@@ -246,6 +268,49 @@ export class AppServer {
     this.approvals.delete(requestId);
     pending.resolve(approved);
     return { resolved: true };
+  }
+
+  private async processRequest(
+    params: unknown,
+    action: "status" | "read" | "wait" | "kill",
+  ): Promise<ProcessSnapshotData> {
+    if (!this.processes) {
+      throw new RpcError(-32020, "Process management is not available");
+    }
+    const { sessionId, timeoutMs } = objectParams(params);
+    requireString(sessionId, "sessionId");
+    if (
+      timeoutMs !== undefined &&
+      (!Number.isInteger(timeoutMs) || Number(timeoutMs) < 1)
+    ) {
+      throw new RpcError(-32602, "timeoutMs must be a positive integer");
+    }
+
+    const snapshot =
+      action === "wait"
+        ? await this.processes.wait(
+            sessionId,
+            timeoutMs === undefined ? undefined : Number(timeoutMs),
+          )
+        : await this.processes[action](sessionId);
+    await this.recordProcessSnapshot(snapshot);
+    return snapshot;
+  }
+
+  private async recordProcessSnapshot(
+    snapshot: ProcessSnapshotData,
+  ): Promise<void> {
+    for (const thread of this.threads.values()) {
+      updateMutableProcessSnapshots(thread.progress, snapshot);
+      const messages = updateStoredProcessSnapshots(
+        thread.conversation.messages,
+        snapshot,
+      );
+      if (messages === thread.conversation.messages) continue;
+      const conversation = this.updateConversation(thread.conversation, messages);
+      await this.conversationStore.save(conversation);
+      thread.conversation = conversation;
+    }
   }
 
   private async runTurn(
@@ -434,17 +499,159 @@ function updateProgress(
   }
   if (event.type !== "tool.completed") return;
 
+  const processSnapshot = parseProcessSnapshot(event.result.output);
+  if (processSnapshot) {
+    updateMutableProcessSnapshots(progress, processSnapshot);
+  }
   const activity = progress
     .flatMap((step) => step.activities)
     .find((candidate) => candidate.id === event.result.callId);
   if (!activity) return;
-  activity.status = event.result.isError ? "failed" : "completed";
+  activity.status = event.result.isError
+    ? "failed"
+    : activity.name === "exec_command" && processSnapshot
+      ? activityStatus(processSnapshot)
+      : "completed";
+  if (activity.name === "exec_command" && processSnapshot) {
+    activity.process = processSnapshot;
+  }
   if (
     activity.name !== "exec_command" &&
     activity.name !== "project_memory"
   ) {
-    activity.detail = truncate(event.result.output);
+    activity.detail = processSnapshot
+      ? processDetail(processSnapshot)
+      : truncate(event.result.output);
   }
+}
+
+function updateMutableProcessSnapshots(
+  progress: MutableConversationProgress[],
+  snapshot: ProcessSnapshotData,
+): boolean {
+  let changed = false;
+  for (const activity of progress.flatMap((step) => step.activities)) {
+    if (activity.process?.sessionId !== snapshot.sessionId) continue;
+    if (sameProcessSnapshot(activity.process, snapshot)) continue;
+    activity.process = { ...snapshot };
+    activity.status = activityStatus(snapshot);
+    changed = true;
+  }
+  return changed;
+}
+
+function updateStoredProcessSnapshots(
+  messages: readonly ConversationMessageData[],
+  snapshot: ProcessSnapshotData,
+): readonly ConversationMessageData[] {
+  let changed = false;
+  const next = messages.map((message) => {
+    const progress = updateStoredProgress(message.progress, snapshot);
+    const activities = updateStoredActivities(message.activities, snapshot);
+    if (progress === message.progress && activities === message.activities) {
+      return message;
+    }
+    changed = true;
+    return {
+      ...message,
+      ...(progress === undefined ? {} : { progress }),
+      ...(activities === undefined ? {} : { activities }),
+    };
+  });
+  return changed ? next : messages;
+}
+
+function updateStoredProgress(
+  progress: readonly ConversationProgressData[] | undefined,
+  snapshot: ProcessSnapshotData,
+): readonly ConversationProgressData[] | undefined {
+  if (!progress) return progress;
+  let changed = false;
+  const next = progress.map((step) => {
+    const activities = updateStoredActivities(step.activities, snapshot);
+    if (activities === step.activities) return step;
+    changed = true;
+    return { ...step, activities: activities ?? step.activities };
+  });
+  return changed ? next : progress;
+}
+
+function updateStoredActivities(
+  activities: readonly ConversationActivityData[] | undefined,
+  snapshot: ProcessSnapshotData,
+): readonly ConversationActivityData[] | undefined {
+  if (!activities) return activities;
+  let changed = false;
+  const next = activities.map((activity) => {
+    if (
+      activity.process?.sessionId !== snapshot.sessionId ||
+      sameProcessSnapshot(activity.process, snapshot)
+    ) {
+      return activity;
+    }
+    changed = true;
+    return {
+      ...activity,
+      status: activityStatus(snapshot),
+      process: { ...snapshot },
+    };
+  });
+  return changed ? next : activities;
+}
+
+function parseProcessSnapshot(value: string): ProcessSnapshotData | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return;
+  }
+  if (!isObject(parsed)) return;
+  const status = parsed.status;
+  if (
+    typeof parsed.sessionId !== "string" ||
+    typeof parsed.command !== "string" ||
+    typeof parsed.cwd !== "string" ||
+    (status !== "running" &&
+      status !== "completed" &&
+      status !== "failed" &&
+      status !== "terminated") ||
+    (parsed.exitCode !== null && typeof parsed.exitCode !== "number") ||
+    (parsed.signal !== null && typeof parsed.signal !== "string") ||
+    typeof parsed.stdout !== "string" ||
+    typeof parsed.stderr !== "string" ||
+    typeof parsed.truncated !== "boolean" ||
+    typeof parsed.startedAt !== "string" ||
+    (parsed.completedAt !== undefined && typeof parsed.completedAt !== "string")
+  ) {
+    return;
+  }
+  return parsed as unknown as ProcessSnapshotData;
+}
+
+function activityStatus(
+  snapshot: ProcessSnapshotData,
+): ConversationActivityData["status"] {
+  return snapshot.status;
+}
+
+function processDetail(snapshot: ProcessSnapshotData): string {
+  return `${snapshot.status} · ${snapshot.sessionId}`;
+}
+
+function sameProcessSnapshot(
+  left: ProcessSnapshotData,
+  right: ProcessSnapshotData,
+): boolean {
+  return (
+    left.status === right.status &&
+    left.exitCode === right.exitCode &&
+    left.signal === right.signal &&
+    left.stdout === right.stdout &&
+    left.stderr === right.stderr &&
+    left.truncated === right.truncated &&
+    left.completedAt === right.completedAt
+  );
 }
 
 function snapshotProgress(
