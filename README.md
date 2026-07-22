@@ -4,7 +4,8 @@ Threadlight 是一个小而清晰的 TypeScript Agent Runtime：让模型的每�
 
 它包含以下模块和应用：
 
-- `@threadlight/agent-loop`：模型调用、工具循环、审批钩子、取消、事件和会话状态。
+- `@threadlight/agent-loop`：provider-neutral 的工具循环、审批钩子、取消、事件和会话状态。
+- `@threadlight/model-providers`：OpenAI Responses、DeepSeek 与千问兼容协议适配器。
 - `@threadlight/project-memory`：项目记忆的安全路径、原子 Markdown 存储和版本校验。
 - `@threadlight/builtin-tools`：内置的项目记忆、命令执行和互联网搜索工具。
 - `@threadlight/protocol`：客户端与 app-server 共享的 JSON-RPC 类型。
@@ -21,14 +22,15 @@ Electron / Web UI / IDE
         │ @threadlight/client + pluggable transport
         ▼
 @threadlight/app-server
-        │
-        ▼
-@threadlight/agent-loop
-        ├── ModelProvider
+        ├── @threadlight/model-providers ──┐
+        │                                  │ implements
+        ▼                                  ▼
+@threadlight/agent-loop ◄────────── ModelProvider
         └── Tool[] ◄── @threadlight/builtin-tools
 ```
 
-`agent-loop` 不依赖 app-server；app-server 只是它的一个客户端协议适配层。
+`agent-loop` 不依赖 app-server 或任何厂商 SDK；厂商 wire format 和 opaque state
+由 `model-providers` 适配。app-server 只根据运行时配置选择 Provider 并注入 loop。
 client 和 app-server 不互相依赖，二者只共享 protocol。
 
 ## Client API
@@ -58,6 +60,21 @@ export OPENAI_API_KEY="..."
 # 可选；设置后启用 web_search
 export BRAVE_SEARCH_API_KEY="..."
 npm run desktop:dev
+```
+
+也可以在桌面设置中切换 DeepSeek 或阿里云百炼·千问；对应 CLI 环境变量为：
+
+```bash
+# DeepSeek
+export THREADLIGHT_PROVIDER="deepseek"
+export DEEPSEEK_API_KEY="..."
+export THREADLIGHT_MODEL="deepseek-v4-pro"
+
+# 或千问
+export THREADLIGHT_PROVIDER="qwen"
+export DASHSCOPE_API_KEY="..."
+export DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export THREADLIGHT_MODEL="qwen3.7-plus"
 ```
 
 构建并预览 production bundle：
@@ -131,10 +148,10 @@ app-server 使用 stdout 发送 JSONL 协议消息，日志只写入 stderr。�
 ```ts
 import {
   AgentLoop,
-  OpenAIResponsesProvider,
   defineAgent,
 } from "@threadlight/agent-loop";
 import { createExecCommandTool } from "@threadlight/builtin-tools";
+import { OpenAIResponsesProvider } from "@threadlight/model-providers";
 
 const loop = new AgentLoop(
   new OpenAIResponsesProvider({ defaultModel: "gpt-5.6-sol" }),

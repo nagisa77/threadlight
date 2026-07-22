@@ -8,6 +8,7 @@
   },
   "references": [
     { "path": "../agent-loop" },
+    { "path": "../model-providers" },
     { "path": "../builtin-tools" },
     { "path": "../project-memory" },
     { "path": "../protocol" }

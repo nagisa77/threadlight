@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 
+import { AgentLoop } from "@threadlight/agent-loop";
 import {
-  AgentLoop,
-  OpenAIResponsesProvider,
-} from "@threadlight/agent-loop";
+  createModelProvider,
+  QWEN_DEFAULT_BASE_URL,
+  type ModelProviderId,
+} from "@threadlight/model-providers";
 import {
   createExecCommandTool,
   createProcessKillTool,
@@ -22,13 +24,24 @@ import { FileConversationStore } from "./conversation-store.js";
 import { jsonLineSender, serveJsonLines } from "./stdio.js";
 import { createWorkspaceAgentFactory } from "./workspace-agent.js";
 
-if (!process.env.OPENAI_API_KEY) {
-  process.stderr.write("OPENAI_API_KEY is required\n");
+const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
+const providerApiKey = apiKeyFor(providerId, process.env);
+if (!providerApiKey) {
+  process.stderr.write(`${apiKeyEnvironmentName(providerId)} is required\n`);
   process.exit(1);
 }
 
-const provider = new OpenAIResponsesProvider({
-  defaultModel: process.env.THREADLIGHT_MODEL ?? "gpt-5.6-sol",
+const provider = createModelProvider({
+  provider: providerId,
+  apiKey: providerApiKey,
+  defaultModel:
+    process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId),
+  ...(providerId === "qwen"
+    ? {
+        baseURL:
+          process.env.DASHSCOPE_BASE_URL ?? QWEN_DEFAULT_BASE_URL,
+      }
+    : {}),
 });
 
 const loop = new AgentLoop(provider);
@@ -89,4 +102,31 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     void processManager.dispose().finally(() => process.exit(0));
   });
+}
+
+function parseProvider(value: string | undefined): ModelProviderId {
+  if (!value || value === "openai") return "openai";
+  if (value === "deepseek" || value === "qwen") return value;
+  throw new Error(`Unsupported model provider: ${value}`);
+}
+
+function apiKeyFor(
+  provider: ModelProviderId,
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  if (provider === "deepseek") return environment.DEEPSEEK_API_KEY;
+  if (provider === "qwen") return environment.DASHSCOPE_API_KEY;
+  return environment.OPENAI_API_KEY;
+}
+
+function apiKeyEnvironmentName(provider: ModelProviderId): string {
+  if (provider === "deepseek") return "DEEPSEEK_API_KEY";
+  if (provider === "qwen") return "DASHSCOPE_API_KEY";
+  return "OPENAI_API_KEY";
+}
+
+function defaultModelFor(provider: ModelProviderId): string {
+  if (provider === "deepseek") return "deepseek-v4-pro";
+  if (provider === "qwen") return "qwen3.7-plus";
+  return "gpt-5.6-sol";
 }

@@ -19,16 +19,26 @@ export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
 export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
   "threadlight:project-memory:open";
 
+export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
+
 export interface DesktopSettingsSnapshot {
+  provider: DesktopModelProvider;
   openAIApiKeyConfigured: boolean;
+  deepSeekApiKeyConfigured: boolean;
+  qwenApiKeyConfigured: boolean;
   searchApiKeyConfigured: boolean;
+  qwenBaseUrl: string;
   model: string;
   autoApproveAll: boolean;
 }
 
 export interface DesktopSettingsUpdate {
+  provider: DesktopModelProvider;
   openAIApiKey?: string | null;
+  deepSeekApiKey?: string | null;
+  qwenApiKey?: string | null;
   searchApiKey?: string | null;
+  qwenBaseUrl: string;
   model: string;
   autoApproveAll: boolean;
 }

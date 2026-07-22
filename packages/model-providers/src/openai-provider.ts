@@ -5,7 +5,7 @@ import type {
   ModelProvider,
   ModelRequest,
   ModelTurn,
-} from "./types.js";
+} from "@threadlight/agent-loop";
 
 export interface OpenAIResponsesProviderOptions {
   apiKey?: string;

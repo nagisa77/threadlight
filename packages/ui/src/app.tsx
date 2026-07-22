@@ -1001,7 +1001,7 @@ function ConnectionError({
       <div>
         <strong>无法连接到运行时</strong>
         <p>{message}</p>
-        <p className="error-help">请在设置中配置 OpenAI API Key，然后重新连接。</p>
+        <p className="error-help">请在设置中检查模型厂商与 API Key，然后重新连接。</p>
         <div className="connection-actions">
           {onOpenSettings && (
             <button className="primary pressable" onClick={onOpenSettings}>

@@ -8,14 +8,19 @@ import {
 import { dirname } from "node:path";
 
 import type {
+  DesktopModelProvider,
   DesktopSettingsSnapshot,
   DesktopSettingsUpdate,
 } from "../shared/desktop-api.js";
 
 interface StoredSettings {
   version: 1;
+  provider?: DesktopModelProvider;
   encryptedOpenAIApiKey?: string;
+  encryptedDeepSeekApiKey?: string;
+  encryptedQwenApiKey?: string;
   encryptedSearchApiKey?: string;
+  qwenBaseUrl?: string;
   model?: string;
   autoApproveAll: boolean;
 }
@@ -26,13 +31,21 @@ export interface SecretCodec {
 }
 
 export interface RuntimeSettings {
+  provider: DesktopModelProvider;
   openAIApiKey?: string;
+  deepSeekApiKey?: string;
+  qwenApiKey?: string;
   searchApiKey?: string;
+  qwenBaseUrl: string;
   model: string;
   autoApproveAll: boolean;
 }
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
+export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro";
+export const DEFAULT_QWEN_MODEL = "qwen3.7-plus";
+export const DEFAULT_QWEN_BASE_URL =
+  "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 const EMPTY_SETTINGS: StoredSettings = {
   version: 1,
@@ -48,8 +61,12 @@ export class SettingsStore {
   snapshot(environment: NodeJS.ProcessEnv = process.env): DesktopSettingsSnapshot {
     const settings = this.runtimeSettings(environment);
     return {
+      provider: settings.provider,
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
+      deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
+      qwenApiKeyConfigured: Boolean(settings.qwenApiKey),
       searchApiKeyConfigured: Boolean(settings.searchApiKey),
+      qwenBaseUrl: settings.qwenBaseUrl,
       model: settings.model,
       autoApproveAll: settings.autoApproveAll,
     };
@@ -62,6 +79,8 @@ export class SettingsStore {
     const current = this.read();
     const next: StoredSettings = {
       ...current,
+      provider: update.provider,
+      qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl),
       model: requireNonEmpty(update.model, "Model"),
       autoApproveAll: update.autoApproveAll,
     };
@@ -70,6 +89,18 @@ export class SettingsStore {
       next,
       "encryptedOpenAIApiKey",
       update.openAIApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedDeepSeekApiKey",
+      update.deepSeekApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedQwenApiKey",
+      update.qwenApiKey,
       this.codec,
     );
     updateSecret(
@@ -87,17 +118,30 @@ export class SettingsStore {
     environment: NodeJS.ProcessEnv = process.env,
   ): RuntimeSettings {
     const stored = this.read();
+    const provider =
+      stored.provider ?? parseProvider(environment.THREADLIGHT_PROVIDER);
     return {
+      provider,
       openAIApiKey:
         decryptOptional(stored.encryptedOpenAIApiKey, this.codec) ??
         nonEmpty(environment.OPENAI_API_KEY),
+      deepSeekApiKey:
+        decryptOptional(stored.encryptedDeepSeekApiKey, this.codec) ??
+        nonEmpty(environment.DEEPSEEK_API_KEY),
+      qwenApiKey:
+        decryptOptional(stored.encryptedQwenApiKey, this.codec) ??
+        nonEmpty(environment.DASHSCOPE_API_KEY),
       searchApiKey:
         decryptOptional(stored.encryptedSearchApiKey, this.codec) ??
         nonEmpty(environment.BRAVE_SEARCH_API_KEY),
+      qwenBaseUrl:
+        nonEmpty(stored.qwenBaseUrl) ??
+        nonEmpty(environment.DASHSCOPE_BASE_URL) ??
+        DEFAULT_QWEN_BASE_URL,
       model:
         nonEmpty(stored.model) ??
         nonEmpty(environment.THREADLIGHT_MODEL) ??
-        DEFAULT_MODEL,
+        defaultModel(provider),
       autoApproveAll: stored.autoApproveAll,
     };
   }
@@ -138,11 +182,21 @@ export function runtimeEnvironment(
   settings: RuntimeSettings,
 ): NodeJS.ProcessEnv {
   return {
-    ...(settings.openAIApiKey
+    THREADLIGHT_PROVIDER: settings.provider,
+    ...(settings.provider === "openai" && settings.openAIApiKey
       ? { OPENAI_API_KEY: settings.openAIApiKey }
+      : {}),
+    ...(settings.provider === "deepseek" && settings.deepSeekApiKey
+      ? { DEEPSEEK_API_KEY: settings.deepSeekApiKey }
+      : {}),
+    ...(settings.provider === "qwen" && settings.qwenApiKey
+      ? { DASHSCOPE_API_KEY: settings.qwenApiKey }
       : {}),
     ...(settings.searchApiKey
       ? { BRAVE_SEARCH_API_KEY: settings.searchApiKey }
+      : {}),
+    ...(settings.provider === "qwen"
+      ? { DASHSCOPE_BASE_URL: settings.qwenBaseUrl }
       : {}),
     THREADLIGHT_MODEL: settings.model,
     THREADLIGHT_AUTO_APPROVE: settings.autoApproveAll ? "1" : "0",
@@ -151,7 +205,11 @@ export function runtimeEnvironment(
 
 function updateSecret(
   settings: StoredSettings,
-  key: "encryptedOpenAIApiKey" | "encryptedSearchApiKey",
+  key:
+    | "encryptedOpenAIApiKey"
+    | "encryptedDeepSeekApiKey"
+    | "encryptedQwenApiKey"
+    | "encryptedSearchApiKey",
   value: string | null | undefined,
   codec: SecretCodec,
 ): void {
@@ -184,8 +242,12 @@ function isStoredSettings(value: unknown): value is StoredSettings {
   return (
     settings.version === 1 &&
     typeof settings.autoApproveAll === "boolean" &&
+    optionalProvider(settings.provider) &&
     optionalString(settings.encryptedOpenAIApiKey) &&
+    optionalString(settings.encryptedDeepSeekApiKey) &&
+    optionalString(settings.encryptedQwenApiKey) &&
     optionalString(settings.encryptedSearchApiKey) &&
+    optionalString(settings.qwenBaseUrl) &&
     optionalString(settings.model)
   );
 }
@@ -198,6 +260,38 @@ function requireNonEmpty(value: string, label: string): string {
 
 function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
+}
+
+function optionalProvider(value: unknown): boolean {
+  return value === undefined || isProvider(value);
+}
+
+function isProvider(value: unknown): value is DesktopModelProvider {
+  return value === "openai" || value === "deepseek" || value === "qwen";
+}
+
+function parseProvider(value: string | undefined): DesktopModelProvider {
+  return isProvider(value) ? value : "openai";
+}
+
+function defaultModel(provider: DesktopModelProvider): string {
+  if (provider === "deepseek") return DEFAULT_DEEPSEEK_MODEL;
+  if (provider === "qwen") return DEFAULT_QWEN_MODEL;
+  return DEFAULT_MODEL;
+}
+
+function normalizeHttpUrl(value: string): string {
+  const normalized = requireNonEmpty(value, "Qwen Base URL").replace(/\/$/, "");
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error("Qwen Base URL must be a valid URL");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("Qwen Base URL must use HTTP or HTTPS");
+  }
+  return normalized;
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

@@ -19,6 +19,7 @@
   ],
   "dependencies": {
     "@threadlight/agent-loop": "0.1.0",
+    "@threadlight/model-providers": "0.1.0",
     "@threadlight/builtin-tools": "0.1.0",
     "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0"

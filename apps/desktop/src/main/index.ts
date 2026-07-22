@@ -22,6 +22,7 @@ import { AppServerProcess } from "./app-server-process.js";
 import { createExternalWindowHandler } from "./external-links.js";
 import {
   DEFAULT_MODEL,
+  DEFAULT_QWEN_BASE_URL,
   runtimeEnvironment,
   SettingsStore,
 } from "./settings-store.js";
@@ -103,6 +104,8 @@ function startAppServer(window: BrowserWindow, cwd: string): void {
     cwd,
     environment: runtimeEnvironment(
       settingsStore?.runtimeSettings() ?? {
+        provider: "openai",
+        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
         model: DEFAULT_MODEL,
         autoApproveAll: false,
       },
@@ -252,8 +255,17 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (typeof update.autoApproveAll !== "boolean") {
     throw new Error("autoApproveAll must be a boolean");
   }
+  if (!isModelProvider(update.provider)) {
+    throw new Error("provider must be openai, deepseek, or qwen");
+  }
   if (!isOptionalSecret(update.openAIApiKey)) {
     throw new Error("openAIApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.deepSeekApiKey)) {
+    throw new Error("deepSeekApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.qwenApiKey)) {
+    throw new Error("qwenApiKey must be a string or null");
   }
   if (!isOptionalSecret(update.searchApiKey)) {
     throw new Error("searchApiKey must be a string or null");
@@ -261,16 +273,33 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (typeof update.model !== "string" || !update.model.trim()) {
     throw new Error("model must be a non-empty string");
   }
+  if (typeof update.qwenBaseUrl !== "string" || !update.qwenBaseUrl.trim()) {
+    throw new Error("qwenBaseUrl must be a non-empty string");
+  }
   return {
+    provider: update.provider,
     model: update.model.trim(),
+    qwenBaseUrl: update.qwenBaseUrl.trim(),
     autoApproveAll: update.autoApproveAll,
     ...(update.openAIApiKey !== undefined
       ? { openAIApiKey: update.openAIApiKey }
+      : {}),
+    ...(update.deepSeekApiKey !== undefined
+      ? { deepSeekApiKey: update.deepSeekApiKey }
+      : {}),
+    ...(update.qwenApiKey !== undefined
+      ? { qwenApiKey: update.qwenApiKey }
       : {}),
     ...(update.searchApiKey !== undefined
       ? { searchApiKey: update.searchApiKey }
       : {}),
   } as DesktopSettingsUpdate;
+}
+
+function isModelProvider(
+  value: unknown,
+): value is DesktopSettingsUpdate["provider"] {
+  return value === "openai" || value === "deepseek" || value === "qwen";
 }
 
 function isOptionalSecret(value: unknown): value is string | null | undefined {

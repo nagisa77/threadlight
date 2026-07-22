@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_QWEN_BASE_URL,
   runtimeEnvironment,
   SettingsStore,
   type SecretCodec,
@@ -31,31 +32,50 @@ function createStore() {
 }
 
 describe("SettingsStore", () => {
-  it("encrypts API keys and exposes only configuration status", () => {
+  it("encrypts every provider key and exposes only configuration status", () => {
     const { path, store } = createStore();
 
     const snapshot = store.update(
       {
-        openAIApiKey: "  sk-test-openai  ",
-        searchApiKey: "search-test-key",
-        model: "  gpt-5.6-terra  ",
+        provider: "deepseek",
+        openAIApiKey: "openai-secret",
+        deepSeekApiKey: "  deepseek-secret  ",
+        qwenApiKey: "qwen-secret",
+        searchApiKey: "search-secret",
+        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+        model: "  deepseek-v4-pro  ",
         autoApproveAll: true,
       },
       {},
     );
 
     expect(snapshot).toEqual({
+      provider: "deepseek",
       openAIApiKeyConfigured: true,
+      deepSeekApiKeyConfigured: true,
+      qwenApiKeyConfigured: true,
       searchApiKeyConfigured: true,
-      model: "gpt-5.6-terra",
+      qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+      model: "deepseek-v4-pro",
       autoApproveAll: true,
     });
-    expect(readFileSync(path, "utf8")).not.toContain("sk-test-openai");
-    expect(readFileSync(path, "utf8")).not.toContain("search-test-key");
+    const stored = readFileSync(path, "utf8");
+    for (const secret of [
+      "openai-secret",
+      "deepseek-secret",
+      "qwen-secret",
+      "search-secret",
+    ]) {
+      expect(stored).not.toContain(secret);
+    }
     expect(store.runtimeSettings({})).toEqual({
-      openAIApiKey: "sk-test-openai",
-      searchApiKey: "search-test-key",
-      model: "gpt-5.6-terra",
+      provider: "deepseek",
+      openAIApiKey: "openai-secret",
+      deepSeekApiKey: "deepseek-secret",
+      qwenApiKey: "qwen-secret",
+      searchApiKey: "search-secret",
+      qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+      model: "deepseek-v4-pro",
       autoApproveAll: true,
     });
   });
@@ -64,7 +84,9 @@ describe("SettingsStore", () => {
     const { store } = createStore();
     store.update(
       {
+        provider: "openai",
         openAIApiKey: "stored-key",
+        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
         model: "gpt-5.6-sol",
         autoApproveAll: false,
       },
@@ -73,8 +95,10 @@ describe("SettingsStore", () => {
 
     store.update(
       {
+        provider: "qwen",
         openAIApiKey: null,
-        model: "gpt-5.6-luna",
+        qwenBaseUrl: "https://example.test/compatible-mode/v1/",
+        model: "qwen3.7-plus",
         autoApproveAll: false,
       },
       { OPENAI_API_KEY: "environment-key" },
@@ -83,35 +107,53 @@ describe("SettingsStore", () => {
     expect(
       store.runtimeSettings({ OPENAI_API_KEY: "environment-key" }),
     ).toEqual({
+      provider: "qwen",
       openAIApiKey: "environment-key",
+      deepSeekApiKey: undefined,
+      qwenApiKey: undefined,
       searchApiKey: undefined,
-      model: "gpt-5.6-luna",
+      qwenBaseUrl: "https://example.test/compatible-mode/v1",
+      model: "qwen3.7-plus",
       autoApproveAll: false,
     });
   });
 
-  it("maps runtime settings to child-process environment variables", () => {
+  it("maps provider settings to child-process environment variables", () => {
     expect(
       runtimeEnvironment({
+        provider: "qwen",
         openAIApiKey: "openai",
+        deepSeekApiKey: "deepseek",
+        qwenApiKey: "qwen",
         searchApiKey: "search",
-        model: "gpt-5.6-terra",
+        qwenBaseUrl: "https://qwen.example/v1",
+        model: "qwen3.7-plus",
         autoApproveAll: true,
       }),
     ).toEqual({
-      OPENAI_API_KEY: "openai",
+      THREADLIGHT_PROVIDER: "qwen",
+      DASHSCOPE_API_KEY: "qwen",
       BRAVE_SEARCH_API_KEY: "search",
-      THREADLIGHT_MODEL: "gpt-5.6-terra",
+      DASHSCOPE_BASE_URL: "https://qwen.example/v1",
+      THREADLIGHT_MODEL: "qwen3.7-plus",
       THREADLIGHT_AUTO_APPROVE: "1",
     });
   });
 
-  it("uses an environment model before falling back to the default", () => {
+  it("uses provider defaults while remaining compatible with version 1 settings", () => {
     const { store } = createStore();
 
-    expect(store.snapshot({ THREADLIGHT_MODEL: "gpt-5.6-luna" }).model).toBe(
-      "gpt-5.6-luna",
-    );
-    expect(store.snapshot({}).model).toBe("gpt-5.6-sol");
+    expect(store.snapshot({ THREADLIGHT_PROVIDER: "deepseek" })).toMatchObject({
+      provider: "deepseek",
+      model: "deepseek-v4-pro",
+    });
+    expect(store.snapshot({ THREADLIGHT_PROVIDER: "qwen" })).toMatchObject({
+      provider: "qwen",
+      model: "qwen3.7-plus",
+    });
+    expect(store.snapshot({})).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.6-sol",
+    });
   });
 });

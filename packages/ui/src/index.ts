@@ -34,6 +34,8 @@ export type {
 } from "./session.js";
 export type { ScrollMetrics } from "./scroll.js";
 export type {
+  ModelProviderId,
+  ProviderSecretDrafts,
   SettingsAdapter,
   SecretDraft,
   SettingsSnapshot,

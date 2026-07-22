@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   KeyRound,
+  Link2,
   LoaderCircle,
   Search,
   ShieldCheck,
@@ -12,55 +13,146 @@ import {
   TriangleAlert,
 } from "lucide-react";
 
-export const MODEL_OPTIONS = [
+export type ModelProviderId = "openai" | "deepseek" | "qwen";
+
+interface ModelOption {
+  value: string;
+  label: string;
+  qualifier: string;
+  description: string;
+}
+
+interface ProviderOption {
+  value: ModelProviderId;
+  label: string;
+  description: string;
+  keyLabel: string;
+  keyDescription: string;
+  defaultModel: string;
+  models: readonly ModelOption[];
+}
+
+export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
   {
-    value: "gpt-5.6-sol",
-    label: "GPT-5.6 Sol",
-    qualifier: "性能优先",
-    description: "适合复杂推理和编程任务，优先获得最佳质量。",
+    value: "openai",
+    label: "OpenAI",
+    description: "使用 OpenAI Responses API，适合 GPT 系列模型。",
+    keyLabel: "OpenAI API Key",
+    keyDescription: "用于 OpenAI 模型请求，通常以 sk- 开头。",
+    defaultModel: "gpt-5.6-sol",
+    models: [
+      {
+        value: "gpt-5.6-sol",
+        label: "GPT-5.6 Sol",
+        qualifier: "性能优先",
+        description: "适合复杂推理和编程任务，优先获得最佳质量。",
+      },
+      {
+        value: "gpt-5.6-terra",
+        label: "GPT-5.6 Terra",
+        qualifier: "均衡",
+        description: "在能力、速度和成本之间取得平衡。",
+      },
+      {
+        value: "gpt-5.6-luna",
+        label: "GPT-5.6 Luna",
+        qualifier: "成本优先",
+        description: "适合成本敏感的高频和轻量任务。",
+      },
+      {
+        value: "gpt-5.4-mini",
+        label: "GPT-5.4 mini",
+        qualifier: "强力 mini",
+        description: "更快的编程和工具调用模型，兼顾能力与成本。",
+      },
+      {
+        value: "gpt-5-mini",
+        label: "GPT-5 mini",
+        qualifier: "经济 mini",
+        description: "适合目标清晰、低延迟和高吞吐的任务。",
+      },
+      {
+        value: "gpt-4.1-mini",
+        label: "GPT-4.1 mini",
+        qualifier: "低延迟 mini",
+        description: "无额外推理步骤，擅长指令遵循和工具调用。",
+      },
+    ],
   },
   {
-    value: "gpt-5.6-terra",
-    label: "GPT-5.6 Terra",
-    qualifier: "均衡",
-    description: "在能力、速度和成本之间取得平衡。",
+    value: "deepseek",
+    label: "DeepSeek",
+    description: "直连 DeepSeek API，支持推理和工具调用。",
+    keyLabel: "DeepSeek API Key",
+    keyDescription: "用于 DeepSeek 模型请求。",
+    defaultModel: "deepseek-v4-pro",
+    models: [
+      {
+        value: "deepseek-v4-pro",
+        label: "DeepSeek V4 Pro",
+        qualifier: "性能优先",
+        description: "面向复杂推理、编程和长上下文 Agent 任务。",
+      },
+      {
+        value: "deepseek-v4-flash",
+        label: "DeepSeek V4 Flash",
+        qualifier: "速度优先",
+        description: "更低延迟和成本，适合日常 Agent 与高频任务。",
+      },
+    ],
   },
   {
-    value: "gpt-5.6-luna",
-    label: "GPT-5.6 Luna",
-    qualifier: "成本优先",
-    description: "适合成本敏感的高频和轻量任务。",
+    value: "qwen",
+    label: "阿里云百炼 · 千问",
+    description: "通过百炼 OpenAI 兼容接口使用千问模型。",
+    keyLabel: "百炼 API Key",
+    keyDescription: "用于阿里云百炼模型请求；密钥与服务地域对应。",
+    defaultModel: "qwen3.7-plus",
+    models: [
+      {
+        value: "qwen3.7-max",
+        label: "Qwen3.7 Max",
+        qualifier: "性能优先",
+        description: "适合复杂、多步骤推理和高难度 Agent 任务。",
+      },
+      {
+        value: "qwen3.7-plus",
+        label: "Qwen3.7 Plus",
+        qualifier: "均衡",
+        description: "在能力、速度和成本之间取得平衡，适合多数任务。",
+      },
+      {
+        value: "qwen3.6-flash",
+        label: "Qwen3.6 Flash",
+        qualifier: "低延迟",
+        description: "面向简单、高频任务，优先响应速度与成本。",
+      },
+    ],
   },
-  {
-    value: "gpt-5.4-mini",
-    label: "GPT-5.4 mini",
-    qualifier: "强力 mini",
-    description: "更快的编程和工具调用模型，兼顾能力与成本。",
-  },
-  {
-    value: "gpt-5-mini",
-    label: "GPT-5 mini",
-    qualifier: "经济 mini",
-    description: "适合目标清晰、低延迟和高吞吐的任务。",
-  },
-  {
-    value: "gpt-4.1-mini",
-    label: "GPT-4.1 mini",
-    qualifier: "低延迟 mini",
-    description: "无额外推理步骤，擅长指令遵循和工具调用。",
-  },
-] as const;
+];
+
+export const MODEL_OPTIONS = PROVIDER_OPTIONS[0].models;
+export const DEFAULT_QWEN_BASE_URL =
+  "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 export interface SettingsSnapshot {
+  provider: ModelProviderId;
   openAIApiKeyConfigured: boolean;
+  deepSeekApiKeyConfigured: boolean;
+  qwenApiKeyConfigured: boolean;
   searchApiKeyConfigured: boolean;
+  qwenBaseUrl: string;
   model: string;
   autoApproveAll: boolean;
 }
 
 export interface SettingsUpdate {
+  provider: ModelProviderId;
   openAIApiKey?: string | null;
+  deepSeekApiKey?: string | null;
+  qwenApiKey?: string | null;
   searchApiKey?: string | null;
+  qwenBaseUrl: string;
   model: string;
   autoApproveAll: boolean;
 }
@@ -75,7 +167,14 @@ export interface SecretDraft {
   cleared: boolean;
 }
 
+export type ProviderSecretDrafts = Record<ModelProviderId, SecretDraft>;
+
 const EMPTY_SECRET: SecretDraft = { value: "", cleared: false };
+const EMPTY_PROVIDER_SECRETS: ProviderSecretDrafts = {
+  openai: EMPTY_SECRET,
+  deepseek: EMPTY_SECRET,
+  qwen: EMPTY_SECRET,
+};
 
 export function SettingsPage({
   adapter,
@@ -85,8 +184,12 @@ export function SettingsPage({
   onRuntimeRestart(): Promise<void>;
 }) {
   const [settings, setSettings] = useState<SettingsSnapshot>();
-  const [openAIKey, setOpenAIKey] = useState<SecretDraft>(EMPTY_SECRET);
+  const [providerKeys, setProviderKeys] = useState<ProviderSecretDrafts>(
+    EMPTY_PROVIDER_SECRETS,
+  );
   const [searchKey, setSearchKey] = useState<SecretDraft>(EMPTY_SECRET);
+  const [provider, setProvider] = useState<ModelProviderId>("openai");
+  const [qwenBaseUrl, setQwenBaseUrl] = useState(DEFAULT_QWEN_BASE_URL);
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
   const [autoApproveAll, setAutoApproveAll] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -100,6 +203,8 @@ export function SettingsPage({
       .then((snapshot) => {
         if (!active) return;
         setSettings(snapshot);
+        setProvider(snapshot.provider);
+        setQwenBaseUrl(snapshot.qwenBaseUrl);
         setModel(snapshot.model);
         setAutoApproveAll(snapshot.autoApproveAll);
       })
@@ -111,22 +216,39 @@ export function SettingsPage({
     };
   }, [adapter]);
 
+  const providerOption = providerDetails(provider);
+  const providerKey = providerKeys[provider];
   const dirty = settings
-    ? openAIKey.value.trim().length > 0 ||
-      openAIKey.cleared ||
+    ? Object.values(providerKeys).some(
+        (draft) => draft.value.trim().length > 0 || draft.cleared,
+      ) ||
       searchKey.value.trim().length > 0 ||
       searchKey.cleared ||
+      provider !== settings.provider ||
+      qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
       model !== settings.model ||
       autoApproveAll !== settings.autoApproveAll
     : false;
 
-  function editSecret(
-    setter: (draft: SecretDraft) => void,
-    value: string,
-  ) {
-    setter({ value, cleared: false });
+  function markEdited() {
     setSaved(false);
     setError(undefined);
+  }
+
+  function editProviderKey(value: string) {
+    setProviderKeys((drafts) => ({
+      ...drafts,
+      [provider]: { value, cleared: false },
+    }));
+    markEdited();
+  }
+
+  function clearProviderKey() {
+    setProviderKeys((drafts) => ({
+      ...drafts,
+      [provider]: { value: "", cleared: true },
+    }));
+    markEdited();
   }
 
   async function save() {
@@ -137,10 +259,17 @@ export function SettingsPage({
 
     try {
       const snapshot = await adapter.save(
-        createSettingsUpdate(openAIKey, searchKey, model, autoApproveAll),
+        createSettingsUpdate(
+          providerKeys,
+          searchKey,
+          provider,
+          qwenBaseUrl,
+          model,
+          autoApproveAll,
+        ),
       );
       setSettings(snapshot);
-      setOpenAIKey(EMPTY_SECRET);
+      setProviderKeys(EMPTY_PROVIDER_SECRETS);
       setSearchKey(EMPTY_SECRET);
       setSaved(true);
       await onRuntimeRestart();
@@ -156,7 +285,7 @@ export function SettingsPage({
       <header className="workspace-header settings-header">
         <div>
           <h1>设置</h1>
-          <p>模型、搜索与工具权限</p>
+          <p>模型服务、搜索与工具权限</p>
         </div>
       </header>
 
@@ -182,41 +311,47 @@ export function SettingsPage({
                     <Sparkles size={16} />
                   </span>
                   <div>
-                    <h3 id="model-title">模型</h3>
-                    <p>选择新任务和后续回复使用的 OpenAI 模型。</p>
+                    <h3 id="model-title">模型服务</h3>
+                    <p>选择服务厂商；可用模型和连接配置会随厂商切换。</p>
                   </div>
                 </div>
 
                 <div className="settings-fields">
-                  <div className="settings-field model-field">
-                    <div className="settings-field-label">
-                      <div>
-                        <label htmlFor="model-select">默认模型</label>
-                        <p>{modelDescription(model)}</p>
-                      </div>
-                    </div>
-                    <div className="model-select-wrap">
-                      <select
-                        id="model-select"
-                        value={model}
-                        onChange={(event) => {
-                          setModel(event.target.value);
-                          setSaved(false);
-                          setError(undefined);
-                        }}
-                      >
-                        {!isKnownModel(model) && (
-                          <option value={model}>{model}（当前配置）</option>
-                        )}
-                        {MODEL_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label} — {option.qualifier}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={14} aria-hidden="true" />
-                    </div>
-                  </div>
+                  <SelectField
+                    id="provider-select"
+                    label="服务厂商"
+                    description={providerOption.description}
+                    value={provider}
+                    onChange={(value) => {
+                      const nextProvider = value as ModelProviderId;
+                      setProvider(nextProvider);
+                      setModel(providerDetails(nextProvider).defaultModel);
+                      markEdited();
+                    }}
+                    options={PROVIDER_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                  />
+                  <SelectField
+                    id="model-select"
+                    label="默认模型"
+                    description={modelDescription(provider, model)}
+                    value={model}
+                    onChange={(value) => {
+                      setModel(value);
+                      markEdited();
+                    }}
+                    options={[
+                      ...(!isKnownModel(provider, model)
+                        ? [{ value: model, label: `${model}（当前配置）` }]
+                        : []),
+                      ...providerOption.models.map((option) => ({
+                        value: option.value,
+                        label: `${option.label} — ${option.qualifier}`,
+                      })),
+                    ]}
+                  />
                 </div>
               </section>
 
@@ -226,24 +361,34 @@ export function SettingsPage({
                     <KeyRound size={16} />
                   </span>
                   <div>
-                    <h3 id="api-title">API 密钥</h3>
-                    <p>配置模型和联网搜索所需的凭据。</p>
+                    <h3 id="api-title">连接与 API 密钥</h3>
+                    <p>配置 {providerOption.label} 和联网搜索所需的凭据。</p>
                   </div>
                 </div>
 
                 <div className="settings-fields">
                   <SecretField
-                    id="openai-api-key"
-                    label="OpenAI API Key"
-                    description="用于模型请求。通常以 sk- 开头。"
-                    configured={settings?.openAIApiKeyConfigured ?? false}
-                    draft={openAIKey}
-                    onChange={(value) => editSecret(setOpenAIKey, value)}
-                    onClear={() => {
-                      setOpenAIKey({ value: "", cleared: true });
-                      setSaved(false);
-                    }}
+                    key={provider}
+                    id={`${provider}-api-key`}
+                    label={providerOption.keyLabel}
+                    description={providerOption.keyDescription}
+                    configured={providerKeyConfigured(settings, provider)}
+                    draft={providerKey}
+                    onChange={editProviderKey}
+                    onClear={clearProviderKey}
                   />
+                  {provider === "qwen" && (
+                    <TextField
+                      id="qwen-base-url"
+                      label="Base URL"
+                      description="默认连接北京地域；其他地域或业务空间请填写对应兼容接口地址。"
+                      value={qwenBaseUrl}
+                      onChange={(value) => {
+                        setQwenBaseUrl(value);
+                        markEdited();
+                      }}
+                    />
+                  )}
                   <SecretField
                     id="search-api-key"
                     label="搜索 API Key"
@@ -251,10 +396,13 @@ export function SettingsPage({
                     configured={settings?.searchApiKeyConfigured ?? false}
                     draft={searchKey}
                     icon="search"
-                    onChange={(value) => editSecret(setSearchKey, value)}
+                    onChange={(value) => {
+                      setSearchKey({ value, cleared: false });
+                      markEdited();
+                    }}
                     onClear={() => {
                       setSearchKey({ value: "", cleared: true });
-                      setSaved(false);
+                      markEdited();
                     }}
                   />
                 </div>
@@ -287,8 +435,7 @@ export function SettingsPage({
                     aria-label="自动同意所有询问"
                     onClick={() => {
                       setAutoApproveAll((value) => !value);
-                      setSaved(false);
-                      setError(undefined);
+                      markEdited();
                     }}
                   >
                     <span />
@@ -332,6 +479,47 @@ export function SettingsPage({
         </div>
       </section>
     </>
+  );
+}
+
+function SelectField({
+  id,
+  label,
+  description,
+  value,
+  options,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  value: string;
+  options: readonly { value: string; label: string }[];
+  onChange(value: string): void;
+}) {
+  return (
+    <div className="settings-field model-field">
+      <div className="settings-field-label">
+        <div>
+          <label htmlFor={id}>{label}</label>
+          <p>{description}</p>
+        </div>
+      </div>
+      <div className="model-select-wrap">
+        <select
+          id={id}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <ChevronDown size={14} aria-hidden="true" />
+      </div>
+    </div>
   );
 }
 
@@ -406,38 +594,103 @@ function SecretField({
   );
 }
 
+function TextField({
+  id,
+  label,
+  description,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  value: string;
+  onChange(value: string): void;
+}) {
+  return (
+    <div className="settings-field">
+      <div className="settings-field-label">
+        <div>
+          <label htmlFor={id}>{label}</label>
+          <p>{description}</p>
+        </div>
+      </div>
+      <div className="secret-input-wrap">
+        <span className="secret-leading" aria-hidden="true">
+          <Link2 size={14} />
+        </span>
+        <input
+          id={id}
+          type="url"
+          value={value}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={DEFAULT_QWEN_BASE_URL}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function createSettingsUpdate(
-  openAIKey: SecretDraft,
+  providerKeys: ProviderSecretDrafts,
   searchKey: SecretDraft,
+  provider: ModelProviderId,
+  qwenBaseUrl: string,
   model: string,
   autoApproveAll: boolean,
 ): SettingsUpdate {
   return {
+    provider,
+    qwenBaseUrl: qwenBaseUrl.trim(),
     model,
     autoApproveAll,
-    ...secretUpdate("openAIApiKey", openAIKey),
+    ...secretUpdate("openAIApiKey", providerKeys.openai),
+    ...secretUpdate("deepSeekApiKey", providerKeys.deepseek),
+    ...secretUpdate("qwenApiKey", providerKeys.qwen),
     ...secretUpdate("searchApiKey", searchKey),
   };
 }
 
-function isKnownModel(model: string): boolean {
-  return MODEL_OPTIONS.some((option) => option.value === model);
-}
-
-function modelDescription(model: string): string {
+function providerDetails(provider: ModelProviderId): ProviderOption {
   return (
-    MODEL_OPTIONS.find((option) => option.value === model)?.description ??
-    "当前模型由外部配置提供；选择其他模型后将覆盖它。"
+    PROVIDER_OPTIONS.find((option) => option.value === provider) ??
+    PROVIDER_OPTIONS[0]
   );
 }
 
-function secretUpdate(
-  key: "openAIApiKey" | "searchApiKey",
+function providerKeyConfigured(
+  settings: SettingsSnapshot | undefined,
+  provider: ModelProviderId,
+): boolean {
+  if (!settings) return false;
+  if (provider === "deepseek") return settings.deepSeekApiKeyConfigured;
+  if (provider === "qwen") return settings.qwenApiKeyConfigured;
+  return settings.openAIApiKeyConfigured;
+}
+
+function isKnownModel(provider: ModelProviderId, model: string): boolean {
+  return providerDetails(provider).models.some((option) => option.value === model);
+}
+
+function modelDescription(provider: ModelProviderId, model: string): string {
+  return (
+    providerDetails(provider).models.find((option) => option.value === model)
+      ?.description ?? "当前模型由外部配置提供；选择其他模型后将覆盖它。"
+  );
+}
+
+function secretUpdate<K extends keyof Pick<
+  SettingsUpdate,
+  "openAIApiKey" | "deepSeekApiKey" | "qwenApiKey" | "searchApiKey"
+>>(
+  key: K,
   draft: SecretDraft,
-): Pick<SettingsUpdate, typeof key> | Record<string, never> {
+): Pick<SettingsUpdate, K> | Record<string, never> {
   const value = draft.value.trim();
-  if (value) return { [key]: value };
-  if (draft.cleared) return { [key]: null };
+  if (value) return { [key]: value } as Pick<SettingsUpdate, K>;
+  if (draft.cleared) return { [key]: null } as Pick<SettingsUpdate, K>;
   return {};
 }
 

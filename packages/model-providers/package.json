@@ -1,5 +1,5 @@
 {
-  "name": "@threadlight/agent-loop",
+  "name": "@threadlight/model-providers",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,5 +13,9 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "dependencies": {
+    "@threadlight/agent-loop": "0.1.0",
+    "openai": "^6.48.0"
+  }
 }
