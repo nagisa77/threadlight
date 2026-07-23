@@ -1,7 +1,9 @@
 import OpenAI from "openai";
+import { createReadStream } from "node:fs";
 
 import type {
   ModelGenerateOptions,
+  ModelAttachment,
   ModelProvider,
   ModelRequest,
   ModelTurn,
@@ -26,6 +28,27 @@ export class OpenAIResponsesProvider implements ModelProvider {
     this.defaultModel = options.defaultModel ?? "gpt-5.6-sol";
   }
 
+  async uploadAttachment(
+    attachment: ModelAttachment,
+    signal?: AbortSignal,
+  ): Promise<ModelAttachment> {
+    if (openAIFileId(attachment.providerReference)) return attachment;
+    const params: OpenAI.FileCreateParams = {
+      file: createReadStream(attachment.path),
+      purpose: "user_data",
+    };
+    const uploaded = signal
+      ? await this.client.files.create(params, { signal })
+      : await this.client.files.create(params);
+    return {
+      ...attachment,
+      providerReference: {
+        protocol: "openai-files",
+        fileId: uploaded.id,
+      },
+    };
+  }
+
   async generate(
     request: ModelRequest,
     options: ModelGenerateOptions = {},
@@ -34,16 +57,42 @@ export class OpenAIResponsesProvider implements ModelProvider {
       ? sanitizeResponseInput(request.state)
       : [];
 
-    if (request.input) {
-      input.push({ role: "user", content: request.input });
-    }
-
     for (const result of request.toolResults ?? []) {
       input.push({
         type: "function_call_output",
         call_id: result.callId,
         output: result.output,
       });
+    }
+
+    if (request.attachments?.length) {
+      const content: OpenAI.Responses.ResponseInputContent[] = [];
+      if (request.input) {
+        content.push({ type: "input_text", text: request.input });
+      }
+      for (const attachment of request.attachments ?? []) {
+        const prepared = await this.uploadAttachment(
+          attachment,
+          request.signal,
+        );
+        const fileId = openAIFileId(prepared.providerReference);
+        if (!fileId) throw new Error("OpenAI file upload did not return an id");
+        content.push(
+          attachment.kind === "image"
+            ? {
+                type: "input_image",
+                detail: "auto",
+                file_id: fileId,
+              }
+            : {
+                type: "input_file",
+                file_id: fileId,
+              },
+        );
+      }
+      input.push({ role: "user", content });
+    } else if (request.input) {
+      input.push({ role: "user", content: request.input });
     }
 
     const tools: OpenAI.Responses.Tool[] = request.tools.map((tool) => ({
@@ -92,6 +141,13 @@ export class OpenAIResponsesProvider implements ModelProvider {
         : undefined,
     };
   }
+}
+
+function openAIFileId(value: unknown): string | undefined {
+  if (!isObject(value)) return;
+  return value.protocol === "openai-files" && typeof value.fileId === "string"
+    ? value.fileId
+    : undefined;
 }
 
 function sanitizeResponseInput(

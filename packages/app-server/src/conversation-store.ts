@@ -142,11 +142,27 @@ function isConversationMessage(value: unknown): boolean {
     typeof message.id === "string" &&
     (message.role === "user" || message.role === "assistant") &&
     typeof message.text === "string" &&
+    (message.attachments === undefined ||
+      (Array.isArray(message.attachments) &&
+        message.attachments.every(isAttachment))) &&
     (message.error === undefined || typeof message.error === "boolean") &&
     (message.progress === undefined ||
       (Array.isArray(message.progress) &&
         message.progress.every(isConversationProgress))) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isAttachment(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const attachment = value as Record<string, unknown>;
+  return (
+    typeof attachment.id === "string" &&
+    typeof attachment.name === "string" &&
+    typeof attachment.mimeType === "string" &&
+    typeof attachment.size === "number" &&
+    (attachment.kind === "image" || attachment.kind === "file") &&
+    typeof attachment.path === "string"
   );
 }
 

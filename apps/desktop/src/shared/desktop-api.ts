@@ -1,4 +1,5 @@
 import type {
+  AttachmentData,
   JsonRpcOutgoing,
   JsonRpcRequest,
 } from "@threadlight/protocol";
@@ -20,6 +21,8 @@ export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
   "threadlight:project-memory:open";
 export const DESKTOP_AUDIO_TRANSCRIBE_CHANNEL =
   "threadlight:audio:transcribe";
+export const DESKTOP_ATTACHMENT_REFERENCE_CHANNEL =
+  "threadlight:attachment:reference";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 
@@ -87,6 +90,13 @@ export interface DesktopAudioTranscriptionRequest {
   mimeType: string;
 }
 
+export interface DesktopAttachmentReferenceRequest {
+  name: string;
+  mimeType: string;
+  size: number;
+  path: string;
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -108,4 +118,5 @@ export interface DesktopApi {
   transcribeAudio(
     request: DesktopAudioTranscriptionRequest,
   ): Promise<string>;
+  createAttachmentReference(file: File): Promise<AttachmentData>;
 }

@@ -1,16 +1,163 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   AgentLoop,
   defineAgent,
   defineTool,
   type ModelProvider,
+  type ModelRequest,
 } from "@threadlight/agent-loop";
 
 import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 describe("AppServer", () => {
+  it("rejects attachment metadata that points outside the configured upload root", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "threadlight-server-upload-"));
+    const attachmentRoot = join(directory, "uploads");
+    const outsidePath = join(directory, "outside.txt");
+    mkdirSync(attachmentRoot);
+    writeFileSync(outsidePath, "private");
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate() {
+          return { text: "done", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({ name: "test", instructions: "Reply" }),
+      attachmentRoot,
+      send: (message) => messages.push(message),
+    });
+
+    try {
+      await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+      await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+      const threadResponse = messages.find(
+        (message) => "id" in message && message.id === 2,
+      );
+      const threadId = (threadResponse?.result as { threadId: string }).threadId;
+      await server.receive({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "turn/start",
+        params: {
+          threadId,
+          input: "Inspect this",
+          attachments: [{
+            id: "attachment-1",
+            name: "outside.txt",
+            mimeType: "text/plain",
+            size: 7,
+            kind: "file",
+            path: outsidePath,
+          }],
+        },
+      });
+
+      expect(messages.at(-1)).toMatchObject({
+        id: 3,
+        error: {
+          code: -32602,
+          message: expect.stringContaining("active project"),
+        },
+      });
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("lets the scripted model decide to upload an attachment during the turn", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "threadlight-server-local-"));
+    const attachmentPath = join(directory, "diagram.png");
+    writeFileSync(attachmentPath, Uint8Array.from([1, 2, 3, 4, 5]));
+    const requests: ModelRequest[] = [];
+    let uploads = 0;
+    let completeTurn: ((message: JsonRpcOutgoing) => void) | undefined;
+    const completed = new Promise<JsonRpcOutgoing>((resolve) => {
+      completeTurn = resolve;
+    });
+    const provider: ModelProvider = {
+      async uploadAttachment(attachment) {
+        uploads += 1;
+        return {
+          ...attachment,
+          providerReference: { protocol: "scripted", fileId: "file-1" },
+        };
+      },
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I will inspect the image.",
+            toolCalls: [
+              {
+                id: "upload-1",
+                name: "attach_to_model_context",
+                arguments: { attachmentId: "attachment-1" },
+              },
+            ],
+          };
+        }
+        return { text: "done", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "test", instructions: "Reply" }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completeTurn?.(message);
+        }
+      },
+    });
+    const attachment = {
+      id: "attachment-1",
+      name: "diagram.png",
+      mimeType: "image/png",
+      size: 5,
+      kind: "image",
+      path: attachmentPath,
+    };
+
+    try {
+      await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+      await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+      const threadResponse = messages.find(
+        (message) => "id" in message && message.id === 2,
+      );
+      const threadId = (threadResponse?.result as { threadId: string }).threadId;
+      await server.receive({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "turn/start",
+        params: { threadId, input: "", attachments: [attachment] },
+      });
+
+      await expect(completed).resolves.toMatchObject({
+        method: "turn/completed",
+        params: { threadId, output: "done" },
+      });
+      expect(uploads).toBe(1);
+      expect(requests[0]?.attachments).toBeUndefined();
+      expect(requests[0]?.input).toContain("diagram.png");
+      expect(requests[0]?.input).toContain(attachmentPath);
+      expect(requests[1]?.attachments).toEqual([
+        {
+          ...attachment,
+          providerReference: { protocol: "scripted", fileId: "file-1" },
+        },
+      ]);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("forwards model deltas before the completed turn", async () => {
     let finishGeneration!: () => void;
     const generationPending = new Promise<void>((resolve) => {

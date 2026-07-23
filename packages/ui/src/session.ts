@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
 import type {
+  AttachmentData,
   AgentEventData,
   ConversationMessageData,
   ProcessSnapshotData,
@@ -25,6 +26,7 @@ export interface ConversationMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  attachments?: readonly AttachmentData[];
   error?: boolean;
   progress?: readonly ConversationProgress[];
   activities?: readonly ToolActivity[];
@@ -55,7 +57,12 @@ export type SessionAction =
       messages?: readonly ConversationMessageData[];
     }
   | { type: "connection.failed"; error: string }
-  | { type: "message.sent"; id: string; text: string }
+  | {
+      type: "message.sent";
+      id: string;
+      text: string;
+      attachments?: readonly AttachmentData[];
+    }
   | { type: "turn.started" }
   | { type: "turn.completed"; id: string; output: string }
   | { type: "turn.failed"; id: string; error: string }
@@ -103,7 +110,14 @@ export function sessionReducer(
         approval: undefined,
         messages: [
           ...state.messages,
-          { id: action.id, role: "user", text: action.text },
+          {
+            id: action.id,
+            role: "user",
+            text: action.text,
+            ...(action.attachments?.length
+              ? { attachments: action.attachments }
+              : {}),
+          },
         ],
       };
     case "turn.started":
@@ -492,13 +506,20 @@ export function useThreadlightSession(
   );
 
   const send = useCallback(
-    async (value: string) => {
+    async (value: string, attachments: readonly AttachmentData[] = []) => {
       const text = value.trim();
-      if (!text || !state.threadId || state.isRunning) return false;
+      if ((!text && attachments.length === 0) || !state.threadId || state.isRunning) {
+        return false;
+      }
 
-      dispatch({ type: "message.sent", id: crypto.randomUUID(), text });
+      dispatch({
+        type: "message.sent",
+        id: crypto.randomUUID(),
+        text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+      });
       try {
-        await client.startTurn(state.threadId, text);
+        await client.startTurn(state.threadId, text, attachments);
       } catch (error) {
         dispatch({
           type: "turn.failed",

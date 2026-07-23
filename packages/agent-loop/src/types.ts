@@ -40,10 +40,21 @@ export interface TokenUsage {
   totalTokens: number;
 }
 
+export interface ModelAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "file";
+  path: string;
+  providerReference?: unknown;
+}
+
 export interface ModelRequest {
   model?: string;
   instructions: string;
   input?: string;
+  attachments?: readonly ModelAttachment[];
   state?: unknown;
   toolResults?: readonly ToolResult[];
   tools: readonly Pick<Tool, "name" | "description" | "parameters">[];
@@ -67,6 +78,10 @@ export interface ModelGenerateOptions {
 }
 
 export interface ModelProvider {
+  uploadAttachment?(
+    attachment: ModelAttachment,
+    signal?: AbortSignal,
+  ): Promise<ModelAttachment>;
   generate(
     request: ModelRequest,
     options?: ModelGenerateOptions,
@@ -111,6 +126,7 @@ export type AgentEvent =
 export interface RunOptions {
   signal?: AbortSignal;
   modelState?: unknown;
+  attachments?: readonly ModelAttachment[];
   onEvent?: (event: AgentEvent) => void;
   approve?: (request: ApprovalRequest) => Promise<boolean>;
 }

@@ -3,9 +3,12 @@ import {
   useEffect,
   useRef,
   useState,
+  type ClipboardEvent,
+  type DragEvent,
   type KeyboardEvent,
 } from "react";
 import type { ThreadlightClient } from "@threadlight/client";
+import type { AttachmentData } from "@threadlight/protocol";
 import {
   ArrowUp,
   Check,
@@ -14,9 +17,11 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  FileText,
   LoaderCircle,
   Mic,
   NotebookText,
+  Paperclip,
   Settings,
   Sparkles,
   SquarePen,
@@ -60,7 +65,25 @@ export interface ThreadlightAppProps {
   projects?: ProjectsAdapter;
   memory?: ProjectMemoryAdapter;
   voiceInput?: VoiceInputAdapter;
+  attachmentStage?: AttachmentStageAdapter;
+  attachmentPreview?: AttachmentPreviewAdapter;
 }
+
+export interface AttachmentStageAdapter {
+  stage(file: File): Promise<AttachmentData>;
+}
+
+export interface AttachmentPreviewAdapter {
+  imageUrl(attachment: AttachmentData): string | undefined;
+}
+
+interface PendingAttachment {
+  id: string;
+  file: File;
+  previewUrl?: string;
+}
+
+const MAX_COMPOSER_ATTACHMENTS = 10;
 
 type VoiceInputStatus =
   | "idle"
@@ -80,6 +103,8 @@ export function ThreadlightApp({
   projects,
   memory,
   voiceInput,
+  attachmentStage,
+  attachmentPreview,
 }: ThreadlightAppProps) {
   const {
     state,
@@ -105,14 +130,38 @@ export function ThreadlightApp({
   const [deletingConversation, setDeletingConversation] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceInputStatus>("idle");
   const [voiceError, setVoiceError] = useState<string>();
+  const [pendingAttachments, setPendingAttachments] = useState<
+    PendingAttachment[]
+  >([]);
+  const [preparingAttachments, setPreparingAttachments] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string>();
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
   const mediaStream = useRef<MediaStream | undefined>(undefined);
   const recordedChunks = useRef<Blob[]>([]);
   const voiceOperation = useRef(0);
+  const dragDepth = useRef(0);
+  const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const conversation = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const currentProject = activeProject(projectSnapshot);
+
+  useEffect(() => {
+    pendingAttachmentsRef.current = pendingAttachments;
+  }, [pendingAttachments]);
+
+  useEffect(
+    () => () => {
+      for (const attachment of pendingAttachmentsRef.current) {
+        if (attachment.previewUrl?.startsWith("blob:")) {
+          URL.revokeObjectURL(attachment.previewUrl);
+        }
+      }
+    },
+    [],
+  );
 
   const releaseVoiceCapture = useCallback(() => {
     const recorder = mediaRecorder.current;
@@ -301,12 +350,118 @@ export function ThreadlightApp({
     }
   }
 
+  function addAttachments(files: readonly File[]) {
+    if (
+      !attachmentStage ||
+      view !== "thread" ||
+      state.isRunning ||
+      preparingAttachments ||
+      files.length === 0
+    ) {
+      return;
+    }
+    const available = Math.max(
+      0,
+      MAX_COMPOSER_ATTACHMENTS - pendingAttachmentsRef.current.length,
+    );
+    const additions = files.slice(0, available).map(
+      (file) =>
+        ({
+          id: crypto.randomUUID(),
+          file,
+          ...(file.type.startsWith("image/")
+            ? { previewUrl: URL.createObjectURL(file) }
+            : {}),
+        }) satisfies PendingAttachment,
+    );
+    if (additions.length === 0) return;
+    setAttachmentError(undefined);
+    const next = [...pendingAttachmentsRef.current, ...additions];
+    pendingAttachmentsRef.current = next;
+    setPendingAttachments(next);
+  }
+
+  function removeAttachment(id: string) {
+    const attachment = pendingAttachmentsRef.current.find(
+      (candidate) => candidate.id === id,
+    );
+    if (attachment?.previewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(attachment.previewUrl);
+    }
+    const next = pendingAttachmentsRef.current.filter(
+      (candidate) => candidate.id !== id,
+    );
+    pendingAttachmentsRef.current = next;
+    setPendingAttachments(next);
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLElement>) {
+    const files = [...event.clipboardData.files];
+    if (files.length === 0) return;
+    event.preventDefault();
+    addAttachments(files);
+  }
+
+  function handleDragEnter(event: DragEvent<HTMLElement>) {
+    if (!attachmentStage || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current += 1;
+    setIsDraggingFiles(true);
+  }
+
+  function handleDragOver(event: DragEvent<HTMLElement>) {
+    if (!attachmentStage || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLElement>) {
+    if (!hasFiles(event.dataTransfer)) return;
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setIsDraggingFiles(false);
+  }
+
+  function handleDrop(event: DragEvent<HTMLElement>) {
+    if (!attachmentStage || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth.current = 0;
+    setIsDraggingFiles(false);
+    addAttachments([...event.dataTransfer.files]);
+  }
+
   async function submit(value = input) {
-    if (voiceStatus !== "idle") return;
+    if (voiceStatus !== "idle" || preparingAttachments) return;
     followOutput.current = true;
     const shouldNameConversation = !hasUserInput(state.messages);
-    if (await send(value)) {
+    const draftAttachments = [...pendingAttachmentsRef.current];
+    let stagedAttachments: AttachmentData[] = [];
+    if (draftAttachments.length > 0) {
+      if (!attachmentStage) return;
+      setPreparingAttachments(true);
+      setAttachmentError(undefined);
+      try {
+        stagedAttachments = await Promise.all(
+          draftAttachments.map((attachment) =>
+            attachmentStage.stage(attachment.file),
+          ),
+        );
+      } catch (error) {
+        setAttachmentError(errorMessage(error));
+        return;
+      } finally {
+        setPreparingAttachments(false);
+      }
+    }
+    if (await send(value, stagedAttachments)) {
+      for (const attachment of draftAttachments) {
+        if (attachment.previewUrl?.startsWith("blob:")) {
+          URL.revokeObjectURL(attachment.previewUrl);
+        }
+      }
       setInput("");
+      setAttachmentError(undefined);
+      pendingAttachmentsRef.current = [];
+      setPendingAttachments([]);
       if (textarea.current) textarea.current.style.height = "auto";
       if (projects && currentProject && state.threadId) {
         try {
@@ -317,9 +472,11 @@ export function ThreadlightApp({
             projectId: currentProject.id,
             id: state.threadId,
             title: shouldNameConversation
-              ? conversationTitle(value)
+              ? conversationTitle(value || stagedAttachments[0]?.name || "新任务")
               : (existingTitle ??
-                conversationTitle(state.messages[0]?.text ?? value)),
+                conversationTitle(
+                  state.messages[0]?.text || value || stagedAttachments[0]?.name || "新任务",
+                )),
           });
           setProjectSnapshot(snapshot);
         } catch (error) {
@@ -570,7 +727,14 @@ export function ThreadlightApp({
         </div>
       </aside>
 
-      <main className="workspace">
+      <main
+        className={`workspace ${isDraggingFiles ? "is-dragging-files" : ""}`}
+        onPaste={handlePaste}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         {view === "memory" && memory && currentProject ? (
           <ProjectMemoryPage
             adapter={memory}
@@ -637,27 +801,38 @@ export function ThreadlightApp({
                         className={`message ${message.role} ${message.error ? "error" : ""}`}
                         key={message.id}
                       >
-                        <div className="message-body">
-                          {message.progress && message.progress.length > 0 && (
-                            <ProgressList
-                              progress={message.progress}
-                              onTerminateProcess={terminateProcess}
+                        {message.role === "user" &&
+                          message.attachments &&
+                          message.attachments.length > 0 && (
+                            <MessageAttachments
+                              attachments={message.attachments}
+                              attachmentPreview={attachmentPreview}
                             />
                           )}
-                          {(!message.progress || message.progress.length === 0) &&
-                            message.activities &&
-                            message.activities.length > 0 && (
-                            <ActivityList
-                              activities={message.activities}
-                              onTerminateProcess={terminateProcess}
-                            />
-                          )}
-                          {message.role === "assistant" ? (
-                            <MarkdownContent>{message.text}</MarkdownContent>
-                          ) : (
-                            <p>{message.text}</p>
-                          )}
-                        </div>
+                        {(message.text || message.role === "assistant") && (
+                          <div className="message-body">
+                            {message.progress && message.progress.length > 0 && (
+                              <ProgressList
+                                progress={message.progress}
+                                onTerminateProcess={terminateProcess}
+                              />
+                            )}
+                            {(!message.progress ||
+                              message.progress.length === 0) &&
+                              message.activities &&
+                              message.activities.length > 0 && (
+                                <ActivityList
+                                  activities={message.activities}
+                                  onTerminateProcess={terminateProcess}
+                                />
+                              )}
+                            {message.role === "assistant" ? (
+                              <MarkdownContent>{message.text}</MarkdownContent>
+                            ) : (
+                              <p>{message.text}</p>
+                            )}
+                          </div>
+                        )}
                       </article>
                     ))}
 
@@ -701,29 +876,65 @@ export function ThreadlightApp({
               <div
                 className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
               >
-                <textarea
-                  ref={textarea}
-                  value={input}
-                  rows={1}
-                  placeholder={
-                    voiceStatus === "recording"
-                      ? "正在聆听…"
-                      : "向 Threadlight 提问…"
-                  }
-                  disabled={state.connection !== "ready"}
+                <input
+                  ref={fileInput}
+                  className="visually-hidden"
+                  type="file"
+                  multiple
+                  tabIndex={-1}
                   onChange={(event) => {
-                    setInput(event.target.value);
-                    setVoiceError(undefined);
+                    addAttachments([...(event.currentTarget.files ?? [])]);
+                    event.currentTarget.value = "";
                   }}
-                  onKeyDown={handleKeyDown}
-                  onInput={(event) => {
-                    event.currentTarget.style.height = "auto";
-                    event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
-                  }}
-                  aria-label="消息"
-                  aria-describedby="composer-hint"
                 />
-                {voiceInput && !state.isRunning && (
+                {pendingAttachments.length > 0 && (
+                  <ComposerAttachments
+                    attachments={pendingAttachments}
+                    onRemove={removeAttachment}
+                    disabled={preparingAttachments}
+                  />
+                )}
+                <div className="composer-row">
+                  {attachmentStage && (
+                    <button
+                      type="button"
+                      className="composer-action attach pressable"
+                      onClick={() => fileInput.current?.click()}
+                      disabled={
+                        state.connection !== "ready" ||
+                        state.isRunning ||
+                        preparingAttachments ||
+                        pendingAttachments.length >= MAX_COMPOSER_ATTACHMENTS
+                      }
+                      aria-label="添加图片或文件"
+                      title="添加图片或文件"
+                    >
+                      <Paperclip size={17} />
+                    </button>
+                  )}
+                  <textarea
+                    ref={textarea}
+                    value={input}
+                    rows={1}
+                    placeholder={
+                      voiceStatus === "recording"
+                        ? "正在聆听…"
+                        : "向 Threadlight 提问…"
+                    }
+                    disabled={state.connection !== "ready"}
+                    onChange={(event) => {
+                      setInput(event.target.value);
+                      setVoiceError(undefined);
+                    }}
+                    onKeyDown={handleKeyDown}
+                    onInput={(event) => {
+                      event.currentTarget.style.height = "auto";
+                      event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
+                    }}
+                    aria-label="消息"
+                    aria-describedby="composer-hint"
+                  />
+                  {voiceInput && !state.isRunning && (
                   <button
                     type="button"
                     className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
@@ -757,8 +968,8 @@ export function ThreadlightApp({
                       <Mic size={17} />
                     )}
                   </button>
-                )}
-                {state.isRunning ? (
+                  )}
+                  {state.isRunning ? (
                   <button
                     className="composer-action stop pressable"
                     onClick={() => void interrupt()}
@@ -772,25 +983,41 @@ export function ThreadlightApp({
                     className="composer-action send pressable"
                     onClick={() => void submit()}
                     disabled={
-                      !input.trim() ||
+                      (!input.trim() && pendingAttachments.length === 0) ||
                       state.connection !== "ready" ||
-                      voiceStatus !== "idle"
+                      voiceStatus !== "idle" ||
+                      preparingAttachments
                     }
                     aria-label="发送消息"
                     title="发送"
                   >
                     <ArrowUp size={18} strokeWidth={2.4} />
                   </button>
-                )}
+                  )}
+                </div>
               </div>
               <p
                 id="composer-hint"
-                className={`composer-hint ${voiceError ? "error" : ""}`}
+                className={`composer-hint ${voiceError || attachmentError ? "error" : ""}`}
                 aria-live="polite"
               >
-                {voiceInputHint(voiceStatus, voiceError)}
+                {attachmentHint(
+                  voiceStatus,
+                  voiceError,
+                  attachmentError,
+                  pendingAttachments,
+                  preparingAttachments,
+                )}
               </p>
             </footer>
+            {isDraggingFiles && (
+              <div className="attachment-drop-overlay" aria-hidden="true">
+                <div>
+                  <Paperclip size={20} />
+                  <span>拖到这里添加到对话</span>
+                </div>
+              </div>
+            )}
           </>
         )}
       </main>
@@ -1270,6 +1497,114 @@ function ConnectionError({
   );
 }
 
+export function MessageAttachments({
+  attachments,
+  attachmentPreview,
+}: {
+  attachments: readonly AttachmentData[];
+  attachmentPreview?: AttachmentPreviewAdapter;
+}) {
+  const images = attachments
+    .filter((attachment) => attachment.kind === "image")
+    .flatMap((attachment) => {
+      const url = previewUrlFor(attachmentPreview, attachment);
+      return url ? [{ attachment, url }] : [];
+    });
+  const imageIds = new Set(images.map(({ attachment }) => attachment.id));
+  const files = attachments.filter((attachment) => !imageIds.has(attachment.id));
+  return (
+    <div className="message-attachments" aria-label="消息附件">
+      {images.length > 0 && (
+        <div className="message-image-grid">
+          {images.map(({ attachment, url }) => (
+            <img
+              key={attachment.id}
+              src={url}
+              alt={attachment.name}
+              loading="lazy"
+            />
+          ))}
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="message-file-list">
+          {files.map((attachment) => (
+            <div className="message-file" key={attachment.id}>
+              <span className="attachment-file-icon">
+                <FileText size={16} />
+              </span>
+              <span>
+                <strong>{attachment.name}</strong>
+                <small>{formatFileSize(attachment.size)}</small>
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function previewUrlFor(
+  attachmentPreview: AttachmentPreviewAdapter | undefined,
+  attachment: AttachmentData,
+): string | undefined {
+  try {
+    return attachmentPreview?.imageUrl(attachment);
+  } catch {
+    return undefined;
+  }
+}
+
+function ComposerAttachments({
+  attachments,
+  onRemove,
+  disabled,
+}: {
+  attachments: readonly PendingAttachment[];
+  onRemove(id: string): void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="composer-attachments" aria-label="待发送附件">
+      {attachments.map((attachment) => {
+        const isImage = attachment.file.type.startsWith("image/");
+        return (
+          <div
+            className={`composer-attachment ${isImage ? "image" : "file"}`}
+            key={attachment.id}
+            title={attachment.file.name}
+          >
+            {isImage && attachment.previewUrl ? (
+              <img src={attachment.previewUrl} alt={attachment.file.name} />
+            ) : (
+              <span className="attachment-file-icon">
+                <FileText size={17} />
+              </span>
+            )}
+            {!isImage && (
+              <span className="composer-attachment-copy">
+                <strong>{attachment.file.name}</strong>
+                <small>{formatFileSize(attachment.file.size)}</small>
+              </span>
+            )}
+            <button
+              type="button"
+              className="attachment-remove pressable"
+              onClick={() => onRemove(attachment.id)}
+              disabled={disabled}
+              aria-label={`移除 ${attachment.file.name}`}
+              title="移除"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function shortId(id?: string): string {
   return id ? id.slice(0, 8) : "—";
 }
@@ -1280,15 +1615,36 @@ function connectionLabel(connection: string): string {
   return "正在连接";
 }
 
-function voiceInputHint(
-  status: VoiceInputStatus,
-  error?: string,
-): string {
+function voiceInputHint(status: VoiceInputStatus, error?: string): string {
   if (error) return error;
   if (status === "requesting") return "正在请求麦克风权限…";
   if (status === "recording") return "正在聆听 · 点击红色按钮完成 · Esc 取消";
   if (status === "transcribing") return "正在将语音转成文字…";
   return "Enter 发送 · Shift + Enter 换行";
+}
+
+function attachmentHint(
+  status: VoiceInputStatus,
+  voiceError: string | undefined,
+  attachmentError: string | undefined,
+  attachments: readonly PendingAttachment[],
+  preparing: boolean,
+): string {
+  if (voiceError || status !== "idle") return voiceInputHint(status, voiceError);
+  if (attachmentError) return attachmentError;
+  if (preparing) return "正在准备附件…";
+  if (attachments.length > 0) return `已添加 ${attachments.length} 个附件 · Enter 发送`;
+  return voiceInputHint(status);
+}
+
+function hasFiles(dataTransfer: DataTransfer): boolean {
+  return dataTransfer.types.includes("Files");
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function formatArguments(value: unknown): string {

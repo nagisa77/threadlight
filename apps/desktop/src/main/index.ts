@@ -1,10 +1,13 @@
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   app,
   BrowserWindow,
   dialog,
   ipcMain,
+  net,
+  protocol,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   safeStorage,
@@ -12,6 +15,7 @@ import {
 } from "electron";
 import {
   THREADLIGHT_METHODS,
+  type AttachmentData,
   type JsonRpcOutgoing,
   type JsonRpcRequest,
   type ThreadlightMethod,
@@ -19,6 +23,10 @@ import {
 import { ProjectMemoryStore } from "@threadlight/project-memory";
 
 import { AppServerProcess } from "./app-server-process.js";
+import {
+  createAttachmentReference,
+  resolveAttachmentUrlPath,
+} from "./attachment-upload.js";
 import {
   parseAudioTranscriptionRequest,
   transcribeAudio,
@@ -33,6 +41,7 @@ import {
 import { ProjectStore } from "./project-store.js";
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
+  DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
@@ -44,10 +53,23 @@ import {
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
+  type DesktopAttachmentReferenceRequest,
   type DesktopConversationTarget,
-  type DesktopSettingsUpdate,
   type DesktopConversationUpdate,
+  type DesktopSettingsUpdate,
 } from "../shared/desktop-api.js";
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "threadlight-attachment",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
 
 let mainWindow: BrowserWindow | null = null;
 let appServer: AppServerProcess | null = null;
@@ -268,6 +290,17 @@ async function handleAudioTranscription(
   return transcribeAudio(parseAudioTranscriptionRequest(value), { apiKey });
 }
 
+function handleAttachmentReference(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): AttachmentData {
+  requireTrustedSender(event);
+  if (!projectStore?.activeProject()) {
+    throw new Error("请先打开项目，再添加附件。");
+  }
+  return createAttachmentReference(parseAttachmentReferenceRequest(value));
+}
+
 function requireProject(value: unknown) {
   if (!projectStore) throw new Error("Projects are not available");
   if (typeof value !== "string" || !value) throw new Error("Invalid project id");
@@ -371,6 +404,29 @@ function parseConversationTarget(value: unknown): DesktopConversationTarget {
   return { projectId: target.projectId, id: target.id };
 }
 
+function parseAttachmentReferenceRequest(
+  value: unknown,
+): DesktopAttachmentReferenceRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid attachment reference");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.name !== "string" ||
+    typeof request.mimeType !== "string" ||
+    typeof request.size !== "number" ||
+    typeof request.path !== "string"
+  ) {
+    throw new Error("Invalid attachment reference");
+  }
+  return {
+    name: request.name,
+    mimeType: request.mimeType,
+    size: request.size,
+    path: request.path,
+  };
+}
+
 function sendToRenderer(window: BrowserWindow, message: JsonRpcOutgoing): void {
   if (!window.isDestroyed()) {
     window.webContents.send(DESKTOP_MESSAGE_CHANNEL, message);
@@ -407,6 +463,24 @@ app.whenReady().then(() => {
     },
   );
   projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
+  protocol.handle("threadlight-attachment", (request) => {
+    try {
+      const url = new URL(request.url);
+      const parts = url.pathname
+        .split("/")
+        .filter(Boolean)
+        .map(decodeURIComponent);
+      const encodedPath = parts.length === 1 ? parts[0] : parts[1];
+      if (url.hostname !== "local" || !encodedPath || parts.length > 2) {
+        return new Response("Not found", { status: 404 });
+      }
+      return net.fetch(
+        pathToFileURL(resolveAttachmentUrlPath(encodedPath)).href,
+      );
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  });
   const initialWorkspace = process.env.THREADLIGHT_WORKSPACE;
   if (initialWorkspace) projectStore.register(initialWorkspace);
   ipcMain.on(DESKTOP_REQUEST_CHANNEL, handleRequest);
@@ -426,6 +500,10 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_GET_CHANNEL, handleProjectMemoryGet);
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, handleProjectMemoryOpen);
   ipcMain.handle(DESKTOP_AUDIO_TRANSCRIBE_CHANNEL, handleAudioTranscription);
+  ipcMain.handle(
+    DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
+    handleAttachmentReference,
+  );
   createWindow();
 
   app.on("activate", () => {
@@ -433,7 +511,9 @@ app.whenReady().then(() => {
   });
 });
 
-app.on("before-quit", () => appServer?.stop());
+app.on("before-quit", () => {
+  appServer?.stop();
+});
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });

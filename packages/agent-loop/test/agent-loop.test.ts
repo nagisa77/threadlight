@@ -34,6 +34,100 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("uploads an attachment only after the model calls the attachment tool", async () => {
+    const requests: ModelRequest[] = [];
+    let uploads = 0;
+    const provider: ModelProvider = {
+      async uploadAttachment(attachment) {
+        uploads += 1;
+        return {
+          ...attachment,
+          providerReference: { protocol: "test", id: "file-1" },
+        };
+      },
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I need the image.",
+            toolCalls: [
+              {
+                id: "upload-1",
+                name: "attach_to_model_context",
+                arguments: { attachmentId: "attachment-1" },
+              },
+            ],
+          };
+        }
+        return { text: "The image is ready.", toolCalls: [] };
+      },
+    };
+    const attachment = {
+      id: "attachment-1",
+      name: "diagram.png",
+      mimeType: "image/png",
+      size: 5,
+      kind: "image" as const,
+      path: "/workspace/.threadlight/uploads/diagram.png",
+    };
+
+    await new AgentLoop(provider).run(
+      defineAgent({ name: "test", instructions: "Inspect the image" }),
+      "What is shown?",
+      { attachments: [attachment] },
+    );
+
+    expect(uploads).toBe(1);
+    expect(requests[0]?.attachments).toBeUndefined();
+    expect(requests[0]?.input).toContain("diagram.png");
+    expect(requests[0]?.input).toContain(
+      "/workspace/.threadlight/uploads/diagram.png",
+    );
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain(
+      "attach_to_model_context",
+    );
+    expect(requests[1]?.attachments).toEqual([
+      {
+        ...attachment,
+        providerReference: { protocol: "test", id: "file-1" },
+      },
+    ]);
+  });
+
+  it("does not upload attachments when the model answers without the tool", async () => {
+    let uploads = 0;
+    const provider: ModelProvider = {
+      async uploadAttachment(attachment) {
+        uploads += 1;
+        return attachment;
+      },
+      async generate(request) {
+        expect(request.input).toContain("notes.txt");
+        expect(request.input).toContain("/workspace/notes.txt");
+        return { text: "No file inspection needed.", toolCalls: [] };
+      },
+    };
+
+    await new AgentLoop(provider).run(
+      defineAgent({ name: "test", instructions: "Reply" }),
+      "Say hello instead",
+      {
+        attachments: [
+          {
+            id: "attachment-1",
+            name: "notes.txt",
+            mimeType: "text/plain",
+            size: 5,
+            kind: "file",
+            path: "/workspace/notes.txt",
+          },
+        ],
+      },
+    );
+
+    expect(uploads).toBe(0);
+  });
+
   it("forwards the selected model through every scripted model turn", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);

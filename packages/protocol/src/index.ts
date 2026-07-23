@@ -93,10 +93,21 @@ export interface ConversationProgressData {
   activities: readonly ConversationActivityData[];
 }
 
+export interface AttachmentData {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "file";
+  /** Provider-readable local path. Wire adapters must never inline its bytes. */
+  path: string;
+}
+
 export interface ConversationMessageData {
   id: string;
   role: "user" | "assistant";
   text: string;
+  attachments?: readonly AttachmentData[];
   error?: boolean;
   progress?: readonly ConversationProgressData[];
   /** @deprecated Kept for conversations written before ordered progress. */
@@ -153,7 +164,11 @@ export interface ThreadlightMethodMap {
     result: { deleted: boolean };
   };
   "turn/start": {
-    params: { threadId: string; input: string };
+    params: {
+      threadId: string;
+      input: string;
+      attachments?: readonly AttachmentData[];
+    };
     result: { turnId: string };
   };
   "turn/interrupt": {

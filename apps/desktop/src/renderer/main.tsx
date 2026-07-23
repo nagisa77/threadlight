@@ -2,6 +2,8 @@ import { createRoot } from "react-dom/client";
 import { ThreadlightClient } from "@threadlight/client";
 import {
   ThreadlightApp,
+  type AttachmentPreviewAdapter,
+  type AttachmentStageAdapter,
   type ProjectMemoryAdapter,
   type ProjectsAdapter,
   type SettingsAdapter,
@@ -10,6 +12,7 @@ import {
 import "@threadlight/ui/styles.css";
 
 import { ElectronTransport } from "./electron-transport.js";
+import { attachmentPreviewUrl } from "./attachment-preview.js";
 
 const client = new ThreadlightClient(new ElectronTransport());
 const settings: SettingsAdapter = {
@@ -40,6 +43,15 @@ const voiceInput: VoiceInputAdapter = {
   transcribe: (recording) =>
     window.threadlightDesktop.transcribeAudio(recording),
 };
+const attachmentStage: AttachmentStageAdapter = {
+  stage: (file) => window.threadlightDesktop.createAttachmentReference(file),
+};
+const attachmentPreview: AttachmentPreviewAdapter = {
+  imageUrl: (attachment) =>
+    attachment.kind === "image"
+      ? attachmentPreviewUrl(attachment.path)
+      : undefined,
+};
 const root = document.getElementById("root");
 
 if (!root) throw new Error("Missing root element");
@@ -51,5 +63,7 @@ createRoot(root).render(
     projects={projects}
     memory={memory}
     voiceInput={voiceInput}
+    attachmentStage={attachmentStage}
+    attachmentPreview={attachmentPreview}
   />,
 );

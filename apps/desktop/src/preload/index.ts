@@ -1,8 +1,9 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { JsonRpcOutgoing } from "@threadlight/protocol";
 
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
+  DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
@@ -57,6 +58,16 @@ const api: DesktopApi = {
   },
   transcribeAudio(request) {
     return ipcRenderer.invoke(DESKTOP_AUDIO_TRANSCRIBE_CHANNEL, request);
+  },
+  createAttachmentReference(file) {
+    const path = webUtils.getPathForFile(file);
+    if (!path) throw new Error("无法读取附件的本地路径。");
+    return ipcRenderer.invoke(DESKTOP_ATTACHMENT_REFERENCE_CHANNEL, {
+      name: file.name,
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      path,
+    });
   },
 };
 

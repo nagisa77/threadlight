@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { realpathSync, statSync } from "node:fs";
+import { resolve, sep } from "node:path";
 
 import type {
   Agent,
@@ -9,6 +11,7 @@ import type {
 
 import type {
   ConversationActivityData,
+  AttachmentData,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,
@@ -62,6 +65,7 @@ interface SharedAppServerOptions {
   conversationStore?: ConversationStore;
   processes?: ProcessController;
   now?: () => Date;
+  attachmentRoot?: string;
 }
 
 export type AgentFactory = () => Agent | Promise<Agent>;
@@ -80,6 +84,7 @@ export class AppServer {
   private readonly conversationStore: ConversationStore;
   private readonly processes?: ProcessController;
   private readonly now: () => Date;
+  private readonly attachmentRoot?: string;
   private readonly threads = new Map<string, ThreadState>();
   private readonly approvals = new Map<string, PendingApproval>();
   private initialized = false;
@@ -93,6 +98,9 @@ export class AppServer {
       options.conversationStore ?? new MemoryConversationStore();
     this.processes = options.processes;
     this.now = options.now ?? (() => new Date());
+    this.attachmentRoot = options.attachmentRoot
+      ? resolve(options.attachmentRoot)
+      : undefined;
   }
 
   async receive(message: JsonRpcRequest): Promise<void> {
@@ -206,9 +214,22 @@ export class AppServer {
   }
 
   private async startTurn(params: unknown): Promise<{ turnId: string }> {
-    const { threadId, input } = objectParams(params);
+    const {
+      threadId,
+      input,
+      attachments: attachmentValue,
+    } = objectParams(params);
     requireString(threadId, "threadId");
-    requireString(input, "input");
+    if (typeof input !== "string") {
+      throw new RpcError(-32602, "input must be a string");
+    }
+    const attachments = parseAttachments(attachmentValue);
+    for (const attachment of attachments) {
+      this.requireLocalAttachment(attachment);
+    }
+    if (!input.trim() && attachments.length === 0) {
+      throw new RpcError(-32602, "A turn requires text or an attachment");
+    }
 
     const thread = this.threads.get(threadId);
     if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
@@ -226,6 +247,7 @@ export class AppServer {
         id: randomUUID(),
         role: "user",
         text: input,
+        ...(attachments.length > 0 ? { attachments } : {}),
       },
     ]);
     try {
@@ -237,7 +259,14 @@ export class AppServer {
     }
 
     queueMicrotask(() => {
-      void this.runTurn(threadId, turnId, input, thread, controller);
+      void this.runTurn(
+        threadId,
+        turnId,
+        input,
+        attachments,
+        thread,
+        controller,
+      );
     });
 
     return { turnId };
@@ -253,6 +282,24 @@ export class AppServer {
     activeTurn.controller.abort(new Error("Turn interrupted by client"));
     this.rejectApprovalsForTurn(activeTurn.id);
     return { interrupted: true };
+  }
+
+  private requireLocalAttachment(attachment: AttachmentData): void {
+    try {
+      const path = realpathSync(attachment.path);
+      if (!statSync(path).isFile()) throw new Error("not a file");
+      if (this.attachmentRoot) {
+        const root = realpathSync(this.attachmentRoot);
+        if (!path.startsWith(`${root}${sep}`)) throw new Error("outside root");
+      }
+    } catch {
+      throw new RpcError(
+        -32602,
+        this.attachmentRoot
+          ? "attachment path must be an uploaded file in the active project"
+          : "attachment path must be a readable local file",
+      );
+    }
   }
 
   private resolveApproval(params: unknown): { resolved: boolean } {
@@ -317,6 +364,7 @@ export class AppServer {
     threadId: string,
     turnId: string,
     input: string,
+    attachments: readonly AttachmentData[],
     thread: ThreadState,
     controller: AbortController,
   ): Promise<void> {
@@ -325,6 +373,7 @@ export class AppServer {
     try {
       const result = await this.loop.run(thread.agent, input, {
         modelState: thread.conversation.modelState,
+        attachments,
         signal: controller.signal,
         onEvent: (event) => this.forwardEvent(threadId, turnId, thread, event),
         approve: (request) =>
@@ -471,6 +520,29 @@ function requireString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || value.length === 0) {
     throw new RpcError(-32602, `${name} must be a non-empty string`);
   }
+}
+
+function parseAttachments(value: unknown): readonly AttachmentData[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || !value.every(isAttachment)) {
+    throw new RpcError(-32602, "attachments must contain valid local files");
+  }
+  return value;
+}
+
+function isAttachment(value: unknown): value is AttachmentData {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const attachment = value as Record<string, unknown>;
+  return (
+    typeof attachment.id === "string" &&
+    typeof attachment.name === "string" &&
+    typeof attachment.mimeType === "string" &&
+    typeof attachment.size === "number" &&
+    Number.isSafeInteger(attachment.size) &&
+    attachment.size >= 0 &&
+    (attachment.kind === "image" || attachment.kind === "file") &&
+    typeof attachment.path === "string"
+  );
 }
 
 function updateProgress(

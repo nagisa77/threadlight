@@ -1,4 +1,5 @@
 export type {
+  AttachmentData,
   ConversationActivityData,
   ConversationMessageData,
   ConversationProgressData,

@@ -16,6 +16,7 @@ export {
 } from "./voice-input.js";
 
 export type { ThreadlightAppProps } from "./app.js";
+export type { AttachmentPreviewAdapter, AttachmentStageAdapter } from "./app.js";
 export type {
   ConversationSummary,
   ConversationSummaryTarget,

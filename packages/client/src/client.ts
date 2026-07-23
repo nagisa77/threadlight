@@ -1,4 +1,5 @@
 import type {
+  AttachmentData,
   JsonRpcId,
   JsonRpcNotification,
   JsonRpcOutgoing,
@@ -101,8 +102,16 @@ export class ThreadlightClient {
     return this.request("thread/delete", { threadId });
   }
 
-  startTurn(threadId: string, input: string) {
-    return this.request("turn/start", { threadId, input });
+  startTurn(
+    threadId: string,
+    input: string,
+    attachments: readonly AttachmentData[] = [],
+  ) {
+    return this.request("turn/start", {
+      threadId,
+      input,
+      ...(attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   interruptTurn(threadId: string) {

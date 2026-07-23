@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import type {
   JsonSchema,
   ModelGenerateOptions,
+  ModelAttachment,
   ModelProvider,
   ModelRequest,
   ModelTurn,
@@ -54,10 +55,23 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     this.provider = options.provider;
   }
 
+  async uploadAttachment(
+    _attachment: ModelAttachment,
+  ): Promise<ModelAttachment> {
+    throw new Error(
+      `${this.provider} 当前不支持通过文件上传接口发送附件，请切换到 OpenAI。`,
+    );
+  }
+
   async generate(
     request: ModelRequest,
     options: ModelGenerateOptions = {},
   ): Promise<ModelTurn> {
+    if (request.attachments?.length) {
+      throw new Error(
+        `${this.provider} 当前不支持通过文件上传接口发送附件，请切换到 OpenAI。`,
+      );
+    }
     const messages = this.messagesFrom(request.state, request.instructions);
 
     if (request.input) {

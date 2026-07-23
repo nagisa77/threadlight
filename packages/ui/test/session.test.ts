@@ -7,6 +7,30 @@ import {
 } from "../src/index.js";
 
 describe("sessionReducer", () => {
+  it("keeps uploaded attachments outside the optimistic user text", () => {
+    const attachment = {
+      id: "attachment-1",
+      name: "diagram.png",
+      mimeType: "image/png",
+      size: 5,
+      kind: "image" as const,
+      path: "/workspace/.threadlight/uploads/diagram.png",
+    };
+    const state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "",
+      attachments: [attachment],
+    });
+
+    expect(state.messages[0]).toEqual({
+      id: "message-1",
+      role: "user",
+      text: "",
+      attachments: [attachment],
+    });
+  });
+
   it("accumulates real model deltas and commits one completed message", () => {
     let state = sessionReducer(initialSessionState, {
       type: "message.sent",

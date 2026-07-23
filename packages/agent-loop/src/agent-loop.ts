@@ -12,6 +12,12 @@ import type {
   ToolCall,
   ToolResult,
 } from "./types.js";
+import {
+  ATTACH_TO_MODEL_CONTEXT_TOOL,
+  attachmentPrompt,
+  createAttachmentContextTool,
+  type AttachmentDelivery,
+} from "./attachment-tool.js";
 
 const EMPTY_USAGE: TokenUsage = {
   inputTokens: 0,
@@ -48,7 +54,27 @@ export class AgentLoop {
     options: RunOptions,
     emit: (event: AgentEvent) => void,
   ): Promise<RunResult> {
-    const tools = agent.tools ?? [];
+    const availableAttachments = options.attachments ?? [];
+    const attachmentDelivery: AttachmentDelivery = { pending: [] };
+    const attachmentTool = createAttachmentContextTool(
+      this.provider,
+      availableAttachments,
+      attachmentDelivery,
+    );
+    const tools = [
+      ...(agent.tools ?? []),
+      ...(attachmentTool ? [attachmentTool] : []),
+    ];
+    if (
+      attachmentTool &&
+      (agent.tools ?? []).some(
+        (tool) => tool.name === ATTACH_TO_MODEL_CONTEXT_TOOL,
+      )
+    ) {
+      throw new Error(
+        `${ATTACH_TO_MODEL_CONTEXT_TOOL} is reserved by the agent loop`,
+      );
+    }
     const maxSteps = agent.maxSteps ?? 20;
     const usage = { ...EMPTY_USAGE };
     let state = options.modelState;
@@ -62,7 +88,14 @@ export class AgentLoop {
         {
           model: agent.model,
           instructions: agent.instructions,
-          input: step === 1 ? input : undefined,
+          input:
+            step === 1
+              ? attachmentPrompt(input, availableAttachments)
+              : undefined,
+          attachments:
+            attachmentDelivery.pending.length > 0
+              ? attachmentDelivery.pending
+              : undefined,
           state,
           toolResults,
           tools,
@@ -81,6 +114,7 @@ export class AgentLoop {
           },
         },
       );
+      attachmentDelivery.pending = [];
 
       emit({
         type: "model.completed",
