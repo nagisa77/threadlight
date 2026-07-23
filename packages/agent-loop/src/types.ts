@@ -78,6 +78,9 @@ export interface ModelGenerateOptions {
 }
 
 export interface ModelProvider {
+  validateAttachment?(
+    attachment: ModelAttachment,
+  ): void | Promise<void>;
   uploadAttachment?(
     attachment: ModelAttachment,
     signal?: AbortSignal,

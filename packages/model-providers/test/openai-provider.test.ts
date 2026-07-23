@@ -42,11 +42,11 @@ describe("OpenAIResponsesProvider", () => {
       attachments: [
         {
           id: "attachment-1",
-          name: "song.mp3",
-          mimeType: "audio/mpeg",
+          name: "notes.txt",
+          mimeType: "text/plain",
           size: 42,
           kind: "file",
-          path: "/workspace/song.mp3",
+          path: "/workspace/notes.txt",
           providerReference: {
             protocol: "openai-files",
             fileId: "file-1",
@@ -121,6 +121,42 @@ describe("OpenAIResponsesProvider", () => {
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
+  });
+
+  it.each([
+    {
+      name: "diagram.PNG",
+      mimeType: "image/png",
+      kind: "image" as const,
+      error: "Expected image type to be a supported format",
+    },
+    {
+      name: "song.mp3",
+      mimeType: "audio/mpeg",
+      kind: "file" as const,
+      error: "Expected context stuffing file type to be a supported format",
+    },
+  ])("rejects unsupported $kind formats before uploading", async ({
+    name,
+    mimeType,
+    kind,
+    error,
+  }) => {
+    const create = vi.fn();
+    const client = { files: { create } } as unknown as OpenAI;
+    const provider = new OpenAIResponsesProvider({ client });
+
+    await expect(
+      provider.uploadAttachment({
+        id: "attachment-1",
+        name,
+        mimeType,
+        size: 3,
+        kind,
+        path: `/workspace/${name}`,
+      }),
+    ).rejects.toThrow(error);
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("uses the Responses stream and preserves the completed opaque state", async () => {

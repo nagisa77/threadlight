@@ -49,6 +49,7 @@ export function createAttachmentContextTool(
       if (!provider.uploadAttachment) {
         throw new Error("The active model provider does not support attachments");
       }
+      await provider.validateAttachment?.(attachment);
       const prepared = await provider.uploadAttachment(attachment, context.signal);
       if (prepared.providerReference === undefined) {
         throw new Error("The model provider did not return an attachment reference");

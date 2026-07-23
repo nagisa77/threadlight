@@ -128,6 +128,78 @@ describe("AgentLoop", () => {
     expect(uploads).toBe(0);
   });
 
+  it("reports attachment validation errors as tool failures without ending the run", async () => {
+    const requests: ModelRequest[] = [];
+    const events: AgentEvent[] = [];
+    let uploads = 0;
+    const provider: ModelProvider = {
+      validateAttachment(attachment) {
+        throw new Error(`Unsupported attachment format: ${attachment.name}`);
+      },
+      async uploadAttachment(attachment) {
+        uploads += 1;
+        return attachment;
+      },
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I need the image.",
+            toolCalls: [
+              {
+                id: "upload-1",
+                name: "attach_to_model_context",
+                arguments: { attachmentId: "attachment-1" },
+              },
+            ],
+          };
+        }
+        return { text: "I could not inspect the image.", toolCalls: [] };
+      },
+    };
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({ name: "test", instructions: "Inspect the image" }),
+      "What is shown?",
+      {
+        attachments: [
+          {
+            id: "attachment-1",
+            name: "diagram.PNG",
+            mimeType: "image/png",
+            size: 5,
+            kind: "image",
+            path: "/workspace/diagram.PNG",
+          },
+        ],
+        onEvent: (event) => events.push(event),
+      },
+    );
+
+    expect(result.output).toBe("I could not inspect the image.");
+    expect(uploads).toBe(0);
+    expect(requests[1]?.attachments).toBeUndefined();
+    expect(requests[1]?.toolResults).toEqual([
+      {
+        callId: "upload-1",
+        name: "attach_to_model_context",
+        output: "Unsupported attachment format: diagram.PNG",
+        isError: true,
+      },
+    ]);
+    expect(events).toContainEqual({
+      type: "tool.completed",
+      runId: result.runId,
+      result: {
+        callId: "upload-1",
+        name: "attach_to_model_context",
+        output: "Unsupported attachment format: diagram.PNG",
+        isError: true,
+      },
+    });
+    expect(events.some((event) => event.type === "run.failed")).toBe(false);
+  });
+
   it("forwards the selected model through every scripted model turn", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);

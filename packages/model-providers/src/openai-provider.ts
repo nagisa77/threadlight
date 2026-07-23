@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { createReadStream } from "node:fs";
+import { extname } from "node:path";
 
 import type {
   ModelGenerateOptions,
@@ -15,6 +16,96 @@ export interface OpenAIResponsesProviderOptions {
   client?: OpenAI;
 }
 
+const OPENAI_IMAGE_EXTENSIONS = [
+  ".jpeg",
+  ".jpg",
+  ".png",
+  ".gif",
+  ".webp",
+] as const;
+
+const OPENAI_CONTEXT_FILE_EXTENSIONS = [
+  ".art",
+  ".bat",
+  ".brf",
+  ".c",
+  ".cls",
+  ".css",
+  ".csv",
+  ".diff",
+  ".doc",
+  ".docx",
+  ".dot",
+  ".eml",
+  ".es",
+  ".h",
+  ".hs",
+  ".htm",
+  ".html",
+  ".hwp",
+  ".hwpx",
+  ".ics",
+  ".ifb",
+  ".java",
+  ".js",
+  ".json",
+  ".keynote",
+  ".ksh",
+  ".ltx",
+  ".mail",
+  ".markdown",
+  ".md",
+  ".mht",
+  ".mhtml",
+  ".mjs",
+  ".nws",
+  ".odt",
+  ".pages",
+  ".patch",
+  ".pdf",
+  ".pl",
+  ".pm",
+  ".pot",
+  ".potm",
+  ".potx",
+  ".ppa",
+  ".pps",
+  ".ppsm",
+  ".ppsx",
+  ".ppt",
+  ".pptm",
+  ".pptx",
+  ".pwz",
+  ".py",
+  ".rst",
+  ".rtf",
+  ".scala",
+  ".sh",
+  ".shtml",
+  ".srt",
+  ".sty",
+  ".svg",
+  ".svgz",
+  ".tex",
+  ".text",
+  ".txt",
+  ".tsv",
+  ".vcf",
+  ".vtt",
+  ".wiz",
+  ".xla",
+  ".xlb",
+  ".xlc",
+  ".xlm",
+  ".xls",
+  ".xlsx",
+  ".xlt",
+  ".xlw",
+  ".xml",
+  ".yaml",
+  ".yml",
+] as const;
+
 export class OpenAIResponsesProvider implements ModelProvider {
   private readonly client: OpenAI;
   private readonly defaultModel: string;
@@ -28,10 +119,29 @@ export class OpenAIResponsesProvider implements ModelProvider {
     this.defaultModel = options.defaultModel ?? "gpt-5.6-sol";
   }
 
+  validateAttachment(attachment: ModelAttachment): void {
+    const extension = extname(attachment.name);
+    const supported =
+      attachment.kind === "image"
+        ? OPENAI_IMAGE_EXTENSIONS
+        : OPENAI_CONTEXT_FILE_EXTENSIONS;
+
+    if (!(supported as readonly string[]).includes(extension)) {
+      const expected =
+        attachment.kind === "image"
+          ? "image type"
+          : "context stuffing file type";
+      throw new Error(
+        `Expected ${expected} to be a supported format: ${supported.join(", ")} but got ${extension || "no file extension"}.`,
+      );
+    }
+  }
+
   async uploadAttachment(
     attachment: ModelAttachment,
     signal?: AbortSignal,
   ): Promise<ModelAttachment> {
+    this.validateAttachment(attachment);
     if (openAIFileId(attachment.providerReference)) return attachment;
     const params: OpenAI.FileCreateParams = {
       file: createReadStream(attachment.path),
