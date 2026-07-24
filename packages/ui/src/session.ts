@@ -244,6 +244,8 @@ function completeTool(
       activities: step.activities.map((activity) => {
         if (activity.id !== result.callId) return activity;
         const isExecCommand = activity.name === "exec_command";
+        const keepsInputDetail =
+          isExecCommand || activity.name === "computer";
         return {
           ...activity,
           status: result.isError
@@ -251,7 +253,7 @@ function completeTool(
             : isExecCommand && process
               ? processActivityStatus(process)
               : "completed",
-          detail: isExecCommand
+          detail: keepsInputDetail
             ? activity.detail
             : process
               ? `${process.status} · ${process.sessionId}`
@@ -370,9 +372,20 @@ function truncate(value: string, limit = 1_200): string {
 }
 
 function toolInput(call: ToolCallData): string | undefined {
-  if (call.name !== "exec_command" || !isObject(call.arguments)) return;
-  const command = call.arguments.command;
-  return typeof command === "string" ? `$ ${command}` : undefined;
+  if (!isObject(call.arguments)) return;
+  if (call.name === "exec_command") {
+    const command = call.arguments.command;
+    return typeof command === "string" ? `$ ${command}` : undefined;
+  }
+  if (call.name === "computer" && Array.isArray(call.arguments.actions)) {
+    const actions = call.arguments.actions.flatMap((action) =>
+      isObject(action) && typeof action.type === "string"
+        ? [action.type.replaceAll("_", " ")]
+        : [],
+    );
+    return actions.length > 0 ? actions.join(" → ") : undefined;
+  }
+  return;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

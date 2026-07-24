@@ -168,11 +168,21 @@ export class OpenAIResponsesProvider implements ModelProvider {
       : [];
 
     for (const result of request.toolResults ?? []) {
-      input.push({
-        type: "function_call_output",
-        call_id: result.callId,
-        output: result.output,
-      });
+      const tool = request.tools.find(
+        (candidate) => candidate.name === result.name,
+      );
+      if (tool?.kind === "computer") {
+        if (result.isError) {
+          throw new Error(`Computer tool failed: ${result.output}`);
+        }
+        input.push(computerCallOutput(result.callId, result.output));
+      } else {
+        input.push({
+          type: "function_call_output",
+          call_id: result.callId,
+          output: result.output,
+        });
+      }
     }
 
     if (request.attachments?.length) {
@@ -205,13 +215,17 @@ export class OpenAIResponsesProvider implements ModelProvider {
       input.push({ role: "user", content: request.input });
     }
 
-    const tools: OpenAI.Responses.Tool[] = request.tools.map((tool) => ({
-      type: "function",
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.parameters,
-      strict: isStrictCompatible(tool.parameters),
-    }));
+    const tools: OpenAI.Responses.Tool[] = request.tools.map((tool) =>
+      tool.kind === "computer"
+        ? { type: "computer" }
+        : {
+            type: "function",
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.parameters,
+            strict: isStrictCompatible(tool.parameters),
+          },
+    );
 
     const params = {
       model: request.model ?? this.defaultModel,
@@ -234,13 +248,33 @@ export class OpenAIResponsesProvider implements ModelProvider {
 
     return {
       text: response.output_text,
-      toolCalls: response.output
-        .filter((item) => item.type === "function_call")
-        .map((item) => ({
-          id: item.call_id,
-          name: item.name,
-          arguments: JSON.parse(item.arguments) as unknown,
-        })),
+      toolCalls: response.output.flatMap((item) => {
+        if (item.type === "function_call") {
+          return [
+            {
+              id: item.call_id,
+              name: item.name,
+              arguments: JSON.parse(item.arguments) as unknown,
+            },
+          ];
+        }
+        if (item.type === "computer_call") {
+          const computerTool = request.tools.find(
+            (tool) => tool.kind === "computer",
+          );
+          return [
+            {
+              id: item.call_id,
+              name: computerTool?.name ?? "computer",
+              arguments: {
+                actions: item.actions ?? (item.action ? [item.action] : []),
+                pendingSafetyChecks: item.pending_safety_checks ?? [],
+              },
+            },
+          ];
+        }
+        return [];
+      }),
       state: [...input, ...output],
       usage: response.usage
         ? {
@@ -251,6 +285,47 @@ export class OpenAIResponsesProvider implements ModelProvider {
         : undefined,
     };
   }
+}
+
+function computerCallOutput(
+  callId: string,
+  serializedOutput: string,
+): OpenAI.Responses.ResponseInputItem {
+  let value: unknown;
+  try {
+    value = JSON.parse(serializedOutput) as unknown;
+  } catch {
+    throw new Error("Computer tool returned invalid JSON");
+  }
+  if (
+    !isObject(value) ||
+    value.type !== "computer_screenshot" ||
+    typeof value.imageUrl !== "string" ||
+    !value.imageUrl.startsWith("data:image/png;base64,")
+  ) {
+    throw new Error("Computer tool did not return a PNG screenshot");
+  }
+
+  const safetyChecks = Array.isArray(value.acknowledgedSafetyChecks)
+    ? value.acknowledgedSafetyChecks.filter(isSafetyCheck)
+    : [];
+
+  return {
+    type: "computer_call_output",
+    call_id: callId,
+    output: {
+      type: "computer_screenshot",
+      image_url: value.imageUrl,
+      detail: value.detail === "original" ? "original" : undefined,
+    },
+    acknowledged_safety_checks: safetyChecks,
+  } as unknown as OpenAI.Responses.ResponseInputItem;
+}
+
+function isSafetyCheck(
+  value: unknown,
+): value is { id: string; code?: string | null; message?: string | null } {
+  return isObject(value) && typeof value.id === "string" && value.id.length > 0;
 }
 
 function openAIFileId(value: unknown): string | undefined {

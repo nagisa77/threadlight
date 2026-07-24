@@ -7,6 +7,175 @@ import { join } from "node:path";
 import { OpenAIResponsesProvider } from "../src/openai-provider.js";
 
 describe("OpenAIResponsesProvider", () => {
+  it("runs the native computer tool protocol alongside function tools", async () => {
+    const responses = [
+      {
+        output_text: "",
+        output: [
+          {
+            type: "computer_call",
+            id: "computer-item-1",
+            call_id: "computer-call-1",
+            actions: [
+              { type: "screenshot" },
+              { type: "click", x: 200, y: 120, button: "left", keys: [] },
+            ],
+            pending_safety_checks: [
+              {
+                id: "safety-1",
+                code: "confirm_action",
+                message: "Confirm the click",
+              },
+            ],
+            status: "completed",
+          },
+        ],
+      },
+      {
+        output_text: "done",
+        output: [
+          {
+            type: "message",
+            id: "message-1",
+            role: "assistant",
+            status: "completed",
+            content: [
+              {
+                type: "output_text",
+                text: "done",
+                annotations: [],
+                logprobs: [],
+              },
+            ],
+          },
+        ],
+      },
+    ] as unknown as OpenAI.Responses.Response[];
+    const stream = vi.fn(() => {
+      const response = responses.shift();
+      if (!response) throw new Error("missing scripted response");
+      const responseStream = {
+        on() {
+          return responseStream;
+        },
+        async finalResponse() {
+          return response;
+        },
+      };
+      return responseStream;
+    });
+    const client = { responses: { stream } } as unknown as OpenAI;
+    const provider = new OpenAIResponsesProvider({ client });
+    const tools = [
+      {
+        name: "computer",
+        description: "Control the computer",
+        parameters: {},
+        kind: "computer" as const,
+      },
+      {
+        name: "lookup",
+        description: "Look up a value",
+        parameters: {
+          type: "object",
+          properties: { query: { type: "string" } },
+          required: ["query"],
+          additionalProperties: false,
+        },
+      },
+    ];
+
+    const first = await provider.generate({
+      instructions: "Use tools",
+      input: "Click the control",
+      tools,
+    });
+
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      tools: [
+        { type: "computer" },
+        { type: "function", name: "lookup", strict: true },
+      ],
+    });
+    expect(first.toolCalls).toEqual([
+      {
+        id: "computer-call-1",
+        name: "computer",
+        arguments: {
+          actions: [
+            { type: "screenshot" },
+            {
+              type: "click",
+              x: 200,
+              y: 120,
+              button: "left",
+              keys: [],
+            },
+          ],
+          pendingSafetyChecks: [
+            {
+              id: "safety-1",
+              code: "confirm_action",
+              message: "Confirm the click",
+            },
+          ],
+        },
+      },
+    ]);
+
+    const second = await provider.generate({
+      instructions: "Use tools",
+      state: first.state,
+      toolResults: [
+        {
+          callId: "computer-call-1",
+          name: "computer",
+          output: JSON.stringify({
+            type: "computer_screenshot",
+            imageUrl: "data:image/png;base64,iVBORw==",
+            detail: "original",
+            acknowledgedSafetyChecks: [
+              {
+                id: "safety-1",
+                code: "confirm_action",
+                message: "Confirm the click",
+              },
+            ],
+          }),
+        },
+      ],
+      tools,
+    });
+
+    const secondParams = stream.mock.calls[1]?.[0] as
+      | OpenAI.Responses.ResponseCreateParams
+      | undefined;
+    expect(secondParams?.input).toEqual([
+      { role: "user", content: "Click the control" },
+      expect.objectContaining({
+        type: "computer_call",
+        call_id: "computer-call-1",
+      }),
+      {
+        type: "computer_call_output",
+        call_id: "computer-call-1",
+        output: {
+          type: "computer_screenshot",
+          image_url: "data:image/png;base64,iVBORw==",
+          detail: "original",
+        },
+        acknowledged_safety_checks: [
+          {
+            id: "safety-1",
+            code: "confirm_action",
+            message: "Confirm the click",
+          },
+        ],
+      },
+    ]);
+    expect(second).toMatchObject({ text: "done", toolCalls: [] });
+  });
+
   it("disables strict mode for open MCP-style argument objects", async () => {
     const response = {
       output_text: "done",

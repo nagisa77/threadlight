@@ -1,3 +1,7 @@
+export {
+  createComputerUseTool,
+  createMacOSComputerUseDriver,
+} from "./computer-use.js";
 export { createExecCommandTool } from "./exec-command.js";
 export {
   createMcpCallTool,
@@ -14,6 +18,12 @@ export {
 export { createProjectMemoryTool } from "./project-memory.js";
 export { createWebSearchTool } from "./web-search.js";
 
+export type {
+  ComputerUseAction,
+  ComputerUseDriver,
+  ComputerUseSafetyCheck,
+  ComputerUseToolOptions,
+} from "./computer-use.js";
 export type {
   ExecCommandResult,
   ExecCommandToolOptions,

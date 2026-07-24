@@ -9,6 +9,7 @@ export interface Tool {
   name: string;
   description: string;
   parameters: JsonSchema;
+  kind?: "function" | "computer";
   needsApproval?: boolean | ((arguments_: unknown) => boolean);
   execute(arguments_: unknown, context: ToolContext): Promise<unknown>;
 }
@@ -57,7 +58,10 @@ export interface ModelRequest {
   attachments?: readonly ModelAttachment[];
   state?: unknown;
   toolResults?: readonly ToolResult[];
-  tools: readonly Pick<Tool, "name" | "description" | "parameters">[];
+  tools: readonly Pick<
+    Tool,
+    "name" | "description" | "parameters" | "kind"
+  >[];
   signal?: AbortSignal;
 }
 

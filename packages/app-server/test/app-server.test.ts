@@ -301,6 +301,101 @@ describe("AppServer", () => {
     });
   });
 
+  it("keeps computer screenshots for the model but redacts them from UI events", async () => {
+    const screenshot = `data:image/png;base64,${"A".repeat(4_000)}`;
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "",
+            toolCalls: [
+              {
+                id: "computer-call-1",
+                name: "computer",
+                arguments: {
+                  actions: [{ type: "screenshot" }],
+                  pendingSafetyChecks: [],
+                },
+              },
+            ],
+          };
+        }
+        return { text: "done", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    let completeTurn: ((message: JsonRpcOutgoing) => void) | undefined;
+    const completed = new Promise<JsonRpcOutgoing>((resolve) => {
+      completeTurn = resolve;
+    });
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "test",
+        instructions: "Use computer",
+        tools: [
+          defineTool({
+            name: "computer",
+            kind: "computer",
+            description: "Control the computer",
+            parameters: { type: "object" },
+            async execute() {
+              return {
+                type: "computer_screenshot",
+                imageUrl: screenshot,
+                detail: "original",
+                acknowledgedSafetyChecks: [],
+              };
+            },
+          }),
+        ],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completeTurn?.(message);
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadResponse = messages.find(
+      (message) => "id" in message && message.id === 2,
+    );
+    const threadId = (threadResponse?.result as { threadId: string }).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Inspect the screen" },
+    });
+    await completed;
+
+    expect(requests[1]?.toolResults?.[0]?.output).toContain(screenshot);
+    const completedTool = messages.find(
+      (message) =>
+        "method" in message &&
+        message.method === "agent/event" &&
+        (message.params as { event?: { type?: string } }).event?.type ===
+          "tool.completed",
+    );
+    expect(completedTool).toMatchObject({
+      method: "agent/event",
+      params: {
+        event: {
+          result: {
+            name: "computer",
+            output: '{"type":"computer_screenshot","status":"captured"}',
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(completedTool)).not.toContain(screenshot);
+  });
+
   it("automatically approves protected tools when configured", async () => {
     let generation = 0;
     let executions = 0;

@@ -7,7 +7,7 @@ Threadlight 是一个小而清晰的 TypeScript Agent Runtime：让模型的每�
 - `@threadlight/agent-loop`：provider-neutral 的工具循环、审批钩子、取消、事件和会话状态。
 - `@threadlight/model-providers`：OpenAI Responses、DeepSeek 与千问兼容协议适配器。
 - `@threadlight/project-memory`：项目记忆的安全路径、原子 Markdown 存储和版本校验。
-- `@threadlight/builtin-tools`：内置的项目记忆、命令执行和互联网搜索工具。
+- `@threadlight/builtin-tools`：内置的项目记忆、命令执行、Computer Use 和互联网搜索工具。
 - `@threadlight/protocol`：客户端与 app-server 共享的 JSON-RPC 类型。
 - `@threadlight/app-server`：JSON-RPC 2.0、thread/turn 管理、项目内会话持久化、流式事件、审批恢复和 stdio transport。
 - `@threadlight/client`：transport-neutral 的类型安全客户端、请求关联和事件订阅。
@@ -129,6 +129,12 @@ npm start
 会继续作为受管进程运行并返回不透明 `sessionId`，可通过 `process_status`、
 `process_read`、`process_wait` 和 `process_kill` 查询输出、等待或终止。设置
 `BRAVE_SEARCH_API_KEY` 后还会注册基于 Brave Search API 的 `web_search`。
+
+使用 OpenAI provider 在 macOS 运行时，还会注册 Responses API 原生
+`computer` 工具。模型返回的批量鼠标、键盘、滚动和截图动作由
+`@threadlight/builtin-tools` 直接执行，不在动作批次之间请求确认；执行后把主屏幕
+PNG 作为 `computer_call_output` 回传。首次使用需要在“系统设置”中为 Threadlight
+授予“辅助功能”和“屏幕录制”权限。设置 `THREADLIGHT_COMPUTER_USE=0` 可以禁用该工具。
 
 每个会话还会获得独立的临时 MCP runtime。模型可以用 `mcp_connect` 连接用户明确
 提供或工作区内可验证的 stdio / Streamable HTTP MCP Server，读取它公布的工具

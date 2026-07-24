@@ -472,7 +472,11 @@ export class AppServer {
     event: AgentEvent,
   ): void {
     updateProgress(thread.progress, event);
-    this.notify("agent/event", { threadId, turnId, event });
+    this.notify("agent/event", {
+      threadId,
+      turnId,
+      event: clientSafeAgentEvent(event),
+    });
   }
 
   private updateConversation(
@@ -630,7 +634,10 @@ function updateProgress(
   }
   if (event.type !== "tool.completed") return;
 
-  const processSnapshot = parseProcessSnapshot(event.result.output);
+  const processSnapshot =
+    event.result.name === "computer"
+      ? undefined
+      : parseProcessSnapshot(event.result.output);
   if (processSnapshot) {
     updateMutableProcessSnapshots(progress, processSnapshot);
   }
@@ -648,7 +655,8 @@ function updateProgress(
   }
   if (
     activity.name !== "exec_command" &&
-    activity.name !== "project_memory"
+    activity.name !== "project_memory" &&
+    activity.name !== "computer"
   ) {
     activity.detail = processSnapshot
       ? processDetail(processSnapshot)
@@ -805,7 +813,32 @@ function toolDetail(name: string, arguments_: unknown): string | undefined {
       ? "Update .threadlight/MEMORY.md"
       : "Read .threadlight/MEMORY.md";
   }
+  if (name === "computer" && Array.isArray(arguments_.actions)) {
+    const actions = arguments_.actions.flatMap((action) =>
+      isObject(action) && typeof action.type === "string"
+        ? [action.type.replaceAll("_", " ")]
+        : [],
+    );
+    return actions.length > 0 ? actions.join(" → ") : undefined;
+  }
   return;
+}
+
+function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
+  if (
+    event.type !== "tool.completed" ||
+    event.result.name !== "computer" ||
+    event.result.isError
+  ) {
+    return event;
+  }
+  return {
+    ...event,
+    result: {
+      ...event.result,
+      output: '{"type":"computer_screenshot","status":"captured"}',
+    },
+  };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

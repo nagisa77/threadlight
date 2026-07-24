@@ -200,6 +200,46 @@ describe("sessionReducer", () => {
     expect(state.progress[0]?.activities[0]?.detail).toBe("search result");
   });
 
+  it("keeps the computer action summary after its screenshot is captured", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: {
+        type: "tool.started",
+        runId: "run-1",
+        call: {
+          id: "call-1",
+          name: "computer",
+          arguments: {
+            actions: [
+              { type: "screenshot" },
+              { type: "click", x: 120, y: 80 },
+            ],
+          },
+        },
+      },
+    });
+    expect(state.progress[0]?.activities[0]?.detail).toBe(
+      "screenshot → click",
+    );
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "call-1",
+          name: "computer",
+          output: '{"type":"computer_screenshot","status":"captured"}',
+        },
+      },
+    });
+
+    expect(state.progress[0]?.activities[0]).toMatchObject({
+      status: "completed",
+      detail: "screenshot → click",
+    });
+  });
+
   it("tracks managed command output and a user-terminated state", () => {
     let state = sessionReducer(initialSessionState, {
       type: "agent.event",

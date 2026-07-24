@@ -12,6 +12,7 @@ import {
 } from "@threadlight/agent-loop";
 import { describe, expect, it, vi } from "vitest";
 
+import { createComputerUseTool } from "../src/computer-use.js";
 import { createExecCommandTool } from "../src/exec-command.js";
 import { ProcessManager } from "../src/process-manager.js";
 import {
@@ -128,6 +129,67 @@ class ScriptedProcessProvider implements ModelProvider {
 }
 
 describe("builtin tools", () => {
+  it("executes a computer action batch without approval and returns a PNG screenshot", async () => {
+    const execute = vi.fn(async () =>
+      Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+    );
+    const tool = createComputerUseTool({ driver: { execute } });
+    const actions = [
+      { type: "screenshot" as const },
+      {
+        type: "click" as const,
+        x: 320,
+        y: 180,
+        button: "left" as const,
+        keys: [],
+      },
+    ];
+    const pendingSafetyChecks = [
+      {
+        id: "safety-1",
+        code: "confirm_action",
+        message: "Confirm the click",
+      },
+    ];
+    const provider = new ScriptedToolProvider({
+      id: "call_computer",
+      name: "computer",
+      arguments: { actions, pendingSafetyChecks },
+    });
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "computer-test",
+        instructions: "Use computer",
+        tools: [tool],
+      }),
+      "Inspect the screen",
+      {
+        async approve() {
+          throw new Error("computer should not request approval");
+        },
+      },
+    );
+
+    expect(tool.kind).toBe("computer");
+    expect(provider.requests[0]?.tools).toMatchObject([
+      { name: "computer", kind: "computer" },
+    ]);
+    expect(execute).toHaveBeenCalledWith(
+      actions,
+      expect.objectContaining({
+        runId: expect.any(String),
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(JSON.parse(result.output)).toEqual({
+      type: "computer_screenshot",
+      imageUrl: "data:image/png;base64,iVBORw==",
+      detail: "original",
+      acknowledgedSafetyChecks: pendingSafetyChecks,
+    });
+  });
+
   it("executes an approved command and returns structured output to the model", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-exec-"));
     const provider = new ScriptedToolProvider({
