@@ -4,6 +4,7 @@ import {
   ThreadlightApp,
   type AttachmentPreviewAdapter,
   type AttachmentStageAdapter,
+  type ComputerShareAdapter,
   type ProjectMemoryAdapter,
   type ProjectsAdapter,
   type SettingsAdapter,
@@ -52,6 +53,13 @@ const attachmentPreview: AttachmentPreviewAdapter = {
       ? attachmentPreviewUrl(attachment.path)
       : undefined,
 };
+const computerShare: ComputerShareAdapter = {
+  load: () => window.threadlightDesktop.getComputerShare(),
+  showPictureInPicture: () => window.threadlightDesktop.showComputerShare(),
+  stop: () => window.threadlightDesktop.stopComputerShare(),
+  subscribe: (listener) =>
+    window.threadlightDesktop.onComputerShareChanged(listener),
+};
 const root = document.getElementById("root");
 
 if (!root) throw new Error("Missing root element");
@@ -65,5 +73,6 @@ createRoot(root).render(
     voiceInput={voiceInput}
     attachmentStage={attachmentStage}
     attachmentPreview={attachmentPreview}
+    computerShare={computerShare}
   />,
 );

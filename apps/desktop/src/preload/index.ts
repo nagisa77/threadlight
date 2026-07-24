@@ -4,6 +4,10 @@ import type { JsonRpcOutgoing } from "@threadlight/protocol";
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
@@ -16,6 +20,7 @@ import {
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
   type DesktopApi,
+  type DesktopComputerShareSnapshot,
 } from "../shared/desktop-api.js";
 
 const api: DesktopApi = {
@@ -68,6 +73,27 @@ const api: DesktopApi = {
       size: file.size,
       path,
     });
+  },
+  getComputerShare() {
+    return ipcRenderer.invoke(DESKTOP_COMPUTER_SHARE_GET_CHANNEL);
+  },
+  showComputerShare() {
+    return ipcRenderer.invoke(DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL);
+  },
+  stopComputerShare() {
+    return ipcRenderer.invoke(DESKTOP_COMPUTER_SHARE_STOP_CHANNEL);
+  },
+  onComputerShareChanged(listener) {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      snapshot: DesktopComputerShareSnapshot,
+    ) => listener(snapshot);
+    ipcRenderer.on(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(
+        DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
+        handler,
+      );
   },
 };
 

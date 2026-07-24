@@ -13,6 +13,7 @@ import type {
   ComputerUseAction,
 } from "@threadlight/builtin-tools";
 import type { DesktopComputerRequest } from "@threadlight/protocol";
+import type { DesktopComputerShareSnapshot } from "../shared/desktop-api.js";
 
 import {
   ComputerCaptureSession,
@@ -33,7 +34,11 @@ import {
   type ComputerFrameLayout,
   type ComputerSourceBounds,
 } from "./computer-layout.js";
-import { computerPreviewHtml } from "./computer-preview.js";
+import {
+  COMPUTER_PREVIEW_WINDOW_APPEARANCE,
+  computerPreviewHtml,
+  computerPreviewSize,
+} from "./computer-preview.js";
 
 interface WindowMetadata {
   windowId: number;
@@ -104,6 +109,53 @@ export class DesktopComputerService {
       stopAll: () => this.stopMediaStreams(),
       status: () => this.captureStatuses(),
     });
+
+  constructor(
+    private readonly onShareChanged: (
+      snapshot: DesktopComputerShareSnapshot,
+    ) => void = () => undefined,
+  ) {}
+
+  shareSnapshot(): DesktopComputerShareSnapshot {
+    return {
+      active: this.selection.mode !== "none",
+      pictureInPicture: this.selection.pictureInPicture,
+      targets: this.selectedTargets.map((target) => ({
+        id: target.id,
+        name: target.name,
+        ...(target.applicationName
+          ? { applicationName: target.applicationName }
+          : {}),
+      })),
+    };
+  }
+
+  showPictureInPicture(): Promise<DesktopComputerShareSnapshot> {
+    return this.serialize(async () => {
+      if (this.selection.mode === "none") return this.shareSnapshot();
+      this.selection = { ...this.selection, pictureInPicture: true };
+      try {
+        await this.captureSharedFrame();
+        this.startPreviewUpdates();
+        this.preview?.showInactive();
+        this.preview?.moveTop();
+        this.notifyShareChanged();
+        return this.shareSnapshot();
+      } catch (error) {
+        this.selection = { ...this.selection, pictureInPicture: false };
+        this.closePreview();
+        this.notifyShareChanged();
+        throw error;
+      }
+    });
+  }
+
+  stopSharing(): Promise<DesktopComputerShareSnapshot> {
+    return this.serialize(async () => {
+      await this.clear();
+      return this.shareSnapshot();
+    });
+  }
 
   handle(request: DesktopComputerRequest): Promise<unknown> {
     return this.serialize(async () => {
@@ -188,6 +240,7 @@ export class DesktopComputerService {
       this.layout = layoutActiveSources(activeSources);
       await this.captureSharedFrame();
       if (options.pictureInPicture) this.startPreviewUpdates();
+      this.notifyShareChanged();
       return this.state();
     } catch (error) {
       this.selection = EMPTY_SELECTION;
@@ -196,6 +249,7 @@ export class DesktopComputerService {
       this.cursor = undefined;
       this.activeProcessId = undefined;
       this.closePreview();
+      this.notifyShareChanged();
       throw error;
     }
   }
@@ -208,6 +262,7 @@ export class DesktopComputerService {
     this.cursor = undefined;
     this.activeProcessId = undefined;
     this.closePreview();
+    this.notifyShareChanged();
     return this.state();
   }
 
@@ -633,21 +688,21 @@ export class DesktopComputerService {
 
   private async ensurePreview(): Promise<BrowserWindow> {
     if (this.preview && !this.preview.isDestroyed()) return this.preview;
+    const previewSize = this.layout
+      ? computerPreviewSize(this.layout)
+      : { width: 180, height: 120 };
     const preview = new BrowserWindow({
-      width: 480,
-      height: 330,
-      minWidth: 340,
-      minHeight: 240,
+      width: previewSize.width,
+      height: previewSize.height,
       show: false,
-      resizable: true,
+      resizable: false,
       minimizable: false,
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
       title: "Threadlight · Computer Use",
-      titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-      backgroundColor: "#111210",
+      ...COMPUTER_PREVIEW_WINDOW_APPEARANCE,
       webPreferences: {
         sandbox: true,
         contextIsolation: true,
@@ -655,17 +710,21 @@ export class DesktopComputerService {
         backgroundThrottling: false,
       },
     });
+    preview.setHasShadow(false);
+    if (process.platform === "darwin") preview.setVibrancy(null);
     preview.setAlwaysOnTop(true, "floating");
     preview.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     preview.on("closed", () => {
-      if (this.preview === preview) this.preview = undefined;
+      if (this.preview !== preview) return;
+      this.preview = undefined;
       this.stopPreviewUpdates();
       this.selection = {
         ...this.selection,
         pictureInPicture: false,
       };
+      this.notifyShareChanged();
     });
-    await preview.loadURL(htmlDataUrl(computerPreviewHtml(true)));
+    await preview.loadURL(htmlDataUrl(computerPreviewHtml()));
     this.preview = preview;
     return preview;
   }
@@ -678,12 +737,20 @@ export class DesktopComputerService {
   }
 
   private async renderPreview(image: NativeImage): Promise<void> {
-    if (!this.selection.pictureInPicture) return;
+    if (!this.selection.pictureInPicture || !this.layout) return;
     const preview = await this.ensurePreview();
+    const previewSize = computerPreviewSize(this.layout);
+    const contentBounds = preview.getContentBounds();
+    if (
+      contentBounds.width !== previewSize.width ||
+      contentBounds.height !== previewSize.height
+    ) {
+      preview.setContentSize(previewSize.width, previewSize.height, false);
+    }
     await preview.webContents.executeJavaScript(
-      `window.threadlightRenderComposite(${JSON.stringify(
+      `window.threadlightRenderStack(${JSON.stringify(
         image.toDataURL(),
-      )}, ${this.captureSession.activeSources.length})`,
+      )}, ${JSON.stringify(this.layout)})`,
     );
     if (!preview.isVisible()) preview.showInactive();
   }
@@ -712,6 +779,10 @@ export class DesktopComputerService {
   private stopPreviewUpdates(): void {
     if (this.previewTimer) clearInterval(this.previewTimer);
     this.previewTimer = undefined;
+  }
+
+  private notifyShareChanged(): void {
+    this.onShareChanged(this.shareSnapshot());
   }
 
   private serialize<Result>(operation: () => Promise<Result>): Promise<Result> {

@@ -22,6 +22,7 @@ import {
   Mic,
   NotebookText,
   Paperclip,
+  PictureInPicture2,
   Settings,
   Sparkles,
   SquarePen,
@@ -67,6 +68,7 @@ export interface ThreadlightAppProps {
   voiceInput?: VoiceInputAdapter;
   attachmentStage?: AttachmentStageAdapter;
   attachmentPreview?: AttachmentPreviewAdapter;
+  computerShare?: ComputerShareAdapter;
 }
 
 export interface AttachmentStageAdapter {
@@ -75,6 +77,27 @@ export interface AttachmentStageAdapter {
 
 export interface AttachmentPreviewAdapter {
   imageUrl(attachment: AttachmentData): string | undefined;
+}
+
+export interface ComputerShareTarget {
+  id: string;
+  name: string;
+  applicationName?: string;
+}
+
+export interface ComputerShareSnapshot {
+  active: boolean;
+  pictureInPicture: boolean;
+  targets: readonly ComputerShareTarget[];
+}
+
+export interface ComputerShareAdapter {
+  load(): Promise<ComputerShareSnapshot>;
+  showPictureInPicture(): Promise<ComputerShareSnapshot>;
+  stop(): Promise<ComputerShareSnapshot>;
+  subscribe(
+    listener: (snapshot: ComputerShareSnapshot) => void,
+  ): () => void;
 }
 
 interface PendingAttachment {
@@ -105,6 +128,7 @@ export function ThreadlightApp({
   voiceInput,
   attachmentStage,
   attachmentPreview,
+  computerShare,
 }: ThreadlightAppProps) {
   const {
     state,
@@ -136,6 +160,10 @@ export function ThreadlightApp({
   const [preparingAttachments, setPreparingAttachments] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string>();
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const [computerShareSnapshot, setComputerShareSnapshot] =
+    useState<ComputerShareSnapshot>();
+  const [computerShareError, setComputerShareError] = useState<string>();
+  const [showingComputerShare, setShowingComputerShare] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -146,6 +174,7 @@ export function ThreadlightApp({
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const conversation = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
+  const wasRunning = useRef(state.isRunning);
   const currentProject = activeProject(projectSnapshot);
 
   useEffect(() => {
@@ -162,6 +191,46 @@ export function ThreadlightApp({
     },
     [],
   );
+
+  useEffect(() => {
+    if (!computerShare) return;
+    let active = true;
+    const unsubscribe = computerShare.subscribe((snapshot) => {
+      if (!active) return;
+      setComputerShareSnapshot(snapshot);
+      setComputerShareError(undefined);
+    });
+    void computerShare
+      .load()
+      .then((snapshot) => {
+        if (!active) return;
+        setComputerShareSnapshot(snapshot);
+        setComputerShareError(undefined);
+      })
+      .catch((error) => {
+        if (active) setComputerShareError(errorMessage(error));
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [computerShare]);
+
+  useEffect(() => {
+    const turnEnded = shouldStopComputerShare(
+      wasRunning.current,
+      state.isRunning,
+    );
+    wasRunning.current = state.isRunning;
+    if (!turnEnded || !computerShare) return;
+    void computerShare
+      .stop()
+      .then((snapshot) => {
+        setComputerShareSnapshot(snapshot);
+        setComputerShareError(undefined);
+      })
+      .catch((error) => setComputerShareError(errorMessage(error)));
+  }, [computerShare, state.isRunning]);
 
   const releaseVoiceCapture = useCallback(() => {
     const recorder = mediaRecorder.current;
@@ -581,6 +650,31 @@ export function ThreadlightApp({
     if (currentProject || !projects) await retry();
   }
 
+  async function showComputerSharePreview() {
+    if (!computerShare || showingComputerShare) return;
+    setShowingComputerShare(true);
+    setComputerShareError(undefined);
+    try {
+      setComputerShareSnapshot(await computerShare.showPictureInPicture());
+    } catch (error) {
+      setComputerShareError(errorMessage(error));
+    } finally {
+      setShowingComputerShare(false);
+    }
+  }
+
+  function stopRunningTurn() {
+    void interrupt();
+    if (!computerShare) return;
+    void computerShare
+      .stop()
+      .then((snapshot) => {
+        setComputerShareSnapshot(snapshot);
+        setComputerShareError(undefined);
+      })
+      .catch((error) => setComputerShareError(errorMessage(error)));
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Escape" && voiceStatus === "recording") {
       event.preventDefault();
@@ -887,6 +981,14 @@ export function ThreadlightApp({
                     event.currentTarget.value = "";
                   }}
                 />
+                {computerShareSnapshot?.active && (
+                  <ComputerShareStatus
+                    snapshot={computerShareSnapshot}
+                    busy={showingComputerShare}
+                    error={computerShareError}
+                    onShow={() => void showComputerSharePreview()}
+                  />
+                )}
                 {pendingAttachments.length > 0 && (
                   <ComposerAttachments
                     attachments={pendingAttachments}
@@ -972,7 +1074,7 @@ export function ThreadlightApp({
                   {state.isRunning ? (
                   <button
                     className="composer-action stop pressable"
-                    onClick={() => void interrupt()}
+                    onClick={stopRunningTurn}
                     aria-label="停止运行"
                     title="停止"
                   >
@@ -1033,6 +1135,64 @@ export function ThreadlightApp({
           onConfirm={() => void confirmDeleteConversation()}
         />
       )}
+    </div>
+  );
+}
+
+export function shouldStopComputerShare(
+  wasRunning: boolean,
+  isRunning: boolean,
+): boolean {
+  return wasRunning && !isRunning;
+}
+
+export function ComputerShareStatus({
+  snapshot,
+  busy,
+  error,
+  onShow,
+}: {
+  snapshot: ComputerShareSnapshot;
+  busy: boolean;
+  error?: string;
+  onShow(): void;
+}) {
+  const applications = [
+    ...new Set(
+      snapshot.targets.map(
+        (target) => target.applicationName ?? target.name,
+      ),
+    ),
+  ];
+  const targetLabel =
+    applications.length > 0
+      ? applications.join("、")
+      : `${snapshot.targets.length} 个窗口`;
+
+  return (
+    <div className="composer-share" aria-live="polite">
+      <span className="composer-share-icon" aria-hidden="true">
+        <PictureInPicture2 size={14} />
+        <span />
+      </span>
+      <span className="composer-share-copy">
+        <strong>
+          正在共享
+          {snapshot.targets.length > 1
+            ? ` ${snapshot.targets.length} 个窗口`
+            : ""}
+        </strong>
+        <small title={targetLabel}>{error ?? targetLabel}</small>
+      </span>
+      <button
+        type="button"
+        className="composer-share-action pressable"
+        disabled={busy}
+        onClick={onShow}
+      >
+        {busy && <LoaderCircle className="spin" size={12} />}
+        {snapshot.pictureInPicture ? "显示画中画" : "重新打开"}
+      </button>
     </div>
   );
 }

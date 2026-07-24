@@ -23,6 +23,14 @@ export const DESKTOP_AUDIO_TRANSCRIBE_CHANNEL =
   "threadlight:audio:transcribe";
 export const DESKTOP_ATTACHMENT_REFERENCE_CHANNEL =
   "threadlight:attachment:reference";
+export const DESKTOP_COMPUTER_SHARE_GET_CHANNEL =
+  "threadlight:computer-share:get";
+export const DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL =
+  "threadlight:computer-share:show";
+export const DESKTOP_COMPUTER_SHARE_STOP_CHANNEL =
+  "threadlight:computer-share:stop";
+export const DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL =
+  "threadlight:computer-share:changed";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 
@@ -97,6 +105,18 @@ export interface DesktopAttachmentReferenceRequest {
   path: string;
 }
 
+export interface DesktopComputerShareTarget {
+  id: string;
+  name: string;
+  applicationName?: string;
+}
+
+export interface DesktopComputerShareSnapshot {
+  active: boolean;
+  pictureInPicture: boolean;
+  targets: readonly DesktopComputerShareTarget[];
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -119,4 +139,10 @@ export interface DesktopApi {
     request: DesktopAudioTranscriptionRequest,
   ): Promise<string>;
   createAttachmentReference(file: File): Promise<AttachmentData>;
+  getComputerShare(): Promise<DesktopComputerShareSnapshot>;
+  showComputerShare(): Promise<DesktopComputerShareSnapshot>;
+  stopComputerShare(): Promise<DesktopComputerShareSnapshot>;
+  onComputerShareChanged(
+    listener: (snapshot: DesktopComputerShareSnapshot) => void,
+  ): () => void;
 }

@@ -47,6 +47,10 @@ import { ProjectStore } from "./project-store.js";
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
+  DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
@@ -338,6 +342,24 @@ function handleAttachmentReference(
   return createAttachmentReference(parseAttachmentReferenceRequest(value));
 }
 
+function handleComputerShareGet(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!computerService) throw new Error("Computer sharing is not available");
+  return computerService.shareSnapshot();
+}
+
+function handleComputerShareShow(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!computerService) throw new Error("Computer sharing is not available");
+  return computerService.showPictureInPicture();
+}
+
+function handleComputerShareStop(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!computerService) throw new Error("Computer sharing is not available");
+  return computerService.stopSharing();
+}
+
 function requireProject(value: unknown) {
   if (!projectStore) throw new Error("Projects are not available");
   if (typeof value !== "string" || !value) throw new Error("Invalid project id");
@@ -500,7 +522,11 @@ app.whenReady().then(() => {
     },
   );
   projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
-  computerService = new DesktopComputerService();
+  computerService = new DesktopComputerService((snapshot) => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) return;
+    window.webContents.send(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, snapshot);
+  });
   protocol.handle("threadlight-computer", (request) => {
     if (request.url !== COMPUTER_CAPTURE_URL) {
       return new Response("Not found", { status: 404 });
@@ -550,6 +576,9 @@ app.whenReady().then(() => {
     DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
     handleAttachmentReference,
   );
+  ipcMain.handle(DESKTOP_COMPUTER_SHARE_GET_CHANNEL, handleComputerShareGet);
+  ipcMain.handle(DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL, handleComputerShareShow);
+  ipcMain.handle(DESKTOP_COMPUTER_SHARE_STOP_CHANNEL, handleComputerShareStop);
   createWindow();
 
   app.on("activate", () => {
