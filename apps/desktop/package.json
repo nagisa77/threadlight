@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@threadlight/builtin-tools": "0.1.0",
     "@threadlight/client": "0.1.0",
     "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0",

@@ -24,6 +24,11 @@ import { ProjectMemoryStore } from "@threadlight/project-memory";
 
 import { AppServerProcess } from "./app-server-process.js";
 import {
+  COMPUTER_CAPTURE_URL,
+  computerCaptureHtml,
+} from "./computer-capture.js";
+import { DesktopComputerService } from "./computer-service.js";
+import {
   createAttachmentReference,
   resolveAttachmentUrlPath,
 } from "./attachment-upload.js";
@@ -69,12 +74,21 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  {
+    scheme: "threadlight-computer",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+    },
+  },
 ]);
 
 let mainWindow: BrowserWindow | null = null;
 let appServer: AppServerProcess | null = null;
 let settingsStore: SettingsStore | null = null;
 let projectStore: ProjectStore | null = null;
+let computerService: DesktopComputerService | null = null;
 const appIconPath = resolve(
   import.meta.dirname,
   "../../resources/app-icon.png",
@@ -101,16 +115,32 @@ function createWindow(): void {
   mainWindow = window;
 
   window.webContents.session.setPermissionCheckHandler(
-    (webContents, permission, _requestingOrigin, details) =>
-      webContents === window.webContents &&
-      permission === "media" &&
-      details.isMainFrame &&
-      details.mediaType === "audio",
+    (webContents, permission, _requestingOrigin, details) => {
+      if (
+        computerService?.ownsCaptureWebContents(webContents) &&
+        permission === "media"
+      ) {
+        return true;
+      }
+      return (
+        webContents === window.webContents &&
+        permission === "media" &&
+        details.isMainFrame &&
+        details.mediaType === "audio"
+      );
+    },
   );
   window.webContents.session.setPermissionRequestHandler(
     (webContents, permission, callback, details) => {
       const mediaTypes =
         "mediaTypes" in details ? details.mediaTypes : undefined;
+      if (
+        computerService?.ownsCaptureWebContents(webContents) &&
+        permission === "media"
+      ) {
+        callback(true);
+        return;
+      }
       callback(
         webContents === window.webContents &&
           permission === "media" &&
@@ -130,6 +160,7 @@ function createWindow(): void {
     if (mainWindow === window) mainWindow = null;
     appServer?.stop();
     appServer = null;
+    computerService?.dispose();
   });
 
   const activeProject = projectStore?.activeProject();
@@ -159,6 +190,12 @@ function startAppServer(window: BrowserWindow, cwd: string): void {
       },
     ),
     send: (message) => sendToRenderer(window, message),
+    handleComputerRequest: (request) => {
+      if (!computerService) {
+        throw new Error("Desktop computer service is not available");
+      }
+      return computerService.handle(request);
+    },
   });
   appServer.start();
 }
@@ -463,6 +500,15 @@ app.whenReady().then(() => {
     },
   );
   projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
+  computerService = new DesktopComputerService();
+  protocol.handle("threadlight-computer", (request) => {
+    if (request.url !== COMPUTER_CAPTURE_URL) {
+      return new Response("Not found", { status: 404 });
+    }
+    return new Response(computerCaptureHtml(), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  });
   protocol.handle("threadlight-attachment", (request) => {
     try {
       const url = new URL(request.url);
@@ -513,6 +559,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   appServer?.stop();
+  computerService?.dispose();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

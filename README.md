@@ -131,10 +131,21 @@ npm start
 `BRAVE_SEARCH_API_KEY` 后还会注册基于 Brave Search API 的 `web_search`。
 
 使用 OpenAI provider 在 macOS 运行时，还会注册 Responses API 原生
-`computer` 工具。模型返回的批量鼠标、键盘、滚动和截图动作由
-`@threadlight/builtin-tools` 直接执行，不在动作批次之间请求确认；执行后把主屏幕
-PNG 作为 `computer_call_output` 回传。首次使用需要在“系统设置”中为 Threadlight
-授予“辅助功能”和“屏幕录制”权限。设置 `THREADLIGHT_COMPUTER_USE=0` 可以禁用该工具。
+`computer` 工具。Electron 桌面端还会注入 `computer_share`：模型先枚举并选择一个或
+多个 App、窗口或显示器，之后 `computer` 只收到这些目标组成的 1440×900 稳定画布。
+同一画布显示在不抢焦点的置顶画中画中，跨屏幕坐标会映射回各自窗口。App/窗口模式
+默认把鼠标事件定向发送给目标进程，并优先使用 macOS Accessibility action，不移动
+实体鼠标；整块桌面或不支持定向输入的界面可以显式选择 system input 兼容模式。
+
+`desktopCapturer` 只用于发现可共享来源；选中目标后，桌面端会在受限的隐藏窗口中为
+每个来源创建长期存活的 `getDisplayMedia` 视频轨。模型截图和画中画读取同一组实时
+视频帧，不会通过重新枚举缩略图刷新活跃共享。窗口 target 使用原生 CGWindowID 作为
+稳定身份；视频轨意外结束时才重新枚举并尝试按窗口或 App 身份绑定。
+
+动作批次之间不请求确认。首次使用仍需要在“系统设置”中为 Threadlight 授予“辅助功能”
+和“屏幕录制”权限；这是 macOS 系统授权，不能由应用跳过。直接运行 CLI app-server
+时没有 Electron 捕获会话，因此继续使用单显示器兼容驱动。设置
+`THREADLIGHT_COMPUTER_USE=0` 可以禁用该工具。
 
 每个会话还会获得独立的临时 MCP runtime。模型可以用 `mcp_connect` 连接用户明确
 提供或工作区内可验证的 stdio / Streamable HTTP MCP Server，读取它公布的工具

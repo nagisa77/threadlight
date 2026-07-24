@@ -55,7 +55,7 @@ class ScriptedProcessProvider implements ModelProvider {
           {
             id: "call_exec",
             name: "exec_command",
-            arguments: { command: this.command, cwd: null, timeout_ms: 80 },
+            arguments: { command: this.command, cwd: null, timeout_ms: 250 },
           },
         ],
       };

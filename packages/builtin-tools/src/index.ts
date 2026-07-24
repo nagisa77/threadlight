@@ -2,6 +2,7 @@ export {
   createComputerUseTool,
   createMacOSComputerUseDriver,
 } from "./computer-use.js";
+export { createComputerShareTool } from "./computer-share.js";
 export { createExecCommandTool } from "./exec-command.js";
 export {
   createMcpCallTool,
@@ -24,6 +25,13 @@ export type {
   ComputerUseSafetyCheck,
   ComputerUseToolOptions,
 } from "./computer-use.js";
+export type {
+  ComputerShareMode,
+  ComputerShareRuntime,
+  ComputerShareState,
+  ComputerShareTarget,
+  ComputerShareToolOptions,
+} from "./computer-share.js";
 export type {
   ExecCommandResult,
   ExecCommandToolOptions,

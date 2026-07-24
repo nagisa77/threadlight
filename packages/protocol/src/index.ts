@@ -41,6 +41,23 @@ export interface JsonRpcNotification<
 
 export type JsonRpcOutgoing = JsonRpcResponse | JsonRpcNotification;
 
+export const DESKTOP_COMPUTER_METHODS = [
+  "computer/list",
+  "computer/configure",
+  "computer/clear",
+  "computer/execute",
+] as const;
+
+export type DesktopComputerMethod =
+  (typeof DESKTOP_COMPUTER_METHODS)[number];
+
+export type DesktopComputerRequest = JsonRpcRequest<
+  DesktopComputerMethod,
+  unknown
+> & { id: JsonRpcId };
+
+export type DesktopComputerResponse = JsonRpcResponse<unknown>;
+
 export interface ToolCallData {
   id: string;
   name: string;

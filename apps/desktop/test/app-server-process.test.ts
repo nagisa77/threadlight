@@ -8,6 +8,9 @@ import { AppServerProcess } from "../src/main/app-server-process.js";
 const entry = fileURLToPath(
   new URL("./fixtures/scripted-server.mjs", import.meta.url),
 );
+const computerEntry = fileURLToPath(
+  new URL("./fixtures/computer-rpc-server.mjs", import.meta.url),
+);
 
 describe("AppServerProcess", () => {
   it("carries JSON-RPC messages over JSONL", async () => {
@@ -78,6 +81,30 @@ describe("AppServerProcess", () => {
       result: { configured: "updated" },
     });
     expect(messages).toHaveLength(1);
+    server.stop();
+  });
+
+  it("carries desktop computer requests over the private child-process pipe", async () => {
+    let deliver: ((message: JsonRpcOutgoing) => void) | undefined;
+    const response = new Promise<JsonRpcOutgoing>((resolve) => {
+      deliver = resolve;
+    });
+    const server = new AppServerProcess({
+      entry: computerEntry,
+      cwd: process.cwd(),
+      send: (message) => deliver?.(message),
+      handleComputerRequest: async (request) => ({
+        handled: request.method,
+      }),
+    });
+
+    server.start();
+
+    await expect(response).resolves.toEqual({
+      jsonrpc: "2.0",
+      id: 91,
+      result: { handled: "computer/list" },
+    });
     server.stop();
   });
 });
