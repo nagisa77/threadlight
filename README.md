@@ -130,6 +130,12 @@ npm start
 `process_read`、`process_wait` 和 `process_kill` 查询输出、等待或终止。设置
 `BRAVE_SEARCH_API_KEY` 后还会注册基于 Brave Search API 的 `web_search`。
 
+每个会话还会获得独立的临时 MCP runtime。模型可以用 `mcp_connect` 连接用户明确
+提供或工作区内可验证的 stdio / Streamable HTTP MCP Server，读取它公布的工具
+schema，再用 `mcp_call` 执行具体工具。MCP 连接不会写入设置或会话文件，也没有手动
+连接管理界面；它只在当前 app-server 进程中的对应会话内复用，并在会话删除或服务
+退出时自动释放。连接和远端工具调用默认都需要客户端审批。
+
 app-server 使用 stdout 发送 JSONL 协议消息，日志只写入 stderr。启动后可以逐行发送：
 
 ```json

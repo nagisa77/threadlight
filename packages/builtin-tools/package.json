@@ -15,6 +15,7 @@
     "dist"
   ],
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@threadlight/agent-loop": "0.1.0",
     "@threadlight/project-memory": "0.1.0"
   }

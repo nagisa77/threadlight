@@ -7,6 +7,60 @@ import { join } from "node:path";
 import { OpenAIResponsesProvider } from "../src/openai-provider.js";
 
 describe("OpenAIResponsesProvider", () => {
+  it("disables strict mode for open MCP-style argument objects", async () => {
+    const response = {
+      output_text: "done",
+      output: [],
+    } as unknown as OpenAI.Responses.Response;
+    const responseStream = {
+      on() {
+        return responseStream;
+      },
+      async finalResponse() {
+        return response;
+      },
+    };
+    const stream = vi.fn(() => responseStream);
+    const client = { responses: { stream } } as unknown as OpenAI;
+
+    await new OpenAIResponsesProvider({ client }).generate({
+      instructions: "Use tools",
+      tools: [
+        {
+          name: "closed",
+          description: "Closed schema",
+          parameters: {
+            type: "object",
+            properties: { value: { type: "string" } },
+            required: ["value"],
+            additionalProperties: false,
+          },
+        },
+        {
+          name: "mcp_call",
+          description: "Open arguments",
+          parameters: {
+            type: "object",
+            properties: {
+              arguments: {
+                type: "object",
+                additionalProperties: true,
+              },
+            },
+            required: ["arguments"],
+            additionalProperties: false,
+          },
+        },
+      ],
+    });
+
+    const params = stream.mock.calls[0]?.[0] as OpenAI.Responses.ResponseCreateParams;
+    expect(params.tools).toMatchObject([
+      { name: "closed", strict: true },
+      { name: "mcp_call", strict: false },
+    ]);
+  });
+
   it("sends uploaded files by file_id without the mutually exclusive filename", async () => {
     const response = {
       output_text: "done",

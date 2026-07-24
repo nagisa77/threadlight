@@ -210,7 +210,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-      strict: true,
+      strict: isStrictCompatible(tool.parameters),
     }));
 
     const params = {
@@ -290,4 +290,40 @@ function sanitizeResponseInput(
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isStrictCompatible(schema: unknown): boolean {
+  if (!isObject(schema)) return false;
+
+  const variants = ["anyOf", "oneOf", "allOf"] as const;
+  for (const key of variants) {
+    const value = schema[key];
+    if (
+      value !== undefined &&
+      (!Array.isArray(value) || !value.every(isStrictCompatible))
+    ) {
+      return false;
+    }
+  }
+
+  const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  if (types.includes("object")) {
+    if (schema.additionalProperties !== false) return false;
+    const properties = schema.properties;
+    if (!isObject(properties)) return false;
+    const required = schema.required;
+    if (
+      !Array.isArray(required) ||
+      !Object.keys(properties).every((name) => required.includes(name))
+    ) {
+      return false;
+    }
+    if (!Object.values(properties).every(isStrictCompatible)) return false;
+  }
+
+  if (types.includes("array")) {
+    if (!isStrictCompatible(schema.items)) return false;
+  }
+
+  return true;
 }

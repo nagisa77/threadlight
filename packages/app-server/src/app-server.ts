@@ -7,6 +7,7 @@ import type {
   AgentEvent,
   AgentLoop,
   ApprovalRequest,
+  Tool,
 } from "@threadlight/agent-loop";
 
 import type {
@@ -32,6 +33,7 @@ interface ThreadState {
   agent: Agent;
   conversation: StoredConversation;
   progress: MutableConversationProgress[];
+  runtime?: ThreadRuntime;
   activeTurn?: {
     id: string;
     controller: AbortController;
@@ -64,11 +66,21 @@ interface SharedAppServerOptions {
   autoApproveAll?: boolean;
   conversationStore?: ConversationStore;
   processes?: ProcessController;
+  threadRuntimeFactory?: ThreadRuntimeFactory;
   now?: () => Date;
   attachmentRoot?: string;
 }
 
 export type AgentFactory = () => Agent | Promise<Agent>;
+
+export interface ThreadRuntime {
+  tools?: readonly Tool[];
+  dispose?(): void | Promise<void>;
+}
+
+export type ThreadRuntimeFactory = () =>
+  | ThreadRuntime
+  | Promise<ThreadRuntime>;
 
 export type AppServerOptions = SharedAppServerOptions &
   (
@@ -83,6 +95,7 @@ export class AppServer {
   private readonly autoApproveAll: boolean;
   private readonly conversationStore: ConversationStore;
   private readonly processes?: ProcessController;
+  private readonly threadRuntimeFactory?: ThreadRuntimeFactory;
   private readonly now: () => Date;
   private readonly attachmentRoot?: string;
   private readonly threads = new Map<string, ThreadState>();
@@ -97,6 +110,7 @@ export class AppServer {
     this.conversationStore =
       options.conversationStore ?? new MemoryConversationStore();
     this.processes = options.processes;
+    this.threadRuntimeFactory = options.threadRuntimeFactory;
     this.now = options.now ?? (() => new Date());
     this.attachmentRoot = options.attachmentRoot
       ? resolve(options.attachmentRoot)
@@ -159,7 +173,6 @@ export class AppServer {
   }
 
   private async startThread(): Promise<{ threadId: string }> {
-    const agent = await this.agentFactory();
     const threadId = randomUUID();
     const timestamp = this.now().toISOString();
     const conversation: StoredConversation = {
@@ -169,7 +182,10 @@ export class AppServer {
       updatedAt: timestamp,
       messages: [],
     };
-    this.threads.set(threadId, { agent, conversation, progress: [] });
+    this.threads.set(
+      threadId,
+      await this.createThreadState(conversation),
+    );
     return { threadId };
   }
 
@@ -183,11 +199,7 @@ export class AppServer {
     if (!thread) {
       const conversation = await this.conversationStore.load(threadId);
       if (conversation) {
-        thread = {
-          agent: await this.agentFactory(),
-          conversation,
-          progress: [],
-        };
+        thread = await this.createThreadState(conversation);
         this.threads.set(threadId, thread);
       }
     }
@@ -209,8 +221,24 @@ export class AppServer {
     }
 
     const deletedFromStore = await this.conversationStore.delete(threadId);
+    if (thread) await this.disposeThreadRuntime(thread);
     this.threads.delete(threadId);
     return { deleted: !!thread || deletedFromStore };
+  }
+
+  async dispose(): Promise<void> {
+    for (const thread of this.threads.values()) {
+      thread.activeTurn?.controller.abort(
+        new Error("App server is shutting down"),
+      );
+      if (thread.activeTurn) this.rejectApprovalsForTurn(thread.activeTurn.id);
+    }
+    await Promise.all(
+      [...this.threads.values()].map((thread) =>
+        this.disposeThreadRuntime(thread),
+      ),
+    );
+    this.threads.clear();
   }
 
   private async startTurn(params: unknown): Promise<{ turnId: string }> {
@@ -486,6 +514,37 @@ export class AppServer {
     this.send({ jsonrpc: "2.0", method, params });
   }
 
+  private async createThreadState(
+    conversation: StoredConversation,
+  ): Promise<ThreadState> {
+    const baseAgent = await this.agentFactory();
+    const runtime = await this.threadRuntimeFactory?.();
+    try {
+      return {
+        agent: runtime ? attachRuntimeTools(baseAgent, runtime) : baseAgent,
+        conversation,
+        progress: [],
+        ...(runtime ? { runtime } : {}),
+      };
+    } catch (error) {
+      await runtime?.dispose?.();
+      throw error;
+    }
+  }
+
+  private async disposeThreadRuntime(thread: ThreadState): Promise<void> {
+    const runtime = thread.runtime;
+    thread.runtime = undefined;
+    if (!runtime?.dispose) return;
+    try {
+      await runtime.dispose();
+    } catch (error) {
+      process.stderr.write(
+        `Could not dispose thread runtime ${thread.conversation.threadId}: ${String(error)}\n`,
+      );
+    }
+  }
+
   private reply(id: JsonRpcId, result: unknown): void {
     this.send({ jsonrpc: "2.0", id, result });
   }
@@ -755,4 +814,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function truncate(value: string, limit = 1_200): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value;
+}
+
+function attachRuntimeTools(agent: Agent, runtime: ThreadRuntime): Agent {
+  const tools = [...(agent.tools ?? []), ...(runtime.tools ?? [])];
+  const names = new Set<string>();
+  for (const tool of tools) {
+    if (names.has(tool.name)) {
+      throw new Error(`Duplicate agent tool: ${tool.name}`);
+    }
+    names.add(tool.name);
+  }
+  return { ...agent, tools };
 }

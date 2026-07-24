@@ -14,6 +14,8 @@ export type {
   AgentFactory,
   AppServerOptions,
   ProcessController,
+  ThreadRuntime,
+  ThreadRuntimeFactory,
 } from "./app-server.js";
 export type {
   ConversationStore,

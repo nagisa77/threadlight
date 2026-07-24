@@ -1,4 +1,9 @@
 export { createExecCommandTool } from "./exec-command.js";
+export {
+  createMcpCallTool,
+  createMcpConnectTool,
+} from "./mcp-tools.js";
+export { ConversationMcpRuntime } from "./mcp-runtime.js";
 export { ProcessManager } from "./process-manager.js";
 export {
   createProcessKillTool,
@@ -13,6 +18,15 @@ export type {
   ExecCommandResult,
   ExecCommandToolOptions,
 } from "./exec-command.js";
+export type { McpToolOptions } from "./mcp-tools.js";
+export type {
+  ConversationMcpRuntimeOptions,
+  McpConnection,
+  McpConnectResult,
+  McpConnector,
+  McpDiscoveredTool,
+  McpServerSpec,
+} from "./mcp-runtime.js";
 export type {
   ManagedProcessSnapshot,
   ManagedProcessStatus,
