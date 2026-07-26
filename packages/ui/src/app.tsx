@@ -1478,7 +1478,11 @@ export function ActivityList({
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
 }) {
-  const [expanded, setExpanded] = useState(live);
+  const hasFailedActivity = activities.some(
+    (activity) =>
+      activity.status === "failed" || activity.status === "terminated",
+  );
+  const [expanded, setExpanded] = useState(live || hasFailedActivity);
   const hasRunningActivity = activities.some(
     (activity) => activity.status === "running",
   );

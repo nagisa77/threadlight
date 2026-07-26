@@ -23,6 +23,7 @@ import {
 } from "./computer-capture-session.js";
 import { COMPUTER_CAPTURE_URL } from "./computer-capture.js";
 import {
+  enableMacOSChildWindowCapture,
   performMacOSComputerActions,
   type RoutedComputerAction,
 } from "./computer-input.js";
@@ -102,6 +103,7 @@ export class DesktopComputerService {
   private activeProcessId?: number;
   private pendingDisplaySource?: DesktopCapturerSource;
   private previewTimer?: ReturnType<typeof setInterval>;
+  private childWindowCaptureConfigured = false;
   private operation = Promise.resolve();
   private readonly captureSession =
     new ComputerCaptureSession<ActiveCaptureSource>({
@@ -206,6 +208,9 @@ export class DesktopComputerService {
     pictureInPicture: boolean;
     inputMode: "virtual" | "system";
   }) {
+    if (!this.childWindowCaptureConfigured) {
+      this.childWindowCaptureConfigured = enableMacOSChildWindowCapture();
+    }
     const catalog = await this.loadCatalog(false);
     const records = options.targetIds.map((id) => {
       const record = catalog.records.get(id);
@@ -643,6 +648,7 @@ export class DesktopComputerService {
         height: COMPUTER_CANVAS_HEIGHT,
       },
       inputMode: this.selection.inputMode,
+      includeChildWindows: this.childWindowCaptureConfigured,
     };
   }
 

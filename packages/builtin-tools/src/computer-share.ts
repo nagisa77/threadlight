@@ -29,6 +29,7 @@ export interface ComputerShareState {
     height: number;
   };
   inputMode: "virtual" | "system";
+  includeChildWindows?: boolean;
 }
 
 export interface ComputerShareRuntime {

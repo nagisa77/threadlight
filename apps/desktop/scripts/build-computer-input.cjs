@@ -32,6 +32,8 @@ const result = spawnSync(
     "AppKit",
     "-framework",
     "ApplicationServices",
+    "-framework",
+    "ScreenCaptureKit",
     source,
     "-o",
     output,

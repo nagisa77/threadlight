@@ -1,9 +1,12 @@
 #include <AppKit/AppKit.h>
 #include <ApplicationServices/ApplicationServices.h>
+#include <ScreenCaptureKit/ScreenCaptureKit.h>
 #include <node_api.h>
+#include <objc/runtime.h>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -11,6 +14,57 @@
 #include <vector>
 
 namespace {
+
+using SCConfigurationInit = id (*)(id, SEL);
+using SCConfigurationChildWindowSetter = void (*)(id, SEL, BOOL);
+
+IMP originalSCConfigurationInit = nullptr;
+IMP originalSCConfigurationChildWindowSetter = nullptr;
+
+id ThreadlightSCConfigurationInit(id self, SEL selector) {
+  id configuration =
+      reinterpret_cast<SCConfigurationInit>(originalSCConfigurationInit)(
+          self, selector);
+  if (@available(macOS 14.2, *)) {
+    static_cast<SCStreamConfiguration *>(configuration).includeChildWindows =
+        YES;
+  }
+  return configuration;
+}
+
+void ThreadlightSetIncludeChildWindows(id self, SEL selector, BOOL) {
+  reinterpret_cast<SCConfigurationChildWindowSetter>(
+      originalSCConfigurationChildWindowSetter)(self, selector, YES);
+}
+
+bool EnableChildWindowCapture() {
+  if (@available(macOS 14.2, *)) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+      Class configurationClass = SCStreamConfiguration.class;
+      Method initializer =
+          class_getInstanceMethod(configurationClass, @selector(init));
+      Method setter = class_getInstanceMethod(
+          configurationClass, @selector(setIncludeChildWindows:));
+      if (initializer) {
+        originalSCConfigurationInit = method_getImplementation(initializer);
+        method_setImplementation(
+            initializer,
+            reinterpret_cast<IMP>(ThreadlightSCConfigurationInit));
+      }
+      if (setter) {
+        originalSCConfigurationChildWindowSetter =
+            method_getImplementation(setter);
+        method_setImplementation(
+            setter,
+            reinterpret_cast<IMP>(ThreadlightSetIncludeChildWindows));
+      }
+    });
+    SCStreamConfiguration *configuration = [SCStreamConfiguration new];
+    return configuration.includeChildWindows;
+  }
+  return false;
+}
 
 class AXRef {
 public:
@@ -120,6 +174,109 @@ bool HasRole(AXUIElementRef element, CFStringRef desired) {
       CFGetTypeID(value) == CFStringGetTypeID() && CFEqual(value, desired);
   CFRelease(value);
   return matches;
+}
+
+std::string Utf8(NSString *value) {
+  if (!value)
+    return "unknown";
+  const char *text = value.UTF8String;
+  return text ? text : "unknown";
+}
+
+NSString *CopyStringAttribute(AXUIElementRef element, CFStringRef attribute) {
+  if (!element)
+    return nil;
+  CFTypeRef value = nullptr;
+  if (AXUIElementCopyAttributeValue(element, attribute, &value) !=
+          kAXErrorSuccess ||
+      !value) {
+    return nil;
+  }
+  if (CFGetTypeID(value) != CFStringGetTypeID()) {
+    CFRelease(value);
+    return nil;
+  }
+  return CFBridgingRelease(value);
+}
+
+std::string DescribeElement(AXUIElementRef element) {
+  if (!element)
+    return "none";
+  NSString *role = CopyStringAttribute(element, kAXRoleAttribute);
+  NSString *subrole = CopyStringAttribute(element, kAXSubroleAttribute);
+  std::string result = "{role=" + Utf8(role);
+  if (subrole)
+    result += ", subrole=" + Utf8(subrole);
+  result += "}";
+  return result;
+}
+
+std::string DescribeAXError(AXError error) {
+  switch (error) {
+  case kAXErrorSuccess:
+    return "success";
+  case kAXErrorFailure:
+    return "failure";
+  case kAXErrorIllegalArgument:
+    return "illegal_argument";
+  case kAXErrorInvalidUIElement:
+    return "invalid_element";
+  case kAXErrorInvalidUIElementObserver:
+    return "invalid_observer";
+  case kAXErrorCannotComplete:
+    return "cannot_complete";
+  case kAXErrorAttributeUnsupported:
+    return "attribute_unsupported";
+  case kAXErrorActionUnsupported:
+    return "action_unsupported";
+  case kAXErrorNotificationUnsupported:
+    return "notification_unsupported";
+  case kAXErrorNotImplemented:
+    return "not_implemented";
+  case kAXErrorNotificationAlreadyRegistered:
+    return "notification_already_registered";
+  case kAXErrorNotificationNotRegistered:
+    return "notification_not_registered";
+  case kAXErrorAPIDisabled:
+    return "api_disabled";
+  case kAXErrorNoValue:
+    return "no_value";
+  case kAXErrorParameterizedAttributeUnsupported:
+    return "parameterized_attribute_unsupported";
+  case kAXErrorNotEnoughPrecision:
+    return "not_enough_precision";
+  }
+  return "code_" + std::to_string(static_cast<int>(error));
+}
+
+std::string DescribeAction(NSDictionary *action, bool isVirtual) {
+  NSString *type = String(action, @"type");
+  std::string result = Utf8(type) +
+                       " input=" + (isVirtual ? "virtual" : "system");
+  const auto processId = ProcessId(action);
+  if (processId)
+    result += " pid=" + std::to_string(*processId);
+  const auto x = Number(action, @"x");
+  const auto y = Number(action, @"y");
+  if (x && y) {
+    result += " point=(" +
+              std::to_string(static_cast<long long>(std::llround(*x))) + "," +
+              std::to_string(static_cast<long long>(std::llround(*y))) + ")";
+  }
+  if ([type isEqualToString:@"type"]) {
+    NSString *text = String(action, @"text") ?: @"";
+    result += " utf16_length=" + std::to_string(text.length);
+  }
+  if ([type isEqualToString:@"keypress"])
+    result += " key_count=" + std::to_string(Array(action, @"keys").count);
+  if ([type isEqualToString:@"drag"])
+    result += " path_points=" + std::to_string(Array(action, @"path").count);
+  return result;
+}
+
+void LogComputerInput(const std::string &message) {
+  std::fprintf(stderr, "[Threadlight computer] %s\n", message.c_str());
+  std::fflush(stderr);
 }
 
 AXRef CopyElementAt(pid_t pid, CGPoint point) {
@@ -611,7 +768,29 @@ void Activate(std::optional<pid_t> processId) {
     return;
   NSRunningApplication *application =
       [NSRunningApplication runningApplicationWithProcessIdentifier:*processId];
+  if (!application)
+    return;
+  const bool wasActive = application.active;
   [application activateWithOptions:NSApplicationActivateIgnoringOtherApps];
+  if (!wasActive)
+    usleep(50'000);
+}
+
+void PostUnicodeText(NSString *text, bool isVirtual,
+                     std::optional<pid_t> processId) {
+  const NSUInteger length = text.length;
+  std::vector<UniChar> characters(length);
+  if (length > 0) {
+    [text getCharacters:characters.data() range:NSMakeRange(0, length)];
+  }
+  CGEventRef down = CGEventCreateKeyboardEvent(nullptr, 0, true);
+  CGEventKeyboardSetUnicodeString(down, length, characters.data());
+  PostEvent(down, isVirtual, processId);
+  CFRelease(down);
+  CGEventRef up = CGEventCreateKeyboardEvent(nullptr, 0, false);
+  CGEventKeyboardSetUnicodeString(up, length, characters.data());
+  PostEvent(up, isVirtual, processId);
+  CFRelease(up);
 }
 
 class Driver {
@@ -628,44 +807,73 @@ public:
           "Allow Threadlight in System Settings > Privacy & Security > "
           "Accessibility, then restart Threadlight");
     }
-    for (id raw in actions) {
+    LogComputerInput("batch started input=" +
+                     std::string(isVirtual_ ? "virtual" : "system") +
+                     " action_count=" + std::to_string(actions.count));
+    for (NSUInteger actionIndex = 0; actionIndex < actions.count;
+         actionIndex += 1) {
+      id raw = actions[actionIndex];
       if (![raw isKindOfClass:[NSDictionary class]])
         continue;
       NSDictionary *action = raw;
       NSString *type = String(action, @"type");
-      if ([type isEqualToString:@"click"])
-        Click(action, 1);
-      else if ([type isEqualToString:@"double_click"])
-        Click(action, 2);
-      else if ([type isEqualToString:@"move"])
-        Move(action);
-      else if ([type isEqualToString:@"drag"])
-        Drag(action);
-      else if ([type isEqualToString:@"scroll"])
-        Scroll(action);
-      else if ([type isEqualToString:@"keypress"])
-        Keypress(action);
-      else if ([type isEqualToString:@"type"])
-        Type(action);
-      else {
-        throw std::runtime_error("Unsupported native computer input action");
+      const std::string context = "action " + std::to_string(actionIndex + 1) +
+                                  "/" + std::to_string(actions.count) + " " +
+                                  DescribeAction(action, isVirtual_);
+      LogComputerInput(context + " started");
+      try {
+        if ([type isEqualToString:@"click"])
+          Click(action, 1);
+        else if ([type isEqualToString:@"double_click"])
+          Click(action, 2);
+        else if ([type isEqualToString:@"move"])
+          Move(action);
+        else if ([type isEqualToString:@"drag"])
+          Drag(action);
+        else if ([type isEqualToString:@"scroll"])
+          Scroll(action);
+        else if ([type isEqualToString:@"keypress"])
+          Keypress(action);
+        else if ([type isEqualToString:@"type"])
+          Type(action);
+        else {
+          throw std::runtime_error("Unsupported native computer input action");
+        }
+      } catch (const std::exception &error) {
+        const std::string diagnostic = context + " failed: " + error.what();
+        LogComputerInput(diagnostic);
+        throw std::runtime_error(diagnostic);
       }
+      LogComputerInput(context + " completed");
     }
+    LogComputerInput("batch completed");
   }
 
 private:
   bool isVirtual_;
   AXUIElementRef active_ = nullptr;
+  std::optional<pid_t> activeProcessId_;
 
-  void SetActive(AXUIElementRef element) {
+  void SetActive(AXUIElementRef element, std::optional<pid_t> processId) {
+    // The caller may pass active_ itself. Retain the replacement before
+    // releasing the old reference so an alias never becomes a dangling pointer.
+    AXUIElementRef replacement =
+        element ? static_cast<AXUIElementRef>(CFRetain(element)) : nullptr;
     if (active_)
       CFRelease(active_);
-    active_ =
-        element ? static_cast<AXUIElementRef>(CFRetain(element)) : nullptr;
+    active_ = replacement;
+    activeProcessId_ = element ? processId : std::nullopt;
+  }
+
+  AXUIElementRef ActiveFor(std::optional<pid_t> processId) const {
+    return active_ && processId && activeProcessId_ == processId ? active_
+                                                                 : nullptr;
   }
 
   void Click(NSDictionary *action, int count) {
     const auto processId = ProcessId(action);
+    if (isVirtual_)
+      Activate(processId);
     const CGPoint point = Point(action);
     NSArray *keys = Array(action, @"keys");
     NSString *button = String(action, @"button") ?: @"left";
@@ -675,7 +883,7 @@ private:
       AXRef clickable;
       if (hit) {
         AXRef focused = FocusNearest(hit.get());
-        SetActive(focused ? focused.get() : hit.get());
+        SetActive(focused ? focused.get() : hit.get(), processId);
         clickable = NearestWithAction(hit.get(), kAXPressAction);
         if (!clickable) {
           clickable = NearestWithRole(hit.get(), kAXRowRole);
@@ -685,7 +893,7 @@ private:
         clickable = FindActionableAt(*processId, point, ActionableKind::Click);
       }
       if (clickable) {
-        SetActive(clickable.get());
+        SetActive(clickable.get(), processId);
         bool performed = true;
         for (int index = 0; index < count; index += 1) {
           if (!PerformClick(clickable.get())) {
@@ -737,7 +945,7 @@ private:
             FindActionableAt(*processId, first, ActionableKind::Adjustable);
       }
       if (adjustable) {
-        SetActive(adjustable.get());
+        SetActive(adjustable.get(), processId);
         AXUIElementSetAttributeValue(adjustable.get(), kAXFocusedAttribute,
                                      kCFBooleanTrue);
         if (SetSliderValue(adjustable.get(), last))
@@ -820,8 +1028,7 @@ private:
   void Keypress(NSDictionary *action) {
     const auto processId = ProcessId(action);
     NSArray *keys = Array(action, @"keys");
-    if (!isVirtual_)
-      Activate(processId);
+    Activate(processId);
     const CGEventFlags flags = ModifierFlags(keys);
     for (id raw in keys) {
       if (![raw isKindOfClass:[NSString class]] ||
@@ -829,7 +1036,7 @@ private:
         continue;
       }
       NSString *key = raw;
-      if (isVirtual_ && AdjustWithKey(key))
+      if (isVirtual_ && ActiveFor(processId) && AdjustWithKey(key))
         continue;
       const auto code = KeyCode(key);
       if (!code) {
@@ -849,41 +1056,74 @@ private:
 
   void Type(NSDictionary *action) {
     const auto processId = ProcessId(action);
+    if (isVirtual_)
+      Activate(processId);
     NSString *text = String(action, @"text") ?: @"";
-    if (processId) {
-      AXRef focused = CopyFocusedElement(*processId);
-      AXUIElementRef target = focused ? focused.get() : active_;
-      if (target) {
-        if (AXUIElementSetAttributeValue(target, kAXSelectedTextAttribute,
-                                         (__bridge CFStringRef)text) ==
-                kAXErrorSuccess ||
-            AXUIElementSetAttributeValue(target, kAXValueAttribute,
-                                         (__bridge CFStringRef)text) ==
-                kAXErrorSuccess) {
-          SetActive(target);
-          return;
-        }
+    AXRef focused;
+    AXUIElementRef active = ActiveFor(processId);
+    AXError focusedSelectedTextError = kAXErrorNoValue;
+    AXError focusedValueError = kAXErrorNoValue;
+    AXError activeSelectedTextError = kAXErrorNoValue;
+    AXError activeValueError = kAXErrorNoValue;
+    const auto setText = [&](AXUIElementRef target, AXError &selectedTextError,
+                             AXError &valueError) {
+      if (!target)
+        return false;
+      selectedTextError = AXUIElementSetAttributeValue(
+          target, kAXSelectedTextAttribute, (__bridge CFStringRef)text);
+      if (selectedTextError != kAXErrorSuccess) {
+        valueError = AXUIElementSetAttributeValue(
+            target, kAXValueAttribute, (__bridge CFStringRef)text);
       }
+      return selectedTextError == kAXErrorSuccess ||
+             valueError == kAXErrorSuccess;
+    };
+    if (processId) {
+      focused = CopyFocusedElement(*processId);
+      if (setText(focused ? focused.get() : nullptr,
+                  focusedSelectedTextError, focusedValueError)) {
+        SetActive(focused.get(), processId);
+        return;
+      }
+      if (active && (!focused || active != focused.get()) &&
+          setText(active, activeSelectedTextError, activeValueError)) {
+        SetActive(active, processId);
+        return;
+      }
+    }
+    if (isVirtual_ && processId) {
+      LogComputerInput(
+          "type AX targets unavailable; using pid-scoped Unicode fallback pid=" +
+          std::to_string(*processId) +
+          " utf16_length=" + std::to_string(text.length));
+      PostUnicodeText(text, true, processId);
+      return;
     }
     if (isVirtual_) {
       throw std::runtime_error(
-          "The target application has no editable focused AX element");
+          "The target application has no editable focused AX element "
+          "(focused=" +
+          DescribeElement(focused ? focused.get() : nullptr) +
+          ", active=" + DescribeElement(active_) +
+          ", active_pid=" +
+          (activeProcessId_ ? std::to_string(*activeProcessId_) : "none") +
+          ", focused_selected_text=" +
+          DescribeAXError(focusedSelectedTextError) +
+          ", focused_value=" + DescribeAXError(focusedValueError) +
+          ", active_selected_text=" +
+          DescribeAXError(activeSelectedTextError) +
+          ", active_value=" + DescribeAXError(activeValueError) + ")");
     }
     Activate(processId);
-    const NSUInteger length = text.length;
-    std::vector<UniChar> characters(length);
-    if (length > 0) {
-      [text getCharacters:characters.data() range:NSMakeRange(0, length)];
-    }
-    CGEventRef down = CGEventCreateKeyboardEvent(nullptr, 0, true);
-    CGEventKeyboardSetUnicodeString(down, length, characters.data());
-    PostEvent(down, false, processId);
-    CFRelease(down);
-    CGEventRef up = CGEventCreateKeyboardEvent(nullptr, 0, false);
-    PostEvent(up, false, processId);
-    CFRelease(up);
+    PostUnicodeText(text, false, processId);
   }
 };
+
+Driver &SharedDriver(bool isVirtual) {
+  static Driver virtualDriver(true);
+  static Driver systemDriver(false);
+  return isVirtual ? virtualDriver : systemDriver;
+}
 
 napi_value Perform(napi_env env, napi_callback_info info) {
   size_t argc = 1;
@@ -908,7 +1148,7 @@ napi_value Perform(napi_env env, napi_callback_info info) {
       NSDictionary *request = value;
       const bool isVirtual =
           [String(request, @"inputMode") isEqualToString:@"virtual"];
-      Driver(isVirtual).Run(Array(request, @"actions"));
+      SharedDriver(isVirtual).Run(Array(request, @"actions"));
     }
   } catch (const std::exception &error) {
     napi_throw_error(env, nullptr, error.what());
@@ -922,6 +1162,18 @@ napi_value Perform(napi_env env, napi_callback_info info) {
   return undefined;
 }
 
+napi_value EnableChildWindows(napi_env env, napi_callback_info info) {
+  size_t argc = 0;
+  napi_get_cb_info(env, info, &argc, nullptr, nullptr, nullptr);
+  bool enabled = false;
+  @autoreleasepool {
+    enabled = EnableChildWindowCapture();
+  }
+  napi_value result;
+  napi_get_boolean(env, enabled, &result);
+  return result;
+}
+
 } // namespace
 
 NAPI_MODULE_INIT() {
@@ -929,5 +1181,10 @@ NAPI_MODULE_INIT() {
   napi_create_function(env, "perform", NAPI_AUTO_LENGTH, Perform, nullptr,
                        &perform);
   napi_set_named_property(env, exports, "perform", perform);
+  napi_value enableChildWindowCapture;
+  napi_create_function(env, "enableChildWindowCapture", NAPI_AUTO_LENGTH,
+                       EnableChildWindows, nullptr, &enableChildWindowCapture);
+  napi_set_named_property(env, exports, "enableChildWindowCapture",
+                          enableChildWindowCapture);
   return exports;
 }

@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
-import type {
-  AttachmentData,
-  AgentEventData,
-  ConversationMessageData,
-  ProcessSnapshotData,
-  ToolCallData,
-  ToolResultData,
+import {
+  appendActivityDetail,
+  formatComputerToolInput,
+  formatComputerToolResult,
+  type AttachmentData,
+  type AgentEventData,
+  type ConversationMessageData,
+  type ProcessSnapshotData,
+  type ToolCallData,
+  type ToolResultData,
 } from "@threadlight/protocol";
 
 export interface ToolActivity {
@@ -246,6 +249,11 @@ function completeTool(
         const isExecCommand = activity.name === "exec_command";
         const keepsInputDetail =
           isExecCommand || activity.name === "computer";
+        const detail = keepsInputDetail
+          ? activity.detail
+          : process
+            ? `${process.status} · ${process.sessionId}`
+            : truncate(result.output);
         return {
           ...activity,
           status: result.isError
@@ -253,11 +261,10 @@ function completeTool(
             : isExecCommand && process
               ? processActivityStatus(process)
               : "completed",
-          detail: keepsInputDetail
-            ? activity.detail
-            : process
-              ? `${process.status} · ${process.sessionId}`
-              : truncate(result.output),
+          detail:
+            activity.name === "computer"
+              ? appendActivityDetail(detail, formatComputerToolResult(result))
+              : detail,
           ...(isExecCommand && process ? { process } : {}),
         };
       }),
@@ -378,12 +385,7 @@ function toolInput(call: ToolCallData): string | undefined {
     return typeof command === "string" ? `$ ${command}` : undefined;
   }
   if (call.name === "computer" && Array.isArray(call.arguments.actions)) {
-    const actions = call.arguments.actions.flatMap((action) =>
-      isObject(action) && typeof action.type === "string"
-        ? [action.type.replaceAll("_", " ")]
-        : [],
-    );
-    return actions.length > 0 ? actions.join(" → ") : undefined;
+    return formatComputerToolInput(call.arguments);
   }
   return;
 }

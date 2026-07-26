@@ -47,6 +47,7 @@ const CANVAS_PADDING = 16;
 const TILE_GAP = 12;
 const TILE_HEADER_HEIGHT = 30;
 const TILE_INSET = 2;
+const CONTENT_EDGE_SNAP_DISTANCE = 64;
 
 export function layoutComputerSources(
   sources: readonly ComputerFrameSource[],
@@ -125,18 +126,43 @@ export function mapCanvasPoint(
   x: number,
   y: number,
 ): MappedComputerPoint | undefined {
-  const tile = layout.tiles.find((candidate) =>
+  const exact = layout.tiles.find((candidate) =>
     contains(candidate.content, x, y),
   );
+  const snapped = exact ? undefined : snapToNearbyContent(layout, x, y);
+  const tile = exact ?? snapped?.tile;
   if (!tile) return;
-  const relativeX = (x - tile.content.x) / tile.content.width;
-  const relativeY = (y - tile.content.y) / tile.content.height;
+  const mappedX = snapped?.x ?? x;
+  const mappedY = snapped?.y ?? y;
+  const relativeX = (mappedX - tile.content.x) / tile.content.width;
+  const relativeY = (mappedY - tile.content.y) / tile.content.height;
   return {
     sourceId: tile.sourceId,
     ...(tile.processId === undefined ? {} : { processId: tile.processId }),
     x: tile.sourceBounds.x + relativeX * tile.sourceBounds.width,
     y: tile.sourceBounds.y + relativeY * tile.sourceBounds.height,
   };
+}
+
+function snapToNearbyContent(
+  layout: ComputerFrameLayout,
+  x: number,
+  y: number,
+): { tile: ComputerFrameTile; x: number; y: number } | undefined {
+  const tile = layout.tiles.find((candidate) =>
+    contains(candidate.tile, x, y),
+  );
+  if (!tile) return;
+  const snappedX = clamp(x, tile.content.x, tile.content.x + tile.content.width);
+  const snappedY = clamp(y, tile.content.y, tile.content.y + tile.content.height);
+  if (Math.hypot(x - snappedX, y - snappedY) > CONTENT_EDGE_SNAP_DISTANCE) {
+    return;
+  }
+  return { tile, x: snappedX, y: snappedY };
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function contains(

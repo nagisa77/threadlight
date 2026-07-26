@@ -9,6 +9,11 @@ import type {
   ApprovalRequest,
   Tool,
 } from "@threadlight/agent-loop";
+import {
+  appendActivityDetail,
+  formatComputerToolInput,
+  formatComputerToolResult,
+} from "@threadlight/protocol";
 
 import type {
   ConversationActivityData,
@@ -662,6 +667,12 @@ function updateProgress(
       ? processDetail(processSnapshot)
       : truncate(event.result.output);
   }
+  if (activity.name === "computer") {
+    activity.detail = appendActivityDetail(
+      activity.detail,
+      formatComputerToolResult(event.result),
+    );
+  }
 }
 
 function updateMutableProcessSnapshots(
@@ -814,12 +825,7 @@ function toolDetail(name: string, arguments_: unknown): string | undefined {
       : "Read .threadlight/MEMORY.md";
   }
   if (name === "computer" && Array.isArray(arguments_.actions)) {
-    const actions = arguments_.actions.flatMap((action) =>
-      isObject(action) && typeof action.type === "string"
-        ? [action.type.replaceAll("_", " ")]
-        : [],
-    );
-    return actions.length > 0 ? actions.join(" → ") : undefined;
+    return formatComputerToolInput(arguments_);
   }
   return;
 }

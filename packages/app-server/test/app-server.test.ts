@@ -394,6 +394,127 @@ describe("AppServer", () => {
       },
     });
     expect(JSON.stringify(completedTool)).not.toContain(screenshot);
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+    const resumed = messages.find(
+      (message) => "id" in message && message.id === 4,
+    );
+    const storedMessages = (
+      resumed?.result as {
+        messages?: Array<{
+          role?: string;
+          progress?: Array<{
+            activities?: Array<{ detail?: string }>;
+          }>;
+        }>;
+      }
+    )?.messages;
+    const computerDetail = storedMessages
+      ?.findLast((message) => message.role === "assistant")
+      ?.progress?.[0]?.activities?.[0]?.detail;
+    expect(computerDetail).toBe(
+      [
+        "操作 1 · screenshot",
+        "结果 · 已捕获更新后的屏幕截图",
+      ].join("\n"),
+    );
+  });
+
+  it("stores detailed computer failures without retaining typed content", async () => {
+    let generation = 0;
+    const provider: ModelProvider = {
+      async generate() {
+        generation += 1;
+        if (generation === 1) {
+          return {
+            text: "",
+            toolCalls: [
+              {
+                id: "computer-call-1",
+                name: "computer",
+                arguments: {
+                  actions: [
+                    { type: "click", x: 120, y: 80, button: "left" },
+                    { type: "type", text: "private message" },
+                  ],
+                  pendingSafetyChecks: [],
+                },
+              },
+            ],
+          };
+        }
+        return { text: "done", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    let completeTurn: ((message: JsonRpcOutgoing) => void) | undefined;
+    const completed = new Promise<JsonRpcOutgoing>((resolve) => {
+      completeTurn = resolve;
+    });
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "test",
+        instructions: "Use computer",
+        tools: [
+          defineTool({
+            name: "computer",
+            kind: "computer",
+            description: "Control the computer",
+            parameters: { type: "object" },
+            async execute() {
+              throw new Error(
+                "action 2/2 type input=virtual pid=42 failed: " +
+                  "focused={role=AXWindow}, active={role=AXButton}",
+              );
+            },
+          }),
+        ],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completeTurn?.(message);
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadResponse = messages.find(
+      (message) => "id" in message && message.id === 2,
+    );
+    const threadId = (threadResponse?.result as { threadId: string }).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Send a message" },
+    });
+    await completed;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    const resumed = messages.find(
+      (message) => "id" in message && message.id === 4,
+    );
+    const serialized = JSON.stringify(resumed);
+    expect(serialized).toContain(
+      "操作 2 · type · 15 个字符（内容未记录）",
+    );
+    expect(serialized).toContain(
+      "错误 · action 2/2 type input=virtual pid=42 failed",
+    );
+    expect(serialized).not.toContain("private message");
   });
 
   it("automatically approves protected tools when configured", async () => {

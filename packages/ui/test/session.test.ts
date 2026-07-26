@@ -200,7 +200,7 @@ describe("sessionReducer", () => {
     expect(state.progress[0]?.activities[0]?.detail).toBe("search result");
   });
 
-  it("keeps the computer action summary after its screenshot is captured", () => {
+  it("shows detailed computer actions and the screenshot result", () => {
     let state = sessionReducer(initialSessionState, {
       type: "agent.event",
       event: {
@@ -219,7 +219,10 @@ describe("sessionReducer", () => {
       },
     });
     expect(state.progress[0]?.activities[0]?.detail).toBe(
-      "screenshot → click",
+      [
+        "操作 1 · screenshot",
+        "操作 2 · click · 坐标 (120, 80)",
+      ].join("\n"),
     );
     state = sessionReducer(state, {
       type: "agent.event",
@@ -236,8 +239,57 @@ describe("sessionReducer", () => {
 
     expect(state.progress[0]?.activities[0]).toMatchObject({
       status: "completed",
-      detail: "screenshot → click",
+      detail: [
+        "操作 1 · screenshot",
+        "操作 2 · click · 坐标 (120, 80)",
+        "结果 · 已捕获更新后的屏幕截图",
+      ].join("\n"),
     });
+  });
+
+  it("shows computer failures without recording typed content", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: {
+        type: "tool.started",
+        runId: "run-1",
+        call: {
+          id: "call-1",
+          name: "computer",
+          arguments: {
+            actions: [
+              { type: "click", x: 120, y: 80, button: "left" },
+              { type: "type", text: "private message" },
+              { type: "wait" },
+            ],
+          },
+        },
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "call-1",
+          name: "computer",
+          output:
+            "action 2/2 type input=virtual pid=42 failed: focused={role=AXWindow}",
+          isError: true,
+        },
+      },
+    });
+
+    const activity = state.progress[0]?.activities[0];
+    expect(activity).toMatchObject({ status: "failed" });
+    expect(activity?.detail).toContain(
+      "操作 2 · type · 15 个字符（内容未记录）",
+    );
+    expect(activity?.detail).toContain(
+      "错误 · action 2/2 type input=virtual pid=42 failed",
+    );
+    expect(activity?.detail).not.toContain("private message");
   });
 
   it("tracks managed command output and a user-terminated state", () => {

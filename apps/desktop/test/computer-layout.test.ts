@@ -68,12 +68,101 @@ describe("computer shared-content layout", () => {
     }
   });
 
-  it("does not route clicks on labels or letterboxing", () => {
-    const layout = layoutComputerSources([source()]);
+  it("does not route tile header points far from narrow window content", () => {
+    const layout = layoutComputerSources([
+      source({ pixelWidth: 400, pixelHeight: 1_000 }),
+    ]);
     const tile = layout.tiles[0];
     expect(tile).toBeDefined();
     expect(
       mapCanvasPoint(layout, (tile?.tile.x ?? 0) + 8, (tile?.tile.y ?? 0) + 8),
+    ).toBeUndefined();
+  });
+
+  it("snaps a projected title-bar click to the window top edge", () => {
+    const layout = layoutComputerSources([
+      source({
+        id: "window:wechat",
+        processId: 35942,
+        pixelWidth: 957,
+        pixelHeight: 949,
+        bounds: { x: -4, y: -1014, width: 957, height: 949 },
+      }),
+    ]);
+
+    const mapped = mapCanvasPoint(layout, 710, 31);
+
+    expect(mapped).toMatchObject({
+      sourceId: "window:wechat",
+      processId: 35942,
+      y: -1014,
+    });
+  });
+
+  it("snaps nearby letterboxing to the same window content edge", () => {
+    const layout = layoutComputerSources([
+      source({
+        id: "window:settings",
+        pixelWidth: 723,
+        pixelHeight: 949,
+      }),
+      source({
+        id: "window:wechat",
+        processId: 35942,
+        pixelWidth: 957,
+        pixelHeight: 949,
+        bounds: { x: -4, y: -1014, width: 957, height: 949 },
+      }),
+    ]);
+    const wechat = layout.tiles[1];
+    expect(wechat).toBeDefined();
+
+    const mapped = mapCanvasPoint(
+      layout,
+      (wechat?.content.x ?? 0) + (wechat?.content.width ?? 0) / 2,
+      (wechat?.content.y ?? 0) - 48,
+    );
+
+    expect(mapped).toMatchObject({
+      sourceId: "window:wechat",
+      processId: 35942,
+      y: -1014,
+    });
+    expect(mapped?.x).toBeCloseTo(474.5);
+  });
+
+  it("does not route distant letterboxing or gaps between tiles", () => {
+    const layout = layoutComputerSources([
+      source({
+        id: "window:settings",
+        pixelWidth: 723,
+        pixelHeight: 949,
+      }),
+      source({
+        id: "window:wechat",
+        pixelWidth: 957,
+        pixelHeight: 949,
+      }),
+    ]);
+    const [settings, wechat] = layout.tiles;
+    expect(settings).toBeDefined();
+    expect(wechat).toBeDefined();
+
+    expect(
+      mapCanvasPoint(
+        layout,
+        (wechat?.content.x ?? 0) + (wechat?.content.width ?? 0) / 2,
+        (wechat?.content.y ?? 0) - 70,
+      ),
+    ).toBeUndefined();
+    expect(
+      mapCanvasPoint(
+        layout,
+        ((settings?.tile.x ?? 0) + (settings?.tile.width ?? 0) +
+          (wechat?.tile.x ?? 0)) /
+          2,
+        400,
+      ),
     ).toBeUndefined();
   });
 });

@@ -46,6 +46,24 @@ describe("ActivityList", () => {
     expect(html).toContain('<summary class="activity-heading">');
   });
 
+  it("starts failed execution records expanded so diagnostics are visible", () => {
+    const html = renderToStaticMarkup(
+      <ActivityList
+        activities={[
+          {
+            id: "failed-call",
+            name: "computer",
+            status: "failed",
+            detail: "错误 · focused={role=AXWindow}",
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('<details class="activity-list" open="">');
+    expect(html).toContain("focused={role=AXWindow}");
+  });
+
   it("keeps a live execution record expanded until the final answer arrives", () => {
     const html = renderToStaticMarkup(
       <ActivityList

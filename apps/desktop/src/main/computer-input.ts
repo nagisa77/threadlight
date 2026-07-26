@@ -20,6 +20,7 @@ export type RoutedComputerAction =
 
 export interface NativeComputerInputAddon {
   perform(request: string): void;
+  enableChildWindowCapture?(): boolean;
 }
 
 let nativeAddon: NativeComputerInputAddon | undefined;
@@ -44,6 +45,17 @@ export function performComputerActionsWithAddon(
   inputMode: "virtual" | "system",
 ): void {
   addon.perform(JSON.stringify({ actions, inputMode }));
+}
+
+export function enableMacOSChildWindowCapture(): boolean {
+  if (process.platform !== "darwin") return false;
+  return enableChildWindowCaptureWithAddon(loadNativeAddon());
+}
+
+export function enableChildWindowCaptureWithAddon(
+  addon: NativeComputerInputAddon,
+): boolean {
+  return addon.enableChildWindowCapture?.() ?? false;
 }
 
 export function nativeComputerInputCandidates(

@@ -1,3 +1,9 @@
+export {
+  appendActivityDetail,
+  formatComputerToolInput,
+  formatComputerToolResult,
+} from "./computer-activity.js";
+
 export type JsonRpcId = string | number | null;
 
 export interface JsonRpcRequest<
