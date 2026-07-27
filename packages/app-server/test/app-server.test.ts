@@ -15,6 +15,18 @@ import { createUpdatePlanTool } from "@threadlight/builtin-tools";
 import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
+function richPlanStep(
+  step: string,
+  status: "pending" | "in_progress" | "completed",
+) {
+  return {
+    step,
+    details: `Execute ${step} using the inspected architecture and preserve existing behavior.`,
+    acceptanceCriteria: [`${step} is implemented and verified.`],
+    status,
+  };
+}
+
 describe("AppServer", () => {
   it("starts user-selected Plan mode and persists scripted plan progress", async () => {
     const requests: ModelRequest[] = [];
@@ -32,8 +44,8 @@ describe("AppServer", () => {
                 name: "update_plan",
                 arguments: {
                   plan: [
-                    { step: "Inspect architecture", status: "in_progress" },
-                    { step: "Implement mode", status: "pending" },
+                    richPlanStep("Inspect architecture", "in_progress"),
+                    richPlanStep("Implement mode", "pending"),
                   ],
                 },
               },
@@ -100,8 +112,8 @@ describe("AppServer", () => {
             plan: {
               source: "user",
               items: [
-                { step: "Inspect architecture", status: "in_progress" },
-                { step: "Implement mode", status: "pending" },
+                richPlanStep("Inspect architecture", "in_progress"),
+                richPlanStep("Implement mode", "pending"),
               ],
             },
           },
@@ -127,8 +139,8 @@ describe("AppServer", () => {
                     name: "update_plan",
                     arguments: {
                       plan: [
-                        { step: "Investigate", status: "in_progress" },
-                        { step: "Verify", status: "pending" },
+                        richPlanStep("Investigate", "in_progress"),
+                        richPlanStep("Verify", "pending"),
                       ],
                     },
                   },

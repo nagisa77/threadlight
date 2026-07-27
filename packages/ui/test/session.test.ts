@@ -46,6 +46,31 @@ describe("sessionReducer", () => {
       ],
     });
     expect(state.progress).toEqual([]);
+
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "plan-1",
+          name: "update_plan",
+          output: JSON.stringify({
+            plan: [
+              { step: "Inspect", status: "completed" },
+              { step: "Build", status: "in_progress" },
+              { step: "Test", status: "pending" },
+            ],
+            documentPath: ".threadlight/plans/run-1.md",
+            documentVersion: "0123456789abcdef",
+          }),
+        },
+      },
+    });
+    expect(state.plan).toMatchObject({
+      documentPath: ".threadlight/plans/run-1.md",
+      documentVersion: "0123456789abcdef",
+    });
   });
 
   it("keeps background task runtime state isolated by thread", () => {

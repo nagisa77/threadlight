@@ -11,6 +11,26 @@ export function projectAgentPlan(
   event: AgentEventData,
 ): AgentPlanData | undefined {
   if (
+    event.type === "tool.completed" &&
+    event.result.name === UPDATE_PLAN_TOOL_NAME &&
+    !event.result.isError
+  ) {
+    const document = parsePlanDocumentResult(event.result.output);
+    if (!document) return plan;
+    return {
+      ...(plan ?? {
+        source: "model",
+        items: document.items ?? [],
+      }),
+      ...(document.explanation
+        ? { explanation: document.explanation }
+        : {}),
+      ...(document.items ? { items: document.items } : {}),
+      documentPath: document.documentPath,
+      documentVersion: document.documentVersion,
+    };
+  }
+  if (
     event.type !== "tool.started" ||
     event.call.name !== UPDATE_PLAN_TOOL_NAME
   ) {
@@ -23,6 +43,46 @@ export function projectAgentPlan(
     source: plan?.source ?? "model",
     ...(update.explanation ? { explanation: update.explanation } : {}),
     items: update.items,
+    ...(plan?.documentPath
+      ? { documentPath: plan.documentPath }
+      : {}),
+    ...(plan?.documentVersion
+      ? { documentVersion: plan.documentVersion }
+      : {}),
+  };
+}
+
+function parsePlanDocumentResult(output: string): {
+  explanation?: string;
+  items?: readonly PlanItemData[];
+  documentPath: string;
+  documentVersion: string;
+} | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(output);
+  } catch {
+    return;
+  }
+  if (
+    !isObject(value) ||
+    typeof value.documentPath !== "string" ||
+    !/^\.threadlight\/plans\/[A-Za-z0-9_-]+\.md$/.test(
+      value.documentPath,
+    ) ||
+    typeof value.documentVersion !== "string" ||
+    !/^[a-f0-9]{16}$/.test(value.documentVersion)
+  ) {
+    return;
+  }
+  const update = parsePlanUpdate(value);
+  return {
+    documentPath: value.documentPath,
+    documentVersion: value.documentVersion,
+    ...(update?.explanation
+      ? { explanation: update.explanation }
+      : {}),
+    ...(update ? { items: update.items } : {}),
   };
 }
 
@@ -41,8 +101,46 @@ export function parsePlanUpdate(
       typeof candidate.step === "string"
         ? candidate.step.replace(/\s+/g, " ").trim()
         : "";
-    if (!step || step.length > 200 || seen.has(step)) return;
+    if (!step || step.length > 120 || seen.has(step)) return;
     seen.add(step);
+    const details =
+      typeof candidate.details === "string"
+        ? candidate.details.replace(/\s+/g, " ").trim()
+        : undefined;
+    if (
+      candidate.details !== undefined &&
+      (!details || details.length > 2000)
+    ) {
+      return;
+    }
+    let acceptanceCriteria: readonly string[] | undefined;
+    if (candidate.acceptanceCriteria !== undefined) {
+      if (
+        !Array.isArray(candidate.acceptanceCriteria) ||
+        candidate.acceptanceCriteria.length < 1 ||
+        candidate.acceptanceCriteria.length > 8
+      ) {
+        return;
+      }
+      const criteriaSeen = new Set<string>();
+      const criteria: string[] = [];
+      for (const criterion of candidate.acceptanceCriteria) {
+        const normalized =
+          typeof criterion === "string"
+            ? criterion.replace(/\s+/g, " ").trim()
+            : "";
+        if (
+          !normalized ||
+          normalized.length > 500 ||
+          criteriaSeen.has(normalized)
+        ) {
+          return;
+        }
+        criteriaSeen.add(normalized);
+        criteria.push(normalized);
+      }
+      acceptanceCriteria = criteria;
+    }
     const status = candidate.status;
     if (
       status !== "pending" &&
@@ -52,7 +150,12 @@ export function parsePlanUpdate(
       return;
     }
     if (status === "in_progress") activeSteps += 1;
-    items.push({ step, status });
+    items.push({
+      step,
+      ...(details ? { details } : {}),
+      ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
+      status,
+    });
   }
   if (activeSteps > 1) return;
 
@@ -62,7 +165,7 @@ export function parsePlanUpdate(
       : undefined;
   if (
     value.explanation !== undefined &&
-    (!explanation || explanation.length > 500)
+    (!explanation || explanation.length > 2000)
   ) {
     return;
   }

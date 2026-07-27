@@ -29,6 +29,7 @@ import { refractor } from "refractor";
 import tsx from "refractor/tsx";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
+import { MarkdownContent } from "./markdown.js";
 import { useI18n, type Translate } from "./i18n.js";
 import { useTheme } from "./theme.js";
 import {
@@ -85,6 +86,7 @@ export interface WorkspaceAdapter {
 export interface WorkspaceFileOpenRequest {
   id: number;
   path: string;
+  activate?: boolean;
   line?: number;
   column?: number;
 }
@@ -114,6 +116,7 @@ export function WorkspacePanel({
   onResizeBy,
   onResetSize,
   onRefreshChanges,
+  toolbarActions,
 }: {
   adapter: WorkspaceAdapter;
   terminal?: TerminalAdapter;
@@ -129,6 +132,7 @@ export function WorkspacePanel({
   onResizeBy(delta: number): void;
   onResetSize(): void;
   onRefreshChanges(): void;
+  toolbarActions?: ReactNode;
 }) {
   const { t } = useI18n();
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() => [
@@ -160,7 +164,9 @@ export function WorkspacePanel({
           tab.kind === "file" && tab.path === fileOpenRequest.path,
       );
       if (existing) {
-        setActiveTabId(existing.id);
+        if (fileOpenRequest.activate !== false) {
+          setActiveTabId(existing.id);
+        }
         return current.map((tab) =>
           tab.id === existing.id
             ? {
@@ -182,7 +188,9 @@ export function WorkspacePanel({
         ) ??
         current.find((tab) => tab.kind === "file" && !tab.path);
       if (empty) {
-        setActiveTabId(empty.id);
+        if (fileOpenRequest.activate !== false) {
+          setActiveTabId(empty.id);
+        }
         return current.map((tab) =>
           tab.id === empty.id
             ? {
@@ -205,7 +213,9 @@ export function WorkspacePanel({
         column: fileOpenRequest.column,
         revealRequest: fileOpenRequest.id,
       };
-      setActiveTabId(next.id);
+      if (fileOpenRequest.activate !== false) {
+        setActiveTabId(next.id);
+      }
       return [...current, next];
     });
   }, [fileOpenRequest?.id]);
@@ -309,49 +319,58 @@ export function WorkspacePanel({
         }}
       />
       <div className="workspace-panel-tabs">
-        <div className="workspace-tab-strip" role="tablist" aria-label={t("panelTabs")}>
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={tab.id === activeTab?.id}
-              className={`workspace-tab pressable ${tab.id === activeTab?.id ? "active" : ""}`}
-              onClick={() => setActiveTabId(tab.id)}
-            >
-              {tab.kind === "review" ? (
-                <FileDiff size={14} />
-              ) : tab.kind === "terminal" ? (
-                <Terminal size={14} />
-              ) : (
-                <File size={14} />
-              )}
-              <span>{tab.title}</span>
-              <span
-                role="button"
-                tabIndex={0}
-                className="workspace-tab-close pressable"
-                aria-label={t("closeTab", { title: tab.title })}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeTab(tab.id);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key !== "Enter" && event.key !== " ") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  closeTab(tab.id);
-                }}
+        <div className="workspace-panel-tab-flow">
+          <div
+            className="workspace-tab-strip"
+            role="tablist"
+            aria-label={t("panelTabs")}
+          >
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={tab.id === activeTab?.id}
+                className={`workspace-tab pressable ${tab.id === activeTab?.id ? "active" : ""}`}
+                onClick={() => setActiveTabId(tab.id)}
               >
-                <X size={13} />
-              </span>
-            </button>
-          ))}
+                {tab.kind === "review" ? (
+                  <FileDiff size={14} />
+                ) : tab.kind === "terminal" ? (
+                  <Terminal size={14} />
+                ) : (
+                  <File size={14} />
+                )}
+                <span>{tab.title}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="workspace-tab-close pressable"
+                  aria-label={t("closeTab", { title: tab.title })}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    closeTab(tab.id);
+                  }}
+                >
+                  <X size={13} />
+                </span>
+              </button>
+            ))}
+          </div>
+          <PanelAddMenu
+            available={terminal ? ["terminal", "file"] : ["file"]}
+            onSelect={addTab}
+          />
         </div>
-        <PanelAddMenu
-          available={terminal ? ["terminal", "file"] : ["file"]}
-          onSelect={addTab}
-        />
+        {toolbarActions && (
+          <div className="workspace-panel-actions">{toolbarActions}</div>
+        )}
       </div>
 
       <div className="workspace-panel-stage">
@@ -607,7 +626,11 @@ export function FileView({
     return () => {
       active = false;
     };
-  }, [adapter, path, projectId]);
+  }, [adapter, path, projectId, revealRequest]);
+
+  useEffect(() => {
+    if (isPlanDocumentPath(path)) setTreeVisible(false);
+  }, [path]);
 
   return (
     <div className="file-view" role="tabpanel" hidden={hidden}>
@@ -643,6 +666,8 @@ export function FileView({
             <PanelState icon={<FileCode2 size={20} />}>
               {t("binaryPreview")}
             </PanelState>
+          ) : isPlanDocumentPath(file.path) ? (
+            <PlanDocument content={file.content} />
           ) : (
             <FileSource
               name={file.name}
@@ -663,6 +688,20 @@ export function FileView({
       </div>
     </div>
   );
+}
+
+export function PlanDocument({ content }: { content: string }) {
+  return (
+    <article className="plan-document">
+      <MarkdownContent>{content}</MarkdownContent>
+    </article>
+  );
+}
+
+export function isPlanDocumentPath(
+  path: string | undefined,
+): path is string {
+  return !!path && /^\.threadlight\/plans\/[A-Za-z0-9_-]+\.md$/.test(path);
 }
 
 export function FileSource({

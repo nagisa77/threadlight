@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 import type {
   DesktopLanguage,
   DesktopModelProvider,
+  DesktopProjectOpener,
   DesktopSettingsSnapshot,
   DesktopSettingsUpdate,
   DesktopTheme,
@@ -19,6 +20,7 @@ interface StoredSettings {
   version: 1;
   language?: DesktopLanguage;
   theme?: DesktopTheme;
+  preferredProjectOpener?: DesktopProjectOpener;
   provider?: DesktopModelProvider;
   encryptedOpenAIApiKey?: string;
   encryptedDeepSeekApiKey?: string;
@@ -64,6 +66,9 @@ export class SettingsStore {
     return {
       language: parseLanguage(this.read().language),
       theme: parseTheme(this.read().theme),
+      preferredProjectOpener: parseProjectOpener(
+        this.read().preferredProjectOpener,
+      ),
       provider: settings.provider,
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
@@ -83,6 +88,8 @@ export class SettingsStore {
       ...current,
       language: update.language ?? current.language,
       theme: update.theme ?? current.theme,
+      preferredProjectOpener:
+        update.preferredProjectOpener ?? current.preferredProjectOpener,
       provider: update.provider,
       qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl),
       model: requireNonEmpty(update.model, "Model"),
@@ -250,7 +257,8 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.qwenBaseUrl) &&
     optionalString(settings.model) &&
     optionalLanguage(settings.language) &&
-    optionalTheme(settings.theme)
+    optionalTheme(settings.theme) &&
+    optionalProjectOpener(settings.preferredProjectOpener)
   );
 }
 
@@ -288,6 +296,18 @@ function parseLanguage(value: unknown): DesktopLanguage {
 
 function optionalTheme(value: unknown): boolean {
   return value === undefined || isTheme(value);
+}
+
+function optionalProjectOpener(value: unknown): boolean {
+  return value === undefined || typeof value === "string";
+}
+
+function isProjectOpener(value: unknown): value is DesktopProjectOpener {
+  return typeof value === "string";
+}
+
+function parseProjectOpener(value: unknown): DesktopProjectOpener {
+  return isProjectOpener(value) ? value : "";
 }
 
 function isTheme(value: unknown): value is DesktopTheme {

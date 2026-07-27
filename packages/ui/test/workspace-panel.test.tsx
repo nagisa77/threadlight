@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildChangeTree,
   FileSource,
+  isPlanDocumentPath,
+  PlanDocument,
   ReviewChangesTree,
   ReviewView,
   WorkspacePanel,
@@ -75,6 +77,31 @@ describe("ReviewView", () => {
 });
 
 describe("FileSource", () => {
+  it("renders generated plan files as readable Markdown documents", () => {
+    const html = renderToStaticMarkup(
+      <PlanDocument
+        content={[
+          "# Plan",
+          "",
+          "Progress: 1 / 2",
+          "",
+          "- [x] Inspect",
+          "- [ ] Implement — In progress",
+        ].join("\n")}
+      />,
+    );
+
+    expect(isPlanDocumentPath(".threadlight/plans/thread-1.md")).toBe(
+      true,
+    );
+    expect(isPlanDocumentPath("docs/plan.md")).toBe(false);
+    expect(html).toContain('class="plan-document"');
+    expect(html).toContain("<h1>Plan</h1>");
+    expect(html).toContain(
+      'type="checkbox" disabled="" checked=""',
+    );
+  });
+
   it("renders stable one-based line numbers including a trailing blank line", () => {
     const html = renderToStaticMarkup(
       <FileSource name="LATEST.md" content={"# Latest\nDraft\n"} />,
@@ -141,6 +168,7 @@ describe("WorkspacePanel", () => {
         onResizeBy={vi.fn()}
         onResetSize={vi.fn()}
         onRefreshChanges={vi.fn()}
+        toolbarActions={<button type="button">Global action</button>}
       />,
     );
 
@@ -155,6 +183,12 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="文件路径"');
     expect(html).toContain('aria-label="隐藏文件树"');
     expect(html).toContain("threadlight");
+    expect(html.indexOf('class="workspace-tab-strip"')).toBeLessThan(
+      html.indexOf('class="panel-add-menu"'),
+    );
+    expect(html.indexOf('class="panel-add-menu"')).toBeLessThan(
+      html.indexOf('class="workspace-panel-actions"'),
+    );
   });
 });
 

@@ -93,6 +93,7 @@ describe("settings", () => {
     ).toEqual({
       language: "zh-CN",
       theme: "system",
+      preferredProjectOpener: "",
       provider: "deepseek",
       deepSeekApiKey: "ds-new",
       qwenApiKey: null,
@@ -117,6 +118,7 @@ describe("settings", () => {
     ).toEqual({
       language: "zh-CN",
       theme: "system",
+      preferredProjectOpener: "",
       provider: "qwen",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "qwen3.7-plus",
@@ -156,5 +158,24 @@ describe("settings", () => {
         "dark",
       ).theme,
     ).toBe("dark");
+  });
+
+  it("includes the selected preferred project opener", () => {
+    expect(
+      createSettingsUpdate(
+        {
+          openai: { value: "", cleared: false },
+          deepseek: { value: "", cleared: false },
+          qwen: { value: "", cleared: false },
+        },
+        { value: "", cleared: false },
+        "openai",
+        DEFAULT_QWEN_BASE_URL,
+        "gpt-5.6-sol",
+        "zh-CN",
+        "system",
+        "cursor",
+      ).preferredProjectOpener,
+    ).toBe("cursor");
   });
 });

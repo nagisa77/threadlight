@@ -20,6 +20,7 @@ export { createProjectMemoryTool } from "./project-memory.js";
 export {
   createUpdatePlanTool,
   parsePlanSnapshot,
+  renderPlanDocument,
   UPDATE_PLAN_TOOL_NAME,
   USER_SELECTED_PLAN_INSTRUCTIONS,
 } from "./update-plan.js";

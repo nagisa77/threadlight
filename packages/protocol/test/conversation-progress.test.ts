@@ -14,6 +14,33 @@ import {
 
 describe("conversation progress projection", () => {
   it("projects plan tool calls separately from execution activity", () => {
+    const plan = [
+      {
+        step: "Inspect architecture",
+        details:
+          "Trace plan events through the tool loop, protocol projection, persistence, and UI.",
+        acceptanceCriteria: [
+          "The relevant ownership boundaries are documented.",
+        ],
+        status: "completed",
+      },
+      {
+        step: "Implement Plan mode",
+        details:
+          "Add the turn-scoped plan document while preserving compact titles in progress UI.",
+        acceptanceCriteria: [
+          "Each run receives a distinct plan document.",
+          "Rich step details survive protocol projection.",
+        ],
+        status: "in_progress",
+      },
+      {
+        step: "Run tests",
+        details: "Run focused offline tests followed by the full suite.",
+        acceptanceCriteria: ["All test suites pass."],
+        status: "pending",
+      },
+    ] as const;
     const event: AgentEventData = {
       type: "tool.started",
       runId: "run-1",
@@ -22,11 +49,7 @@ describe("conversation progress projection", () => {
         name: "update_plan",
         arguments: {
           explanation: "Break down the implementation",
-          plan: [
-            { step: "Inspect architecture", status: "completed" },
-            { step: "Implement Plan mode", status: "in_progress" },
-            { step: "Run tests", status: "pending" },
-          ],
+          plan,
         },
       },
     };
@@ -34,13 +57,29 @@ describe("conversation progress projection", () => {
     expect(projectAgentPlan(undefined, event)).toEqual({
       source: "model",
       explanation: "Break down the implementation",
-      items: [
-        { step: "Inspect architecture", status: "completed" },
-        { step: "Implement Plan mode", status: "in_progress" },
-        { step: "Run tests", status: "pending" },
-      ],
+      items: plan,
     });
     expect(projectAgentProgress([], event)).toEqual([]);
+
+    expect(
+      projectAgentPlan(projectAgentPlan(undefined, event), {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "plan-1",
+          name: "update_plan",
+          output: JSON.stringify({
+            explanation: "Break down the implementation",
+            plan,
+            documentPath: ".threadlight/plans/run-1.md",
+            documentVersion: "0123456789abcdef",
+          }),
+        },
+      }),
+    ).toMatchObject({
+      documentPath: ".threadlight/plans/run-1.md",
+      documentVersion: "0123456789abcdef",
+    });
   });
 
   it("projects the same model and tool event sequence into ordered progress", () => {

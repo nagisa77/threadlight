@@ -17,6 +17,8 @@ import {
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
+  DESKTOP_PROJECT_OPENERS_GET_CHANNEL,
+  DESKTOP_PROJECT_OPEN_WITH_CHANNEL,
   DESKTOP_PROJECTS_GET_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
@@ -61,6 +63,12 @@ const api: DesktopApi = {
   },
   activateProject(projectId) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_ACTIVATE_CHANNEL, projectId);
+  },
+  getProjectOpeners(projectId) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_OPENERS_GET_CHANNEL, projectId);
+  },
+  openProjectWith(request) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_OPEN_WITH_CHANNEL, request);
   },
   upsertConversation(update) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_UPSERT_CHANNEL, update);

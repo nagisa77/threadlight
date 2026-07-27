@@ -164,6 +164,14 @@ function isAgentPlan(value: unknown): boolean {
     (plan.source === "user" || plan.source === "model") &&
     (plan.explanation === undefined ||
       typeof plan.explanation === "string") &&
+    (plan.documentPath === undefined ||
+      (typeof plan.documentPath === "string" &&
+        /^\.threadlight\/plans\/[A-Za-z0-9_-]+\.md$/.test(
+          plan.documentPath,
+        ))) &&
+    (plan.documentVersion === undefined ||
+      (typeof plan.documentVersion === "string" &&
+        /^[a-f0-9]{16}$/.test(plan.documentVersion))) &&
     Array.isArray(plan.items) &&
     plan.items.every((item) => {
       if (!item || typeof item !== "object" || Array.isArray(item)) {
@@ -172,6 +180,13 @@ function isAgentPlan(value: unknown): boolean {
       const candidate = item as Record<string, unknown>;
       return (
         typeof candidate.step === "string" &&
+        (candidate.details === undefined ||
+          typeof candidate.details === "string") &&
+        (candidate.acceptanceCriteria === undefined ||
+          (Array.isArray(candidate.acceptanceCriteria) &&
+            candidate.acceptanceCriteria.every(
+              (criterion) => typeof criterion === "string",
+            ))) &&
         (candidate.status === "pending" ||
           candidate.status === "in_progress" ||
           candidate.status === "completed")

@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   net,
+  nativeImage,
   protocol,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
@@ -52,6 +53,10 @@ import {
 } from "./settings-store.js";
 import { ProjectStore } from "./project-store.js";
 import {
+  openProjectWith,
+  projectOpeners,
+} from "./project-opener.js";
+import {
   TerminalSessionManager,
   type TerminalSessionEvent,
 } from "./terminal-session.js";
@@ -71,6 +76,8 @@ import {
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
+  DESKTOP_PROJECT_OPENERS_GET_CHANNEL,
+  DESKTOP_PROJECT_OPEN_WITH_CHANNEL,
   DESKTOP_PROJECTS_GET_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
@@ -86,6 +93,8 @@ import {
   type DesktopConversationTarget,
   type DesktopConversationUpdate,
   type DesktopConversationChangesRequest,
+  type DesktopProjectOpenWithRequest,
+  type DesktopProjectOpener,
   type DesktopSettingsUpdate,
   type DesktopTerminalCreateRequest,
   type DesktopTerminalResizeRequest,
@@ -417,9 +426,15 @@ function handleSettingsUpdate(event: IpcMainInvokeEvent, value: unknown) {
   if (!settingsStore) throw new Error("Settings are not available");
 
   const update = parseSettingsUpdate(value);
+  const previousRuntimeSettings = settingsStore.runtimeSettings();
   const snapshot = settingsStore.update(update);
-  if (mainWindow) {
-    const environment = runtimeEnvironment(settingsStore.runtimeSettings());
+  const nextRuntimeSettings = settingsStore.runtimeSettings();
+  if (
+    mainWindow &&
+    JSON.stringify(previousRuntimeSettings) !==
+      JSON.stringify(nextRuntimeSettings)
+  ) {
+    const environment = runtimeEnvironment(nextRuntimeSettings);
     for (const appServer of appServers.values()) {
       appServer.restart(environment);
     }
@@ -465,6 +480,70 @@ function handleProjectActivate(event: IpcMainInvokeEvent, value: unknown) {
     ensureAppServer(mainWindow, activeProject.id, activeProject.basePath);
   }
   return snapshot;
+}
+
+async function handleProjectOpenersGet(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const basePath =
+    typeof value === "string" && value
+      ? requireProject(value).basePath
+      : (projectStore?.activeProject()?.basePath ?? app.getPath("home"));
+  const openers = await projectOpeners(basePath);
+  return Promise.all(
+    openers.map(async (opener) => {
+      let iconDataUrl: string | undefined;
+      if (opener.iconPath) {
+        try {
+          const icon = await nativeImage.createThumbnailFromPath(
+            opener.iconPath,
+            {
+              width: 32,
+              height: 32,
+            },
+          );
+          if (!icon.isEmpty()) iconDataUrl = icon.toDataURL();
+        } catch {
+          // Fall through to the system file icon below.
+        }
+      }
+      if (!iconDataUrl && opener.applicationPath) {
+        try {
+          const icon = await app.getFileIcon(opener.applicationPath, {
+            size: "normal",
+          });
+          if (!icon.isEmpty()) iconDataUrl = icon.toDataURL();
+        } catch {
+          // The menu has a vector fallback if macOS cannot resolve an icon.
+        }
+      }
+      return {
+        id: opener.id,
+        label: opener.label,
+        available: opener.available,
+        default: opener.default,
+        ...(iconDataUrl ? { iconDataUrl } : {}),
+      };
+    }),
+  );
+}
+
+async function handleProjectOpenWith(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): Promise<void> {
+  requireTrustedSender(event);
+  const request = parseProjectOpenWithRequest(value);
+  const project = requireProject(request.projectId);
+  const availableOpeners = await projectOpeners(project.basePath);
+  if (!availableOpeners.some((opener) => opener.id === request.opener)) {
+    throw new Error("The selected project app is no longer available");
+  }
+  await openProjectWith(project.basePath, request.opener, {
+    openPath: (path) => shell.openPath(path),
+  });
 }
 
 function handleConversationUpsert(event: IpcMainInvokeEvent, value: unknown) {
@@ -727,6 +806,12 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (update.theme !== undefined && !isTheme(update.theme)) {
     throw new Error("theme must be system, light, or dark");
   }
+  if (
+    update.preferredProjectOpener !== undefined &&
+    !isProjectOpenerPreference(update.preferredProjectOpener)
+  ) {
+    throw new Error("preferredProjectOpener is invalid");
+  }
   if (!isOptionalSecret(update.openAIApiKey)) {
     throw new Error("openAIApiKey must be a string or null");
   }
@@ -748,6 +833,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   return {
     ...(update.language !== undefined ? { language: update.language } : {}),
     ...(update.theme !== undefined ? { theme: update.theme } : {}),
+    ...(update.preferredProjectOpener !== undefined
+      ? { preferredProjectOpener: update.preferredProjectOpener }
+      : {}),
     provider: update.provider,
     model: update.model.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
@@ -784,6 +872,20 @@ function isTheme(
   return value === "system" || value === "light" || value === "dark";
 }
 
+function isProjectOpener(value: unknown): value is DesktopProjectOpener {
+  return (
+    typeof value === "string" &&
+    value.trim().length > 0 &&
+    value.length <= 255
+  );
+}
+
+function isProjectOpenerPreference(
+  value: unknown,
+): value is DesktopProjectOpener {
+  return typeof value === "string" && value.length <= 255;
+}
+
 function isModelProvider(
   value: unknown,
 ): value is DesktopSettingsUpdate["provider"] {
@@ -807,6 +909,23 @@ function parseConversationUpdate(value: unknown): DesktopConversationUpdate {
     throw new Error("Invalid conversation update");
   }
   return { projectId: update.projectId, id: update.id, title: update.title };
+}
+
+function parseProjectOpenWithRequest(
+  value: unknown,
+): DesktopProjectOpenWithRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid project opener request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    !request.projectId ||
+    !isProjectOpener(request.opener)
+  ) {
+    throw new Error("Invalid project opener request");
+  }
+  return { projectId: request.projectId, opener: request.opener };
 }
 
 function parseConversationTarget(value: unknown): DesktopConversationTarget {
@@ -1061,6 +1180,8 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_CHANNEL, handleProjectOpen);
   ipcMain.handle(DESKTOP_PROJECT_ACTIVATE_CHANNEL, handleProjectActivate);
+  ipcMain.handle(DESKTOP_PROJECT_OPENERS_GET_CHANNEL, handleProjectOpenersGet);
+  ipcMain.handle(DESKTOP_PROJECT_OPEN_WITH_CHANNEL, handleProjectOpenWith);
   ipcMain.handle(
     DESKTOP_CONVERSATION_UPSERT_CHANNEL,
     handleConversationUpsert,
