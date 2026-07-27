@@ -8,6 +8,7 @@ import {
   DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
   DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
   DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
+  DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
@@ -42,6 +43,9 @@ const api: DesktopApi = {
     };
     ipcRenderer.on(DESKTOP_MESSAGE_CHANNEL, handler);
     return () => ipcRenderer.removeListener(DESKTOP_MESSAGE_CHANNEL, handler);
+  },
+  writeClipboardText(text) {
+    return ipcRenderer.invoke(DESKTOP_CLIPBOARD_WRITE_CHANNEL, text);
   },
   getSettings() {
     return ipcRenderer.invoke(DESKTOP_SETTINGS_GET_CHANNEL);

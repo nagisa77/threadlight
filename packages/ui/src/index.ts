@@ -4,7 +4,11 @@ export {
   ThreadlightApp,
 } from "./app.js";
 export { activeProject } from "./projects.js";
-export { MarkdownContent } from "./markdown.js";
+export {
+  MarkdownContent,
+  parseLocalFileReference,
+  workspaceFileReference,
+} from "./markdown.js";
 export { MemoryDocument, ProjectMemoryPage } from "./memory.js";
 export {
   initialSessionState,
@@ -49,6 +53,7 @@ export type { ThreadlightAppProps } from "./app.js";
 export type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
+  ClipboardAdapter,
   ComputerShareAdapter,
   ComputerShareSnapshot,
   ComputerShareTarget,
@@ -61,7 +66,11 @@ export type {
   ProjectsAdapter,
   ProjectsSnapshot,
 } from "./projects.js";
-export type { MarkdownContentProps } from "./markdown.js";
+export type {
+  LocalFileReference,
+  MarkdownContentProps,
+  WorkspaceFileReference,
+} from "./markdown.js";
 export type {
   ProjectMemoryAdapter,
   ProjectMemorySnapshot,
@@ -99,4 +108,5 @@ export type {
   WorkspaceAdapter,
   WorkspaceEntry,
   WorkspaceFile,
+  WorkspaceFileOpenRequest,
 } from "./workspace-panel.js";

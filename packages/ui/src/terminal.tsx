@@ -7,7 +7,7 @@ import {
 } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XtermTerminal } from "@xterm/xterm";
-import { File, SquareTerminal, X } from "lucide-react";
+import { File, Terminal, X } from "lucide-react";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
 import { useI18n, type Translate } from "./i18n.js";
@@ -169,7 +169,7 @@ export function TerminalPanel({
                   onClick={() => setActiveTabId(tab.id)}
                 >
                   {tab.kind === "terminal" ? (
-                    <SquareTerminal size={14} aria-hidden="true" />
+                    <Terminal size={14} aria-hidden="true" />
                   ) : (
                     <File size={14} aria-hidden="true" />
                   )}

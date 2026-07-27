@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   net,
@@ -61,6 +62,7 @@ import {
   DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
   DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
   DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
+  DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
@@ -1046,6 +1048,15 @@ app.whenReady().then(() => {
     void handleRequest(event, value);
   });
   ipcMain.handle(DESKTOP_SETTINGS_GET_CHANNEL, handleSettingsGet);
+  ipcMain.handle(
+    DESKTOP_CLIPBOARD_WRITE_CHANNEL,
+    (_event, value: unknown) => {
+      if (typeof value !== "string") {
+        throw new TypeError("Clipboard text must be a string");
+      }
+      clipboard.writeText(value);
+    },
+  );
   ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);
   ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_CHANNEL, handleProjectOpen);

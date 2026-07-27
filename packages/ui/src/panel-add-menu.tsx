@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Files, Plus, SquareTerminal } from "lucide-react";
+import { Files, Plus, Terminal } from "lucide-react";
 import { useI18n } from "./i18n.js";
 
 export type PanelViewKind = "terminal" | "file";
@@ -55,7 +55,7 @@ export function PanelAddMenu({
               setOpen(false);
             }}
           >
-            <SquareTerminal size={16} />
+            <Terminal size={16} />
             <span>{t("terminal")}</span>
           </button>
         )}

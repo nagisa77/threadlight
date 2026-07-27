@@ -30,6 +30,8 @@ describe("TerminalPanel", () => {
     );
 
     expect(html).toContain('aria-label="底部面板"');
+    expect(html).toContain('class="lucide lucide-terminal"');
+    expect(html).not.toContain("lucide-square-terminal");
     expect(html).toContain("终端 1");
     expect(html).toContain('aria-label="新建面板标签"');
     expect(html).toContain(">终端</span>");

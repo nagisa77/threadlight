@@ -97,6 +97,20 @@ describe("FileSource", () => {
     expect(html).toContain("token keyword");
     expect(html).toContain("token number");
   });
+
+  it("marks a requested source line for direct file-link previews", () => {
+    const html = renderToStaticMarkup(
+      <FileSource
+        name="example.ts"
+        content={"const first = 1;\nconst second = 2;\n"}
+        line={2}
+        revealRequest={1}
+      />,
+    );
+
+    expect(html).toContain('class="file-source-line target" data-line="2"');
+    expect(html).toContain(">2</span>");
+  });
 });
 
 describe("WorkspacePanel", () => {

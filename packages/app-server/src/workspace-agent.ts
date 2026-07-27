@@ -20,6 +20,9 @@ export interface WorkspaceAgentFactoryOptions {
   context?: LoadWorkspaceContextOptions;
 }
 
+export const LOCAL_RESOURCE_LINK_INSTRUCTIONS =
+  "When mentioning a local file or directory that the user may want to open, format it as a Markdown link using its absolute path, for example [report.pdf](/absolute/path/report.pdf) or [app.ts:42](/absolute/path/app.ts:42). Do not leave useful local resource paths as plain text or inline code.";
+
 export function createWorkspaceAgentFactory(
   options: WorkspaceAgentFactoryOptions,
 ): () => Promise<Agent> {
@@ -33,6 +36,7 @@ export function createWorkspaceAgentFactory(
       name: options.name ?? "threadlight",
       instructions: [
         options.baseInstructions.trim(),
+        LOCAL_RESOURCE_LINK_INSTRUCTIONS,
         renderWorkspaceContext(context),
       ]
         .filter(Boolean)

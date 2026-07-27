@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -20,7 +21,7 @@ import {
   Plus,
   RefreshCw,
   Rows3,
-  SquareTerminal,
+  Terminal,
   X,
 } from "lucide-react";
 import DiffViewer from "react-diff-viewer-continued";
@@ -81,11 +82,21 @@ export interface WorkspaceAdapter {
   read(projectId: string, path: string): Promise<WorkspaceFile>;
 }
 
+export interface WorkspaceFileOpenRequest {
+  id: number;
+  path: string;
+  line?: number;
+  column?: number;
+}
+
 interface WorkspaceTab {
   id: string;
   kind: "review" | PanelViewKind;
   path?: string;
   title: string;
+  line?: number;
+  column?: number;
+  revealRequest?: number;
 }
 
 export function WorkspacePanel({
@@ -97,6 +108,7 @@ export function WorkspacePanel({
   changesLoading,
   changesError,
   reviewRequest,
+  fileOpenRequest,
   hidden,
   onResizeStart,
   onResizeBy,
@@ -111,6 +123,7 @@ export function WorkspacePanel({
   changesLoading: boolean;
   changesError?: string;
   reviewRequest: number;
+  fileOpenRequest?: WorkspaceFileOpenRequest;
   hidden: boolean;
   onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void;
   onResizeBy(delta: number): void;
@@ -138,6 +151,64 @@ export function WorkspacePanel({
       return [...current, next];
     });
   }, [reviewRequest]);
+
+  useEffect(() => {
+    if (!fileOpenRequest) return;
+    setTabs((current) => {
+      const existing = current.find(
+        (tab) =>
+          tab.kind === "file" && tab.path === fileOpenRequest.path,
+      );
+      if (existing) {
+        setActiveTabId(existing.id);
+        return current.map((tab) =>
+          tab.id === existing.id
+            ? {
+                ...tab,
+                line: fileOpenRequest.line,
+                column: fileOpenRequest.column,
+                revealRequest: fileOpenRequest.id,
+              }
+            : tab,
+        );
+      }
+
+      const empty =
+        current.find(
+          (tab) =>
+            tab.kind === "file" &&
+            !tab.path &&
+            tab.id === activeTabId,
+        ) ??
+        current.find((tab) => tab.kind === "file" && !tab.path);
+      if (empty) {
+        setActiveTabId(empty.id);
+        return current.map((tab) =>
+          tab.id === empty.id
+            ? {
+                ...tab,
+                path: fileOpenRequest.path,
+                title: fileName(fileOpenRequest.path),
+                line: fileOpenRequest.line,
+                column: fileOpenRequest.column,
+                revealRequest: fileOpenRequest.id,
+              }
+            : tab,
+        );
+      }
+
+      const next: WorkspaceTab = {
+        ...createFileTab(t),
+        path: fileOpenRequest.path,
+        title: fileName(fileOpenRequest.path),
+        line: fileOpenRequest.line,
+        column: fileOpenRequest.column,
+        revealRequest: fileOpenRequest.id,
+      };
+      setActiveTabId(next.id);
+      return [...current, next];
+    });
+  }, [fileOpenRequest?.id]);
 
   useEffect(() => {
     setTabs([createFileTab(t)]);
@@ -195,7 +266,14 @@ export function WorkspacePanel({
     setTabs((current) =>
       current.map((tab) =>
         tab.id === activeTab.id
-          ? { ...tab, path, title: fileName(path) }
+          ? {
+              ...tab,
+              path,
+              title: fileName(path),
+              line: undefined,
+              column: undefined,
+              revealRequest: undefined,
+            }
           : tab,
       ),
     );
@@ -244,7 +322,7 @@ export function WorkspacePanel({
               {tab.kind === "review" ? (
                 <FileDiff size={14} />
               ) : tab.kind === "terminal" ? (
-                <SquareTerminal size={14} />
+                <Terminal size={14} />
               ) : (
                 <File size={14} />
               )}
@@ -305,6 +383,8 @@ export function WorkspacePanel({
             projectId={projectId}
             projectName={projectName}
             path={activeTab.path}
+            line={activeTab.line}
+            revealRequest={activeTab.revealRequest}
             onSelectFile={selectFile}
           />
         ) : activeTab?.kind === "terminal" ? null : (
@@ -484,6 +564,8 @@ export function FileView({
   projectId,
   projectName,
   path,
+  line,
+  revealRequest,
   hidden = false,
   onSelectFile,
 }: {
@@ -491,6 +573,8 @@ export function FileView({
   projectId: string;
   projectName: string;
   path?: string;
+  line?: number;
+  revealRequest?: number;
   hidden?: boolean;
   onSelectFile(path: string): void;
 }) {
@@ -560,7 +644,12 @@ export function FileView({
               {t("binaryPreview")}
             </PanelState>
           ) : (
-            <FileSource name={file.name} content={file.content} />
+            <FileSource
+              name={file.name}
+              content={file.content}
+              line={line}
+              revealRequest={revealRequest}
+            />
           )}
         </div>
         {treeVisible && (
@@ -579,23 +668,42 @@ export function FileView({
 export function FileSource({
   name,
   content,
+  line,
+  revealRequest,
 }: {
   name: string;
   content: string;
+  line?: number;
+  revealRequest?: number;
 }) {
   const { t } = useI18n();
+  const source = useRef<HTMLDivElement>(null);
   const lines = useMemo(
     () => highlightedFileLines(name, content),
     [content, name],
   );
+  const targetLine = line && line <= lines.length ? line : undefined;
+
+  useEffect(() => {
+    if (!targetLine || !revealRequest) return;
+    source.current
+      ?.querySelector<HTMLElement>(`[data-line="${targetLine}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [revealRequest, targetLine]);
+
   return (
     <div
+      ref={source}
       className="file-source"
       role="region"
       aria-label={t("sourceCode", { name })}
     >
       {lines.map((segments, index) => (
-        <div className="file-source-line" key={index}>
+        <div
+          className={`file-source-line ${index + 1 === targetLine ? "target" : ""}`}
+          data-line={index + 1}
+          key={index}
+        >
           <span className="file-source-line-number" aria-hidden="true">
             {index + 1}
           </span>

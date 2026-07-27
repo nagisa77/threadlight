@@ -4,6 +4,7 @@ import {
   ThreadlightApp,
   type AttachmentPreviewAdapter,
   type AttachmentStageAdapter,
+  type ClipboardAdapter,
   type ComputerShareAdapter,
   type ProjectMemoryAdapter,
   type ProjectsAdapter,
@@ -18,6 +19,9 @@ import { ElectronTransport } from "./electron-transport.js";
 import { attachmentPreviewUrl } from "./attachment-preview.js";
 
 const client = new ThreadlightClient(new ElectronTransport());
+const clipboard: ClipboardAdapter = {
+  writeText: (text) => window.threadlightDesktop.writeClipboardText(text),
+};
 const settings: SettingsAdapter = {
   load: () => window.threadlightDesktop.getSettings(),
   save: (update) => window.threadlightDesktop.updateSettings(update),
@@ -85,6 +89,7 @@ if (!root) throw new Error("Missing root element");
 createRoot(root).render(
   <ThreadlightApp
     client={client}
+    clipboard={clipboard}
     settings={settings}
     projects={projects}
     memory={memory}

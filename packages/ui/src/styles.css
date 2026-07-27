@@ -864,7 +864,13 @@ button:disabled {
 .message.user {
   align-items: flex-end;
   flex-direction: column;
+  gap: 7px;
   justify-content: flex-end;
+}
+
+.message.assistant {
+  flex-direction: column;
+  gap: 0;
 }
 
 .message-attachments {
@@ -983,8 +989,60 @@ button:disabled {
   background: #eeece6;
 }
 
+.message.assistant.error .message-body {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--sidebar) 58%, var(--panel));
+  box-shadow: inset 3px 0 0 var(--line-strong);
+}
+
 .message.assistant.error .markdown-content {
+  color: var(--ink);
+}
+
+.message-actions {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 2px;
+  margin-top: 5px;
+}
+
+.message-actions.user {
+  justify-content: flex-end;
+}
+
+.message-action {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--subtle);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.message-action.copied {
+  color: var(--success);
+}
+
+.message-action.failed {
   color: var(--danger);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .message-action:hover {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--line) 48%, transparent);
+  }
 }
 
 .live-run {
@@ -1124,6 +1182,27 @@ button:disabled {
   color: #a9512c;
   text-decoration-color: #d7a78f;
   text-underline-offset: 3px;
+}
+
+.markdown-content .local-file-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: #0969da;
+  font-weight: 520;
+  text-decoration: none;
+}
+
+.markdown-content .local-file-link svg {
+  position: relative;
+  top: 2px;
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+.markdown-content .local-file-link-line {
+  color: inherit;
+  font-weight: 430;
 }
 
 .markdown-content hr {
@@ -2372,7 +2451,7 @@ body.is-resizing-workspace {
 .theme-picker {
   min-width: 0;
   margin: 0;
-  padding: 15px 0 17px;
+  padding: 19px 0 17px;
   border: 0;
 }
 
@@ -3319,6 +3398,16 @@ body.is-resizing-workspace .workspace-split-handle::after {
   grid-template-columns: 52px minmax(0, 1fr);
 }
 
+.file-source-line.target,
+.file-source-line.target .file-source-line-number {
+  background: #fff8c5;
+}
+
+.file-source-line.target .file-source-line-number {
+  color: #785d00;
+  font-weight: 650;
+}
+
 .file-source-line-number {
   position: sticky;
   left: 0;
@@ -3551,6 +3640,12 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .markdown-content .local-file-link:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
   .new-thread-button:hover,
   .secondary:hover,
   .settings-nav-button:hover,
@@ -3714,6 +3809,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 @media (prefers-reduced-motion: reduce) {
   .pressable,
+  .message-action,
   .connection-error,
   .activity-heading,
   .activity-chevron {
@@ -3768,6 +3864,21 @@ html[data-theme="dark"] {
   --danger: #e2746d;
 }
 
+html[data-theme="dark"] .workspace-header {
+  border-bottom-color: var(--line);
+}
+
+html[data-theme="dark"] .settings-nav-button.active {
+  border-color: var(--line-strong);
+}
+
+html[data-theme="dark"] :is(
+  .settings-nav-button.active,
+  .thread-item.active
+) {
+  box-shadow: none;
+}
+
 html[data-theme="dark"] :is(
   .project-row,
   .thread-item-select,
@@ -3780,6 +3891,13 @@ html[data-theme="dark"] :is(
   .review-file-header > span:nth-child(2)
 ) {
   color: var(--ink);
+}
+
+html[data-theme="dark"] :is(
+  .suggestion,
+  .memory-open-button
+) {
+  color: var(--muted);
 }
 
 html[data-theme="dark"] :is(
@@ -3856,6 +3974,22 @@ html[data-theme="dark"] :is(
 }
 
 html[data-theme="dark"] :is(
+  .secret-input-wrap:focus-within,
+  .model-select-wrap:focus-within,
+  .model-select-wrap.open
+) {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-strong));
+  box-shadow: 0 0 0 3px rgb(223 123 77 / 10%);
+}
+
+html[data-theme="dark"] .composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line-strong));
+  box-shadow:
+    0 0 0 3px rgb(223 123 77 / 7%),
+    0 10px 32px rgb(0 0 0 / 18%);
+}
+
+html[data-theme="dark"] :is(
   .settings-select-option[aria-selected="true"],
   .panel-icon-button.active,
   .workspace-tab.active,
@@ -3902,6 +4036,13 @@ html[data-theme="dark"] .terminal-exited {
 }
 
 html[data-theme="dark"] :is(
+  .terminal-viewport .xterm-viewport,
+  .settings-select-popover
+) {
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+html[data-theme="dark"] :is(
   .activity-list[open] .activity-heading,
   .activity-item + .activity-item,
   .settings-section-heading,
@@ -3941,6 +4082,21 @@ html[data-theme="dark"] .markdown-content a {
   text-decoration-color: #9a6048;
 }
 
+html[data-theme="dark"] .markdown-content .local-file-link {
+  color: #58a6ff;
+}
+
+html[data-theme="dark"] :is(
+  .file-source-line.target,
+  .file-source-line.target .file-source-line-number
+) {
+  background: #3b341f;
+}
+
+html[data-theme="dark"] .file-source-line.target .file-source-line-number {
+  color: #e3c45d;
+}
+
 html[data-theme="dark"] .markdown-content blockquote {
   color: var(--muted);
   border-left-color: #7f513d;
@@ -3974,6 +4130,28 @@ html[data-theme="dark"] .process-terminate-button {
   border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
   color: #e69a83;
   background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+html[data-theme="dark"] :is(
+  .activity-item .terminated,
+  .command-output .output-note,
+  .review-change-status.modified
+) {
+  color: #d8a176;
+}
+
+html[data-theme="dark"] :is(
+  .change-additions,
+  .review-change-status.added
+) {
+  color: #72ab84;
+}
+
+html[data-theme="dark"] :is(
+  .change-deletions,
+  .review-change-status.deleted
+) {
+  color: var(--danger);
 }
 
 html[data-theme="dark"] .composer-wrap {
@@ -4152,6 +4330,10 @@ html[data-theme="dark"] :is(
     .memory-retry-button:hover,
     .project-row:hover:not(:disabled),
     .suggestion:not(.suggestion-placeholder):hover,
+    .activity-heading:hover,
+    .conversation-changes-button:hover,
+    .panel-add-trigger:hover,
+    .workspace-panel-close:hover,
     .settings-select-option:hover,
     .panel-add-option:hover,
     .workspace-tree-row:hover,
@@ -4167,6 +4349,22 @@ html[data-theme="dark"] :is(
     border-color: var(--line-strong);
     color: var(--ink);
     background: #303135;
+  }
+
+  html[data-theme="dark"] .process-terminate-button:hover:not(:disabled) {
+    border-color: color-mix(in srgb, var(--danger) 48%, var(--line));
+    color: #f0aaa4;
+    background: color-mix(in srgb, var(--danger) 14%, var(--panel));
+  }
+
+  html[data-theme="dark"] .command-output summary:hover {
+    color: var(--ink);
+  }
+
+  html[data-theme="dark"] .composer-share-action:hover:not(:disabled) {
+    border-color: var(--line-strong);
+    color: var(--ink);
+    background: #34353a;
   }
 
   html[data-theme="dark"] :is(

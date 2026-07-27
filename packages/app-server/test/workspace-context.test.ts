@@ -19,7 +19,10 @@ import { describe, expect, it } from "vitest";
 
 import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
-import { createWorkspaceAgentFactory } from "../src/workspace-agent.js";
+import {
+  createWorkspaceAgentFactory,
+  LOCAL_RESOURCE_LINK_INSTRUCTIONS,
+} from "../src/workspace-agent.js";
 import { loadWorkspaceContext } from "../src/workspace-context.js";
 
 class RecordingProvider implements ModelProvider {
@@ -80,6 +83,9 @@ describe("workspace context", () => {
       });
 
       expect(provider.requests[0]?.instructions).toContain("Base instructions.");
+      expect(provider.requests[0]?.instructions).toContain(
+        LOCAL_RESOURCE_LINK_INSTRUCTIONS,
+      );
       expect(provider.requests[0]?.instructions).toContain(
         "Use the first policy.",
       );

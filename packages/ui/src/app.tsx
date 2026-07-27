@@ -15,6 +15,7 @@ import {
   Check,
   ChevronRight,
   CircleStop,
+  Copy,
   Folder,
   FolderOpen,
   FolderPlus,
@@ -26,13 +27,14 @@ import {
   NotebookText,
   Paperclip,
   PanelRight,
+  PencilLine,
   PictureInPicture2,
   RotateCcw,
   Settings,
   Sparkles,
   SquarePen,
   Square,
-  SquareTerminal,
+  Terminal,
   Trash2,
   X,
 } from "lucide-react";
@@ -42,12 +44,17 @@ import {
   type ConversationProgress,
   type ToolActivity,
 } from "./session.js";
-import { MarkdownContent } from "./markdown.js";
+import {
+  MarkdownContent,
+  workspaceFileReference,
+  type LocalFileReference,
+} from "./markdown.js";
 import {
   ProjectMemoryPage,
   type ProjectMemoryAdapter,
 } from "./memory.js";
 import { isNearBottom } from "./scroll.js";
+import { isTogglePanelShortcut } from "./keyboard-shortcuts.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
 import {
   I18nProvider,
@@ -66,6 +73,7 @@ import {
   WorkspacePanel,
   type ConversationChangesSnapshot,
   type WorkspaceAdapter,
+  type WorkspaceFileOpenRequest,
 } from "./workspace-panel.js";
 import {
   MAX_VOICE_AUDIO_BYTES,
@@ -84,6 +92,7 @@ import {
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
+  clipboard?: ClipboardAdapter;
   settings?: SettingsAdapter;
   projects?: ProjectsAdapter;
   memory?: ProjectMemoryAdapter;
@@ -93,6 +102,10 @@ export interface ThreadlightAppProps {
   computerShare?: ComputerShareAdapter;
   terminal?: TerminalAdapter;
   workspace?: WorkspaceAdapter;
+}
+
+export interface ClipboardAdapter {
+  writeText(text: string): Promise<void>;
 }
 
 export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
@@ -193,6 +206,7 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
 
 function ThreadlightAppContent({
   client,
+  clipboard,
   settings,
   projects,
   memory,
@@ -248,6 +262,8 @@ function ThreadlightAppContent({
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState<number>();
   const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
+  const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] =
+    useState<WorkspaceFileOpenRequest>();
   const [conversationChanges, setConversationChanges] =
     useState<ConversationChangesSnapshot>();
   const [conversationChangesLoading, setConversationChangesLoading] =
@@ -403,11 +419,7 @@ function ThreadlightAppContent({
   useEffect(() => {
     if (!terminal || !currentProject) return;
     const handleShortcut = (event: globalThis.KeyboardEvent) => {
-      if (
-        event.key.toLowerCase() === "j" &&
-        (event.metaKey || event.ctrlKey) &&
-        !event.altKey
-      ) {
+      if (isTogglePanelShortcut(event)) {
         event.preventDefault();
         setTerminalOpen((open) => !open);
       }
@@ -415,6 +427,18 @@ function ThreadlightAppContent({
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [currentProject, terminal]);
+
+  useEffect(() => {
+    if (!workspace || !currentProject) return;
+    const handleShortcut = (event: globalThis.KeyboardEvent) => {
+      if (isTogglePanelShortcut(event, { shiftKey: true })) {
+        event.preventDefault();
+        setWorkspacePanelOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [currentProject, workspace]);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
@@ -796,6 +820,19 @@ function ThreadlightAppContent({
     }
   }
 
+  function rewriteQuestion(value: string) {
+    setInput(value);
+    setVoiceError(undefined);
+    requestAnimationFrame(() => {
+      const element = textarea.current;
+      if (!element) return;
+      element.style.height = "auto";
+      element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+      element.focus();
+      element.setSelectionRange(value.length, value.length);
+    });
+  }
+
   async function createThread() {
     if (!currentProject || voiceStatus !== "idle") return;
     setView("thread");
@@ -917,6 +954,17 @@ function ThreadlightAppContent({
     setWorkspacePanelOpen(true);
     setWorkspaceReviewRequest((request) => request + 1);
     void refreshConversationChanges();
+  }
+
+  function openLocalFile(reference: LocalFileReference) {
+    if (!workspace || !currentProject) return;
+    const file = workspaceFileReference(reference, currentProject.basePath);
+    if (!file) return;
+    setWorkspacePanelOpen(true);
+    setWorkspaceFileOpenRequest((current) => ({
+      ...file,
+      id: (current?.id ?? 0) + 1,
+    }));
   }
 
   function beginWorkspacePanelResize(
@@ -1244,6 +1292,7 @@ function ThreadlightAppContent({
                               <ProgressList
                                 progress={message.progress}
                                 onTerminateProcess={terminateProcess}
+                                onOpenLocalFile={openLocalFile}
                               />
                             )}
                             {(!message.progress ||
@@ -1256,11 +1305,25 @@ function ThreadlightAppContent({
                                 />
                               )}
                             {message.role === "assistant" ? (
-                              <MarkdownContent>{message.text}</MarkdownContent>
+                              <MarkdownContent onOpenLocalFile={openLocalFile}>
+                                {message.text}
+                              </MarkdownContent>
                             ) : (
                               <p>{message.text}</p>
                             )}
                           </div>
+                        )}
+                        {message.text && (
+                          <MessageActions
+                            role={message.role}
+                            text={message.text}
+                            copyText={clipboard?.writeText}
+                            onRewrite={
+                              message.role === "user"
+                                ? () => rewriteQuestion(message.text)
+                                : undefined
+                            }
+                          />
                         )}
                       </article>
                     ))}
@@ -1274,11 +1337,14 @@ function ThreadlightAppContent({
                             progress={state.progress}
                             live
                             onTerminateProcess={terminateProcess}
+                            onOpenLocalFile={openLocalFile}
                           />
                         )}
                         {state.streamingText.length > 0 && (
                           <div className="streaming-copy" aria-busy="true">
-                            <MarkdownContent>{state.streamingText}</MarkdownContent>
+                            <MarkdownContent onOpenLocalFile={openLocalFile}>
+                              {state.streamingText}
+                            </MarkdownContent>
                           </div>
                         )}
                         {state.isThinking && (
@@ -1482,7 +1548,7 @@ function ThreadlightAppContent({
                 title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")}（⌘J）`}
                 onClick={() => setTerminalOpen((open) => !open)}
               >
-                <SquareTerminal size={16} />
+                <Terminal size={16} />
               </button>
             )}
             {workspace && (
@@ -1493,7 +1559,7 @@ function ThreadlightAppContent({
                   workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")
                 }
                 aria-pressed={workspacePanelOpen}
-                title={workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")}
+                title={`${workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")}（⇧⌘J）`}
                 onClick={() => setWorkspacePanelOpen((open) => !open)}
               >
                 <PanelRight size={16} />
@@ -1511,6 +1577,7 @@ function ThreadlightAppContent({
             changesLoading={conversationChangesLoading}
             changesError={conversationChangesError}
             reviewRequest={workspaceReviewRequest}
+            fileOpenRequest={workspaceFileOpenRequest}
             hidden={!workspacePanelOpen}
             onResizeStart={beginWorkspacePanelResize}
             onResizeBy={resizeWorkspacePanelBy}
@@ -1543,6 +1610,134 @@ function ThreadlightAppContent({
       )}
     </div>
   );
+}
+
+export function MessageActions({
+  role,
+  text,
+  copyText,
+  onRewrite,
+}: {
+  role: "user" | "assistant";
+  text: string;
+  copyText?(text: string): Promise<void>;
+  onRewrite?(): void;
+}) {
+  const { t } = useI18n();
+  const [copyStatus, setCopyStatus] = useState<
+    "idle" | "copied" | "failed"
+  >("idle");
+  const copyStatusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+
+  useEffect(
+    () => () => {
+      if (copyStatusTimer.current) clearTimeout(copyStatusTimer.current);
+    },
+    [],
+  );
+
+  async function copyMessage() {
+    try {
+      await writeClipboardText(text, copyText);
+      setCopyStatus("copied");
+    } catch {
+      setCopyStatus("failed");
+    }
+    if (copyStatusTimer.current) clearTimeout(copyStatusTimer.current);
+    copyStatusTimer.current = setTimeout(() => setCopyStatus("idle"), 1600);
+  }
+
+  const copyLabel =
+    copyStatus === "copied"
+      ? t("copied")
+      : copyStatus === "failed"
+        ? t("copyFailed")
+        : t("copyMessage");
+
+  return (
+    <div
+      className={`message-actions ${role}`}
+      aria-label={t("messageActions")}
+      aria-live="polite"
+    >
+      <button
+        type="button"
+        className={`message-action pressable ${copyStatus}`}
+        onClick={() => void copyMessage()}
+        aria-label={copyLabel}
+        title={copyLabel}
+      >
+        {copyStatus === "copied" ? (
+          <Check size={14} />
+        ) : copyStatus === "failed" ? (
+          <X size={14} />
+        ) : (
+          <Copy size={14} />
+        )}
+      </button>
+      {role === "user" && onRewrite && (
+        <button
+          type="button"
+          className="message-action pressable"
+          onClick={onRewrite}
+          aria-label={t("rewriteQuestion")}
+          title={t("rewriteQuestion")}
+        >
+          <PencilLine size={14} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export async function writeClipboardText(
+  text: string,
+  desktopWriteText?: (text: string) => Promise<void>,
+): Promise<void> {
+  if (desktopWriteText) {
+    try {
+      await desktopWriteText(text);
+      return;
+    } catch {
+      // Continue through the browser fallbacks.
+    }
+  }
+
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.clipboard?.writeText
+  ) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Clipboard API can exist but reject writes in Electron or non-secure contexts.
+    }
+  }
+
+  if (typeof document === "undefined") {
+    throw new Error("Clipboard write is unavailable");
+  }
+  const previousFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : undefined;
+  const fallback = document.createElement("textarea");
+  fallback.value = text;
+  fallback.setAttribute("readonly", "");
+  fallback.style.position = "fixed";
+  fallback.style.left = "-9999px";
+  fallback.style.top = "0";
+  document.body.append(fallback);
+  fallback.focus();
+  fallback.select();
+  fallback.setSelectionRange(0, text.length);
+  const copied = document.execCommand("copy");
+  fallback.remove();
+  previousFocus?.focus({ preventScroll: true });
+  if (!copied) throw new Error("Clipboard write failed");
 }
 
 export function ConversationChangesButton({
@@ -2033,10 +2228,12 @@ export function ProgressList({
   progress,
   live = false,
   onTerminateProcess,
+  onOpenLocalFile,
 }: {
   progress: readonly ConversationProgress[];
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
+  onOpenLocalFile?(reference: LocalFileReference): void;
 }) {
   return (
     <div className="progress-list">
@@ -2044,7 +2241,9 @@ export function ProgressList({
         <div className="progress-step" key={index}>
           {step.text.trim() && (
             <div className="progress-copy">
-              <MarkdownContent>{step.text}</MarkdownContent>
+              <MarkdownContent onOpenLocalFile={onOpenLocalFile}>
+                {step.text}
+              </MarkdownContent>
             </div>
           )}
           {step.activities.length > 0 && (
@@ -2086,7 +2285,7 @@ export function ActivityList({
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="activity-heading">
-        <SquareTerminal size={14} />
+        <Terminal size={14} />
         <span>
           {live
             ? hasRunningActivity
