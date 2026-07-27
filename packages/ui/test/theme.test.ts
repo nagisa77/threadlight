@@ -66,10 +66,10 @@ describe("theme", () => {
     );
 
     expect(css).toMatch(
-      /\.plan-status-popover\s*\{[^}]*backdrop-filter:\s*blur\(28px\) saturate\(1\.35\);/s,
+      /\.plan-status-popover::before\s*\{[^}]*backdrop-filter:\s*blur\(36px\) saturate\(1\.25\);/s,
     );
     expect(css).toMatch(
-      /html\[data-theme="dark"\] \.plan-status-popover\s*\{[^}]*background:\s*linear-gradient/s,
+      /html\[data-theme="dark"\] \.plan-status-popover::before\s*\{[^}]*background:\s*linear-gradient/s,
     );
     expect(css).toContain("@supports not (");
   });
