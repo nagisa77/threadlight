@@ -74,9 +74,16 @@ interface SharedAppServerOptions {
   threadRuntimeFactory?: ThreadRuntimeFactory;
   now?: () => Date;
   attachmentRoot?: string;
+  turnCleanup?(context: TurnCleanupContext): void | Promise<void>;
 }
 
 export type AgentFactory = () => Agent | Promise<Agent>;
+
+export interface TurnCleanupContext {
+  threadId: string;
+  turnId: string;
+  runId?: string;
+}
 
 export interface ThreadRuntime {
   tools?: readonly Tool[];
@@ -103,6 +110,7 @@ export class AppServer {
   private readonly threadRuntimeFactory?: ThreadRuntimeFactory;
   private readonly now: () => Date;
   private readonly attachmentRoot?: string;
+  private readonly turnCleanup?: SharedAppServerOptions["turnCleanup"];
   private readonly threads = new Map<string, ThreadState>();
   private readonly approvals = new Map<string, PendingApproval>();
   private initialized = false;
@@ -120,6 +128,7 @@ export class AppServer {
     this.attachmentRoot = options.attachmentRoot
       ? resolve(options.attachmentRoot)
       : undefined;
+    this.turnCleanup = options.turnCleanup;
   }
 
   async receive(message: JsonRpcRequest): Promise<void> {
@@ -402,13 +411,23 @@ export class AppServer {
     controller: AbortController,
   ): Promise<void> {
     this.notify("turn/started", { threadId, turnId });
+    let runId: string | undefined;
+    let cleanedUp = false;
+    const cleanup = async () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      await this.cleanupTurn({ threadId, turnId, runId });
+    };
 
     try {
       const result = await this.loop.run(thread.agent, input, {
         modelState: thread.conversation.modelState,
         attachments,
         signal: controller.signal,
-        onEvent: (event) => this.forwardEvent(threadId, turnId, thread, event),
+        onEvent: (event) => {
+          runId = "runId" in event ? event.runId : event.request.runId;
+          this.forwardEvent(threadId, turnId, thread, event);
+        },
         approve: (request) =>
           this.autoApproveAll
             ? Promise.resolve(true)
@@ -432,6 +451,7 @@ export class AppServer {
       );
       await this.conversationStore.save(completedConversation);
       thread.conversation = completedConversation;
+      await cleanup();
       this.notify("turn/completed", {
         threadId,
         turnId,
@@ -459,14 +479,27 @@ export class AppServer {
           `Could not persist failed conversation ${threadId}: ${String(persistenceError)}\n`,
         );
       }
+      await cleanup();
       this.notify("turn/failed", {
         threadId,
         turnId,
         error: message,
       });
     } finally {
+      await cleanup();
       if (thread.activeTurn?.id === turnId) thread.activeTurn = undefined;
       this.rejectApprovalsForTurn(turnId);
+    }
+  }
+
+  private async cleanupTurn(context: TurnCleanupContext): Promise<void> {
+    if (!this.turnCleanup) return;
+    try {
+      await this.turnCleanup(context);
+    } catch (error) {
+      process.stderr.write(
+        `Could not clean up turn ${context.turnId}: ${String(error)}\n`,
+      );
     }
   }
 

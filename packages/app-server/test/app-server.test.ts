@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,84 @@ import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 describe("AppServer", () => {
+  it("cleans up a scripted model run before completing when the model forgets to clear sharing", async () => {
+    let generation = 0;
+    const shareActions: unknown[] = [];
+    const order: string[] = [];
+    const turnCleanup = vi.fn(async () => {
+      order.push("cleanup");
+    });
+    const provider: ModelProvider = {
+      async generate() {
+        generation += 1;
+        if (generation === 1) {
+          return {
+            text: "",
+            toolCalls: [
+              {
+                id: "share-set",
+                name: "computer_share",
+                arguments: { action: "set" },
+              },
+            ],
+          };
+        }
+        return { text: "done", toolCalls: [] };
+      },
+    };
+    const completed = Promise.withResolvers<void>();
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "test",
+        instructions: "Use sharing",
+        tools: [
+          defineTool({
+            name: "computer_share",
+            description: "Configure sharing",
+            parameters: { type: "object" },
+            async execute(arguments_) {
+              shareActions.push(arguments_);
+              return "shared";
+            },
+          }),
+        ],
+      }),
+      turnCleanup,
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          order.push("completed");
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadResponse = messages.find(
+      (message) => "id" in message && message.id === 2,
+    );
+    const threadId = (threadResponse?.result as { threadId: string }).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Inspect Safari" },
+    });
+    await completed.promise;
+
+    expect(shareActions).toEqual([{ action: "set" }]);
+    expect(turnCleanup).toHaveBeenCalledOnce();
+    expect(turnCleanup).toHaveBeenCalledWith({
+      threadId,
+      turnId: expect.any(String),
+      runId: expect.any(String),
+    });
+    expect(order).toEqual(["cleanup", "completed"]);
+  });
+
   it("rejects attachment metadata that points outside the configured upload root", async () => {
     const directory = mkdtempSync(join(tmpdir(), "threadlight-server-upload-"));
     const attachmentRoot = join(directory, "uploads");

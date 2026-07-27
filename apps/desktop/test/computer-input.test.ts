@@ -71,7 +71,7 @@ describe("native macOS computer input bridge", () => {
     expect(fallback).toBeLessThan(virtualFailure);
   });
 
-  it("activates virtual-input targets without switching to system input", () => {
+  it("keeps virtual AX input in the background without changing app or AX focus", () => {
     const source = readFileSync(
       new URL("../native/computer-input.mm", import.meta.url),
       "utf8",
@@ -82,11 +82,21 @@ describe("native macOS computer input bridge", () => {
     const type = /void Type\(NSDictionary \*action\) \{([\s\S]*?)\n  \}/.exec(
       source,
     )?.[1];
+    const drag = /void Drag\(NSDictionary \*action\) \{([\s\S]*?)\n  \}/.exec(
+      source,
+    )?.[1];
+    const keypress =
+      /void Keypress\(NSDictionary \*action\) \{([\s\S]*?)\n  \}/.exec(
+        source,
+      )?.[1];
 
-    expect(click).toContain("if (isVirtual_)");
-    expect(click).toContain("Activate(processId)");
-    expect(type).toContain("if (isVirtual_)");
-    expect(type).toContain("Activate(processId)");
+    expect(click).not.toContain("ActivateSystemTarget");
+    expect(drag).not.toContain("kAXFocusedAttribute");
+    expect(keypress).toContain("if (!isVirtual_)");
+    expect(keypress).toContain("ActivateSystemTarget(processId)");
+    expect(type).not.toContain("if (isVirtual_)\n      ActivateSystemTarget");
+    expect(source).not.toContain("FocusNearest");
+    expect(source).not.toContain("kAXFocusedAttribute");
   });
 
   it("passes routed actions to the native AX module without changing shape", () => {

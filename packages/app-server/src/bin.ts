@@ -130,6 +130,9 @@ const server = new AppServer({
   ),
   processes: processManager,
   autoApproveAll: process.env.THREADLIGHT_AUTO_APPROVE === "1",
+  async turnCleanup({ runId }) {
+    if (runId) await desktopComputer?.clearForRun(runId);
+  },
 });
 
 serveJsonLines(server, process.stdin, (error) => {

@@ -338,18 +338,6 @@ AXRef NearestAdjustable(AXUIElementRef start) {
   return AXRef();
 }
 
-AXRef FocusNearest(AXUIElementRef start) {
-  AXRef current(static_cast<AXUIElementRef>(CFRetain(start)));
-  while (current) {
-    if (AXUIElementSetAttributeValue(current.get(), kAXFocusedAttribute,
-                                     kCFBooleanTrue) == kAXErrorSuccess) {
-      return current;
-    }
-    current = CopyParent(current.get());
-  }
-  return AXRef();
-}
-
 CFArrayRef CopyElementArray(AXUIElementRef element, CFStringRef attribute) {
   CFTypeRef value = nullptr;
   if (AXUIElementCopyAttributeValue(element, attribute, &value) !=
@@ -763,7 +751,7 @@ void PostMouse(CGEventType type, CGPoint point, CGMouseButton button,
   CFRelease(event);
 }
 
-void Activate(std::optional<pid_t> processId) {
+void ActivateSystemTarget(std::optional<pid_t> processId) {
   if (!processId)
     return;
   NSRunningApplication *application =
@@ -872,8 +860,6 @@ private:
 
   void Click(NSDictionary *action, int count) {
     const auto processId = ProcessId(action);
-    if (isVirtual_)
-      Activate(processId);
     const CGPoint point = Point(action);
     NSArray *keys = Array(action, @"keys");
     NSString *button = String(action, @"button") ?: @"left";
@@ -882,8 +868,9 @@ private:
       AXRef hit = CopyElementAt(*processId, point);
       AXRef clickable;
       if (hit) {
-        AXRef focused = FocusNearest(hit.get());
-        SetActive(focused ? focused.get() : hit.get(), processId);
+        // Remember the routed AX target for a following type or key action,
+        // but leave the user's foreground application and AX focus untouched.
+        SetActive(hit.get(), processId);
         clickable = NearestWithAction(hit.get(), kAXPressAction);
         if (!clickable) {
           clickable = NearestWithRole(hit.get(), kAXRowRole);
@@ -946,8 +933,6 @@ private:
       }
       if (adjustable) {
         SetActive(adjustable.get(), processId);
-        AXUIElementSetAttributeValue(adjustable.get(), kAXFocusedAttribute,
-                                     kCFBooleanTrue);
         if (SetSliderValue(adjustable.get(), last))
           return;
         const double dx = last.x - first.x;
@@ -1028,7 +1013,8 @@ private:
   void Keypress(NSDictionary *action) {
     const auto processId = ProcessId(action);
     NSArray *keys = Array(action, @"keys");
-    Activate(processId);
+    if (!isVirtual_)
+      ActivateSystemTarget(processId);
     const CGEventFlags flags = ModifierFlags(keys);
     for (id raw in keys) {
       if (![raw isKindOfClass:[NSString class]] ||
@@ -1056,8 +1042,6 @@ private:
 
   void Type(NSDictionary *action) {
     const auto processId = ProcessId(action);
-    if (isVirtual_)
-      Activate(processId);
     NSString *text = String(action, @"text") ?: @"";
     AXRef focused;
     AXUIElementRef active = ActiveFor(processId);
@@ -1114,7 +1098,7 @@ private:
           DescribeAXError(activeSelectedTextError) +
           ", active_value=" + DescribeAXError(activeValueError) + ")");
     }
-    Activate(processId);
+    ActivateSystemTarget(processId);
     PostUnicodeText(text, false, processId);
   }
 };

@@ -31,6 +31,7 @@ export class DesktopComputerClient
     }
   >();
   private nextId = 1;
+  private shareOwnerRunId: string | undefined;
 
   constructor(private readonly transport: Duplex) {
     this.lines = createInterface({ input: transport });
@@ -58,6 +59,7 @@ export class DesktopComputerClient
     },
     context: ToolContext,
   ): Promise<ComputerShareState> {
+    this.shareOwnerRunId = context.runId;
     return this.request<ComputerShareState>(
       "computer/configure",
       options,
@@ -66,17 +68,33 @@ export class DesktopComputerClient
   }
 
   async clear(context: ToolContext): Promise<ComputerShareState> {
-    return this.request<ComputerShareState>(
+    const state = await this.request<ComputerShareState>(
       "computer/clear",
       {},
       context.signal,
     );
+    this.shareOwnerRunId = undefined;
+    return state;
+  }
+
+  async clearForRun(runId: string): Promise<boolean> {
+    if (this.shareOwnerRunId !== runId) return false;
+    await this.request<ComputerShareState>(
+      "computer/clear",
+      {},
+      AbortSignal.timeout(5_000),
+    );
+    if (this.shareOwnerRunId === runId) {
+      this.shareOwnerRunId = undefined;
+    }
+    return true;
   }
 
   async execute(
     actions: readonly ComputerUseAction[],
     context: ToolContext,
   ): Promise<Uint8Array> {
+    this.shareOwnerRunId = context.runId;
     const result = await this.request<{ screenshot: string }>(
       "computer/execute",
       { actions },
