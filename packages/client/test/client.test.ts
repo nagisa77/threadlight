@@ -97,6 +97,28 @@ describe("ThreadlightClient", () => {
     await expect(deleted).resolves.toEqual({ deleted: true });
   });
 
+  it("requests three opening questions in the selected language", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const suggested = client.suggestQuestions("thread-1", "zh-CN");
+    expect(transport.sent[0]).toMatchObject({
+      method: "thread/suggestions",
+      params: { threadId: "thread-1", language: "zh-CN" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        suggestions: ["问题一？", "问题二？", "问题三？"],
+      },
+    });
+
+    await expect(suggested).resolves.toEqual({
+      suggestions: ["问题一？", "问题二？", "问题三？"],
+    });
+  });
+
   it("sends a typed managed-process termination request", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

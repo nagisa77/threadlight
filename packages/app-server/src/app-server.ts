@@ -23,6 +23,7 @@ import type {
   JsonRpcRequest,
   ProcessSnapshotData,
   SendMessage,
+  SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
 } from "./protocol.js";
@@ -36,6 +37,14 @@ interface ThreadState {
   agent: Agent;
   conversation: StoredConversation;
   progress: readonly ConversationProgressData[];
+  suggestions: Map<
+    SuggestionLanguage,
+    readonly [string, string, string]
+  >;
+  suggestionRequests: Map<
+    SuggestionLanguage,
+    Promise<readonly [string, string, string]>
+  >;
   runtime?: ThreadRuntime;
   activeTurn?: {
     id: string;
@@ -151,6 +160,8 @@ export class AppServer {
         return this.resumeThread(params);
       case "thread/delete":
         return this.deleteThread(params);
+      case "thread/suggestions":
+        return this.suggestQuestions(params);
       case "turn/start":
         return this.startTurn(params);
       case "turn/interrupt":
@@ -220,6 +231,68 @@ export class AppServer {
     if (thread) await this.disposeThreadRuntime(thread);
     this.threads.delete(threadId);
     return { deleted: !!thread || deletedFromStore };
+  }
+
+  private async suggestQuestions(
+    params: unknown,
+  ): Promise<{ suggestions: readonly [string, string, string] }> {
+    const { threadId, language: languageValue } = objectParams(params);
+    requireString(threadId, "threadId");
+    const language = requireSuggestionLanguage(languageValue);
+
+    const thread = this.threads.get(threadId);
+    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+
+    const cached = thread.suggestions.get(language);
+    if (cached) return { suggestions: cached };
+
+    let request = thread.suggestionRequests.get(language);
+    if (!request) {
+      request = this.generateSuggestedQuestions(thread.agent, language);
+      thread.suggestionRequests.set(language, request);
+    }
+
+    try {
+      const suggestions = await request;
+      thread.suggestions.set(language, suggestions);
+      return { suggestions };
+    } finally {
+      if (thread.suggestionRequests.get(language) === request) {
+        thread.suggestionRequests.delete(language);
+      }
+    }
+  }
+
+  private async generateSuggestedQuestions(
+    agent: Agent,
+    language: SuggestionLanguage,
+  ): Promise<readonly [string, string, string]> {
+    const result = await this.loop.run(
+      {
+        ...agent,
+        name: `${agent.name}-suggestions`,
+        instructions: [
+          agent.instructions,
+          "Generate opening-screen suggestions only. Do not answer the questions, call tools, or describe your reasoning. Each suggestion must be a concrete, useful question the user could ask about this workspace. Make the three questions meaningfully different from one another.",
+        ].join("\n\n"),
+        tools: [],
+        maxSteps: 1,
+      },
+      [
+        `Create exactly three suggested questions in ${suggestionLanguageName(language)} for the current workspace.`,
+        "Keep each question concise and specific to the available project context.",
+        "Return only a JSON array of three strings, with no Markdown or commentary.",
+      ].join(" "),
+    );
+
+    try {
+      return parseSuggestedQuestions(result.output);
+    } catch {
+      throw new RpcError(
+        -32030,
+        "The model did not return three valid suggested questions",
+      );
+    }
   }
 
   async dispose(): Promise<void> {
@@ -512,6 +585,8 @@ export class AppServer {
         agent: runtime ? attachRuntimeTools(baseAgent, runtime) : baseAgent,
         conversation,
         progress: [],
+        suggestions: new Map(),
+        suggestionRequests: new Map(),
         ...(runtime ? { runtime } : {}),
       };
     } catch (error) {
@@ -567,6 +642,67 @@ function requireString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || value.length === 0) {
     throw new RpcError(-32602, `${name} must be a non-empty string`);
   }
+}
+
+const SUGGESTION_LANGUAGES = new Set<SuggestionLanguage>([
+  "zh-CN",
+  "zh-TW",
+  "en",
+  "ja",
+  "ko",
+]);
+
+function requireSuggestionLanguage(value: unknown): SuggestionLanguage {
+  if (
+    typeof value !== "string" ||
+    !SUGGESTION_LANGUAGES.has(value as SuggestionLanguage)
+  ) {
+    throw new RpcError(-32602, "language is not supported");
+  }
+  return value as SuggestionLanguage;
+}
+
+function suggestionLanguageName(language: SuggestionLanguage): string {
+  switch (language) {
+    case "zh-CN":
+      return "Simplified Chinese";
+    case "zh-TW":
+      return "Traditional Chinese";
+    case "en":
+      return "English";
+    case "ja":
+      return "Japanese";
+    case "ko":
+      return "Korean";
+  }
+}
+
+function parseSuggestedQuestions(
+  output: string,
+): readonly [string, string, string] {
+  const start = output.indexOf("[");
+  const end = output.lastIndexOf("]");
+  if (start < 0 || end <= start) throw new Error("Missing JSON array");
+
+  const value: unknown = JSON.parse(output.slice(start, end + 1));
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new Error("Expected three suggestions");
+  }
+
+  const suggestions = value.map((question) => {
+    if (typeof question !== "string") {
+      throw new Error("Suggestion must be a string");
+    }
+    const normalized = question.replace(/\s+/g, " ").trim();
+    if (!normalized || normalized.length > 200) {
+      throw new Error("Suggestion length is invalid");
+    }
+    return normalized;
+  });
+  if (new Set(suggestions).size !== 3) {
+    throw new Error("Suggestions must be unique");
+  }
+  return suggestions as [string, string, string];
 }
 
 function parseAttachments(value: unknown): readonly AttachmentData[] {

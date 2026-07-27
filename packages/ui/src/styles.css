@@ -803,8 +803,50 @@ button:disabled {
 }
 
 .suggestion svg {
+  flex: 0 0 auto;
   color: var(--subtle);
   transform: rotate(45deg);
+}
+
+.suggestion-placeholder {
+  cursor: default;
+}
+
+.suggestion-placeholder span {
+  width: 68%;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--line);
+  opacity: 0.72;
+}
+
+.suggestion-placeholder:nth-child(3) span {
+  width: 81%;
+}
+
+.suggestion-placeholder:nth-child(4) span {
+  width: 59%;
+}
+
+.suggestion-retry {
+  min-height: 49px;
+}
+
+.suggestion-retry > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--muted);
+}
+
+.suggestion-retry strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 580;
+}
+
+.suggestion-retry svg {
+  transform: none;
 }
 
 .message-list {
@@ -3548,7 +3590,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
     background: color-mix(in srgb, var(--danger) 10%, transparent);
   }
 
-  .suggestion:hover {
+  .suggestion:not(.suggestion-placeholder):hover {
     border-color: #cbc8be;
     background: #fff;
   }
@@ -4109,7 +4151,7 @@ html[data-theme="dark"] :is(
     .memory-open-button:hover:not(:disabled),
     .memory-retry-button:hover,
     .project-row:hover:not(:disabled),
-    .suggestion:hover,
+    .suggestion:not(.suggestion-placeholder):hover,
     .settings-select-option:hover,
     .panel-add-option:hover,
     .workspace-tree-row:hover,

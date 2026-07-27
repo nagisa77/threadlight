@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -49,8 +51,20 @@ describe("i18n", () => {
     expect(renderLanguage("ja")).toContain("<label>言語</label>");
   });
 
-  it("renders Traditional Chinese and Korean strings", () => {
+  it("renders an independent Traditional Chinese dictionary with Taiwan terminology", () => {
     expect(renderLanguage("zh-TW")).toContain("<h1>設定</h1>");
+    expect(renderLanguage("zh-TW")).toContain("已變更 3 個檔案");
+    expect(renderLanguage("zh-TW")).toContain("<label>語言</label>");
+
+    const source = readFileSync(
+      new URL("../src/i18n.tsx", import.meta.url),
+      "utf8",
+    );
+    expect(source).toContain("const zhTW: Messages = {");
+    expect(source).not.toContain("traditionalize(");
+  });
+
+  it("renders Korean strings", () => {
     expect(renderLanguage("ko")).toContain("<h1>설정</h1>");
     expect(renderLanguage("ko")).toContain("파일 변경됨");
   });

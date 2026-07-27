@@ -27,6 +27,7 @@ import {
   Paperclip,
   PanelRight,
   PictureInPicture2,
+  RotateCcw,
   Settings,
   Sparkles,
   SquarePen,
@@ -147,6 +148,12 @@ interface PendingAttachment {
 
 const MAX_COMPOSER_ATTACHMENTS = 10;
 
+interface SuggestedQuestionsState {
+  key: string;
+  status: "loading" | "ready" | "error";
+  suggestions: readonly string[];
+}
+
 type VoiceInputStatus =
   | "idle"
   | "requesting"
@@ -201,7 +208,7 @@ function ThreadlightAppContent({
   onLanguageChange(language: Language): void;
   onThemeChange(theme: ThemePreference): void;
 }) {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const {
     state,
     retry,
@@ -247,6 +254,9 @@ function ThreadlightAppContent({
     useState(false);
   const [conversationChangesError, setConversationChangesError] =
     useState<string>();
+  const [suggestedQuestions, setSuggestedQuestions] =
+    useState<SuggestedQuestionsState>();
+  const [suggestionRetry, setSuggestionRetry] = useState(0);
   const conversationChangesRequest = useRef(0);
   const conversationChangesScope = useRef("");
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -271,9 +281,60 @@ function ThreadlightAppContent({
       conversationChanges &&
       conversationChanges.files.length > 0,
   );
+  const suggestionKey = state.threadId
+    ? `${state.threadId}\u0000${language}`
+    : "";
 
   const workspaceChangeRefreshKey =
     conversationChangesRefreshKey(state.progress);
+
+  useEffect(() => {
+    if (
+      state.connection !== "ready" ||
+      !state.threadId ||
+      state.messages.length > 0
+    ) {
+      return;
+    }
+
+    const key = `${state.threadId}\u0000${language}`;
+    let active = true;
+    setSuggestedQuestions({
+      key,
+      status: "loading",
+      suggestions: [],
+    });
+    void client
+      .suggestQuestions(state.threadId, language)
+      .then(({ suggestions }) => {
+        if (active) {
+          setSuggestedQuestions({
+            key,
+            status: "ready",
+            suggestions,
+          });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSuggestedQuestions({
+            key,
+            status: "error",
+            suggestions: [],
+          });
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    client,
+    language,
+    state.connection,
+    state.messages.length,
+    state.threadId,
+    suggestionRetry,
+  ]);
 
   const refreshConversationChanges = useCallback(
     async ({
@@ -1140,6 +1201,23 @@ function ThreadlightAppContent({
                 {state.messages.length === 0 && state.connection !== "error" ? (
                   <EmptyState
                     connecting={state.connection === "connecting"}
+                    suggestions={
+                      suggestedQuestions?.key === suggestionKey
+                        ? suggestedQuestions.suggestions
+                        : []
+                    }
+                    suggestionsLoading={
+                      state.connection === "ready" &&
+                      (suggestedQuestions?.key !== suggestionKey ||
+                        suggestedQuestions.status === "loading")
+                    }
+                    suggestionsFailed={
+                      suggestedQuestions?.key === suggestionKey &&
+                      suggestedQuestions.status === "error"
+                    }
+                    onRetrySuggestions={() =>
+                      setSuggestionRetry((retry) => retry + 1)
+                    }
                     onSelect={(value) => {
                       setInput(value);
                       textarea.current?.focus();
@@ -1877,19 +1955,22 @@ function ProjectEmptyState({
   );
 }
 
-function EmptyState({
+export function EmptyState({
   connecting,
+  suggestions,
+  suggestionsLoading,
+  suggestionsFailed,
+  onRetrySuggestions,
   onSelect,
 }: {
   connecting: boolean;
+  suggestions: readonly string[];
+  suggestionsLoading: boolean;
+  suggestionsFailed: boolean;
+  onRetrySuggestions(): void;
   onSelect(value: string): void;
 }) {
   const { t } = useI18n();
-  const suggestions = [
-    t("suggestionArchitecture"),
-    t("suggestionTests"),
-    t("suggestionFeature"),
-  ];
   return (
     <div className="empty-state">
       <div className="empty-mark" aria-hidden="true">
@@ -1898,17 +1979,50 @@ function EmptyState({
       <h2>{connecting ? t("connectingRuntime") : t("whatToDo")}</h2>
       <p>{t("emptyDescription")}</p>
       {!connecting && (
-        <div className="suggestions">
-          {suggestions.map((suggestion) => (
+        <div
+          className="suggestions"
+          aria-busy={suggestionsLoading || undefined}
+        >
+          {suggestionsLoading ? (
+            <>
+              <span className="visually-hidden" role="status">
+                {t("generatingSuggestions")}
+              </span>
+              {[0, 1, 2].map((placeholder) => (
+                <div
+                  key={placeholder}
+                  className="suggestion suggestion-placeholder"
+                  aria-hidden="true"
+                >
+                  <span />
+                </div>
+              ))}
+            </>
+          ) : suggestionsFailed ? (
             <button
-              key={suggestion}
-              className="suggestion pressable"
-              onClick={() => onSelect(suggestion)}
+              type="button"
+              className="suggestion suggestion-retry pressable"
+              onClick={onRetrySuggestions}
             >
-              {suggestion}
-              <ArrowUp size={14} />
+              <span>
+                <strong>{t("suggestionsUnavailable")}</strong>
+                {t("retrySuggestions")}
+              </span>
+              <RotateCcw size={14} />
             </button>
-          ))}
+          ) : (
+            suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="suggestion pressable"
+                onClick={() => onSelect(suggestion)}
+              >
+                {suggestion}
+                <ArrowUp size={14} />
+              </button>
+            ))
+          )}
         </div>
       )}
     </div>

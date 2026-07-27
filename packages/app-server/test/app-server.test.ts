@@ -15,6 +15,98 @@ import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 describe("AppServer", () => {
+  it("generates three cached opening questions with a scripted model without changing the conversation", async () => {
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return {
+          text: [
+            "```json",
+            '["这个项目最值得先解决的架构风险是什么？","哪些测试缺口最可能导致回归？","下一步最有价值的功能改进是什么？"]',
+            "```",
+          ].join("\n"),
+          toolCalls: [],
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Workspace context: a local TypeScript agent runtime",
+        tools: [
+          defineTool({
+            name: "inspect_workspace",
+            description: "Inspect files",
+            parameters: { type: "object" },
+            async execute() {
+              throw new Error("Suggestions must not call tools");
+            },
+          }),
+        ],
+      }),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+
+    for (const id of [3, 4]) {
+      await server.receive({
+        jsonrpc: "2.0",
+        id,
+        method: "thread/suggestions",
+        params: { threadId, language: "zh-CN" },
+      });
+    }
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      tools: [],
+      input: expect.stringContaining("Simplified Chinese"),
+      instructions: expect.stringContaining(
+        "Workspace context: a local TypeScript agent runtime",
+      ),
+    });
+    expect(
+      messages.find((message) => "id" in message && message.id === 3),
+    ).toMatchObject({
+      result: {
+        suggestions: [
+          "这个项目最值得先解决的架构风险是什么？",
+          "哪些测试缺口最可能导致回归？",
+          "下一步最有价值的功能改进是什么？",
+        ],
+      },
+    });
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        suggestions: [
+          "这个项目最值得先解决的架构风险是什么？",
+          "哪些测试缺口最可能导致回归？",
+          "下一步最有价值的功能改进是什么？",
+        ],
+      },
+    });
+    expect(
+      messages.find((message) => "id" in message && message.id === 5),
+    ).toMatchObject({ result: { messages: [] } });
+  });
+
   it("cleans up a scripted model run before completing when the model forgets to clear sharing", async () => {
     let generation = 0;
     const shareActions: unknown[] = [];

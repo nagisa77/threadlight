@@ -9,6 +9,7 @@ import type {
   ThreadlightMethod,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
+  SuggestionLanguage,
 } from "@threadlight/protocol";
 
 export interface ClientTransport {
@@ -100,6 +101,10 @@ export class ThreadlightClient {
 
   deleteThread(threadId: string) {
     return this.request("thread/delete", { threadId });
+  }
+
+  suggestQuestions(threadId: string, language: SuggestionLanguage) {
+    return this.request("thread/suggestions", { threadId, language });
   }
 
   startTurn(

@@ -138,6 +138,8 @@ export interface ConversationMessageData {
   activities?: readonly ConversationActivityData[];
 }
 
+export type SuggestionLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
+
 export type AgentEventData =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
@@ -181,6 +183,10 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: { deleted: boolean };
   };
+  "thread/suggestions": {
+    params: { threadId: string; language: SuggestionLanguage };
+    result: { suggestions: readonly [string, string, string] };
+  };
   "turn/start": {
     params: {
       threadId: string;
@@ -216,6 +222,7 @@ export const THREADLIGHT_METHODS = [
   "thread/start",
   "thread/resume",
   "thread/delete",
+  "thread/suggestions",
   "turn/start",
   "turn/interrupt",
   "process/status",

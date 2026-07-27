@@ -9,6 +9,7 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
   ProcessSnapshotData,
+  SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
 } from "@threadlight/protocol";
