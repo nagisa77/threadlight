@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
 import {
   projectAgentProgress,
+  projectAgentPlan,
   projectMessagesProcess,
   projectProgressProcess,
   runningProcessSessionIds,
   type AttachmentData,
+  type AgentPlanData,
   type AgentEventData,
   type ConversationActivityData,
   type ConversationMessageData,
   type ConversationProgressData,
   type ProcessSnapshotData,
+  type TurnMode,
 } from "@threadlight/protocol";
 
 export type ToolActivity = ConversationActivityData;
@@ -22,6 +25,8 @@ export interface ConversationMessage {
   text: string;
   attachments?: readonly AttachmentData[];
   error?: boolean;
+  mode?: TurnMode;
+  plan?: AgentPlanData;
   progress?: readonly ConversationProgress[];
   activities?: readonly ToolActivity[];
 }
@@ -34,6 +39,7 @@ export interface SessionState {
   isThinking: boolean;
   messages: readonly ConversationMessage[];
   progress: readonly ConversationProgress[];
+  plan?: AgentPlanData;
   streamingText: string;
   submissionError?: string;
 }
@@ -51,9 +57,10 @@ export type SessionAction =
       id: string;
       text: string;
       attachments?: readonly AttachmentData[];
+      mode?: TurnMode;
     }
   | { type: "message.rejected"; id: string; error: string }
-  | { type: "turn.started" }
+  | { type: "turn.started"; mode: TurnMode }
   | { type: "turn.completed"; id: string; output: string }
   | { type: "turn.failed"; id: string; error: string }
   | { type: "agent.event"; event: AgentEventData }
@@ -96,6 +103,10 @@ export function sessionReducer(
         isRunning: true,
         isThinking: true,
         progress: [],
+        plan:
+          action.mode === "plan"
+            ? { source: "user", items: [] }
+            : undefined,
         streamingText: "",
         submissionError: undefined,
         messages: [
@@ -104,6 +115,7 @@ export function sessionReducer(
             id: action.id,
             role: "user",
             text: action.text,
+            ...(action.mode === "plan" ? { mode: action.mode } : {}),
             ...(action.attachments?.length
               ? { attachments: action.attachments }
               : {}),
@@ -116,12 +128,20 @@ export function sessionReducer(
         isRunning: false,
         isThinking: false,
         progress: [],
+        plan: undefined,
         streamingText: "",
         submissionError: action.error,
         messages: state.messages.filter((message) => message.id !== action.id),
       };
     case "turn.started":
-      return { ...state, isRunning: true, isThinking: true };
+      return {
+        ...state,
+        isRunning: true,
+        isThinking: true,
+        ...(action.mode === "plan" && !state.plan
+          ? { plan: { source: "user", items: [] } }
+          : {}),
+      };
     case "turn.completed":
       return completeTurn(state, action.id, action.output);
     case "turn.failed":
@@ -169,12 +189,14 @@ function reduceAgentEvent(
         isThinking: false,
         streamingText: event.toolCalls.length > 0 ? "" : event.text,
         progress: projectAgentProgress(state.progress, event),
+        plan: projectAgentPlan(state.plan, event),
       };
     case "tool.started":
       return {
         ...state,
         isThinking: false,
         progress: projectAgentProgress(state.progress, event),
+        plan: projectAgentPlan(state.plan, event),
       };
     case "tool.completed":
       return {
@@ -200,6 +222,7 @@ function completeTurn(
     isRunning: false,
     isThinking: false,
     progress: [],
+    plan: undefined,
     streamingText: "",
     messages: [
       ...state.messages,
@@ -209,6 +232,7 @@ function completeTurn(
         text,
         error,
         ...(state.progress.length > 0 ? { progress: state.progress } : {}),
+        ...(state.plan ? { plan: state.plan } : {}),
       },
     ],
   };
@@ -235,14 +259,16 @@ export async function requestTurnStart(
       threadId: string,
       text: string,
       attachments: readonly AttachmentData[],
+      mode: TurnMode,
     ): Promise<unknown>;
   },
   threadId: string,
   text: string,
   attachments: readonly AttachmentData[],
+  mode: TurnMode = "default",
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await client.startTurn(threadId, text, attachments);
+    await client.startTurn(threadId, text, attachments, mode);
     return { ok: true };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
@@ -336,8 +362,8 @@ export function useThreadlightSession(
 
   useEffect(() => {
     const subscriptions = [
-      client.on("turn/started", ({ threadId }) => {
-        updateSession(threadId, { type: "turn.started" });
+      client.on("turn/started", ({ threadId, mode }) => {
+        updateSession(threadId, { type: "turn.started", mode });
       }),
       client.on("turn/completed", ({ threadId, output }) => {
         updateSession(threadId, {
@@ -446,7 +472,11 @@ export function useThreadlightSession(
   );
 
   const send = useCallback(
-    async (value: string, attachments: readonly AttachmentData[] = []) => {
+    async (
+      value: string,
+      attachments: readonly AttachmentData[] = [],
+      mode: TurnMode = "default",
+    ) => {
       const text = value.trim();
       if ((!text && attachments.length === 0) || !state.threadId || state.isRunning) {
         return false;
@@ -458,6 +488,7 @@ export function useThreadlightSession(
         type: "message.sent",
         id: optimisticMessageId,
         text,
+        mode,
         ...(attachments.length > 0 ? { attachments } : {}),
       });
       const started = await requestTurnStart(
@@ -465,6 +496,7 @@ export function useThreadlightSession(
         threadId,
         text,
         attachments,
+        mode,
       );
       if (!started.ok) {
         updateSession(threadId, {

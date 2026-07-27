@@ -1,8 +1,18 @@
 {
   "name": "threadlight",
   "version": "0.1.0",
+  "description": "An observable, recoverable, provider-neutral agent runtime and desktop client.",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nagisa77/threadlight.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nagisa77/threadlight/issues"
+  },
+  "homepage": "https://github.com/nagisa77/threadlight#readme",
   "workspaces": [
     "apps/*",
     "packages/*"

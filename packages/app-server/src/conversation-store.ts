@@ -146,10 +146,37 @@ function isConversationMessage(value: unknown): boolean {
       (Array.isArray(message.attachments) &&
         message.attachments.every(isAttachment))) &&
     (message.error === undefined || typeof message.error === "boolean") &&
+    (message.mode === undefined ||
+      message.mode === "default" ||
+      message.mode === "plan") &&
+    (message.plan === undefined || isAgentPlan(message.plan)) &&
     (message.progress === undefined ||
       (Array.isArray(message.progress) &&
         message.progress.every(isConversationProgress))) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isAgentPlan(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const plan = value as Record<string, unknown>;
+  return (
+    (plan.source === "user" || plan.source === "model") &&
+    (plan.explanation === undefined ||
+      typeof plan.explanation === "string") &&
+    Array.isArray(plan.items) &&
+    plan.items.every((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return false;
+      }
+      const candidate = item as Record<string, unknown>;
+      return (
+        typeof candidate.step === "string" &&
+        (candidate.status === "pending" ||
+          candidate.status === "in_progress" ||
+          candidate.status === "completed")
+      );
+    })
   );
 }
 

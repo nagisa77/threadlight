@@ -10,6 +10,7 @@ import type {
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
   SuggestionLanguage,
+  TurnMode,
 } from "@threadlight/protocol";
 
 export interface ClientTransport {
@@ -111,10 +112,12 @@ export class ThreadlightClient {
     threadId: string,
     input: string,
     attachments: readonly AttachmentData[] = [],
+    mode: TurnMode = "default",
   ) {
     return this.request("turn/start", {
       threadId,
       input,
+      ...(mode === "plan" ? { mode } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
     });
   }

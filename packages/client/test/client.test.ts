@@ -33,6 +33,29 @@ class ScriptedTransport implements ClientTransport {
 }
 
 describe("ThreadlightClient", () => {
+  it("sends an explicit user-selected Plan mode with the turn", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const started = client.startTurn("thread-1", "Build this", [], "plan");
+
+    expect(transport.sent[0]).toMatchObject({
+      method: "turn/start",
+      params: {
+        threadId: "thread-1",
+        input: "Build this",
+        mode: "plan",
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: { turnId: "turn-1" },
+    });
+    await expect(started).resolves.toEqual({ turnId: "turn-1" });
+    client.dispose();
+  });
+
   it("correlates responses independently of their arrival order", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

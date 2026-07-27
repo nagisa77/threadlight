@@ -15,11 +15,15 @@ export function projectAgentProgress(
   progress: readonly ConversationProgressData[],
   event: AgentEventData,
 ): ConversationProgressData[] {
-  if (event.type === "model.completed" && event.toolCalls.length > 0) {
+  if (
+    event.type === "model.completed" &&
+    event.toolCalls.some((call) => call.name !== "update_plan")
+  ) {
     return [...progress, { text: event.text, activities: [] }];
   }
 
   if (event.type === "tool.started") {
+    if (event.call.name === "update_plan") return [...progress];
     const detail = toolDetail(event.call.name, event.call.arguments);
     const activity: ConversationActivityData = {
       id: event.call.id,
@@ -37,7 +41,12 @@ export function projectAgentProgress(
     );
   }
 
-  if (event.type !== "tool.completed") return [...progress];
+  if (
+    event.type !== "tool.completed" ||
+    event.result.name === "update_plan"
+  ) {
+    return [...progress];
+  }
 
   const process =
     event.result.name === "computer"

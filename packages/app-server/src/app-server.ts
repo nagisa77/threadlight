@@ -8,14 +8,17 @@ import type {
   AgentLoop,
   Tool,
 } from "@threadlight/agent-loop";
+import { USER_SELECTED_PLAN_INSTRUCTIONS } from "@threadlight/builtin-tools";
 import {
   projectAgentProgress,
+  projectAgentPlan,
   projectMessagesProcess,
   projectProgressProcess,
 } from "@threadlight/protocol";
 
 import type {
   AttachmentData,
+  AgentPlanData,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,
@@ -26,6 +29,7 @@ import type {
   SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
+  TurnMode,
 } from "./protocol.js";
 import {
   MemoryConversationStore,
@@ -37,6 +41,7 @@ interface ThreadState {
   agent: Agent;
   conversation: StoredConversation;
   progress: readonly ConversationProgressData[];
+  plan?: AgentPlanData;
   suggestions: Map<
     SuggestionLanguage,
     readonly [string, string, string]
@@ -313,6 +318,7 @@ export class AppServer {
     const {
       threadId,
       input,
+      mode: modeValue,
       attachments: attachmentValue,
     } = objectParams(params);
     requireString(threadId, "threadId");
@@ -320,6 +326,7 @@ export class AppServer {
       throw new RpcError(-32602, "input must be a string");
     }
     const attachments = parseAttachments(attachmentValue);
+    const mode = parseTurnMode(modeValue);
     for (const attachment of attachments) {
       this.requireLocalAttachment(attachment);
     }
@@ -337,12 +344,15 @@ export class AppServer {
     const controller = new AbortController();
     thread.activeTurn = { id: turnId, controller };
     thread.progress = [];
+    thread.plan =
+      mode === "plan" ? { source: "user", items: [] } : undefined;
     const startedConversation = this.updateConversation(thread.conversation, [
       ...thread.conversation.messages,
       {
         id: randomUUID(),
         role: "user",
         text: input,
+        ...(mode === "plan" ? { mode } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
       },
     ]);
@@ -359,6 +369,7 @@ export class AppServer {
         threadId,
         turnId,
         input,
+        mode,
         attachments,
         thread,
         controller,
@@ -444,11 +455,12 @@ export class AppServer {
     threadId: string,
     turnId: string,
     input: string,
+    mode: TurnMode,
     attachments: readonly AttachmentData[],
     thread: ThreadState,
     controller: AbortController,
   ): Promise<void> {
-    this.notify("turn/started", { threadId, turnId });
+    this.notify("turn/started", { threadId, turnId, mode });
     let runId: string | undefined;
     let cleanedUp = false;
     const cleanup = async () => {
@@ -458,16 +470,28 @@ export class AppServer {
     };
 
     try {
-      const result = await this.loop.run(thread.agent, input, {
-        toolScopeId: threadId,
-        modelState: thread.conversation.modelState,
-        attachments,
-        signal: controller.signal,
-        onEvent: (event) => {
-          runId = event.runId;
-          this.forwardEvent(threadId, turnId, thread, event);
+      const result = await this.loop.run(
+        mode === "plan"
+          ? {
+              ...thread.agent,
+              instructions: [
+                thread.agent.instructions,
+                USER_SELECTED_PLAN_INSTRUCTIONS,
+              ].join("\n\n"),
+            }
+          : thread.agent,
+        input,
+        {
+          toolScopeId: threadId,
+          modelState: thread.conversation.modelState,
+          attachments,
+          signal: controller.signal,
+          onEvent: (event) => {
+            runId = event.runId;
+            this.forwardEvent(threadId, turnId, thread, event);
+          },
         },
-      });
+      );
       const persistedModelState =
         this.loop.prepareModelStateForPersistence(result.modelState);
 
@@ -482,6 +506,7 @@ export class AppServer {
             ...(thread.progress.length > 0
               ? { progress: thread.progress }
               : {}),
+            ...(thread.plan ? { plan: thread.plan } : {}),
           },
         ],
         { modelState: persistedModelState },
@@ -507,6 +532,7 @@ export class AppServer {
           ...(thread.progress.length > 0
             ? { progress: thread.progress }
             : {}),
+          ...(thread.plan ? { plan: thread.plan } : {}),
         },
       ]);
       try {
@@ -546,6 +572,7 @@ export class AppServer {
     event: AgentEvent,
   ): void {
     thread.progress = projectAgentProgress(thread.progress, event);
+    thread.plan = projectAgentPlan(thread.plan, event);
     this.notify("agent/event", {
       threadId,
       turnId,
@@ -642,6 +669,12 @@ function requireString(value: unknown, name: string): asserts value is string {
   if (typeof value !== "string" || value.length === 0) {
     throw new RpcError(-32602, `${name} must be a non-empty string`);
   }
+}
+
+function parseTurnMode(value: unknown): TurnMode {
+  if (value === undefined || value === "default") return "default";
+  if (value === "plan") return value;
+  throw new RpcError(-32602, "mode must be default or plan");
 }
 
 const SUGGESTION_LANGUAGES = new Set<SuggestionLanguage>([

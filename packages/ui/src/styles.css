@@ -1545,10 +1545,10 @@ button:disabled {
   background: linear-gradient(to bottom, rgb(247 246 242 / 0%), var(--surface) 24%);
 }
 
-.conversation-changes-float {
+.turn-status-float {
   position: absolute;
   z-index: 3;
-  top: -34px;
+  top: -38px;
   right: 30px;
   left: 30px;
   display: flex;
@@ -1556,27 +1556,170 @@ button:disabled {
   pointer-events: none;
 }
 
-.conversation-changes-button {
+.turn-status-pill {
   display: flex;
   width: max-content;
   max-width: min(100%, 714px);
-  height: 30px;
+  height: 34px;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 5px;
+  padding: 0 6px;
   border: 1px solid rgb(255 255 255 / 74%);
-  border-radius: 10px;
+  border-radius: 999px;
   color: var(--muted);
-  background: rgb(255 255 255 / 68%);
+  background:
+    linear-gradient(
+      135deg,
+      rgb(255 255 255 / 78%),
+      rgb(246 245 241 / 64%)
+    );
   box-shadow:
     0 1px 2px rgb(30 29 26 / 7%),
     0 8px 24px rgb(37 35 31 / 8%),
     inset 0 0 0 1px rgb(207 205 196 / 42%);
-  backdrop-filter: blur(16px) saturate(1.25);
-  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
   font-size: 10px;
-  cursor: pointer;
   pointer-events: auto;
+}
+
+.plan-status {
+  position: relative;
+  height: 100%;
+}
+
+.plan-status-trigger,
+.conversation-changes-button {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 999px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.plan-status-trigger strong {
+  color: #66645e;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.plan-status-icon {
+  flex: 0 0 auto;
+  color: #8ab9df;
+}
+
+.plan-status-icon.completed,
+.plan-item-icon.completed {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--success);
+}
+
+.turn-status-separator {
+  color: #9d9a92;
+  font-size: 12px;
+  user-select: none;
+}
+
+.plan-status-popover {
+  position: absolute;
+  right: 50%;
+  bottom: calc(100% + 9px);
+  width: max-content;
+  min-width: 290px;
+  max-width: min(560px, calc(100vw - 48px));
+  padding: 7px;
+  border: 1px solid rgb(255 255 255 / 68%);
+  border-radius: 12px;
+  opacity: 0;
+  background:
+    linear-gradient(
+      135deg,
+      rgb(255 255 255 / 82%),
+      rgb(246 245 241 / 70%)
+    );
+  box-shadow:
+    0 1px 2px rgb(30 29 26 / 6%),
+    0 16px 42px rgb(37 35 31 / 14%),
+    inset 0 1px 0 rgb(255 255 255 / 64%),
+    inset 0 0 0 1px rgb(207 205 196 / 24%);
+  backdrop-filter: blur(28px) saturate(1.35);
+  -webkit-backdrop-filter: blur(28px) saturate(1.35);
+  pointer-events: none;
+  transform: translateX(50%) translateY(4px) scale(0.98);
+  transform-origin: bottom center;
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or
+  (-webkit-backdrop-filter: blur(1px))
+) {
+  .turn-status-pill,
+  .plan-status-popover {
+    background: #f8f7f3;
+  }
+}
+
+.plan-status:hover .plan-status-popover,
+.plan-status:focus-within .plan-status-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(50%) translateY(0) scale(1);
+}
+
+.plan-status-item {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border-radius: 7px;
+  color: #73716a;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.plan-status-item[data-current="true"] {
+  color: #4f4d47;
+  background: #f5f4f0;
+}
+
+.plan-status-item > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-item-icon {
+  flex: 0 0 auto;
+  color: #76746d;
+}
+
+.plan-status-item.pending .plan-item-icon {
+  opacity: 0.7;
+}
+
+.conversation-changes-button {
+  max-width: 100%;
+}
+
+.turn-status-pill .plan-status + .turn-status-separator +
+  .conversation-changes-button > svg {
+  display: none;
 }
 
 .conversation-changes-button > span:nth-child(2) {
@@ -1829,6 +1972,25 @@ button:disabled {
   place-items: center;
   border-radius: 9px;
   cursor: pointer;
+}
+
+.composer-action.plan-mode {
+  display: flex;
+  width: auto;
+  min-width: 32px;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  color: var(--subtle);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.composer-action.plan-mode.active {
+  border-color: #c9d9e7;
+  color: #356f9c;
+  background: #edf5fb;
 }
 
 .composer-action.send {
@@ -3717,6 +3879,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .conversation-changes-button:hover,
+  .plan-status-trigger:hover,
   .panel-add-trigger:hover,
   .panel-add-option:hover,
   .settings-select-option:hover,
@@ -3740,7 +3903,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .composer-action.voice:hover:not(:disabled):not(.recording),
-  .composer-action.attach:hover:not(:disabled) {
+  .composer-action.attach:hover:not(:disabled),
+  .composer-action.plan-mode:hover:not(:disabled):not(.active) {
     color: var(--ink);
     background: rgb(239 238 233 / 74%);
   }
@@ -3812,7 +3976,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .message-action,
   .connection-error,
   .activity-heading,
-  .activity-chevron {
+  .activity-chevron,
+  .plan-status-popover {
     transition-duration: 0ms;
   }
 
@@ -3908,6 +4073,8 @@ html[data-theme="dark"] :is(
   .suggestion,
   .activity-list,
   .conversation-changes-button,
+  .turn-status-pill,
+  .plan-status-popover,
   .memory-open-button,
   .memory-loading,
   .settings-loading
@@ -4162,11 +4329,57 @@ html[data-theme="dark"] .composer-wrap {
   );
 }
 
-html[data-theme="dark"] .conversation-changes-button {
+html[data-theme="dark"] .turn-status-pill {
   border-color: rgb(255 255 255 / 9%);
+  background:
+    linear-gradient(
+      135deg,
+      rgb(47 48 52 / 76%),
+      rgb(31 32 35 / 68%)
+    );
   box-shadow:
     0 8px 24px rgb(0 0 0 / 24%),
+    inset 0 1px 0 rgb(255 255 255 / 10%),
     inset 0 0 0 1px rgb(255 255 255 / 5%);
+}
+
+html[data-theme="dark"] .plan-status-popover {
+  border-color: rgb(255 255 255 / 12%);
+  background:
+    linear-gradient(
+      135deg,
+      rgb(48 49 53 / 80%),
+      rgb(28 29 32 / 74%)
+    );
+  box-shadow:
+    0 18px 46px rgb(0 0 0 / 34%),
+    inset 0 1px 0 rgb(255 255 255 / 10%),
+    inset 0 0 0 1px rgb(255 255 255 / 4%);
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or
+  (-webkit-backdrop-filter: blur(1px))
+) {
+  html[data-theme="dark"] .turn-status-pill,
+  html[data-theme="dark"] .plan-status-popover {
+    background: #26272b;
+  }
+}
+
+html[data-theme="dark"] .plan-status-trigger strong,
+html[data-theme="dark"] .plan-status-item[data-current="true"] {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .plan-status-item[data-current="true"] {
+  background: rgb(255 255 255 / 6%);
+}
+
+html[data-theme="dark"] .composer-action.plan-mode.active {
+  border-color: #3f5c72;
+  color: #9ac5e7;
+  background: #263745;
 }
 
 html[data-theme="dark"] .composer-share {
@@ -4332,6 +4545,8 @@ html[data-theme="dark"] :is(
     .suggestion:not(.suggestion-placeholder):hover,
     .activity-heading:hover,
     .conversation-changes-button:hover,
+    .plan-status-trigger:hover,
+    .composer-action.plan-mode:hover:not(:disabled):not(.active),
     .panel-add-trigger:hover,
     .workspace-panel-close:hover,
     .settings-select-option:hover,

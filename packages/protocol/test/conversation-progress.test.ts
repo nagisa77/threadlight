@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   projectAgentProgress,
+  projectAgentPlan,
   projectMessagesProcess,
   projectProgressProcess,
   runningProcessSessionIds,
@@ -12,6 +13,36 @@ import {
 } from "../src/index.js";
 
 describe("conversation progress projection", () => {
+  it("projects plan tool calls separately from execution activity", () => {
+    const event: AgentEventData = {
+      type: "tool.started",
+      runId: "run-1",
+      call: {
+        id: "plan-1",
+        name: "update_plan",
+        arguments: {
+          explanation: "Break down the implementation",
+          plan: [
+            { step: "Inspect architecture", status: "completed" },
+            { step: "Implement Plan mode", status: "in_progress" },
+            { step: "Run tests", status: "pending" },
+          ],
+        },
+      },
+    };
+
+    expect(projectAgentPlan(undefined, event)).toEqual({
+      source: "model",
+      explanation: "Break down the implementation",
+      items: [
+        { step: "Inspect architecture", status: "completed" },
+        { step: "Implement Plan mode", status: "in_progress" },
+        { step: "Run tests", status: "pending" },
+      ],
+    });
+    expect(projectAgentProgress([], event)).toEqual([]);
+  });
+
   it("projects the same model and tool event sequence into ordered progress", () => {
     const events: AgentEventData[] = [
       {

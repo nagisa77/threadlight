@@ -17,6 +17,12 @@ export {
   createProcessWaitTool,
 } from "./process-tools.js";
 export { createProjectMemoryTool } from "./project-memory.js";
+export {
+  createUpdatePlanTool,
+  parsePlanSnapshot,
+  UPDATE_PLAN_TOOL_NAME,
+  USER_SELECTED_PLAN_INSTRUCTIONS,
+} from "./update-plan.js";
 export { createWebSearchTool } from "./web-search.js";
 
 export type {
@@ -52,6 +58,12 @@ export type {
 } from "./process-manager.js";
 export type { ProcessToolOptions } from "./process-tools.js";
 export type { ProjectMemoryToolOptions } from "./project-memory.js";
+export type {
+  PlanItem,
+  PlanItemStatus,
+  PlanSnapshot,
+  UpdatePlanToolOptions,
+} from "./update-plan.js";
 export type {
   WebSearchResult,
   WebSearchToolOptions,

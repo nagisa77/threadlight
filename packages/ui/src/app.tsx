@@ -9,7 +9,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { ThreadlightClient } from "@threadlight/client";
-import type { AttachmentData } from "@threadlight/protocol";
+import type {
+  AgentPlanData,
+  AttachmentData,
+  TurnMode,
+} from "@threadlight/protocol";
 import {
   ArrowUp,
   Check,
@@ -22,6 +26,7 @@ import {
   FileDiff,
   FileText,
   LoaderCircle,
+  ListTodo,
   Mic,
   Monitor,
   NotebookText,
@@ -236,6 +241,7 @@ function ThreadlightAppContent({
   } = useThreadlightSession(client, { autoConnect: !projects });
   const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
   const [input, setInput] = useState("");
+  const [composerMode, setComposerMode] = useState<TurnMode>("default");
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
   const [switchingProject, setSwitchingProject] = useState(false);
@@ -782,13 +788,14 @@ function ThreadlightAppContent({
         setPreparingAttachments(false);
       }
     }
-    if (await send(value, stagedAttachments)) {
+    if (await send(value, stagedAttachments, composerMode)) {
       for (const attachment of draftAttachments) {
         if (attachment.previewUrl?.startsWith("blob:")) {
           URL.revokeObjectURL(attachment.previewUrl);
         }
       }
       setInput("");
+      setComposerMode("default");
       setAttachmentError(undefined);
       pendingAttachmentsRef.current = [];
       setPendingAttachments([]);
@@ -1362,10 +1369,14 @@ function ThreadlightAppContent({
             </section>
 
             <footer className="composer-wrap">
-              {hasConversationChanges && conversationChanges && (
-                <ConversationChangesButton
-                  changes={conversationChanges}
-                  onOpen={openReviewPanel}
+              {(state.plan ||
+                (hasConversationChanges && conversationChanges)) && (
+                <TurnStatusPill
+                  plan={state.plan}
+                  changes={
+                    hasConversationChanges ? conversationChanges : undefined
+                  }
+                  onOpenChanges={openReviewPanel}
                 />
               )}
               <div
@@ -1422,6 +1433,30 @@ function ThreadlightAppContent({
                       <Paperclip size={17} />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className={`composer-action plan-mode pressable ${composerMode === "plan" ? "active" : ""}`}
+                    onClick={() =>
+                      setComposerMode((mode) =>
+                        mode === "plan" ? "default" : "plan",
+                      )
+                    }
+                    disabled={
+                      state.connection !== "ready" ||
+                      state.isRunning ||
+                      preparingAttachments
+                    }
+                    aria-label={t("planMode")}
+                    aria-pressed={composerMode === "plan"}
+                    title={
+                      composerMode === "plan"
+                        ? t("planModeOn")
+                        : t("planMode")
+                    }
+                  >
+                    <ListTodo size={16} />
+                    <span>{t("plan")}</span>
+                  </button>
                   <textarea
                     ref={textarea}
                     value={input}
@@ -1749,19 +1784,122 @@ export function ConversationChangesButton({
 }) {
   const { t } = useI18n();
   return (
-    <div className="conversation-changes-float">
-      <button
-        type="button"
-        className="conversation-changes-button pressable"
-        onClick={onOpen}
-      >
-        <FileDiff size={14} />
-        <span>{t("filesChanged", { count: changes.files.length })}</span>
-        <span className="change-additions">+{changes.additions}</span>
-        <span className="change-deletions">-{changes.deletions}</span>
-      </button>
+    <button
+      type="button"
+      className="conversation-changes-button pressable"
+      onClick={onOpen}
+    >
+      <FileDiff size={14} />
+      <span>{t("filesChanged", { count: changes.files.length })}</span>
+      <span className="change-additions">+{changes.additions}</span>
+      <span className="change-deletions">-{changes.deletions}</span>
+    </button>
+  );
+}
+
+export function TurnStatusPill({
+  plan,
+  changes,
+  onOpenChanges,
+}: {
+  plan?: AgentPlanData;
+  changes?: ConversationChangesSnapshot;
+  onOpenChanges(): void;
+}) {
+  const { t } = useI18n();
+  const step = plan ? currentPlanStep(plan) : undefined;
+  const completed =
+    !!plan?.items.length &&
+    plan.items.every((item) => item.status === "completed");
+
+  return (
+    <div className="turn-status-float">
+      <div className="turn-status-pill">
+        {plan && (
+          <div className="plan-status">
+            <button
+              type="button"
+              className="plan-status-trigger"
+              aria-label={
+                plan.items.length
+                  ? t("planStep", {
+                      current: step ?? 1,
+                      total: plan.items.length,
+                    })
+                  : t("planning")
+              }
+            >
+              {completed ? (
+                <span className="plan-status-icon completed">
+                  <Check size={11} strokeWidth={2.5} />
+                </span>
+              ) : (
+                <LoaderCircle
+                  className="plan-status-icon spin"
+                  size={15}
+                  strokeWidth={2.2}
+                />
+              )}
+              <strong>
+                {plan.items.length
+                  ? t("planStep", {
+                      current: step ?? 1,
+                      total: plan.items.length,
+                    })
+                  : t("planning")}
+              </strong>
+            </button>
+            {plan.items.length > 0 && (
+              <div
+                className="plan-status-popover"
+                role="list"
+                aria-label={t("plan")}
+              >
+                {plan.items.map((item, index) => (
+                  <div
+                    className={`plan-status-item ${item.status}`}
+                    role="listitem"
+                    data-current={index + 1 === step || undefined}
+                    key={`${index}:${item.step}`}
+                  >
+                    {item.status === "completed" ? (
+                      <span className="plan-item-icon completed">
+                        <Check size={11} strokeWidth={2.5} />
+                      </span>
+                    ) : (
+                      <LoaderCircle
+                        className={`plan-item-icon ${item.status === "in_progress" ? "spin" : ""}`}
+                        size={15}
+                        strokeWidth={2}
+                      />
+                    )}
+                    <span title={item.step}>{item.step}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {plan && changes && <span className="turn-status-separator">·</span>}
+        {changes && (
+          <ConversationChangesButton
+            changes={changes}
+            onOpen={onOpenChanges}
+          />
+        )}
+      </div>
     </div>
   );
+}
+
+export function currentPlanStep(plan: AgentPlanData): number | undefined {
+  if (plan.items.length === 0) return;
+  const active = plan.items.findIndex(
+    (item) => item.status === "in_progress",
+  );
+  if (active >= 0) return active + 1;
+  const pending = plan.items.findIndex((item) => item.status === "pending");
+  return pending >= 0 ? pending + 1 : plan.items.length;
 }
 
 export function conversationChangesRefreshKey(
