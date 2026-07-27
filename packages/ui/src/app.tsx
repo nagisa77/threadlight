@@ -6,6 +6,7 @@ import {
   type ClipboardEvent,
   type DragEvent,
   type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { ThreadlightClient } from "@threadlight/client";
 import type { AttachmentData } from "@threadlight/protocol";
@@ -180,6 +181,7 @@ export function ThreadlightApp({
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [workspacePanelWidth, setWorkspacePanelWidth] = useState<number>();
   const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
   const [conversationChanges, setConversationChanges] =
     useState<ConversationChangesSnapshot>();
@@ -196,8 +198,15 @@ export function ThreadlightApp({
   const dragDepth = useRef(0);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
   const conversation = useRef<HTMLElement>(null);
+  const workspaceRoot = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const currentProject = activeProject(projectSnapshot);
+  const hasConversationChanges = Boolean(
+    workspace &&
+      currentProject &&
+      conversationChanges &&
+      conversationChanges.files.length > 0,
+  );
 
   const refreshConversationChanges = useCallback(async () => {
     if (!workspace || !currentProject || !state.threadId) {
@@ -750,6 +759,59 @@ export function ThreadlightApp({
     void refreshConversationChanges();
   }
 
+  function beginWorkspacePanelResize(
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) {
+    const workspaceElement = workspaceRoot.current;
+    if (!workspaceElement || event.button !== 0) return;
+
+    event.preventDefault();
+    const handle = event.currentTarget;
+    const bounds = workspaceElement.getBoundingClientRect();
+    let nextWidth = clampWorkspacePanelWidth(
+      bounds.right - event.clientX,
+      bounds.width,
+    );
+
+    const updateWidth = (clientX: number) => {
+      nextWidth = clampWorkspacePanelWidth(
+        bounds.right - clientX,
+        bounds.width,
+      );
+      workspaceElement.style.gridTemplateColumns =
+        `minmax(360px, 1fr) ${nextWidth}px`;
+    };
+    const handleMove = (pointerEvent: globalThis.PointerEvent) => {
+      updateWidth(pointerEvent.clientX);
+    };
+    const finish = () => {
+      handle.removeEventListener("pointermove", handleMove);
+      handle.removeEventListener("pointerup", finish);
+      handle.removeEventListener("pointercancel", finish);
+      document.body.classList.remove("is-resizing-workspace");
+      setWorkspacePanelWidth(nextWidth);
+    };
+
+    updateWidth(event.clientX);
+    document.body.classList.add("is-resizing-workspace");
+    handle.setPointerCapture(event.pointerId);
+    handle.addEventListener("pointermove", handleMove);
+    handle.addEventListener("pointerup", finish, { once: true });
+    handle.addEventListener("pointercancel", finish, { once: true });
+  }
+
+  function resizeWorkspacePanelBy(delta: number) {
+    const workspaceElement = workspaceRoot.current;
+    const panelElement =
+      workspaceElement?.querySelector<HTMLElement>(".workspace-panel");
+    if (!workspaceElement || !panelElement) return;
+    const nextWidth = clampWorkspacePanelWidth(
+      panelElement.getBoundingClientRect().width + delta,
+      workspaceElement.getBoundingClientRect().width,
+    );
+    setWorkspacePanelWidth(nextWidth);
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Escape" && voiceStatus === "recording") {
       event.preventDefault();
@@ -896,7 +958,18 @@ export function ThreadlightApp({
       </aside>
 
       <main
+        ref={workspaceRoot}
         className={`workspace ${terminalOpen ? "has-terminal" : ""} ${workspacePanelOpen && workspace && currentProject ? "has-workspace-panel" : ""} ${isDraggingFiles ? "is-dragging-files" : ""}`}
+        style={
+          workspacePanelOpen &&
+          workspace &&
+          currentProject &&
+          workspacePanelWidth
+            ? {
+                gridTemplateColumns: `minmax(360px, 1fr) ${workspacePanelWidth}px`,
+              }
+            : undefined
+        }
         onPaste={handlePaste}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -937,40 +1010,12 @@ export function ThreadlightApp({
                     <LoaderCircle size={13} /> 正在运行
                   </span>
                 )}
-                {terminal && currentProject && (
-                  <button
-                    type="button"
-                    className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
-                    aria-label={terminalOpen ? "关闭终端" : "打开终端"}
-                    aria-pressed={terminalOpen}
-                    title={`${terminalOpen ? "关闭" : "打开"}终端（⌘J）`}
-                    onClick={() => setTerminalOpen((open) => !open)}
-                  >
-                    <Terminal size={15} />
-                  </button>
-                )}
-                {workspace && currentProject && (
-                  <button
-                    type="button"
-                    className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
-                    aria-label={
-                      workspacePanelOpen ? "关闭审阅与文件侧边栏" : "打开审阅与文件侧边栏"
-                    }
-                    aria-pressed={workspacePanelOpen}
-                    title={
-                      workspacePanelOpen ? "关闭侧边栏" : "打开侧边栏"
-                    }
-                    onClick={() => setWorkspacePanelOpen((open) => !open)}
-                  >
-                    <PanelRight size={16} />
-                  </button>
-                )}
               </div>
             </header>
 
             <section
               ref={conversation}
-              className="conversation"
+              className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""}`}
               aria-live="polite"
               onScroll={(event) => {
                 followOutput.current = isNearBottom(event.currentTarget);
@@ -1066,25 +1111,12 @@ export function ThreadlightApp({
             </section>
 
             <footer className="composer-wrap">
-              {workspace &&
-                currentProject &&
-                conversationChanges &&
-                conversationChanges.files.length > 0 && (
-                  <button
-                    type="button"
-                    className="conversation-changes-button pressable"
-                    onClick={openReviewPanel}
-                  >
-                    <FileDiff size={14} />
-                    <span>{conversationChanges.files.length} 个文件已更改</span>
-                    <span className="change-additions">
-                      +{conversationChanges.additions}
-                    </span>
-                    <span className="change-deletions">
-                      -{conversationChanges.deletions}
-                    </span>
-                  </button>
-                )}
+              {hasConversationChanges && conversationChanges && (
+                <ConversationChangesButton
+                  changes={conversationChanges}
+                  onOpen={openReviewPanel}
+                />
+              )}
               <div
                 className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
               >
@@ -1249,6 +1281,36 @@ export function ThreadlightApp({
           </>
         )}
         </div>
+        {currentProject && (terminal || workspace) && (
+          <div className="workspace-global-actions">
+            {terminal && (
+              <button
+                type="button"
+                className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
+                aria-label={terminalOpen ? "关闭终端" : "打开终端"}
+                aria-pressed={terminalOpen}
+                title={`${terminalOpen ? "关闭" : "打开"}终端（⌘J）`}
+                onClick={() => setTerminalOpen((open) => !open)}
+              >
+                <Terminal size={15} />
+              </button>
+            )}
+            {workspace && (
+              <button
+                type="button"
+                className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
+                aria-label={
+                  workspacePanelOpen ? "关闭审阅与文件侧边栏" : "打开审阅与文件侧边栏"
+                }
+                aria-pressed={workspacePanelOpen}
+                title={workspacePanelOpen ? "关闭侧边栏" : "打开侧边栏"}
+                onClick={() => setWorkspacePanelOpen((open) => !open)}
+              >
+                <PanelRight size={16} />
+              </button>
+            )}
+          </div>
+        )}
         {workspace && currentProject && (
           <WorkspacePanel
             adapter={workspace}
@@ -1259,7 +1321,9 @@ export function ThreadlightApp({
             changesError={conversationChangesError}
             reviewRequest={workspaceReviewRequest}
             hidden={!workspacePanelOpen}
-            onClose={() => setWorkspacePanelOpen(false)}
+            onResizeStart={beginWorkspacePanelResize}
+            onResizeBy={resizeWorkspacePanelBy}
+            onResetSize={() => setWorkspacePanelWidth(undefined)}
             onRefreshChanges={() => void refreshConversationChanges()}
           />
         )}
@@ -1285,6 +1349,40 @@ export function ThreadlightApp({
         />
       )}
     </div>
+  );
+}
+
+export function ConversationChangesButton({
+  changes,
+  onOpen,
+}: {
+  changes: ConversationChangesSnapshot;
+  onOpen(): void;
+}) {
+  return (
+    <div className="conversation-changes-float">
+      <button
+        type="button"
+        className="conversation-changes-button pressable"
+        onClick={onOpen}
+      >
+        <FileDiff size={14} />
+        <span>{changes.files.length} 个文件已更改</span>
+        <span className="change-additions">+{changes.additions}</span>
+        <span className="change-deletions">-{changes.deletions}</span>
+      </button>
+    </div>
+  );
+}
+
+export function clampWorkspacePanelWidth(
+  requestedWidth: number,
+  workspaceWidth: number,
+): number {
+  const minimumWidth = Math.min(420, workspaceWidth / 2);
+  const maximumWidth = Math.max(minimumWidth, workspaceWidth - 360);
+  return Math.round(
+    Math.min(maximumWidth, Math.max(minimumWidth, requestedWidth)),
   );
 }
 

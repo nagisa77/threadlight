@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
 import {
@@ -16,13 +17,16 @@ import {
   FolderOpen,
   FolderTree,
   LoaderCircle,
-  PanelRightClose,
   Plus,
   RefreshCw,
   Rows3,
   X,
 } from "lucide-react";
 import DiffViewer from "react-diff-viewer-continued";
+import { refractor } from "refractor";
+import tsx from "refractor/tsx";
+
+refractor.register(tsx);
 
 export interface ConversationFileChange {
   path: string;
@@ -84,7 +88,9 @@ export function WorkspacePanel({
   changesError,
   reviewRequest,
   hidden,
-  onClose,
+  onResizeStart,
+  onResizeBy,
+  onResetSize,
   onRefreshChanges,
 }: {
   adapter: WorkspaceAdapter;
@@ -95,7 +101,9 @@ export function WorkspacePanel({
   changesError?: string;
   reviewRequest: number;
   hidden: boolean;
-  onClose(): void;
+  onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void;
+  onResizeBy(delta: number): void;
+  onResetSize(): void;
   onRefreshChanges(): void;
 }) {
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() => [
@@ -167,6 +175,28 @@ export function WorkspacePanel({
       aria-hidden={hidden}
       hidden={hidden}
     >
+      <div
+        className="workspace-split-handle"
+        role="separator"
+        aria-label="调整聊天与侧边栏宽度"
+        aria-orientation="vertical"
+        tabIndex={0}
+        title="拖动调整宽度，双击恢复等宽"
+        onPointerDown={onResizeStart}
+        onDoubleClick={onResetSize}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            onResizeBy(24);
+          } else if (event.key === "ArrowRight") {
+            event.preventDefault();
+            onResizeBy(-24);
+          } else if (event.key === "Home") {
+            event.preventDefault();
+            onResetSize();
+          }
+        }}
+      />
       <div className="workspace-panel-tabs">
         <div className="workspace-tab-strip" role="tablist" aria-label="面板标签">
           {tabs.map((tab) => (
@@ -214,15 +244,6 @@ export function WorkspacePanel({
             <Plus size={16} />
           </button>
         </div>
-        <button
-          type="button"
-          className="workspace-panel-close pressable"
-          aria-label="关闭侧边栏"
-          title="关闭侧边栏"
-          onClick={onClose}
-        >
-          <PanelRightClose size={17} />
-        </button>
       </div>
 
       {activeTab?.kind === "review" ? (
@@ -511,19 +532,102 @@ export function FileSource({
   name: string;
   content: string;
 }) {
-  const lines = content.split("\n");
+  const lines = useMemo(
+    () => highlightedFileLines(name, content),
+    [content, name],
+  );
   return (
     <div className="file-source" role="region" aria-label={`${name} 源代码`}>
-      {lines.map((line, index) => (
+      {lines.map((segments, index) => (
         <div className="file-source-line" key={index}>
           <span className="file-source-line-number" aria-hidden="true">
             {index + 1}
           </span>
-          <code>{line || "\u200b"}</code>
+          <code>
+            {segments.length > 0
+              ? segments.map((segment, segmentIndex) => (
+                  <span
+                    className={segment.className}
+                    key={`${segmentIndex}-${segment.text.length}`}
+                  >
+                    {segment.text}
+                  </span>
+                ))
+              : "\u200b"}
+          </code>
         </div>
       ))}
     </div>
   );
+}
+
+interface HighlightSegment {
+  text: string;
+  className?: string;
+}
+
+interface HighlightNode {
+  type: string;
+  value?: string;
+  properties?: {
+    className?: string | readonly string[];
+  };
+  children?: readonly HighlightNode[];
+}
+
+export function highlightedFileLines(
+  name: string,
+  content: string,
+): HighlightSegment[][] {
+  const language = languageForPath(name);
+  if (!language || !refractor.registered(language)) {
+    return content.split("\n").map((text) => text ? [{ text }] : []);
+  }
+
+  try {
+    const root = refractor.highlight(content, language) as HighlightNode;
+    const lines: HighlightSegment[][] = [[]];
+
+    const appendText = (text: string, classNames: readonly string[]) => {
+      const parts = text.split("\n");
+      parts.forEach((part, index) => {
+        if (part) {
+          lines[lines.length - 1].push({
+            text: part,
+            ...(classNames.length > 0
+              ? { className: [...new Set(classNames)].join(" ") }
+              : {}),
+          });
+        }
+        if (index < parts.length - 1) lines.push([]);
+      });
+    };
+
+    const visit = (
+      node: HighlightNode,
+      inheritedClassNames: readonly string[],
+    ) => {
+      if (node.type === "text") {
+        appendText(node.value ?? "", inheritedClassNames);
+        return;
+      }
+      const ownClassName = node.properties?.className;
+      const ownClassNames = Array.isArray(ownClassName)
+        ? ownClassName.filter(
+            (className): className is string => typeof className === "string",
+          )
+        : typeof ownClassName === "string"
+          ? ownClassName.split(/\s+/).filter(Boolean)
+          : [];
+      const classNames = [...inheritedClassNames, ...ownClassNames];
+      for (const child of node.children ?? []) visit(child, classNames);
+    };
+
+    visit(root, []);
+    return lines;
+  } catch {
+    return content.split("\n").map((text) => text ? [{ text }] : []);
+  }
 }
 
 interface ChangeTreeNode {
@@ -996,7 +1100,11 @@ function reviewFileId(path: string): string {
 function languageForPath(path: string): string | undefined {
   const extension = path.split(".").at(-1)?.toLowerCase();
   return {
+    bash: "bash",
+    c: "c",
     cjs: "javascript",
+    cpp: "cpp",
+    cs: "csharp",
     css: "css",
     go: "go",
     html: "html",
@@ -1004,11 +1112,20 @@ function languageForPath(path: string): string | undefined {
     js: "javascript",
     json: "json",
     jsx: "jsx",
+    kt: "kotlin",
+    less: "less",
+    lua: "lua",
     md: "markdown",
     mjs: "javascript",
+    php: "php",
     py: "python",
+    rb: "ruby",
     rs: "rust",
+    sass: "sass",
+    scss: "scss",
     sh: "bash",
+    sql: "sql",
+    swift: "swift",
     ts: "typescript",
     tsx: "tsx",
     xml: "xml",

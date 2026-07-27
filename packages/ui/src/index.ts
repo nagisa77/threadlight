@@ -1,4 +1,8 @@
-export { ThreadlightApp } from "./app.js";
+export {
+  clampWorkspacePanelWidth,
+  ConversationChangesButton,
+  ThreadlightApp,
+} from "./app.js";
 export { activeProject } from "./projects.js";
 export { MarkdownContent } from "./markdown.js";
 export { MemoryDocument, ProjectMemoryPage } from "./memory.js";

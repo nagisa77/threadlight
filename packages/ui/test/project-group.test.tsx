@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DeleteConversationDialog,
+  clampWorkspacePanelWidth,
+  ConversationChangesButton,
   hasUserInput,
   ProjectConversationItem,
   ProjectGroup,
@@ -35,6 +37,44 @@ describe("ThreadlightApp", () => {
     );
     expect(html).not.toContain('class="brand"');
     client.dispose();
+  });
+
+  it("keeps both chat and workspace panel usable while resizing", () => {
+    expect(clampWorkspacePanelWidth(200, 1200)).toBe(420);
+    expect(clampWorkspacePanelWidth(640, 1200)).toBe(640);
+    expect(clampWorkspacePanelWidth(1000, 1200)).toBe(840);
+  });
+});
+
+describe("ConversationChangesButton", () => {
+  it("renders as a floating glass control outside the composer flow", () => {
+    const html = renderToStaticMarkup(
+      <ConversationChangesButton
+        changes={{
+          threadId: "thread-1",
+          revision: "revision-1",
+          additions: 12,
+          deletions: 3,
+          files: [
+            {
+              path: "src/index.ts",
+              status: "modified",
+              additions: 12,
+              deletions: 3,
+              binary: false,
+              oldContent: "before\n",
+              newContent: "after\n",
+            },
+          ],
+        }}
+        onOpen={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="conversation-changes-float"');
+    expect(html).toContain("1 个文件已更改");
+    expect(html).toContain("+12");
+    expect(html).toContain("-3");
   });
 });
 

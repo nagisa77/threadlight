@@ -84,6 +84,18 @@ describe("FileSource", () => {
     expect(html).toContain(">1</span>");
     expect(html).toContain(">3</span>");
   });
+
+  it("syntax-highlights supported source files", () => {
+    const html = renderToStaticMarkup(
+      <FileSource
+        name="example.ts"
+        content={'export const answer: number = 42;\n'}
+      />,
+    );
+
+    expect(html).toContain("token keyword");
+    expect(html).toContain("token number");
+  });
 });
 
 describe("WorkspacePanel", () => {
@@ -102,7 +114,9 @@ describe("WorkspacePanel", () => {
         changesLoading={false}
         reviewRequest={0}
         hidden={false}
-        onClose={vi.fn()}
+        onResizeStart={vi.fn()}
+        onResizeBy={vi.fn()}
+        onResetSize={vi.fn()}
         onRefreshChanges={vi.fn()}
       />,
     );
@@ -110,7 +124,8 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="审阅与文件面板"');
     expect(html).toContain("打开文件");
     expect(html).toContain('aria-label="新建文件标签"');
-    expect(html).toContain('aria-label="关闭侧边栏"');
+    expect(html).toContain('aria-label="调整聊天与侧边栏宽度"');
+    expect(html).toContain('aria-orientation="vertical"');
     expect(html).toContain('aria-label="文件路径"');
     expect(html).toContain('aria-label="隐藏文件树"');
     expect(html).toContain("threadlight");
