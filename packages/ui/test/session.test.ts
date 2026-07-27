@@ -9,6 +9,45 @@ import {
 } from "../src/session.js";
 
 describe("sessionReducer", () => {
+  it("shows user-selected Plan mode immediately and accepts model plan updates", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "Build this",
+      mode: "plan",
+    });
+    expect(state.plan).toEqual({ source: "user", items: [] });
+
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "tool.started",
+        runId: "run-1",
+        call: {
+          id: "plan-1",
+          name: "update_plan",
+          arguments: {
+            plan: [
+              { step: "Inspect", status: "completed" },
+              { step: "Build", status: "in_progress" },
+              { step: "Test", status: "pending" },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(state.plan).toEqual({
+      source: "user",
+      items: [
+        { step: "Inspect", status: "completed" },
+        { step: "Build", status: "in_progress" },
+        { step: "Test", status: "pending" },
+      ],
+    });
+    expect(state.progress).toEqual([]);
+  });
+
   it("keeps background task runtime state isolated by thread", () => {
     let sessions = reduceThreadSession({}, "thread-1", {
       type: "connection.ready",

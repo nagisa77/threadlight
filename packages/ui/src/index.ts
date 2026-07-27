@@ -1,7 +1,9 @@
 export {
   clampWorkspacePanelWidth,
   ConversationChangesButton,
+  currentPlanStep,
   ThreadlightApp,
+  TurnStatusPill,
 } from "./app.js";
 export { activeProject } from "./projects.js";
 export {

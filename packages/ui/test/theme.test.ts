@@ -58,4 +58,19 @@ describe("theme", () => {
       /\.theme-picker\s*\{[^}]*padding:\s*19px 0 17px;/s,
     );
   });
+
+  it("renders plan progress surfaces as readable frosted glass", () => {
+    const css = readFileSync(
+      new URL("../src/styles.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(css).toMatch(
+      /\.plan-status-popover\s*\{[^}]*backdrop-filter:\s*blur\(28px\) saturate\(1\.35\);/s,
+    );
+    expect(css).toMatch(
+      /html\[data-theme="dark"\] \.plan-status-popover\s*\{[^}]*background:\s*linear-gradient/s,
+    );
+    expect(css).toContain("@supports not (");
+  });
 });

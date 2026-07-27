@@ -14,10 +14,15 @@
     <a href="./README.md">简体中文</a>
     ·
     <a href="./README.en.md">English</a>
+    ·
+    <a href="./docs/DEVELOPMENT.md">Development guide</a>
   </p>
 
   <p>
     <img src="https://img.shields.io/badge/status-alpha-D56A3A?style=flat-square" alt="Alpha status" />
+    <a href="https://github.com/nagisa77/threadlight/releases/latest"><img src="https://img.shields.io/github/v/release/nagisa77/threadlight?include_prereleases&style=flat-square" alt="Latest release" /></a>
+    <a href="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nagisa77/threadlight/ci.yml?branch=main&style=flat-square&label=tests" alt="CI status" /></a>
+    <img src="https://img.shields.io/github/license/nagisa77/threadlight?style=flat-square" alt="Apache-2.0 license" />
     <img src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" />
     <img src="https://img.shields.io/badge/TypeScript-7-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 7" />
     <img src="https://img.shields.io/badge/Electron-desktop-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron desktop" />
@@ -308,6 +313,8 @@ threadlight/
 ```
 
 ## Development and verification
+
+New contributors should start with the **[complete development guide](./docs/DEVELOPMENT.md)**. It covers the execution path, package boundaries, adding tools and model providers, extending the protocol, desktop debugging, and scripted offline tests. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the pull-request workflow.
 
 ```bash
 npm run build       # Build all packages and the desktop client

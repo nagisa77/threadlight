@@ -26,8 +26,24 @@ describe("FileConversationStore", () => {
       createdAt: "2026-07-21T08:00:00.000Z",
       updatedAt: "2026-07-21T08:01:00.000Z",
       messages: [
-        { id: "message-1", role: "user" as const, text: "Hello" },
-        { id: "message-2", role: "assistant" as const, text: "Hi" },
+        {
+          id: "message-1",
+          role: "user" as const,
+          text: "Hello",
+          mode: "plan" as const,
+        },
+        {
+          id: "message-2",
+          role: "assistant" as const,
+          text: "Hi",
+          plan: {
+            source: "user" as const,
+            items: [
+              { step: "Inspect", status: "completed" as const },
+              { step: "Implement", status: "in_progress" as const },
+            ],
+          },
+        },
       ],
       modelState: { providerWireState: [{ callId: "opaque-call" }] },
     };

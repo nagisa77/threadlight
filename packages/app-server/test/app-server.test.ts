@@ -10,11 +10,178 @@ import {
   type ModelProvider,
   type ModelRequest,
 } from "@threadlight/agent-loop";
+import { createUpdatePlanTool } from "@threadlight/builtin-tools";
 
 import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 describe("AppServer", () => {
+  it("starts user-selected Plan mode and persists scripted plan progress", async () => {
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I’ll make a plan.",
+            toolCalls: [
+              {
+                id: "plan-1",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    { step: "Inspect architecture", status: "in_progress" },
+                    { step: "Implement mode", status: "pending" },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        return { text: "Plan ready", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "planner",
+        instructions: "Work carefully",
+        tools: [createUpdatePlanTool()],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Add Plan mode", mode: "plan" },
+    });
+    await completed.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    expect(requests[0]?.instructions).toContain(
+      "user explicitly selected Plan mode",
+    );
+    expect(
+      messages.find(
+        (message) =>
+          "method" in message && message.method === "turn/started",
+      ),
+    ).toMatchObject({
+      params: { threadId, mode: "plan" },
+    });
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        messages: [
+          { role: "user", mode: "plan" },
+          {
+            role: "assistant",
+            plan: {
+              source: "user",
+              items: [
+                { step: "Inspect architecture", status: "in_progress" },
+                { step: "Implement mode", status: "pending" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("lets the scripted model enter Plan mode without a user toggle", async () => {
+    let generation = 0;
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate() {
+          generation += 1;
+          return generation === 1
+            ? {
+                text: "This needs a plan.",
+                toolCalls: [
+                  {
+                    id: "plan-1",
+                    name: "update_plan",
+                    arguments: {
+                      plan: [
+                        { step: "Investigate", status: "in_progress" },
+                        { step: "Verify", status: "pending" },
+                      ],
+                    },
+                  },
+                ],
+              }
+            : { text: "Done", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({
+        name: "planner",
+        instructions: "Choose tools as needed",
+        tools: [createUpdatePlanTool()],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Investigate this" },
+    });
+    await completed.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        messages: [
+          { role: "user" },
+          { role: "assistant", plan: { source: "model" } },
+        ],
+      },
+    });
+  });
+
   it("generates three cached opening questions with a scripted model without changing the conversation", async () => {
     const requests: ModelRequest[] = [];
     const messages: JsonRpcOutgoing[] = [];

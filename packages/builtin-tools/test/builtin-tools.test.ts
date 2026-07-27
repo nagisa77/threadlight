@@ -22,6 +22,10 @@ import {
   createProcessWaitTool,
 } from "../src/process-tools.js";
 import { createWebSearchTool } from "../src/web-search.js";
+import {
+  createUpdatePlanTool,
+  parsePlanSnapshot,
+} from "../src/update-plan.js";
 
 class ScriptedToolProvider implements ModelProvider {
   readonly requests: ModelRequest[] = [];
@@ -129,6 +133,101 @@ class ScriptedProcessProvider implements ModelProvider {
 }
 
 describe("builtin tools", () => {
+  it("tracks a scripted provider plan through the provider-neutral tool loop", async () => {
+    const requests: ModelRequest[] = [];
+    const updates: unknown[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I’ll plan the work.",
+            toolCalls: [
+              {
+                id: "plan-1",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    { step: "Inspect the code", status: "in_progress" },
+                    { step: "Implement the change", status: "pending" },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        if (requests.length === 2) {
+          expect(JSON.parse(request.toolResults?.[0]?.output ?? "{}"))
+            .toMatchObject({
+              plan: [
+                { step: "Inspect the code", status: "in_progress" },
+                { step: "Implement the change", status: "pending" },
+              ],
+            });
+          return {
+            text: "Inspection is complete.",
+            toolCalls: [
+              {
+                id: "plan-2",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    { step: "Inspect the code", status: "completed" },
+                    { step: "Implement the change", status: "in_progress" },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        return { text: "Done", toolCalls: [] };
+      },
+    };
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "planner",
+        instructions: "Plan multi-step work",
+        tools: [
+          createUpdatePlanTool({
+            onUpdate: (snapshot) => updates.push(snapshot),
+          }),
+        ],
+      }),
+      "Make the change",
+    );
+
+    expect(result.output).toBe("Done");
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain(
+      "update_plan",
+    );
+    expect(updates).toHaveLength(2);
+    expect(updates.at(-1)).toMatchObject({
+      plan: [
+        { status: "completed" },
+        { status: "in_progress" },
+      ],
+    });
+  });
+
+  it("rejects ambiguous or duplicate plan updates offline", () => {
+    expect(() =>
+      parsePlanSnapshot({
+        plan: [
+          { step: "Build", status: "in_progress" },
+          { step: "Test", status: "in_progress" },
+        ],
+      }),
+    ).toThrow("at most one");
+    expect(() =>
+      parsePlanSnapshot({
+        plan: [
+          { step: "Build", status: "pending" },
+          { step: " Build ", status: "completed" },
+        ],
+      }),
+    ).toThrow("unique");
+  });
+
   it("executes a computer action batch and returns a PNG screenshot", async () => {
     const execute = vi.fn(async () =>
       Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),

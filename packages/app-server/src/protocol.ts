@@ -1,5 +1,6 @@
 export type {
   AttachmentData,
+  AgentPlanData,
   ConversationActivityData,
   ConversationMessageData,
   ConversationProgressData,
@@ -12,6 +13,7 @@ export type {
   SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
+  TurnMode,
 } from "@threadlight/protocol";
 
 import type { JsonRpcOutgoing } from "@threadlight/protocol";

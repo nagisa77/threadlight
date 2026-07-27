@@ -8,11 +8,13 @@ import {
   DeleteConversationDialog,
   clampWorkspacePanelWidth,
   ConversationChangesButton,
+  currentPlanStep,
   hasUserInput,
   ProjectConversationItem,
   ProjectGroup,
   showsProjectLevelActivity,
   ThreadlightApp,
+  TurnStatusPill,
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
 } from "../src/app.js";
 
@@ -50,7 +52,7 @@ describe("ThreadlightApp", () => {
 });
 
 describe("ConversationChangesButton", () => {
-  it("renders as a floating glass control outside the composer flow", () => {
+  it("renders the file change summary used by the floating status pill", () => {
     const html = renderToStaticMarkup(
       <ConversationChangesButton
         changes={{
@@ -74,10 +76,54 @@ describe("ConversationChangesButton", () => {
       />,
     );
 
-    expect(html).toContain('class="conversation-changes-float"');
+    expect(html).toContain('class="conversation-changes-button pressable"');
     expect(html).toContain("1 个文件已更改");
     expect(html).toContain("+12");
     expect(html).toContain("-3");
+  });
+
+  it("combines the current plan step and file changes with hover details", () => {
+    const plan = {
+      source: "model" as const,
+      items: [
+        { step: "梳理工具层", status: "completed" as const },
+        { step: "实现 Plan 模式", status: "in_progress" as const },
+        { step: "运行离线测试", status: "pending" as const },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      <TurnStatusPill
+        plan={plan}
+        changes={{
+          threadId: "thread-1",
+          revision: "revision-1",
+          additions: 134,
+          deletions: 0,
+          files: [
+            {
+              path: "src/index.ts",
+              status: "modified",
+              additions: 134,
+              deletions: 0,
+              binary: false,
+              oldContent: "before\n",
+              newContent: "after\n",
+            },
+          ],
+        }}
+        onOpenChanges={vi.fn()}
+      />,
+    );
+
+    expect(currentPlanStep(plan)).toBe(2);
+    expect(html).toContain("第 2 / 3 步");
+    expect(html).toContain("梳理工具层");
+    expect(html).toContain("实现 Plan 模式");
+    expect(html).toContain("运行离线测试");
+    expect(html).toContain("1 个文件已更改");
+    expect(html).toContain("+134");
+    expect(html).toContain("-0");
+    expect(html).toContain('class="turn-status-separator">·</span>');
   });
 });
 

@@ -10,6 +10,11 @@ export {
   projectProgressProcess,
   runningProcessSessionIds,
 } from "./conversation-progress.js";
+export {
+  parsePlanUpdate,
+  projectAgentPlan,
+  UPDATE_PLAN_TOOL_NAME,
+} from "./plan-progress.js";
 
 export type JsonRpcId = string | number | null;
 
@@ -117,6 +122,21 @@ export interface ConversationProgressData {
   activities: readonly ConversationActivityData[];
 }
 
+export type TurnMode = "default" | "plan";
+export type PlanSource = "user" | "model";
+export type PlanItemStatusData = "pending" | "in_progress" | "completed";
+
+export interface PlanItemData {
+  step: string;
+  status: PlanItemStatusData;
+}
+
+export interface AgentPlanData {
+  source: PlanSource;
+  explanation?: string;
+  items: readonly PlanItemData[];
+}
+
 export interface AttachmentData {
   id: string;
   name: string;
@@ -133,6 +153,8 @@ export interface ConversationMessageData {
   text: string;
   attachments?: readonly AttachmentData[];
   error?: boolean;
+  mode?: TurnMode;
+  plan?: AgentPlanData;
   progress?: readonly ConversationProgressData[];
   /** @deprecated Kept for conversations written before ordered progress. */
   activities?: readonly ConversationActivityData[];
@@ -191,6 +213,7 @@ export interface ThreadlightMethodMap {
     params: {
       threadId: string;
       input: string;
+      mode?: TurnMode;
       attachments?: readonly AttachmentData[];
     };
     result: { turnId: string };
@@ -238,7 +261,7 @@ export type MethodResult<Method extends ThreadlightMethod> =
   ThreadlightMethodMap[Method]["result"];
 
 export interface ThreadlightNotificationMap {
-  "turn/started": { threadId: string; turnId: string };
+  "turn/started": { threadId: string; turnId: string; mode: TurnMode };
   "turn/completed": {
     threadId: string;
     turnId: string;
