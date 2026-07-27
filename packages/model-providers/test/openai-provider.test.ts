@@ -647,4 +647,43 @@ describe("OpenAIResponsesProvider", () => {
       },
     ]);
   });
+
+  it("redacts persisted computer screenshots and drops complete old turns to fit", () => {
+    const provider = new OpenAIResponsesProvider({
+      client: {} as OpenAI,
+    });
+    const sensitiveScreenshot =
+      "data:image/png;base64," + "sensitive-pixels".repeat(200);
+    const prepared = provider.prepareStateForPersistence(
+      [
+        { role: "user", content: "old question" },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "old".repeat(600) }],
+        },
+        { role: "user", content: "current question" },
+        {
+          type: "computer_call_output",
+          call_id: "computer-call-1",
+          output: {
+            type: "computer_screenshot",
+            image_url: sensitiveScreenshot,
+          },
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "current answer" }],
+        },
+      ],
+      { maxBytes: 1_000 },
+    );
+    const serialized = JSON.stringify(prepared);
+
+    expect(serialized).not.toContain("sensitive-pixels");
+    expect(serialized).not.toContain("old question");
+    expect(serialized).toContain("current question");
+    expect(Buffer.byteLength(serialized)).toBeLessThanOrEqual(1_000);
+  });
 });

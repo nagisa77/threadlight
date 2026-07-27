@@ -490,4 +490,22 @@ describe("AgentLoop", () => {
       { type: "tool.completed", result: { callId: "call_2" } },
     ]);
   });
+
+  it("enforces a provider-neutral hard limit on persisted model state", () => {
+    const provider: ModelProvider = {
+      prepareStateForPersistence(state) {
+        return state;
+      },
+      async generate() {
+        return { text: "unused", toolCalls: [] };
+      },
+    };
+    const loop = new AgentLoop(provider, {
+      maxPersistedModelStateBytes: 32,
+    });
+
+    expect(() =>
+      loop.prepareModelStateForPersistence({ content: "x".repeat(100) }),
+    ).toThrow("exceeds the 32-byte persistence limit");
+  });
 });

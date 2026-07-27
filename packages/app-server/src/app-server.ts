@@ -9,13 +9,12 @@ import type {
   Tool,
 } from "@threadlight/agent-loop";
 import {
-  appendActivityDetail,
-  formatComputerToolInput,
-  formatComputerToolResult,
+  projectAgentProgress,
+  projectMessagesProcess,
+  projectProgressProcess,
 } from "@threadlight/protocol";
 
 import type {
-  ConversationActivityData,
   AttachmentData,
   ConversationMessageData,
   ConversationProgressData,
@@ -36,17 +35,12 @@ import {
 interface ThreadState {
   agent: Agent;
   conversation: StoredConversation;
-  progress: MutableConversationProgress[];
+  progress: readonly ConversationProgressData[];
   runtime?: ThreadRuntime;
   activeTurn?: {
     id: string;
     controller: AbortController;
   };
-}
-
-interface MutableConversationProgress {
-  text: string;
-  activities: ConversationActivityData[];
 }
 
 export interface ProcessController {
@@ -361,8 +355,8 @@ export class AppServer {
     snapshot: ProcessSnapshotData,
   ): Promise<void> {
     for (const thread of this.threads.values()) {
-      updateMutableProcessSnapshots(thread.progress, snapshot);
-      const messages = updateStoredProcessSnapshots(
+      thread.progress = projectProgressProcess(thread.progress, snapshot);
+      const messages = projectMessagesProcess(
         thread.conversation.messages,
         snapshot,
       );
@@ -400,6 +394,8 @@ export class AppServer {
           this.forwardEvent(threadId, turnId, thread, event);
         },
       });
+      const persistedModelState =
+        this.loop.prepareModelStateForPersistence(result.modelState);
 
       const completedConversation = this.updateConversation(
         thread.conversation,
@@ -410,11 +406,11 @@ export class AppServer {
             role: "assistant",
             text: result.output,
             ...(thread.progress.length > 0
-              ? { progress: snapshotProgress(thread.progress) }
+              ? { progress: thread.progress }
               : {}),
           },
         ],
-        { modelState: result.modelState },
+        { modelState: persistedModelState },
       );
       await this.conversationStore.save(completedConversation);
       thread.conversation = completedConversation;
@@ -435,7 +431,7 @@ export class AppServer {
           text: message,
           error: true,
           ...(thread.progress.length > 0
-            ? { progress: snapshotProgress(thread.progress) }
+            ? { progress: thread.progress }
             : {}),
         },
       ]);
@@ -475,7 +471,7 @@ export class AppServer {
     thread: ThreadState,
     event: AgentEvent,
   ): void {
-    updateProgress(thread.progress, event);
+    thread.progress = projectAgentProgress(thread.progress, event);
     this.notify("agent/event", {
       threadId,
       turnId,
@@ -595,223 +591,6 @@ function isAttachment(value: unknown): value is AttachmentData {
   );
 }
 
-function updateProgress(
-  progress: MutableConversationProgress[],
-  event: AgentEvent,
-): void {
-  if (event.type === "model.completed" && event.toolCalls.length > 0) {
-    progress.push({ text: event.text, activities: [] });
-    return;
-  }
-
-  if (event.type === "tool.started") {
-    let step = progress.at(-1);
-    if (!step) {
-      step = { text: "", activities: [] };
-      progress.push(step);
-    }
-    const detail = toolDetail(event.call.name, event.call.arguments);
-    step.activities.push({
-      id: event.call.id,
-      name: event.call.name,
-      status: "running",
-      ...(detail ? { detail } : {}),
-    });
-    return;
-  }
-  if (event.type !== "tool.completed") return;
-
-  const processSnapshot =
-    event.result.name === "computer"
-      ? undefined
-      : parseProcessSnapshot(event.result.output);
-  if (processSnapshot) {
-    updateMutableProcessSnapshots(progress, processSnapshot);
-  }
-  const activity = progress
-    .flatMap((step) => step.activities)
-    .find((candidate) => candidate.id === event.result.callId);
-  if (!activity) return;
-  activity.status = event.result.isError
-    ? "failed"
-    : activity.name === "exec_command" && processSnapshot
-      ? activityStatus(processSnapshot)
-      : "completed";
-  if (activity.name === "exec_command" && processSnapshot) {
-    activity.process = processSnapshot;
-  }
-  if (
-    activity.name !== "exec_command" &&
-    activity.name !== "project_memory" &&
-    activity.name !== "computer"
-  ) {
-    activity.detail = processSnapshot
-      ? processDetail(processSnapshot)
-      : truncate(event.result.output);
-  }
-  if (activity.name === "computer") {
-    activity.detail = appendActivityDetail(
-      activity.detail,
-      formatComputerToolResult(event.result),
-    );
-  }
-}
-
-function updateMutableProcessSnapshots(
-  progress: MutableConversationProgress[],
-  snapshot: ProcessSnapshotData,
-): boolean {
-  let changed = false;
-  for (const activity of progress.flatMap((step) => step.activities)) {
-    if (activity.process?.sessionId !== snapshot.sessionId) continue;
-    if (sameProcessSnapshot(activity.process, snapshot)) continue;
-    activity.process = { ...snapshot };
-    activity.status = activityStatus(snapshot);
-    changed = true;
-  }
-  return changed;
-}
-
-function updateStoredProcessSnapshots(
-  messages: readonly ConversationMessageData[],
-  snapshot: ProcessSnapshotData,
-): readonly ConversationMessageData[] {
-  let changed = false;
-  const next = messages.map((message) => {
-    const progress = updateStoredProgress(message.progress, snapshot);
-    const activities = updateStoredActivities(message.activities, snapshot);
-    if (progress === message.progress && activities === message.activities) {
-      return message;
-    }
-    changed = true;
-    return {
-      ...message,
-      ...(progress === undefined ? {} : { progress }),
-      ...(activities === undefined ? {} : { activities }),
-    };
-  });
-  return changed ? next : messages;
-}
-
-function updateStoredProgress(
-  progress: readonly ConversationProgressData[] | undefined,
-  snapshot: ProcessSnapshotData,
-): readonly ConversationProgressData[] | undefined {
-  if (!progress) return progress;
-  let changed = false;
-  const next = progress.map((step) => {
-    const activities = updateStoredActivities(step.activities, snapshot);
-    if (activities === step.activities) return step;
-    changed = true;
-    return { ...step, activities: activities ?? step.activities };
-  });
-  return changed ? next : progress;
-}
-
-function updateStoredActivities(
-  activities: readonly ConversationActivityData[] | undefined,
-  snapshot: ProcessSnapshotData,
-): readonly ConversationActivityData[] | undefined {
-  if (!activities) return activities;
-  let changed = false;
-  const next = activities.map((activity) => {
-    if (
-      activity.process?.sessionId !== snapshot.sessionId ||
-      sameProcessSnapshot(activity.process, snapshot)
-    ) {
-      return activity;
-    }
-    changed = true;
-    return {
-      ...activity,
-      status: activityStatus(snapshot),
-      process: { ...snapshot },
-    };
-  });
-  return changed ? next : activities;
-}
-
-function parseProcessSnapshot(value: string): ProcessSnapshotData | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return;
-  }
-  if (!isObject(parsed)) return;
-  const status = parsed.status;
-  if (
-    typeof parsed.sessionId !== "string" ||
-    typeof parsed.command !== "string" ||
-    typeof parsed.cwd !== "string" ||
-    (status !== "running" &&
-      status !== "completed" &&
-      status !== "failed" &&
-      status !== "terminated") ||
-    (parsed.exitCode !== null && typeof parsed.exitCode !== "number") ||
-    (parsed.signal !== null && typeof parsed.signal !== "string") ||
-    typeof parsed.stdout !== "string" ||
-    typeof parsed.stderr !== "string" ||
-    typeof parsed.truncated !== "boolean" ||
-    typeof parsed.startedAt !== "string" ||
-    (parsed.completedAt !== undefined && typeof parsed.completedAt !== "string")
-  ) {
-    return;
-  }
-  return parsed as unknown as ProcessSnapshotData;
-}
-
-function activityStatus(
-  snapshot: ProcessSnapshotData,
-): ConversationActivityData["status"] {
-  return snapshot.status;
-}
-
-function processDetail(snapshot: ProcessSnapshotData): string {
-  return `${snapshot.status} · ${snapshot.sessionId}`;
-}
-
-function sameProcessSnapshot(
-  left: ProcessSnapshotData,
-  right: ProcessSnapshotData,
-): boolean {
-  return (
-    left.status === right.status &&
-    left.exitCode === right.exitCode &&
-    left.signal === right.signal &&
-    left.stdout === right.stdout &&
-    left.stderr === right.stderr &&
-    left.truncated === right.truncated &&
-    left.completedAt === right.completedAt
-  );
-}
-
-function snapshotProgress(
-  progress: readonly MutableConversationProgress[],
-): ConversationProgressData[] {
-  return progress.map((step) => ({
-    text: step.text,
-    activities: step.activities.map((activity) => ({ ...activity })),
-  }));
-}
-
-function toolDetail(name: string, arguments_: unknown): string | undefined {
-  if (!isObject(arguments_)) return;
-  if (name === "exec_command") {
-    const command = arguments_.command;
-    return typeof command === "string" ? `$ ${command}` : undefined;
-  }
-  if (name === "project_memory") {
-    return arguments_.action === "write"
-      ? "Update .threadlight/MEMORY.md"
-      : "Read .threadlight/MEMORY.md";
-  }
-  if (name === "computer" && Array.isArray(arguments_.actions)) {
-    return formatComputerToolInput(arguments_);
-  }
-  return;
-}
-
 function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
   if (
     event.type !== "tool.completed" ||
@@ -827,14 +606,6 @@ function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
       output: '{"type":"computer_screenshot","status":"captured"}',
     },
   };
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function truncate(value: string, limit = 1_200): string {
-  return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
 function attachRuntimeTools(agent: Agent, runtime: ThreadRuntime): Agent {

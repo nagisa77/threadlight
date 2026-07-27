@@ -1098,13 +1098,14 @@ export function ThreadlightApp({
               </div>
               <p
                 id="composer-hint"
-                className={`composer-hint ${voiceError || attachmentError ? "error" : ""}`}
+                className={`composer-hint ${voiceError || attachmentError || state.submissionError ? "error" : ""}`}
                 aria-live="polite"
               >
                 {attachmentHint(
                   voiceStatus,
                   voiceError,
                   attachmentError,
+                  state.submissionError,
                   pendingAttachments,
                   preparingAttachments,
                 )}
@@ -1771,11 +1772,13 @@ function attachmentHint(
   status: VoiceInputStatus,
   voiceError: string | undefined,
   attachmentError: string | undefined,
+  submissionError: string | undefined,
   attachments: readonly PendingAttachment[],
   preparing: boolean,
 ): string {
   if (voiceError || status !== "idle") return voiceInputHint(status, voiceError);
   if (attachmentError) return attachmentError;
+  if (submissionError) return `发送失败：${submissionError}`;
   if (preparing) return "正在准备附件…";
   if (attachments.length > 0) return `已添加 ${attachments.length} 个附件 · Enter 发送`;
   return voiceInputHint(status);

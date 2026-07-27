@@ -63,6 +63,30 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     );
   }
 
+  prepareStateForPersistence(
+    state: unknown,
+    options: { maxBytes: number },
+  ): unknown {
+    if (!isChatProviderState(state) || state.provider !== this.provider) {
+      return state;
+    }
+    let messages = state.messages.map((message) => ({ ...message }));
+    let prepared: ChatProviderState = { ...state, messages };
+    while (serializedBytes(prepared) > options.maxBytes) {
+      const userIndexes = messages.flatMap((message, index) =>
+        message.role === "user" ? [index] : [],
+      );
+      if (userIndexes.length < 2) break;
+      const prefix = messages.filter(
+        (message, index) =>
+          index < userIndexes[0] && message.role === "system",
+      );
+      messages = [...prefix, ...messages.slice(userIndexes[1])];
+      prepared = { ...state, messages };
+    }
+    return prepared;
+  }
+
   async generate(
     request: ModelRequest,
     options: ModelGenerateOptions = {},
@@ -230,4 +254,8 @@ function parseToolArguments(source: string, name: string): unknown {
   } catch {
     throw new Error(`Model returned invalid JSON arguments for tool ${name}`);
   }
+}
+
+function serializedBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value));
 }

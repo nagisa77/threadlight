@@ -24,8 +24,53 @@ const EMPTY_USAGE: TokenUsage = {
   totalTokens: 0,
 };
 
+export const DEFAULT_MAX_PERSISTED_MODEL_STATE_BYTES = 5 * 1024 * 1024;
+
+export interface AgentLoopOptions {
+  maxPersistedModelStateBytes?: number;
+}
+
 export class AgentLoop {
-  constructor(private readonly provider: ModelProvider) {}
+  private readonly maxPersistedModelStateBytes: number;
+
+  constructor(
+    private readonly provider: ModelProvider,
+    options: AgentLoopOptions = {},
+  ) {
+    const maxBytes =
+      options.maxPersistedModelStateBytes ??
+      DEFAULT_MAX_PERSISTED_MODEL_STATE_BYTES;
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+      throw new Error("maxPersistedModelStateBytes must be a positive integer");
+    }
+    this.maxPersistedModelStateBytes = maxBytes;
+  }
+
+  prepareModelStateForPersistence(state: unknown): unknown {
+    if (state === undefined) return;
+    const prepared =
+      this.provider.prepareStateForPersistence?.(state, {
+        maxBytes: this.maxPersistedModelStateBytes,
+      }) ?? state;
+    let serialized: string | undefined;
+    try {
+      serialized = JSON.stringify(prepared);
+    } catch (error) {
+      throw new Error(
+        `Model state is not JSON-serializable: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (serialized === undefined) {
+      throw new Error("Model state is not JSON-serializable");
+    }
+    const bytes = Buffer.byteLength(serialized);
+    if (bytes > this.maxPersistedModelStateBytes) {
+      throw new Error(
+        `Model state is ${bytes} bytes and exceeds the ${this.maxPersistedModelStateBytes}-byte persistence limit`,
+      );
+    }
+    return prepared;
+  }
 
   async run(
     agent: Agent,

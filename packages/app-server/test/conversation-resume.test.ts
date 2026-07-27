@@ -221,6 +221,10 @@ describe("persistent conversations", () => {
     );
     const firstMessages: JsonRpcOutgoing[] = [];
     const firstProvider: ModelProvider = {
+      prepareStateForPersistence(state) {
+        expect(state).toEqual({ opaque: ["response-1"] });
+        return { opaque: ["persisted-response-1"] };
+      },
       async generate(request) {
         expect(request.state).toBeUndefined();
         return {
@@ -280,7 +284,9 @@ describe("persistent conversations", () => {
     });
     await secondCompleted.promise;
 
-    expect(resumedRequest?.state).toEqual({ opaque: ["response-1"] });
+    expect(resumedRequest?.state).toEqual({
+      opaque: ["persisted-response-1"],
+    });
     expect(resumedRequest?.input).toBe("Second question");
     expect(store.load(threadId)?.messages.map((message) => message.text)).toEqual([
       "First question",

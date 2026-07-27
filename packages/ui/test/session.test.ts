@@ -2,11 +2,55 @@ import { describe, expect, it } from "vitest";
 
 import {
   initialSessionState,
+  requestTurnStart,
   sessionReducer,
   type SessionState,
-} from "../src/index.js";
+} from "../src/session.js";
 
 describe("sessionReducer", () => {
+  it("rolls back the optimistic message when turn/start is rejected", async () => {
+    let state = sessionReducer(
+      {
+        ...initialSessionState,
+        connection: "ready",
+        threadId: "thread-1",
+      },
+      {
+        type: "message.sent",
+        id: "message-1",
+        text: "Keep this draft",
+      },
+    );
+    const started = await requestTurnStart(
+      {
+        startTurn: async () => {
+          throw new Error("conversation could not be persisted");
+        },
+      },
+      "thread-1",
+      "Keep this draft",
+      [],
+    );
+    expect(started).toEqual({
+      ok: false,
+      error: "conversation could not be persisted",
+    });
+
+    if (!started.ok) {
+      state = sessionReducer(state, {
+        type: "message.rejected",
+        id: "message-1",
+        error: started.error,
+      });
+    }
+    expect(state).toMatchObject({
+      isRunning: false,
+      isThinking: false,
+      submissionError: "conversation could not be persisted",
+      messages: [],
+    });
+  });
+
   it("keeps uploaded attachments outside the optimistic user text", () => {
     const attachment = {
       id: "attachment-1",

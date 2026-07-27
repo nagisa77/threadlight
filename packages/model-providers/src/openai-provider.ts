@@ -159,6 +159,14 @@ export class OpenAIResponsesProvider implements ModelProvider {
     };
   }
 
+  prepareStateForPersistence(
+    state: unknown,
+    options: { maxBytes: number },
+  ): unknown {
+    if (!Array.isArray(state)) return state;
+    return compactResponseState(state, options.maxBytes);
+  }
+
   async generate(
     request: ModelRequest,
     options: ModelGenerateOptions = {},
@@ -418,6 +426,54 @@ function sanitizeResponseInput(
 
     return item;
   }) as OpenAI.Responses.ResponseInput;
+}
+
+function compactResponseState(
+  state: readonly unknown[],
+  maxBytes: number,
+): OpenAI.Responses.ResponseInput {
+  let compacted = sanitizePersistedResponseInput(state);
+  while (serializedBytes(compacted) > maxBytes) {
+    const userIndexes = compacted.flatMap((item, index) =>
+      isTurnBoundary(item) ? [index] : [],
+    );
+    if (userIndexes.length < 2) break;
+    compacted = compacted.slice(userIndexes[1]);
+  }
+  if (serializedBytes(compacted) > maxBytes) {
+    compacted = compacted.filter(
+      (item) => !isObject(item) || item.type !== "reasoning",
+    ) as OpenAI.Responses.ResponseInput;
+  }
+  return compacted;
+}
+
+function isTurnBoundary(item: unknown): boolean {
+  return (
+    isObject(item) &&
+    item.role === "user" &&
+    typeof item.content === "string"
+  );
+}
+
+function sanitizePersistedResponseInput(
+  state: readonly unknown[],
+): OpenAI.Responses.ResponseInput {
+  return sanitizeResponseInput(state).map((item) => {
+    if (!isObject(item) || item.type !== "computer_call_output") return item;
+    if (!isObject(item.output)) return item;
+    return {
+      ...item,
+      output: {
+        ...item.output,
+        image_url: EMPTY_COMPUTER_SCREENSHOT,
+      },
+    } as OpenAI.Responses.ResponseInputItem;
+  }) as OpenAI.Responses.ResponseInput;
+}
+
+function serializedBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value));
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

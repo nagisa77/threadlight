@@ -1,29 +1,20 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
 import {
-  appendActivityDetail,
-  formatComputerToolInput,
-  formatComputerToolResult,
+  projectAgentProgress,
+  projectMessagesProcess,
+  projectProgressProcess,
+  runningProcessSessionIds,
   type AttachmentData,
   type AgentEventData,
+  type ConversationActivityData,
   type ConversationMessageData,
+  type ConversationProgressData,
   type ProcessSnapshotData,
-  type ToolCallData,
-  type ToolResultData,
 } from "@threadlight/protocol";
 
-export interface ToolActivity {
-  id: string;
-  name: string;
-  status: "running" | "completed" | "failed" | "terminated";
-  detail?: string;
-  process?: ProcessSnapshotData;
-}
-
-export interface ConversationProgress {
-  text: string;
-  activities: readonly ToolActivity[];
-}
+export type ToolActivity = ConversationActivityData;
+export type ConversationProgress = ConversationProgressData;
 
 export interface ConversationMessage {
   id: string;
@@ -44,6 +35,7 @@ export interface SessionState {
   messages: readonly ConversationMessage[];
   progress: readonly ConversationProgress[];
   streamingText: string;
+  submissionError?: string;
 }
 
 export type SessionAction =
@@ -60,6 +52,7 @@ export type SessionAction =
       text: string;
       attachments?: readonly AttachmentData[];
     }
+  | { type: "message.rejected"; id: string; error: string }
   | { type: "turn.started" }
   | { type: "turn.completed"; id: string; output: string }
   | { type: "turn.failed"; id: string; error: string }
@@ -104,6 +97,7 @@ export function sessionReducer(
         isThinking: true,
         progress: [],
         streamingText: "",
+        submissionError: undefined,
         messages: [
           ...state.messages,
           {
@@ -115,6 +109,16 @@ export function sessionReducer(
               : {}),
           },
         ],
+      };
+    case "message.rejected":
+      return {
+        ...state,
+        isRunning: false,
+        isThinking: false,
+        progress: [],
+        streamingText: "",
+        submissionError: action.error,
+        messages: state.messages.filter((message) => message.id !== action.id),
       };
     case "turn.started":
       return { ...state, isRunning: true, isThinking: true };
@@ -147,27 +151,19 @@ function reduceAgentEvent(
         ...state,
         isThinking: false,
         streamingText: event.toolCalls.length > 0 ? "" : event.text,
-        progress:
-          event.toolCalls.length > 0
-            ? [
-                ...state.progress,
-                { text: event.text, activities: [] },
-              ]
-            : state.progress,
+        progress: projectAgentProgress(state.progress, event),
       };
     case "tool.started":
       return {
         ...state,
         isThinking: false,
-        progress: appendActivity(state.progress, {
-          id: event.call.id,
-          name: event.call.name,
-          status: "running",
-          detail: toolInput(event.call),
-        }),
+        progress: projectAgentProgress(state.progress, event),
       };
     case "tool.completed":
-      return completeTool(state, event.result);
+      return {
+        ...state,
+        progress: projectAgentProgress(state.progress, event),
+      };
     case "run.completed":
     case "run.failed":
       return { ...state, isThinking: false };
@@ -201,183 +197,39 @@ function completeTurn(
   };
 }
 
-function appendActivity(
-  progress: readonly ConversationProgress[],
-  activity: ToolActivity,
-): ConversationProgress[] {
-  if (progress.length === 0) {
-    return [{ text: "", activities: [activity] }];
-  }
-
-  return progress.map((step, index) =>
-    index === progress.length - 1
-      ? { ...step, activities: [...step.activities, activity] }
-      : step,
-  );
-}
-
-function completeTool(
-  state: SessionState,
-  result: ToolResultData,
-): SessionState {
-  const process = parseProcessSnapshot(result.output);
-  const progress = updateProgressProcess(state.progress, process);
-  return {
-    ...state,
-    progress: progress.map((step) => ({
-      ...step,
-      activities: step.activities.map((activity) => {
-        if (activity.id !== result.callId) return activity;
-        const isExecCommand = activity.name === "exec_command";
-        const keepsInputDetail =
-          isExecCommand || activity.name === "computer";
-        const detail = keepsInputDetail
-          ? activity.detail
-          : process
-            ? `${process.status} · ${process.sessionId}`
-            : truncate(result.output);
-        return {
-          ...activity,
-          status: result.isError
-            ? "failed"
-            : isExecCommand && process
-              ? processActivityStatus(process)
-              : "completed",
-          detail:
-            activity.name === "computer"
-              ? appendActivityDetail(detail, formatComputerToolResult(result))
-              : detail,
-          ...(isExecCommand && process ? { process } : {}),
-        };
-      }),
-    })),
-  };
-}
-
 function updateSessionProcess(
   state: SessionState,
   process: ProcessSnapshotData,
 ): SessionState {
   return {
     ...state,
-    progress: updateProgressProcess(state.progress, process),
-    messages: state.messages.map((message) => ({
-      ...message,
-      ...(message.progress
-        ? { progress: updateProgressProcess(message.progress, process) }
-        : {}),
-      ...(message.activities
-        ? {
-            activities: updateActivitiesProcess(message.activities, process),
-          }
-        : {}),
-    })),
+    progress: projectProgressProcess(state.progress, process),
+    messages: projectMessagesProcess(state.messages, process),
   };
-}
-
-function updateProgressProcess(
-  progress: readonly ConversationProgress[],
-  process: ProcessSnapshotData | undefined,
-): ConversationProgress[] {
-  if (!process) return [...progress];
-  return progress.map((step) => ({
-    ...step,
-    activities: updateActivitiesProcess(step.activities, process),
-  }));
-}
-
-function updateActivitiesProcess(
-  activities: readonly ToolActivity[],
-  process: ProcessSnapshotData,
-): ToolActivity[] {
-  return activities.map((activity) =>
-    activity.process?.sessionId === process.sessionId
-      ? {
-          ...activity,
-          status: processActivityStatus(process),
-          process,
-        }
-      : activity,
-  );
-}
-
-function parseProcessSnapshot(value: string): ProcessSnapshotData | undefined {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    return;
-  }
-  if (!isObject(parsed)) return;
-  const status = parsed.status;
-  if (
-    typeof parsed.sessionId !== "string" ||
-    typeof parsed.command !== "string" ||
-    typeof parsed.cwd !== "string" ||
-    (status !== "running" &&
-      status !== "completed" &&
-      status !== "failed" &&
-      status !== "terminated") ||
-    (parsed.exitCode !== null && typeof parsed.exitCode !== "number") ||
-    (parsed.signal !== null && typeof parsed.signal !== "string") ||
-    typeof parsed.stdout !== "string" ||
-    typeof parsed.stderr !== "string" ||
-    typeof parsed.truncated !== "boolean" ||
-    typeof parsed.startedAt !== "string" ||
-    (parsed.completedAt !== undefined && typeof parsed.completedAt !== "string")
-  ) {
-    return;
-  }
-  return parsed as unknown as ProcessSnapshotData;
-}
-
-function processActivityStatus(
-  process: ProcessSnapshotData,
-): ToolActivity["status"] {
-  return process.status;
-}
-
-function runningProcessSessionIds(state: SessionState): string[] {
-  const activities = [
-    ...state.progress.flatMap((step) => step.activities),
-    ...state.messages.flatMap((message) => [
-      ...(message.progress?.flatMap((step) => step.activities) ?? []),
-      ...(message.activities ?? []),
-    ]),
-  ];
-  return [
-    ...new Set(
-      activities.flatMap((activity) =>
-        activity.process?.status === "running"
-          ? [activity.process.sessionId]
-          : [],
-      ),
-    ),
-  ].sort();
-}
-
-function truncate(value: string, limit = 1_200): string {
-  return value.length > limit ? `${value.slice(0, limit)}…` : value;
-}
-
-function toolInput(call: ToolCallData): string | undefined {
-  if (!isObject(call.arguments)) return;
-  if (call.name === "exec_command") {
-    const command = call.arguments.command;
-    return typeof command === "string" ? `$ ${command}` : undefined;
-  }
-  if (call.name === "computer" && Array.isArray(call.arguments.actions)) {
-    return formatComputerToolInput(call.arguments);
-  }
-  return;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+export async function requestTurnStart(
+  client: {
+    startTurn(
+      threadId: string,
+      text: string,
+      attachments: readonly AttachmentData[],
+    ): Promise<unknown>;
+  },
+  threadId: string,
+  text: string,
+  attachments: readonly AttachmentData[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await client.startTurn(threadId, text, attachments);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
 }
 
 export function useThreadlightSession(
@@ -448,7 +300,10 @@ export function useThreadlightSession(
     return () => subscriptions.forEach((unsubscribe) => unsubscribe());
   }, [client, openThread, options.autoConnect]);
 
-  const runningProcessKey = runningProcessSessionIds(state).join("\u0000");
+  const runningProcessKey = runningProcessSessionIds(
+    state.progress,
+    state.messages,
+  ).join("\u0000");
   useEffect(() => {
     if (!runningProcessKey) return;
     const sessionIds = runningProcessKey.split("\u0000");
@@ -509,20 +364,26 @@ export function useThreadlightSession(
         return false;
       }
 
+      const optimisticMessageId = crypto.randomUUID();
       dispatch({
         type: "message.sent",
-        id: crypto.randomUUID(),
+        id: optimisticMessageId,
         text,
         ...(attachments.length > 0 ? { attachments } : {}),
       });
-      try {
-        await client.startTurn(state.threadId, text, attachments);
-      } catch (error) {
+      const started = await requestTurnStart(
+        client,
+        state.threadId,
+        text,
+        attachments,
+      );
+      if (!started.ok) {
         dispatch({
-          type: "turn.failed",
-          id: crypto.randomUUID(),
-          error: errorMessage(error),
+          type: "message.rejected",
+          id: optimisticMessageId,
+          error: started.error,
         });
+        return false;
       }
       return true;
     },

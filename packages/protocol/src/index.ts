@@ -3,6 +3,13 @@ export {
   formatComputerToolInput,
   formatComputerToolResult,
 } from "./computer-activity.js";
+export {
+  parseProcessSnapshot,
+  projectAgentProgress,
+  projectMessagesProcess,
+  projectProgressProcess,
+  runningProcessSessionIds,
+} from "./conversation-progress.js";
 
 export type JsonRpcId = string | number | null;
 

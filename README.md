@@ -5,7 +5,7 @@
 
   <p><strong>面向本地工程工作的开源 Agent Runtime 与桌面客户端</strong></p>
   <p>
-    将模型推理、工具调用、审批、进程、项目记忆与 Computer Use<br />
+    将模型推理、工具调用、进程、项目记忆与 Computer Use<br />
     组织为一条可观察、可恢复、可扩展的执行链路。
   </p>
 
@@ -32,8 +32,8 @@
 ---
 
 Threadlight 不只是一个聊天界面，也不把 Agent 简化成一次模型请求。它围绕真实的
-工程任务构建：一个任务可以经历多轮模型调用、流式输出、工具执行、人工审批、
-后台进程与中断恢复，同时完整保留模型需要的 opaque state。
+工程任务构建：一个任务可以经历多轮模型调用、流式输出、工具执行、后台进程与
+中断恢复，同时在持久化限制内保留模型需要的 opaque state。
 
 项目由一组边界清晰的 TypeScript 包和一个 Electron 桌面端组成。核心循环保持
 provider-neutral，厂商协议被隔离在 adapter 中；app-server 负责协议与会话编排，
@@ -41,23 +41,23 @@ UI 则通过类型安全客户端消费统一事件。
 
 > [!IMPORTANT]
 > Threadlight 目前处于 **Alpha** 阶段，适合本地开发、架构探索和 Agent 应用原型。
-> 内置命令审批不是操作系统级 sandbox；批准后的命令仍拥有当前用户权限。
+> 内置工具会直接以当前用户权限运行，并不提供操作系统级 sandbox。
 
 ## 为什么是 Threadlight
 
 | 能力 | Threadlight 的实现 |
 | --- | --- |
-| **可观察的 Agent Loop** | thread、turn、模型增量、工具调用、审批与 token usage 都以结构化事件呈现 |
+| **可观察的 Agent Loop** | thread、turn、模型增量、工具调用与 token usage 都以结构化事件呈现 |
 | **Provider 中立** | 核心循环不依赖厂商 SDK；OpenAI Responses、DeepSeek 与千问兼容协议由独立 adapter 接入 |
-| **状态连续性** | 跨工具回合保留 opaque model state，维持推理上下文与调用链关联 |
+| **状态连续性** | 工具回合内完整保留 opaque model state；写盘前按完整用户回合裁剪并限制尺寸 |
 | **本地工程上下文** | 项目、会话、附件与长期记忆围绕工作区组织，不依赖远端业务数据库 |
-| **可控工具执行** | 命令执行、后台进程、MCP、Web Search 与 Computer Use 均进入统一工具和审批模型 |
+| **统一工具执行** | 命令执行、后台进程、MCP、Web Search 与 Computer Use 使用一致的工具接口 |
 | **多端可复用** | React UI、类型安全 client 与 JSON-RPC protocol 解耦，可继续接入 Web、IDE 或自定义 transport |
 
 ### 桌面端体验
 
 - 以项目组织任务，持久化会话并支持恢复、删除和中断。
-- 流式呈现回答、执行进度、工具活动和审批请求。
+- 流式呈现回答、执行进度和工具活动。
 - 支持图片、文件拖放与语音转写输入。
 - 在设置中切换 OpenAI、DeepSeek 或阿里云百炼·千问。
 - 使用系统安全存储加密 API Key，不把密钥写入项目或日志。
@@ -65,7 +65,7 @@ UI 则通过类型安全客户端消费统一事件。
 
 ### Runtime 能力
 
-- 多步骤工具循环、取消信号、审批钩子、结构化事件和 token 统计。
+- 多步骤工具循环、取消信号、结构化事件和 token 统计。
 - 进程状态查询、增量读取、等待与终止。
 - 每个会话独立的临时 MCP runtime。
 - 带 revision 校验的项目长期记忆，避免并发写入静默覆盖。
@@ -128,7 +128,7 @@ flowchart TB
 4. **工具是能力边界**
 
    项目记忆、命令、进程、MCP、搜索和 Computer Use 都实现为统一 `Tool`，
-   可以按运行环境组合、审批和替换。
+   可以按运行环境组合和替换。
 
 ## 快速开始
 
@@ -260,8 +260,8 @@ await client.startTurn(threadId, "分析当前工作区");
 
 ### 命令与后台进程
 
-`exec_command` 默认在执行前请求客户端审批。命令超过前台等待时间后会由受管进程继续
-运行，并返回 opaque `sessionId`：
+`exec_command` 会直接执行命令。命令超过前台等待时间后会由受管进程继续运行，
+并返回 opaque `sessionId`：
 
 - `process_status`：查看当前状态。
 - `process_read`：读取已产生的输出。
@@ -275,7 +275,7 @@ await client.startTurn(threadId, "分析当前工作区");
 再用 `mcp_call` 执行工具。
 
 连接不会写入设置或会话文件，只在当前 app-server 进程的对应会话内复用，并在会话
-删除或服务退出时释放。连接与远端工具调用默认都需要审批。
+删除或服务退出时释放。
 
 ### Computer Use
 
@@ -312,13 +312,14 @@ Threadlight 将全局偏好与项目数据分开存储：
 <project>/.threadlight/
 ├── MEMORY.md                     # 用户可读的长期项目记忆
 └── conversations/
-    └── <threadId>.json           # 会话与 provider-neutral model state
+    └── <threadId>.json           # 会话与经过尺寸限制、脱敏的 opaque model state
 ```
 
 - 密钥只从运行时环境或系统安全存储注入，不进入项目文件、fixtures 或日志。
 - app-server 的协议输出与诊断日志分别写入 stdout 和 stderr。
 - 附件使用受校验的本地路径引用，wire adapter 不直接内联文件字节。
-- 工具审批是应用层安全控制，不替代容器、虚拟机或操作系统 sandbox。
+- 持久化的 opaque model state 上限为 5 MiB；Computer Use 截图会在写盘前替换为占位图。
+- 内置工具会直接运行；需要强隔离时应在容器、虚拟机或操作系统 sandbox 中启动 Threadlight。
 - `.threadlight/` 默认应加入项目的版本控制忽略规则。
 
 ## Monorepo 地图
@@ -341,7 +342,7 @@ threadlight/
 
 | Package | 职责 |
 | --- | --- |
-| `@threadlight/agent-loop` | 工具循环、审批、取消、事件、附件与 opaque state |
+| `@threadlight/agent-loop` | 工具循环、取消、事件、附件与 opaque state |
 | `@threadlight/model-providers` | OpenAI Responses、DeepSeek、千问兼容协议 |
 | `@threadlight/project-memory` | 安全路径、原子写入与乐观并发控制 |
 | `@threadlight/builtin-tools` | 本地与远端工具 runtime |

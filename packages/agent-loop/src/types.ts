@@ -88,6 +88,10 @@ export interface ModelProvider {
     attachment: ModelAttachment,
     signal?: AbortSignal,
   ): Promise<ModelAttachment>;
+  prepareStateForPersistence?(
+    state: unknown,
+    options: { maxBytes: number },
+  ): unknown;
   generate(
     request: ModelRequest,
     options?: ModelGenerateOptions,

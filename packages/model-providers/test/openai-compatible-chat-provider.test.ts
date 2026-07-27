@@ -150,6 +150,35 @@ describe("OpenAICompatibleChatProvider", () => {
       { role: "user", content: "Hello" },
     ]);
   });
+
+  it("drops complete old chat turns before persistence when state exceeds the limit", () => {
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "deepseek",
+      baseURL: "https://api.deepseek.test",
+      defaultModel: "deepseek-v4-pro",
+      client: {} as OpenAI,
+    });
+    const prepared = provider.prepareStateForPersistence(
+      {
+        protocol: "openai-compatible-chat",
+        provider: "deepseek",
+        messages: [
+          { role: "system", content: "System" },
+          { role: "user", content: "old question" },
+          { role: "assistant", content: "old".repeat(600) },
+          { role: "user", content: "current question" },
+          { role: "assistant", content: "current answer" },
+        ],
+      },
+      { maxBytes: 500 },
+    );
+    const serialized = JSON.stringify(prepared);
+
+    expect(serialized).toContain("System");
+    expect(serialized).not.toContain("old question");
+    expect(serialized).toContain("current question");
+    expect(Buffer.byteLength(serialized)).toBeLessThanOrEqual(500);
+  });
 });
 
 async function* chunks(values: readonly unknown[]) {
