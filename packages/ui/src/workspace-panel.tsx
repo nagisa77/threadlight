@@ -20,11 +20,18 @@ import {
   Plus,
   RefreshCw,
   Rows3,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import DiffViewer from "react-diff-viewer-continued";
 import { refractor } from "refractor";
 import tsx from "refractor/tsx";
+
+import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
+import {
+  TerminalView,
+  type TerminalAdapter,
+} from "./terminal.js";
 
 refractor.register(tsx);
 
@@ -74,13 +81,14 @@ export interface WorkspaceAdapter {
 
 interface WorkspaceTab {
   id: string;
-  kind: "review" | "file";
+  kind: "review" | PanelViewKind;
   path?: string;
   title: string;
 }
 
 export function WorkspacePanel({
   adapter,
+  terminal,
   projectId,
   projectName,
   changes,
@@ -94,6 +102,7 @@ export function WorkspacePanel({
   onRefreshChanges,
 }: {
   adapter: WorkspaceAdapter;
+  terminal?: TerminalAdapter;
   projectId: string;
   projectName: string;
   changes?: ConversationChangesSnapshot;
@@ -139,10 +148,14 @@ export function WorkspacePanel({
     }
   }, [activeTabId, tabs]);
 
-  function addFileTab() {
-    const tab = createFileTab();
+  function addTab(kind: PanelViewKind) {
+    const tab = kind === "terminal" ? createTerminalTab() : createFileTab();
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
+  }
+
+  function addFileTab() {
+    addTab("file");
   }
 
   function closeTab(id: string) {
@@ -171,14 +184,14 @@ export function WorkspacePanel({
   return (
     <aside
       className="workspace-panel"
-      aria-label="审阅与文件面板"
+      aria-label="右侧面板"
       aria-hidden={hidden}
       hidden={hidden}
     >
       <div
         className="workspace-split-handle"
         role="separator"
-        aria-label="调整聊天与侧边栏宽度"
+        aria-label="调整聊天与右侧面板宽度"
         aria-orientation="vertical"
         tabIndex={0}
         title="拖动调整宽度，双击恢复等宽"
@@ -210,6 +223,8 @@ export function WorkspacePanel({
             >
               {tab.kind === "review" ? (
                 <FileDiff size={14} />
+              ) : tab.kind === "terminal" ? (
+                <SquareTerminal size={14} />
               ) : (
                 <File size={14} />
               )}
@@ -234,39 +249,48 @@ export function WorkspacePanel({
               </span>
             </button>
           ))}
-          <button
-            type="button"
-            className="workspace-tab-add pressable"
-            aria-label="新建文件标签"
-            title="新建文件标签"
-            onClick={addFileTab}
-          >
-            <Plus size={16} />
-          </button>
         </div>
+        <PanelAddMenu
+          available={terminal ? ["terminal", "file"] : ["file"]}
+          onSelect={addTab}
+        />
       </div>
 
-      {activeTab?.kind === "review" ? (
-        <ReviewView
-          changes={changes}
-          loading={changesLoading}
-          error={changesError}
-          layout={diffLayout}
-          onLayoutChange={setDiffLayout}
-          onRefresh={onRefreshChanges}
-        />
-      ) : activeTab?.kind === "file" ? (
-        <FileView
-          key={activeTab.id}
-          adapter={adapter}
-          projectId={projectId}
-          projectName={projectName}
-          path={activeTab.path}
-          onSelectFile={selectFile}
-        />
-      ) : (
-        <WorkspacePanelEmpty onAdd={addFileTab} />
-      )}
+      <div className="workspace-panel-stage">
+        {terminal &&
+          tabs
+            .filter((tab) => tab.kind === "terminal")
+            .map((tab) => (
+              <TerminalView
+                key={tab.id}
+                adapter={terminal}
+                projectId={projectId}
+                hidden={tab.id !== activeTab?.id}
+                label={tab.title}
+              />
+            ))}
+        {activeTab?.kind === "review" ? (
+          <ReviewView
+            changes={changes}
+            loading={changesLoading}
+            error={changesError}
+            layout={diffLayout}
+            onLayoutChange={setDiffLayout}
+            onRefresh={onRefreshChanges}
+          />
+        ) : activeTab?.kind === "file" ? (
+          <FileView
+            key={activeTab.id}
+            adapter={adapter}
+            projectId={projectId}
+            projectName={projectName}
+            path={activeTab.path}
+            onSelectFile={selectFile}
+          />
+        ) : activeTab?.kind === "terminal" ? null : (
+          <WorkspacePanelEmpty onAdd={addFileTab} />
+        )}
+      </div>
     </aside>
   );
 }
@@ -431,17 +455,19 @@ function ReviewFile({
   );
 }
 
-function FileView({
+export function FileView({
   adapter,
   projectId,
   projectName,
   path,
+  hidden = false,
   onSelectFile,
 }: {
   adapter: WorkspaceAdapter;
   projectId: string;
   projectName: string;
   path?: string;
+  hidden?: boolean;
   onSelectFile(path: string): void;
 }) {
   const [file, setFile] = useState<WorkspaceFile>();
@@ -475,7 +501,7 @@ function FileView({
   }, [adapter, path, projectId]);
 
   return (
-    <div className="file-view">
+    <div className="file-view" role="tabpanel" hidden={hidden}>
       <div className="file-view-toolbar">
         <Breadcrumb projectName={projectName} path={path} />
         <button
@@ -1034,6 +1060,14 @@ function createFileTab(): WorkspaceTab {
     id: crypto.randomUUID(),
     kind: "file",
     title: "打开文件",
+  };
+}
+
+function createTerminalTab(): WorkspaceTab {
+  return {
+    id: crypto.randomUUID(),
+    kind: "terminal",
+    title: "终端",
   };
 }
 

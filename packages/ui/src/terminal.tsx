@@ -7,7 +7,13 @@ import {
 } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XtermTerminal } from "@xterm/xterm";
-import { Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { File, SquareTerminal, X } from "lucide-react";
+
+import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
+import {
+  FileView,
+  type WorkspaceAdapter,
+} from "./workspace-panel.js";
 
 import "@xterm/xterm/css/xterm.css";
 
@@ -44,9 +50,11 @@ export interface TerminalAdapter {
   subscribe(listener: (event: TerminalEvent) => void): () => void;
 }
 
-interface VisibleTerminalSession extends TerminalSessionInfo {
-  number: number;
-  exitCode?: number;
+interface BottomPanelTab {
+  id: string;
+  kind: PanelViewKind;
+  title: string;
+  path?: string;
 }
 
 const DEFAULT_COLUMNS = 80;
@@ -56,124 +64,52 @@ const MAX_PENDING_OUTPUT = 1_000_000;
 
 export function TerminalPanel({
   adapter,
+  workspace,
   projectId,
+  projectName = "",
   onClose,
 }: {
   adapter: TerminalAdapter;
+  workspace?: WorkspaceAdapter;
   projectId: string;
+  projectName?: string;
   onClose(): void;
 }) {
-  const [sessions, setSessions] = useState<VisibleTerminalSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string>();
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState<string>();
+  const nextTerminalNumber = useRef(1);
+  const [tabs, setTabs] = useState<BottomPanelTab[]>(() => [
+    createTerminalTab(1),
+  ]);
+  const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const [panelHeight, setPanelHeight] = useState(260);
-  const sessionNumber = useRef(0);
-  const sessionIds = useRef<string[]>([]);
-  const outputWriters = useRef(new Map<string, (data: string) => void>());
-  const pendingOutput = useRef(new Map<string, string>());
-  const createTerminalRef = useRef<() => Promise<void>>(async () => {});
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
-  useEffect(() => {
-    sessionIds.current = sessions.map((session) => session.id);
-  }, [sessions]);
+  function addTab(kind: PanelViewKind) {
+    const tab =
+      kind === "terminal"
+        ? createTerminalTab(++nextTerminalNumber.current)
+        : createBottomFileTab();
+    setTabs((current) => [...current, tab]);
+    setActiveTabId(tab.id);
+  }
 
-  useEffect(() => {
-    const unsubscribe = adapter.subscribe((event) => {
-      if (event.type === "exit") {
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === event.sessionId
-              ? { ...session, exitCode: event.exitCode }
-              : session,
-          ),
-        );
-        return;
-      }
-      const writer = outputWriters.current.get(event.sessionId);
-      if (writer) {
-        writer(event.data);
-        return;
-      }
-      const buffered =
-        (pendingOutput.current.get(event.sessionId) ?? "") + event.data;
-      pendingOutput.current.set(
-        event.sessionId,
-        buffered.slice(-MAX_PENDING_OUTPUT),
-      );
-    });
-    return unsubscribe;
-  }, [adapter]);
-
-  const createTerminal = useCallback(async () => {
-    if (creating) return;
-    setCreating(true);
-    setError(undefined);
-    try {
-      const session = await adapter.create({
-        projectId,
-        cols: DEFAULT_COLUMNS,
-        rows: DEFAULT_ROWS,
-      });
-      const number = ++sessionNumber.current;
-      setSessions((current) => [...current, { ...session, number }]);
-      setActiveSessionId(session.id);
-    } catch (cause) {
-      setError(errorMessage(cause));
-    } finally {
-      setCreating(false);
-    }
-  }, [adapter, creating, projectId]);
-
-  useEffect(() => {
-    createTerminalRef.current = createTerminal;
-  }, [createTerminal]);
-
-  useEffect(() => {
-    void createTerminalRef.current();
-  }, []);
-
-  useEffect(
-    () => () => {
-      for (const id of sessionIds.current) void adapter.close(id);
-    },
-    [adapter],
-  );
-
-  const registerOutputWriter = useCallback(
-    (
-      sessionId: string,
-      writer: ((data: string) => void) | undefined,
-    ) => {
-      if (!writer) {
-        outputWriters.current.delete(sessionId);
-        return;
-      }
-      outputWriters.current.set(sessionId, writer);
-      const buffered = pendingOutput.current.get(sessionId);
-      if (buffered) {
-        pendingOutput.current.delete(sessionId);
-        writer(buffered);
-      }
-    },
-    [],
-  );
-
-  async function closeSession(sessionId: string) {
-    outputWriters.current.delete(sessionId);
-    pendingOutput.current.delete(sessionId);
-    await adapter.close(sessionId);
-    setSessions((current) => {
-      const index = current.findIndex((session) => session.id === sessionId);
-      const next = current.filter((session) => session.id !== sessionId);
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(
-          next[Math.min(index, Math.max(0, next.length - 1))]?.id,
-        );
+  function closeTab(id: string) {
+    setTabs((current) => {
+      const index = current.findIndex((tab) => tab.id === id);
+      const next = current.filter((tab) => tab.id !== id);
+      if (id === activeTabId) {
+        setActiveTabId(next[Math.min(index, next.length - 1)]?.id ?? "");
       }
       if (next.length === 0) onClose();
       return next;
     });
+  }
+
+  function selectFile(tabId: string, path: string) {
+    setTabs((current) =>
+      current.map((tab) =>
+        tab.id === tabId ? { ...tab, path, title: fileName(path) } : tab,
+      ),
+    );
   }
 
   function startResize(event: ReactPointerEvent<HTMLDivElement>) {
@@ -205,9 +141,9 @@ export function TerminalPanel({
 
   return (
     <section
-      className="terminal-panel"
+      className="terminal-panel panel-container"
       style={{ height: panelHeight }}
-      aria-label="终端面板"
+      aria-label="底部面板"
     >
       <div
         className="terminal-resize-handle"
@@ -215,79 +151,180 @@ export function TerminalPanel({
         onPointerDown={startResize}
       />
       <div className="terminal-toolbar">
-        <div className="terminal-tabs" role="tablist" aria-label="终端">
-          {sessions.map((session) => (
-            <div
-              className={`terminal-tab ${session.id === activeSessionId ? "active" : ""}`}
-              key={session.id}
-            >
-              <button
-                type="button"
-                className="terminal-tab-select pressable"
-                role="tab"
-                aria-selected={session.id === activeSessionId}
-                onClick={() => setActiveSessionId(session.id)}
+        <div className="terminal-tabs" role="tablist" aria-label="底部面板标签">
+          <div className="terminal-tab-strip">
+            {tabs.map((tab) => (
+              <div
+                className={`terminal-tab ${tab.id === activeTab?.id ? "active" : ""}`}
+                key={tab.id}
               >
-                <TerminalIcon size={13} aria-hidden="true" />
-                <span>
-                  {session.shell} {session.number}
-                </span>
-                {session.exitCode !== undefined && (
-                  <span className="terminal-exit-code">
-                    已退出 {session.exitCode}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                className="terminal-tab-close pressable"
-                aria-label={`关闭 ${session.shell} ${session.number}`}
-                title="关闭终端"
-                onClick={() => void closeSession(session.id)}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="terminal-new-button pressable"
-            aria-label="新建终端"
-            title="新建终端"
-            disabled={creating}
-            onClick={() => void createTerminal()}
-          >
-            <Plus size={15} />
-          </button>
+                <button
+                  type="button"
+                  className="terminal-tab-select pressable"
+                  role="tab"
+                  aria-selected={tab.id === activeTab?.id}
+                  onClick={() => setActiveTabId(tab.id)}
+                >
+                  {tab.kind === "terminal" ? (
+                    <SquareTerminal size={14} aria-hidden="true" />
+                  ) : (
+                    <File size={14} aria-hidden="true" />
+                  )}
+                  <span>{tab.title}</span>
+                </button>
+                <button
+                  type="button"
+                  className="terminal-tab-close pressable"
+                  aria-label={`关闭 ${tab.title}`}
+                  title="关闭标签"
+                  onClick={() => closeTab(tab.id)}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+          <PanelAddMenu
+            available={workspace ? ["terminal", "file"] : ["terminal"]}
+            onSelect={addTab}
+          />
         </div>
         <button
           type="button"
           className="terminal-panel-close pressable"
-          aria-label="关闭终端面板"
-          title="关闭终端面板"
+          aria-label="关闭底部面板"
+          title="关闭底部面板"
           onClick={onClose}
         >
           <X size={15} />
         </button>
       </div>
 
-      <div className="terminal-stage">
-        {sessions.map((session) => (
-          <TerminalViewport
-            key={session.id}
-            adapter={adapter}
-            session={session}
-            active={session.id === activeSessionId}
-            registerOutputWriter={registerOutputWriter}
-          />
-        ))}
-        {sessions.length === 0 && (
-          <div className={`terminal-empty ${error ? "error" : ""}`}>
-            {error ?? "正在启动终端…"}
-          </div>
+      <div className="panel-container-stage">
+        {tabs.map((tab) =>
+          tab.kind === "terminal" ? (
+            <TerminalView
+              key={tab.id}
+              adapter={adapter}
+              projectId={projectId}
+              hidden={tab.id !== activeTab?.id}
+              label={tab.title}
+            />
+          ) : workspace ? (
+            <FileView
+              key={tab.id}
+              adapter={workspace}
+              projectId={projectId}
+              projectName={projectName}
+              path={tab.path}
+              hidden={tab.id !== activeTab?.id}
+              onSelectFile={(path) => selectFile(tab.id, path)}
+            />
+          ) : null,
         )}
       </div>
     </section>
+  );
+}
+
+export function TerminalView({
+  adapter,
+  projectId,
+  hidden = false,
+  label = "终端",
+}: {
+  adapter: TerminalAdapter;
+  projectId: string;
+  hidden?: boolean;
+  label?: string;
+}) {
+  const [session, setSession] = useState<TerminalSessionInfo>();
+  const [exitCode, setExitCode] = useState<number>();
+  const [error, setError] = useState<string>();
+  const sessionId = useRef<string | null>(null);
+  const outputWriter = useRef<((data: string) => void) | null>(null);
+  const pendingOutput = useRef("");
+
+  useEffect(() => {
+    let mounted = true;
+    let createdSessionId: string | undefined;
+    const unsubscribe = adapter.subscribe((event) => {
+      if (event.sessionId !== sessionId.current) return;
+      if (event.type === "exit") {
+        if (mounted) setExitCode(event.exitCode);
+        return;
+      }
+      if (outputWriter.current) outputWriter.current(event.data);
+      else {
+        pendingOutput.current = `${pendingOutput.current}${event.data}`.slice(
+          -MAX_PENDING_OUTPUT,
+        );
+      }
+    });
+    void adapter
+      .create({
+        projectId,
+        cols: DEFAULT_COLUMNS,
+        rows: DEFAULT_ROWS,
+      })
+      .then((created) => {
+        createdSessionId = created.id;
+        if (mounted) {
+          sessionId.current = created.id;
+          setSession(created);
+        } else {
+          void adapter.close(created.id);
+        }
+      })
+      .catch((cause) => {
+        if (mounted) setError(errorMessage(cause));
+      });
+
+    return () => {
+      mounted = false;
+      unsubscribe();
+      if (sessionId.current === createdSessionId) sessionId.current = null;
+      if (createdSessionId) void adapter.close(createdSessionId);
+    };
+  }, [adapter, projectId]);
+
+  const registerOutputWriter = useCallback(
+    (writer: ((data: string) => void) | undefined) => {
+      outputWriter.current = writer ?? null;
+      if (writer && pendingOutput.current) {
+        const buffered = pendingOutput.current;
+        pendingOutput.current = "";
+        writer(buffered);
+      }
+    },
+    [],
+  );
+
+  return (
+    <div
+      className="terminal-view"
+      role="tabpanel"
+      aria-label={label}
+      hidden={hidden}
+    >
+      {session ? (
+        <>
+          <TerminalViewport
+            adapter={adapter}
+            session={session}
+            active={!hidden}
+            registerOutputWriter={registerOutputWriter}
+          />
+          {exitCode !== undefined && (
+            <div className="terminal-exited">终端已退出（{exitCode}）</div>
+          )}
+        </>
+      ) : (
+        <div className={`terminal-empty ${error ? "error" : ""}`}>
+          {error ?? "正在启动终端…"}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -298,16 +335,13 @@ function TerminalViewport({
   registerOutputWriter,
 }: {
   adapter: TerminalAdapter;
-  session: VisibleTerminalSession;
+  session: TerminalSessionInfo;
   active: boolean;
-  registerOutputWriter(
-    sessionId: string,
-    writer: ((data: string) => void) | undefined,
-  ): void;
+  registerOutputWriter(writer: ((data: string) => void) | undefined): void;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const terminal = useRef<XtermTerminal | undefined>(undefined);
-  const fitAddon = useRef<FitAddon | undefined>(undefined);
+  const terminal = useRef<XtermTerminal | null>(null);
+  const fitAddon = useRef<FitAddon | null>(null);
 
   useEffect(() => {
     const element = container.current;
@@ -353,9 +387,9 @@ function TerminalViewport({
     });
     terminal.current = instance;
     fitAddon.current = fit;
-    registerOutputWriter(session.id, (data) => instance.write(data));
+    registerOutputWriter((data) => instance.write(data));
 
-    const resizeObserver = new ResizeObserver(() => {
+    const fitAndResize = () => {
       if (element.offsetWidth === 0 || element.offsetHeight === 0) return;
       fit.fit();
       adapter.resize({
@@ -363,27 +397,22 @@ function TerminalViewport({
         cols: instance.cols,
         rows: instance.rows,
       });
-    });
+    };
+    const resizeObserver = new ResizeObserver(fitAndResize);
     resizeObserver.observe(element);
-
     requestAnimationFrame(() => {
-      fit.fit();
-      adapter.resize({
-        sessionId: session.id,
-        cols: instance.cols,
-        rows: instance.rows,
-      });
+      fitAndResize();
       if (active) instance.focus();
     });
 
     return () => {
       resizeObserver.disconnect();
-      registerOutputWriter(session.id, undefined);
+      registerOutputWriter(undefined);
       dataSubscription.dispose();
       fit.dispose();
       instance.dispose();
-      terminal.current = undefined;
-      fitAddon.current = undefined;
+      terminal.current = null;
+      fitAddon.current = null;
     };
   }, [adapter, registerOutputWriter, session.id]);
 
@@ -402,15 +431,27 @@ function TerminalViewport({
     });
   }, [active, adapter, session.id]);
 
-  return (
-    <div
-      ref={container}
-      className="terminal-viewport"
-      role="tabpanel"
-      aria-label={`${session.shell} ${session.number}`}
-      hidden={!active}
-    />
-  );
+  return <div ref={container} className="terminal-viewport" />;
+}
+
+function createTerminalTab(number: number): BottomPanelTab {
+  return {
+    id: crypto.randomUUID(),
+    kind: "terminal",
+    title: `终端 ${number}`,
+  };
+}
+
+function createBottomFileTab(): BottomPanelTab {
+  return {
+    id: crypto.randomUUID(),
+    kind: "file",
+    title: "打开文件",
+  };
+}
+
+function fileName(path: string): string {
+  return path.split("/").at(-1) ?? path;
 }
 
 function errorMessage(error: unknown): string {

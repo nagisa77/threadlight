@@ -1,8 +1,10 @@
 import { ThreadlightClient } from "@threadlight/client";
+import { projectAgentProgress } from "@threadlight/protocol";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  conversationChangesRefreshKey,
   DeleteConversationDialog,
   clampWorkspacePanelWidth,
   ConversationChangesButton,
@@ -11,6 +13,7 @@ import {
   ProjectGroup,
   showsProjectLevelActivity,
   ThreadlightApp,
+  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
 } from "../src/app.js";
 
 describe("ThreadlightApp", () => {
@@ -75,6 +78,61 @@ describe("ConversationChangesButton", () => {
     expect(html).toContain("1 个文件已更改");
     expect(html).toContain("+12");
     expect(html).toContain("-3");
+  });
+});
+
+describe("conversation change refresh tools", () => {
+  it("refreshes after a scripted workspace tool completes, not after read-only tools", () => {
+    let progress = projectAgentProgress([], {
+      type: "tool.started",
+      runId: "run-1",
+      call: { id: "read-1", name: "web_search", arguments: {} },
+    });
+    expect(conversationChangesRefreshKey(progress)).toBe("");
+
+    progress = projectAgentProgress(progress, {
+      type: "tool.completed",
+      runId: "run-1",
+      result: {
+        callId: "read-1",
+        name: "web_search",
+        output: "search result",
+      },
+    });
+    expect(conversationChangesRefreshKey(progress)).toBe("");
+
+    progress = projectAgentProgress(progress, {
+      type: "tool.started",
+      runId: "run-1",
+      call: { id: "write-1", name: "exec_command", arguments: {} },
+    });
+    expect(conversationChangesRefreshKey(progress)).toBe("");
+
+    progress = projectAgentProgress(progress, {
+      type: "tool.completed",
+      runId: "run-1",
+      result: {
+        callId: "write-1",
+        name: "exec_command",
+        output: "command completed",
+      },
+    });
+    expect(conversationChangesRefreshKey(progress)).toBe(
+      "write-1:completed:",
+    );
+  });
+
+  it("keeps direct file and managed-process tools in one explicit list", () => {
+    expect(WORKSPACE_CHANGE_REFRESH_TOOL_NAMES).toEqual([
+      "exec_command",
+      "process_status",
+      "process_read",
+      "process_wait",
+      "process_kill",
+      "apply_patch",
+      "write_file",
+      "edit_file",
+    ]);
   });
 });
 

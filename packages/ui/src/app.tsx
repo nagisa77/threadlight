@@ -31,7 +31,7 @@ import {
   Sparkles,
   SquarePen,
   Square,
-  Terminal,
+  SquareTerminal,
   Trash2,
   X,
 } from "lucide-react";
@@ -81,6 +81,21 @@ export interface ThreadlightAppProps {
   terminal?: TerminalAdapter;
   workspace?: WorkspaceAdapter;
 }
+
+export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
+  "exec_command",
+  "process_status",
+  "process_read",
+  "process_wait",
+  "process_kill",
+  "apply_patch",
+  "write_file",
+  "edit_file",
+] as const;
+
+const workspaceChangeRefreshTools = new Set<string>(
+  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
+);
 
 export interface AttachmentStageAdapter {
   stage(file: File): Promise<AttachmentData>;
@@ -189,6 +204,8 @@ export function ThreadlightApp({
     useState(false);
   const [conversationChangesError, setConversationChangesError] =
     useState<string>();
+  const conversationChangesRequest = useRef(0);
+  const conversationChangesScope = useRef("");
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -201,6 +218,10 @@ export function ThreadlightApp({
   const workspaceRoot = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const currentProject = activeProject(projectSnapshot);
+  conversationChangesScope.current =
+    currentProject && state.threadId
+      ? `${currentProject.id}\u0000${state.threadId}`
+      : "";
   const hasConversationChanges = Boolean(
     workspace &&
       currentProject &&
@@ -208,34 +229,65 @@ export function ThreadlightApp({
       conversationChanges.files.length > 0,
   );
 
-  const refreshConversationChanges = useCallback(async () => {
-    if (!workspace || !currentProject || !state.threadId) {
-      setConversationChanges(undefined);
-      setConversationChangesError(undefined);
-      return;
-    }
-    const projectId = currentProject.id;
-    const threadId = state.threadId;
-    setConversationChangesLoading(true);
-    setConversationChangesError(undefined);
-    try {
-      const snapshot = await workspace.getChanges(projectId, threadId);
-      if (
-        projectId === currentProject.id &&
-        threadId === state.threadId
-      ) {
-        setConversationChanges(snapshot);
+  const workspaceChangeRefreshKey =
+    conversationChangesRefreshKey(state.progress);
+
+  const refreshConversationChanges = useCallback(
+    async ({
+      background = false,
+    }: {
+      background?: boolean;
+    } = {}) => {
+      const request = ++conversationChangesRequest.current;
+      if (!workspace || !currentProject || !state.threadId) {
+        setConversationChanges(undefined);
+        setConversationChangesError(undefined);
+        setConversationChangesLoading(false);
+        return;
       }
-    } catch (error) {
-      setConversationChangesError(errorMessage(error));
-    } finally {
-      setConversationChangesLoading(false);
-    }
-  }, [currentProject, state.threadId, workspace]);
+      const projectId = currentProject.id;
+      const threadId = state.threadId;
+      const scope = `${projectId}\u0000${threadId}`;
+      if (!background) {
+        setConversationChangesLoading(true);
+        setConversationChangesError(undefined);
+      }
+      try {
+        const snapshot = await workspace.getChanges(projectId, threadId);
+        if (
+          request === conversationChangesRequest.current &&
+          scope === conversationChangesScope.current
+        ) {
+          setConversationChanges(snapshot);
+        }
+      } catch (error) {
+        if (
+          !background &&
+          request === conversationChangesRequest.current &&
+          scope === conversationChangesScope.current
+        ) {
+          setConversationChangesError(errorMessage(error));
+        }
+      } finally {
+        if (
+          request === conversationChangesRequest.current &&
+          scope === conversationChangesScope.current
+        ) {
+          setConversationChangesLoading(false);
+        }
+      }
+    },
+    [currentProject, state.threadId, workspace],
+  );
 
   useEffect(() => {
     void refreshConversationChanges();
   }, [refreshConversationChanges, state.isRunning, state.messages.length]);
+
+  useEffect(() => {
+    if (!workspaceChangeRefreshKey) return;
+    void refreshConversationChanges({ background: true });
+  }, [refreshConversationChanges, workspaceChangeRefreshKey]);
 
   useEffect(() => {
     if (!workspace) return;
@@ -1292,7 +1344,7 @@ export function ThreadlightApp({
                 title={`${terminalOpen ? "关闭" : "打开"}终端（⌘J）`}
                 onClick={() => setTerminalOpen((open) => !open)}
               >
-                <Terminal size={15} />
+                <SquareTerminal size={16} />
               </button>
             )}
             {workspace && (
@@ -1300,10 +1352,10 @@ export function ThreadlightApp({
                 type="button"
                 className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
                 aria-label={
-                  workspacePanelOpen ? "关闭审阅与文件侧边栏" : "打开审阅与文件侧边栏"
+                  workspacePanelOpen ? "关闭右侧面板" : "打开右侧面板"
                 }
                 aria-pressed={workspacePanelOpen}
-                title={workspacePanelOpen ? "关闭侧边栏" : "打开侧边栏"}
+                title={workspacePanelOpen ? "关闭右侧面板" : "打开右侧面板"}
                 onClick={() => setWorkspacePanelOpen((open) => !open)}
               >
                 <PanelRight size={16} />
@@ -1314,6 +1366,7 @@ export function ThreadlightApp({
         {workspace && currentProject && (
           <WorkspacePanel
             adapter={workspace}
+            terminal={terminal}
             projectId={currentProject.id}
             projectName={currentProject.name}
             changes={conversationChanges}
@@ -1331,7 +1384,9 @@ export function ThreadlightApp({
           <TerminalPanel
             key={currentProject.id}
             adapter={terminal}
+            workspace={workspace}
             projectId={currentProject.id}
+            projectName={currentProject.name}
             onClose={() => setTerminalOpen(false)}
           />
         )}
@@ -1373,6 +1428,23 @@ export function ConversationChangesButton({
       </button>
     </div>
   );
+}
+
+export function conversationChangesRefreshKey(
+  progress: readonly ConversationProgress[],
+): string {
+  return progress
+    .flatMap((step) => step.activities)
+    .filter(
+      (activity) =>
+        workspaceChangeRefreshTools.has(activity.name) &&
+        (activity.status !== "running" || activity.process !== undefined),
+    )
+    .map(
+      (activity) =>
+        `${activity.id}:${activity.status}:${activity.process?.sessionId ?? ""}`,
+    )
+    .join("\u0000");
 }
 
 export function clampWorkspacePanelWidth(
@@ -1829,7 +1901,7 @@ export function ActivityList({
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
       <summary className="activity-heading">
-        <Terminal size={14} />
+        <SquareTerminal size={14} />
         <span>
           {live ? (hasRunningActivity ? "执行中" : "已执行") : "执行记录"}
         </span>
