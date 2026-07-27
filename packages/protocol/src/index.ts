@@ -178,6 +178,7 @@ export type AgentEventData =
       runId: string;
       step: number;
       delta: string;
+      outputVisibility?: "user" | "provisional";
     }
   | {
       type: "model.completed";
@@ -186,6 +187,7 @@ export type AgentEventData =
       text: string;
       toolCalls: readonly ToolCallData[];
       usage?: Partial<TokenUsageData>;
+      outputVisibility?: "user" | "provisional";
     }
   | { type: "tool.started"; runId: string; call: ToolCallData }
   | { type: "tool.completed"; runId: string; result: ToolResultData }

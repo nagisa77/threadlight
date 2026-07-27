@@ -910,7 +910,13 @@ function ThreadlightAppContent({
       textarea.current?.focus();
       return;
     }
+    closeConversationPanels();
     await newThread();
+  }
+
+  function closeConversationPanels() {
+    setTerminalOpen(false);
+    setWorkspacePanelOpen(false);
   }
 
   async function openProjectFolder() {
@@ -928,6 +934,7 @@ function ThreadlightAppContent({
       setProjectSnapshot(snapshot);
       setView("thread");
       if (snapshot.activeProjectId === projectSnapshot?.activeProjectId) return;
+      closeConversationPanels();
       await connectProject(snapshot);
     } catch (error) {
       setProjectError(errorMessage(error));
@@ -953,6 +960,19 @@ function ThreadlightAppContent({
         setProjectSnapshot(snapshot);
       }
       if (!snapshot) return;
+      const nextProject = activeProject(snapshot);
+      const nextThreadId =
+        threadId ?? nextProject?.conversations[0]?.id;
+      if (
+        conversationContextChanged(
+          currentProject?.id,
+          state.threadId,
+          nextProject?.id,
+          nextThreadId,
+        )
+      ) {
+        closeConversationPanels();
+      }
       setView("thread");
       await connectProject(snapshot, threadId);
     } catch (error) {
@@ -989,6 +1009,7 @@ function ThreadlightAppContent({
       setProjectSnapshot(snapshot);
       setPendingDelete(undefined);
       if (deletingActiveConversation) {
+        closeConversationPanels();
         setView("thread");
         await connectProject(snapshot);
       }
@@ -2275,6 +2296,18 @@ export function showsProjectLevelActivity(
   active: boolean,
 ): boolean {
   return active && !expanded;
+}
+
+export function conversationContextChanged(
+  currentProjectId: string | undefined,
+  currentThreadId: string | undefined,
+  nextProjectId: string | undefined,
+  nextThreadId: string | undefined,
+): boolean {
+  return (
+    currentProjectId !== nextProjectId ||
+    currentThreadId !== nextThreadId
+  );
 }
 
 export function ownsActiveComputerShare(

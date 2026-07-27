@@ -237,6 +237,97 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("does not expose unaccepted Plan-mode final attempts", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "What tools do you have?",
+      mode: "plan",
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: { type: "model.started", runId: "run-1", step: 1 },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.output_text.delta",
+        runId: "run-1",
+        step: 1,
+        delta: "This answer may still be rejected.",
+        outputVisibility: "provisional",
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.completed",
+        runId: "run-1",
+        step: 1,
+        text: "This answer may still be rejected.",
+        toolCalls: [],
+        outputVisibility: "provisional",
+      },
+    });
+
+    expect(state.streamingText).toBe("");
+    expect(state.isThinking).toBe(false);
+    expect(state.messages).toHaveLength(1);
+
+    state = sessionReducer(state, {
+      type: "turn.completed",
+      id: "message-2",
+      output: "Accepted answer.",
+    });
+    expect(state.messages[1]).toMatchObject({
+      role: "assistant",
+      text: "Accepted answer.",
+    });
+  });
+
+  it("streams user-facing Plan output while keeping the plan visible", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "Implement this",
+      mode: "plan",
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: { type: "model.started", runId: "run-1", step: 4 },
+    });
+    for (const delta of ["Plan ", "complete"]) {
+      state = sessionReducer(state, {
+        type: "agent.event",
+        event: {
+          type: "model.output_text.delta",
+          runId: "run-1",
+          step: 4,
+          delta,
+          outputVisibility: "user",
+        },
+      });
+    }
+
+    expect(state.plan).toEqual({ source: "user", items: [] });
+    expect(state.streamingText).toBe("Plan complete");
+    expect(state.isThinking).toBe(false);
+
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.completed",
+        runId: "run-1",
+        step: 4,
+        text: "Plan complete",
+        toolCalls: [],
+        outputVisibility: "user",
+      },
+    });
+
+    expect(state.streamingText).toBe("Plan complete");
+  });
+
   it("moves streamed model commentary into its tool progress step", () => {
     let state = sessionReducer(initialSessionState, {
       type: "agent.event",

@@ -363,6 +363,9 @@ export class DesktopComputerService {
         (source) => source.processId,
       )?.processId;
       this.layout = layoutActiveSources(activeSources);
+      if (this.selection.pictureInPicture) {
+        await this.syncLivePreview(true);
+      }
       await this.captureSharedFrame();
       this.notifyShareChanged();
       return this.state();

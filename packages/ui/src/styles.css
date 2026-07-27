@@ -4101,7 +4101,6 @@ body.is-resizing-workspace .workspace-split-handle::after {
     background: #3a3934;
   }
 
-  .conversation-changes-button:hover,
   .plan-status-trigger:hover,
   .panel-add-trigger:hover,
   .panel-add-option:hover,
@@ -4111,6 +4110,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .workspace-tab-close:hover {
     color: var(--ink);
     background: #efefeb;
+  }
+
+  .conversation-changes-button:hover {
+    color: var(--ink);
+    background: transparent;
   }
 
   .terminal-tab-close:hover,
@@ -4326,7 +4330,6 @@ html[data-theme="dark"] :is(
   .secondary,
   .suggestion,
   .activity-list,
-  .conversation-changes-button,
   .turn-status-pill,
   .plan-status-popover,
   .memory-open-button,
@@ -4585,12 +4588,9 @@ html[data-theme="dark"] .composer-wrap {
 }
 
 html[data-theme="dark"] .turn-status-pill {
-  border-color: rgb(255 255 255 / 9%);
+  border-color: transparent;
   background: transparent;
-  box-shadow:
-    0 8px 24px rgb(0 0 0 / 24%),
-    inset 0 1px 0 rgb(255 255 255 / 10%),
-    inset 0 0 0 1px rgb(255 255 255 / 5%);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
 }
 
 html[data-theme="dark"] .turn-status-pill::before {
@@ -4812,7 +4812,6 @@ html[data-theme="dark"] :is(
     .project-row:hover:not(:disabled),
     .suggestion:not(.suggestion-placeholder):hover,
     .activity-heading:hover,
-    .conversation-changes-button:hover,
     .plan-status-trigger:hover,
     .composer-action.plan-mode:hover:not(:disabled):not(.active),
     .panel-add-trigger:hover,

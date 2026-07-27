@@ -73,4 +73,31 @@ describe("theme", () => {
     );
     expect(css).toContain("@supports not (");
   });
+
+  it("does not add a background when hovering the changed-files action", () => {
+    const css = readFileSync(
+      new URL("../src/styles.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(css).toMatch(
+      /\.conversation-changes-button:hover\s*\{[^}]*background:\s*transparent;/s,
+    );
+    expect(css).not.toMatch(
+      /html\[data-theme="dark"\] :is\([^)]*\.conversation-changes-button:hover[^)]*\)/s,
+    );
+  });
+
+  it("removes the gray outline from the dark turn-status pill", () => {
+    const css = readFileSync(
+      new URL("../src/styles.css", import.meta.url),
+      "utf8",
+    );
+    const rule = css.match(
+      /html\[data-theme="dark"\] \.turn-status-pill\s*\{([^}]*)\}/s,
+    );
+
+    expect(rule?.[1]).toContain("border-color: transparent;");
+    expect(rule?.[1]).not.toContain("inset");
+  });
 });

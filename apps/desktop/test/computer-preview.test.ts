@@ -103,6 +103,27 @@ describe("computer share picture in picture", () => {
     expect(captureHtml).toContain("stopPreviewRelays()");
   });
 
+  it("replaces preview relays whenever the shared selection changes", () => {
+    const service = readFileSync(
+      new URL("../src/main/computer-service.ts", import.meta.url),
+      "utf8",
+    );
+    const configureSelection = service.slice(
+      service.indexOf("private async configureSelection"),
+      service.indexOf("private async clear"),
+    );
+
+    expect(configureSelection).toContain(
+      "await this.captureSession.replace(sources)",
+    );
+    expect(configureSelection).toContain(
+      "await this.syncLivePreview(true)",
+    );
+    expect(configureSelection.indexOf("syncLivePreview(true)")).toBeLessThan(
+      configureSelection.indexOf("captureSharedFrame()"),
+    );
+  });
+
   it("fans windows far enough apart to expose the back card", () => {
     const html = computerPreviewHtml();
 

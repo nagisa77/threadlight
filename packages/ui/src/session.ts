@@ -178,6 +178,13 @@ function reduceAgentEvent(
     case "model.started":
       return { ...state, isThinking: true, streamingText: "" };
     case "model.output_text.delta":
+      if (event.outputVisibility === "provisional") {
+        return {
+          ...state,
+          isThinking: true,
+          streamingText: "",
+        };
+      }
       return {
         ...state,
         isThinking: false,
@@ -187,7 +194,11 @@ function reduceAgentEvent(
       return {
         ...state,
         isThinking: false,
-        streamingText: event.toolCalls.length > 0 ? "" : event.text,
+        streamingText:
+          event.toolCalls.length > 0 ||
+          event.outputVisibility === "provisional"
+            ? ""
+            : event.text,
         progress: projectAgentProgress(state.progress, event),
         plan: projectAgentPlan(state.plan, event),
       };

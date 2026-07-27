@@ -5,6 +5,10 @@ export {
 export { createComputerShareTool } from "./computer-share.js";
 export { createExecCommandTool } from "./exec-command.js";
 export {
+  createRequestPlanInputTool,
+  REQUEST_PLAN_INPUT_TOOL_NAME,
+} from "./request-plan-input.js";
+export {
   createMcpCallTool,
   createMcpConnectTool,
 } from "./mcp-tools.js";

@@ -97,6 +97,47 @@ describe("AgentLoop", () => {
     expect(requests[1]?.input).toBe("Completion rejected; continue.");
   });
 
+  it("lets runtime control choose canonical output without changing provider state", async () => {
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      async generate() {
+        return {
+          text: "Choose one of the directions above.",
+          toolCalls: [],
+          state: [{ providerText: "Choose one of the directions above." }],
+        };
+      },
+    };
+    const canonical = "Choose one:\n1. Alpha\n2. Beta";
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({ name: "controlled", instructions: "Reply" }),
+      "Continue",
+      {
+        controller: {
+          resolveCompletionOutput: () => canonical,
+        },
+        onEvent: (event) => events.push(event),
+      },
+    );
+
+    expect(result.output).toBe(canonical);
+    expect(result.modelState).toEqual([
+      { providerText: "Choose one of the directions above." },
+    ]);
+    expect(events).toContainEqual({
+      type: "message.completed",
+      runId: result.runId,
+      text: canonical,
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "model.completed",
+        text: "Choose one of the directions above.",
+      }),
+    );
+  });
+
   it("uploads an attachment only after the model calls the attachment tool", async () => {
     const requests: ModelRequest[] = [];
     let uploads = 0;

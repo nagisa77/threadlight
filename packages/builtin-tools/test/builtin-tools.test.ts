@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createComputerUseTool } from "../src/computer-use.js";
 import { createExecCommandTool } from "../src/exec-command.js";
+import { createRequestPlanInputTool } from "../src/request-plan-input.js";
 import { ProcessManager } from "../src/process-manager.js";
 import {
   createProcessKillTool,
@@ -150,6 +151,33 @@ class ScriptedProcessProvider implements ModelProvider {
 }
 
 describe("builtin tools", () => {
+  it("validates the turn-scoped blocking input tool", async () => {
+    const tool = createRequestPlanInputTool();
+    const context = {
+      runId: "run-1",
+      signal: new AbortController().signal,
+    };
+
+    await expect(
+      tool.execute(
+        {
+          missing_information: "The deployment environment",
+          question: " Which environment should I target? ",
+        },
+        context,
+      ),
+    ).resolves.toBe("Which environment should I target?");
+    await expect(
+      tool.execute(
+        {
+          missing_information: "",
+          question: "Which environment?",
+        },
+        context,
+      ),
+    ).rejects.toThrow("missing_information");
+  });
+
   it("writes each plan update to a readable workspace document", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-plan-"));
     try {

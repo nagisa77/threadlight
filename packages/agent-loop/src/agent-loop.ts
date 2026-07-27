@@ -127,11 +127,12 @@ export class AgentLoop {
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
-      emit({ type: "model.started", runId, step });
       const controllerContext = { runId, step, tools };
       const directive = options.controller?.beforeModel
         ? await options.controller.beforeModel(controllerContext)
         : {};
+      const outputVisibility = directive.outputVisibility ?? "user";
+      emit({ type: "model.started", runId, step });
       const advertisedTools = directive.tools ?? tools;
       const instructions = directive.instructions
         ? `${agent.instructions}\n\n${directive.instructions}`
@@ -164,6 +165,7 @@ export class AgentLoop {
                 runId,
                 step,
                 delta: event.delta,
+                outputVisibility,
               });
             }
           },
@@ -178,6 +180,7 @@ export class AgentLoop {
         text: turn.text,
         toolCalls: turn.toolCalls,
         usage: turn.usage,
+        outputVisibility,
       });
 
       state = turn.state;
@@ -195,12 +198,19 @@ export class AgentLoop {
           toolResults = [];
           continue;
         }
-        emit({ type: "message.completed", runId, text: turn.text });
+        const controlledOutput = options.controller?.resolveCompletionOutput
+          ? await options.controller.resolveCompletionOutput(
+              turn,
+              controllerContext,
+            )
+          : undefined;
+        const output = controlledOutput ?? turn.text;
+        emit({ type: "message.completed", runId, text: output });
         emit({ type: "run.completed", runId, steps: step });
 
         return {
           runId,
-          output: turn.text,
+          output,
           steps: step,
           modelState: state,
           usage,

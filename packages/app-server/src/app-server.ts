@@ -9,6 +9,7 @@ import type {
   Tool,
 } from "@threadlight/agent-loop";
 import {
+  createRequestPlanInputTool,
   PlanExecutionController,
   USER_SELECTED_PLAN_INSTRUCTIONS,
 } from "@threadlight/builtin-tools";
@@ -475,7 +476,7 @@ export class AppServer {
     try {
       const planController =
         mode === "plan" ? new PlanExecutionController() : undefined;
-      const result = await this.loop.run(
+      const planAgent =
         mode === "plan"
           ? {
               ...thread.agent,
@@ -483,8 +484,14 @@ export class AppServer {
                 thread.agent.instructions,
                 USER_SELECTED_PLAN_INSTRUCTIONS,
               ].join("\n\n"),
+              tools: [
+                ...(thread.agent.tools ?? []),
+                createRequestPlanInputTool(),
+              ],
             }
-          : thread.agent,
+          : thread.agent;
+      const result = await this.loop.run(
+        planAgent,
         input,
         {
           toolScopeId: threadId,
@@ -500,6 +507,12 @@ export class AppServer {
       );
       const persistedModelState =
         this.loop.prepareModelStateForPersistence(result.modelState);
+      if (
+        planController?.phase === "needs_input" &&
+        planController.snapshot === undefined
+      ) {
+        thread.plan = undefined;
+      }
 
       const completedConversation = this.updateConversation(
         thread.conversation,

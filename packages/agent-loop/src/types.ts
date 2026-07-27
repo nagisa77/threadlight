@@ -82,6 +82,8 @@ export type ModelStreamEvent = {
   delta: string;
 };
 
+export type ModelOutputVisibility = "user" | "provisional";
+
 export interface ModelGenerateOptions {
   onEvent?: (event: ModelStreamEvent) => void;
 }
@@ -112,6 +114,7 @@ export type AgentEvent =
       runId: string;
       step: number;
       delta: string;
+      outputVisibility?: ModelOutputVisibility;
     }
   | {
       type: "model.completed";
@@ -120,6 +123,7 @@ export type AgentEvent =
       text: string;
       toolCalls: readonly ToolCall[];
       usage?: Partial<TokenUsage>;
+      outputVisibility?: ModelOutputVisibility;
     }
   | { type: "tool.started"; runId: string; call: ToolCall }
   | { type: "tool.completed"; runId: string; result: ToolResult }
@@ -147,6 +151,11 @@ export interface RunControllerModelDirective {
   instructions?: string;
   /** Tools advertised to the model for this turn. Defaults to every tool. */
   tools?: readonly Tool[];
+  /**
+   * Whether streamed text is ready for the user or remains provisional while
+   * runtime control validates the turn. Defaults to user-facing.
+   */
+  outputVisibility?: ModelOutputVisibility;
 }
 
 export interface RunControllerToolDecision {
@@ -158,9 +167,9 @@ export interface RunControllerToolDecision {
 /**
  * Provider-neutral execution control for a run.
  *
- * A controller may narrow tools, inject ephemeral state, reject calls before
- * execution, observe results, and require another model turn instead of
- * accepting a premature final answer.
+ * A controller may shape advertised tools, inject ephemeral state, reject
+ * calls before execution, observe results, require another model turn instead
+ * of accepting a premature final answer, and choose canonical completion text.
  */
 export interface RunController {
   beforeModel?(
@@ -181,6 +190,14 @@ export interface RunController {
     context: RunControllerContext,
   ): void | Promise<void>;
   validateCompletion?(
+    turn: Pick<ModelTurn, "text">,
+    context: RunControllerContext,
+  ): string | undefined | Promise<string | undefined>;
+  /**
+   * Returns the controller-authoritative user-facing output after completion
+   * validation succeeds. The provider's opaque state remains unchanged.
+   */
+  resolveCompletionOutput?(
     turn: Pick<ModelTurn, "text">,
     context: RunControllerContext,
   ): string | undefined | Promise<string | undefined>;

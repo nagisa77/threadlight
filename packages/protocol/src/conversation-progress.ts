@@ -17,13 +17,13 @@ export function projectAgentProgress(
 ): ConversationProgressData[] {
   if (
     event.type === "model.completed" &&
-    event.toolCalls.some((call) => call.name !== "update_plan")
+    event.toolCalls.some((call) => !isPlanControlTool(call.name))
   ) {
     return [...progress, { text: event.text, activities: [] }];
   }
 
   if (event.type === "tool.started") {
-    if (event.call.name === "update_plan") return [...progress];
+    if (isPlanControlTool(event.call.name)) return [...progress];
     const detail = toolDetail(event.call.name, event.call.arguments);
     const activity: ConversationActivityData = {
       id: event.call.id,
@@ -43,7 +43,7 @@ export function projectAgentProgress(
 
   if (
     event.type !== "tool.completed" ||
-    event.result.name === "update_plan"
+    isPlanControlTool(event.result.name)
   ) {
     return [...progress];
   }
@@ -64,6 +64,10 @@ export function projectAgentProgress(
         : activity,
     ),
   }));
+}
+
+function isPlanControlTool(name: string): boolean {
+  return name === "update_plan" || name === "request_plan_input";
 }
 
 export function projectProgressProcess(

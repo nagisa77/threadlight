@@ -13,6 +13,33 @@ import {
 } from "../src/index.js";
 
 describe("conversation progress projection", () => {
+  it("keeps turn-scoped Plan control calls out of user-facing progress", () => {
+    const started: AgentEventData = {
+      type: "tool.started",
+      runId: "run-1",
+      call: {
+        id: "input-1",
+        name: "request_plan_input",
+        arguments: {
+          missing_information: "The target",
+          question: "Which target should I use?",
+        },
+      },
+    };
+    const completed: AgentEventData = {
+      type: "tool.completed",
+      runId: "run-1",
+      result: {
+        callId: "input-1",
+        name: "request_plan_input",
+        output: "Which target should I use?",
+      },
+    };
+
+    expect(projectAgentProgress([], started)).toEqual([]);
+    expect(projectAgentProgress([], completed)).toEqual([]);
+  });
+
   it("projects plan tool calls separately from execution activity", () => {
     const plan = [
       {

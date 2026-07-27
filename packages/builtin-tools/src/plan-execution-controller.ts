@@ -14,8 +14,13 @@ import {
   type PlanSnapshot,
   UPDATE_PLAN_TOOL_NAME,
 } from "./update-plan.js";
+import { REQUEST_PLAN_INPUT_TOOL_NAME } from "./request-plan-input.js";
 
-export type PlanExecutionPhase = "research" | "execution" | "complete";
+export type PlanExecutionPhase =
+  | "research"
+  | "execution"
+  | "needs_input"
+  | "complete";
 
 /**
  * Turns a model-authored plan into runtime execution control.
@@ -26,6 +31,7 @@ export type PlanExecutionPhase = "research" | "execution" | "complete";
  */
 export class PlanExecutionController implements RunController {
   private snapshotValue: PlanSnapshot | undefined;
+  private turnResponse: string | undefined;
   private readonly pendingUpdates = new Map<string, PlanSnapshot>();
   private readonly successfulTools: string[] = [];
 
@@ -34,6 +40,7 @@ export class PlanExecutionController implements RunController {
   }
 
   get phase(): PlanExecutionPhase {
+    if (this.turnResponse !== undefined) return "needs_input";
     if (!this.snapshotValue) return "research";
     return this.snapshotValue.plan.every(
       (item) => item.status === "completed",
@@ -45,13 +52,31 @@ export class PlanExecutionController implements RunController {
   beforeModel(
     context: RunControllerContext,
   ): RunControllerModelDirective {
+    if (this.phase === "needs_input") {
+      return {
+        tools: [],
+        outputVisibility: "user",
+        instructions: [
+          "PLAN CONTROL — BLOCKING INPUT",
+          "The preceding request_plan_input tool result contains the complete blocking question for this turn.",
+          "Output exactly and only that complete question, character for character. Do not abbreviate it, refer to text above, add an acknowledgement, or introduce new work.",
+          "Runtime control will preserve the tool result as the canonical user-facing output.",
+        ].join("\n"),
+      };
+    }
+
     if (this.phase === "research") {
       return {
-        tools: context.tools.filter(isResearchTool),
+        tools: context.tools.map(advertiseResearchTool),
+        outputVisibility: "provisional",
         instructions: [
           "PLAN CONTROL — RESEARCH PHASE",
           "Inspect the relevant workspace and context before creating the plan.",
-          "Only read-only tools and update_plan are available. Do not claim implementation work has started.",
+          "All turn capabilities are visible for discovery. Tools marked execution-only cannot be called until update_plan creates the initial plan; runtime control will reject premature calls.",
+          "Do not claim a visible execution-only capability is unavailable. Create the plan first, then use it during execution.",
+          "Plans are scoped to this turn. Never add a step that waits for the user's next message or future task.",
+          "Every answerable request, including informational analysis, must create and complete a plan.",
+          "Only if essential user input is missing and no valid plan can proceed, call request_plan_input with one complete, self-contained blocking question. The reply starts a new turn and plan.",
           "When the evidence is sufficient, call update_plan with an ordered plan containing no completed steps and exactly one in_progress step.",
         ].join("\n"),
       };
@@ -60,10 +85,12 @@ export class PlanExecutionController implements RunController {
     const snapshot = this.snapshotValue as PlanSnapshot;
     if (this.phase === "complete") {
       return {
-        tools: context.tools.filter(isResearchTool),
+        tools: context.tools,
+        outputVisibility: "user",
         instructions: [
           "PLAN CONTROL — COMPLETE",
           "Every controlled plan step is completed. Summarize the outcome and the recorded verification evidence.",
+          "All turn tools remain advertised so provider-owned call state stays valid. Runtime control still rejects any tool call that is not allowed in this phase.",
           "Do not perform additional write operations unless the plan is explicitly revised first.",
         ].join("\n"),
       };
@@ -78,6 +105,7 @@ export class PlanExecutionController implements RunController {
         ? this.successfulTools.slice(-8).join(", ")
         : "none yet";
     return {
+      outputVisibility: "provisional",
       instructions: [
         "PLAN CONTROL — EXECUTION PHASE",
         `Current step ${activeIndex + 1}/${snapshot.plan.length}: ${active.step}`,
@@ -98,6 +126,17 @@ export class PlanExecutionController implements RunController {
     call: ToolCall,
     tool: Tool | undefined,
   ): RunControllerToolDecision {
+    if (call.name === REQUEST_PLAN_INPUT_TOOL_NAME) {
+      if (this.phase !== "research") {
+        return {
+          allowed: false,
+          message:
+            "request_plan_input is only available before the turn-scoped plan is created",
+        };
+      }
+      return { allowed: true };
+    }
+
     if (call.name === UPDATE_PLAN_TOOL_NAME) {
       let next: PlanSnapshot;
       try {
@@ -136,6 +175,13 @@ export class PlanExecutionController implements RunController {
     call: ToolCall,
     result: ToolResult,
   ): void {
+    if (call.name === REQUEST_PLAN_INPUT_TOOL_NAME) {
+      if (!result.isError && this.phase === "research") {
+        this.turnResponse = result.output;
+      }
+      return;
+    }
+
     if (call.name === UPDATE_PLAN_TOOL_NAME) {
       const pending = this.pendingUpdates.get(call.id);
       this.pendingUpdates.delete(call.id);
@@ -155,10 +201,14 @@ export class PlanExecutionController implements RunController {
   }
 
   validateCompletion(): string | undefined {
+    if (this.phase === "needs_input") return;
+
     if (!this.snapshotValue) {
       return [
         "The runtime rejected this final answer because Plan mode is still in research.",
         "Use the available read-only tools as needed, then call update_plan with the initial ordered execution plan.",
+        "Informational answers still require a completed plan.",
+        "Only when essential input prevents any valid plan, call request_plan_input with one self-contained blocking question.",
       ].join(" ");
     }
 
@@ -183,13 +233,28 @@ export class PlanExecutionController implements RunController {
       ].join(" ");
     }
   }
+
+  resolveCompletionOutput(): string | undefined {
+    return this.phase === "needs_input" ? this.turnResponse : undefined;
+  }
 }
 
 function isResearchTool(tool: Tool): boolean {
   return (
     tool.name === UPDATE_PLAN_TOOL_NAME ||
+    tool.name === REQUEST_PLAN_INPUT_TOOL_NAME ||
     tool.mutability === "read"
   );
+}
+
+function advertiseResearchTool(tool: Tool): Tool {
+  if (isResearchTool(tool)) return tool;
+  return {
+    ...tool,
+    description:
+      `[Execution-only until update_plan creates the initial plan. ` +
+      `Do not call during research.] ${tool.description}`,
+  };
 }
 
 function validatePlanTransition(

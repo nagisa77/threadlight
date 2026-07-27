@@ -110,6 +110,9 @@ describe("AppServer", () => {
         if ("method" in message && message.method === "turn/completed") {
           completed.resolve();
         }
+        if ("method" in message && message.method === "turn/failed") {
+          completed.reject(new Error(message.params.error));
+        }
       },
     });
 
@@ -169,6 +172,236 @@ describe("AppServer", () => {
         ],
       },
     });
+  });
+
+  it("requires an informational Plan turn to create and complete a plan", async () => {
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          expect(request.tools.map((tool) => tool.name)).toContain(
+            "request_plan_input",
+          );
+          return {
+            text: "I’ll plan the analysis.",
+            toolCalls: [
+              {
+                id: "plan-1",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    richPlanStep("Analyze available capabilities", "in_progress"),
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        if (requests.length === 2) {
+          expect(request.instructions).toContain(
+            "Current step 1/1: Analyze available capabilities",
+          );
+          return {
+            text: "The capability analysis is complete.",
+            toolCalls: [
+              {
+                id: "plan-2",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    {
+                      ...richPlanStep(
+                        "Analyze available capabilities",
+                        "completed",
+                      ),
+                      completionEvidence: [
+                        "The advertised capabilities were reviewed.",
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        expect(request.instructions).toContain("PLAN CONTROL — COMPLETE");
+        return {
+          text: "I can inspect files and run commands.",
+          toolCalls: [],
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "planner",
+        instructions: "Work carefully",
+        tools: [createUpdatePlanTool()],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+        if ("method" in message && message.method === "turn/failed") {
+          completed.reject(new Error(message.params.error));
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "What tools do you have?",
+        mode: "plan",
+      },
+    });
+    await completed.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    expect(requests).toHaveLength(3);
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        messages: [
+          { role: "user", mode: "plan" },
+          {
+            role: "assistant",
+            text: "I can inspect files and run commands.",
+            plan: {
+              source: "user",
+              items: [
+                {
+                  ...richPlanStep(
+                    "Analyze available capabilities",
+                    "completed",
+                  ),
+                  completionEvidence: [
+                    "The advertised capabilities were reviewed.",
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+  });
+
+  it("persists the complete blocking question when the model abbreviates it", async () => {
+    const question = [
+      "Choose one direction:",
+      "1. Calculate a password",
+      "2. Improve the script",
+      "3. Inspect firmware",
+      "4. Describe another task",
+    ].join("\n");
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "",
+            toolCalls: [
+              {
+                id: "input-1",
+                name: "request_plan_input",
+                arguments: {
+                  missing_information: "The task direction",
+                  question,
+                },
+              },
+            ],
+          };
+        }
+        expect(request.tools).toEqual([]);
+        return {
+          text: "Choose one of the four directions above.",
+          toolCalls: [],
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "planner",
+        instructions: "Work carefully",
+        tools: [createUpdatePlanTool()],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+        if ("method" in message && message.method === "turn/failed") {
+          completed.reject(new Error(message.params.error));
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "Continue",
+        mode: "plan",
+      },
+    });
+    await completed.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        messages: [
+          { role: "user", mode: "plan" },
+          {
+            role: "assistant",
+            text: question,
+          },
+        ],
+      },
+    });
+    const resumed = messages.find(
+      (message) => "id" in message && message.id === 4,
+    ) as { result?: { messages?: Array<{ plan?: unknown }> } };
+    expect(resumed.result?.messages?.[1]?.plan).toBeUndefined();
   });
 
   it("lets the scripted model enter Plan mode without a user toggle", async () => {

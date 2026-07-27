@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   conversationChangesRefreshKey,
+  conversationContextChanged,
   DeleteConversationDialog,
   clampWorkspacePanelWidth,
   ConversationChangesButton,
@@ -102,6 +103,33 @@ describe("ThreadlightApp", () => {
     expect(clampWorkspacePanelWidth(200, 1200)).toBe(420);
     expect(clampWorkspacePanelWidth(640, 1200)).toBe(640);
     expect(clampWorkspacePanelWidth(1000, 1200)).toBe(840);
+  });
+
+  it("collapses conversation-scoped panels only when the conversation changes", () => {
+    expect(
+      conversationContextChanged(
+        "project-1",
+        "thread-1",
+        "project-1",
+        "thread-1",
+      ),
+    ).toBe(false);
+    expect(
+      conversationContextChanged(
+        "project-1",
+        "thread-1",
+        "project-1",
+        "thread-2",
+      ),
+    ).toBe(true);
+    expect(
+      conversationContextChanged(
+        "project-1",
+        "thread-1",
+        "project-2",
+        "thread-1",
+      ),
+    ).toBe(true);
   });
 });
 

@@ -41,6 +41,9 @@ export interface UpdatePlanToolOptions {
 export const USER_SELECTED_PLAN_INSTRUCTIONS = [
   "The user explicitly selected Plan mode for this turn.",
   "Begin by researching the relevant workspace and context with the read-only tools available during the research phase.",
+  "Plans are scoped to this single user turn: never create a plan step that waits for the user's next message or a future task.",
+  "Every answerable request must create and complete a plan, including informational analysis and capability questions; use a minimal evidence-and-synthesis plan when no mutation is needed.",
+  "Only when essential user input is missing and no valid plan can proceed, call request_plan_input with the missing information and one complete, self-contained blocking question; the reply will start a new turn and a new plan.",
   "After gathering enough evidence, call update_plan with a comprehensive, actionable plan; do not modify workspace or external state before that plan exists.",
   "Give every step a short UI title, concrete implementation details, and observable acceptance criteria so another model could execute it without guessing.",
   "The runtime controls execution order: keep exactly one step in_progress, work only on the injected current step, and provide completionEvidence when marking it completed.",
