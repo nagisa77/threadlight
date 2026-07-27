@@ -12,6 +12,7 @@ export interface ProcessToolOptions {
 export function createProcessStatusTool(options: ProcessToolOptions): Tool {
   return defineTool({
     name: "process_status",
+    mutability: "read",
     description:
       "Get the current status and captured output of a managed process session.",
     parameters: sessionParameters(),
@@ -24,6 +25,7 @@ export function createProcessStatusTool(options: ProcessToolOptions): Tool {
 export function createProcessReadTool(options: ProcessToolOptions): Tool {
   return defineTool({
     name: "process_read",
+    mutability: "read",
     description:
       "Read the stdout, stderr, and current status of a managed process session.",
     parameters: sessionParameters(),
@@ -36,6 +38,7 @@ export function createProcessReadTool(options: ProcessToolOptions): Tool {
 export function createProcessWaitTool(options: ProcessToolOptions): Tool {
   return defineTool({
     name: "process_wait",
+    mutability: "read",
     description:
       "Wait for a managed process session to finish, or return its current state when the wait timeout is reached.",
     parameters: {

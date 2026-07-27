@@ -8,7 +8,10 @@ import type {
   AgentLoop,
   Tool,
 } from "@threadlight/agent-loop";
-import { USER_SELECTED_PLAN_INSTRUCTIONS } from "@threadlight/builtin-tools";
+import {
+  PlanExecutionController,
+  USER_SELECTED_PLAN_INSTRUCTIONS,
+} from "@threadlight/builtin-tools";
 import {
   projectAgentProgress,
   projectAgentPlan,
@@ -470,6 +473,8 @@ export class AppServer {
     };
 
     try {
+      const planController =
+        mode === "plan" ? new PlanExecutionController() : undefined;
       const result = await this.loop.run(
         mode === "plan"
           ? {
@@ -485,6 +490,7 @@ export class AppServer {
           toolScopeId: threadId,
           modelState: thread.conversation.modelState,
           attachments,
+          ...(planController ? { controller: planController } : {}),
           signal: controller.signal,
           onEvent: (event) => {
             runId = event.runId;

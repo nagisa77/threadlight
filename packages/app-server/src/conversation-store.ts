@@ -187,6 +187,11 @@ function isAgentPlan(value: unknown): boolean {
             candidate.acceptanceCriteria.every(
               (criterion) => typeof criterion === "string",
             ))) &&
+        (candidate.completionEvidence === undefined ||
+          (Array.isArray(candidate.completionEvidence) &&
+            candidate.completionEvidence.every(
+              (evidence) => typeof evidence === "string",
+            ))) &&
         (candidate.status === "pending" ||
           candidate.status === "in_progress" ||
           candidate.status === "completed")

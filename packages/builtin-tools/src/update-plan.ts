@@ -18,11 +18,13 @@ export interface PlanItem {
   step: string;
   details: string;
   acceptanceCriteria: readonly string[];
+  completionEvidence?: readonly string[];
   status: PlanItemStatus;
 }
 
 export interface PlanSnapshot {
   explanation?: string;
+  revisionReason?: string;
   plan: readonly PlanItem[];
   documentPath?: string;
   documentVersion?: string;
@@ -38,10 +40,12 @@ export interface UpdatePlanToolOptions {
 
 export const USER_SELECTED_PLAN_INSTRUCTIONS = [
   "The user explicitly selected Plan mode for this turn.",
-  "Before using any other tool, call update_plan with a comprehensive, actionable plan for this turn.",
+  "Begin by researching the relevant workspace and context with the read-only tools available during the research phase.",
+  "After gathering enough evidence, call update_plan with a comprehensive, actionable plan; do not modify workspace or external state before that plan exists.",
   "Give every step a short UI title, concrete implementation details, and observable acceptance criteria so another model could execute it without guessing.",
-  "Keep exactly one step in_progress while work remains, mark steps completed as you finish them, and call update_plan whenever the active step changes.",
-  "Do not end the turn while plan steps remain pending or in_progress unless you are genuinely blocked; if blocked, explain why in the final response.",
+  "The runtime controls execution order: keep exactly one step in_progress, work only on the injected current step, and provide completionEvidence when marking it completed.",
+  "Never skip a pending step. If discoveries invalidate the plan, call update_plan with revisionReason and preserve every completed step.",
+  "The runtime will reject premature completion while any step remains pending or in_progress.",
 ].join(" ");
 
 export function createUpdatePlanTool(
@@ -49,8 +53,9 @@ export function createUpdatePlanTool(
 ) {
   return defineTool({
     name: UPDATE_PLAN_TOOL_NAME,
+    mutability: "write",
     description:
-      "Create or update the plan for the current user turn. Use this proactively for multi-step work that benefits from explicit progress tracking, even when the user did not select Plan mode. Each step must have a short display title plus enough implementation detail and acceptance criteria for another model to execute it without guessing. Use pending/in_progress/completed statuses and keep at most one step in_progress.",
+      "Create or update the structured execution plan for the current turn. Research relevant context before the initial plan. During controlled execution, keep exactly one step in_progress, add completionEvidence before completing it, and include revisionReason when changing the plan structure.",
     parameters: {
       type: "object",
       properties: {
@@ -59,6 +64,12 @@ export function createUpdatePlanTool(
           description:
             "Optional overall goal, constraints, and approach for this turn.",
           maxLength: 2000,
+        },
+        revisionReason: {
+          type: "string",
+          description:
+            "Why the plan structure must change after execution started. Omit for the initial plan and ordinary status updates.",
+          maxLength: 1000,
         },
         plan: {
           type: "array",
@@ -87,6 +98,18 @@ export function createUpdatePlanTool(
                 maxItems: 8,
                 description:
                   "Observable conditions that prove this step is complete.",
+                items: {
+                  type: "string",
+                  minLength: 1,
+                  maxLength: 500,
+                },
+              },
+              completionEvidence: {
+                type: "array",
+                minItems: 1,
+                maxItems: 8,
+                description:
+                  "Concrete verification evidence for a completed step, such as tests, inspected output, or observed behavior. Required by controlled Plan mode when transitioning a step to completed.",
                 items: {
                   type: "string",
                   minLength: 1,
@@ -138,6 +161,9 @@ export function renderPlanDocument(snapshot: PlanSnapshot): string {
   if (snapshot.explanation) {
     lines.push("", snapshot.explanation);
   }
+  if (snapshot.revisionReason) {
+    lines.push("", `**Revision reason:** ${snapshot.revisionReason}`);
+  }
   lines.push("", "## Steps");
   for (const [index, item] of snapshot.plan.entries()) {
     const status =
@@ -160,6 +186,12 @@ export function renderPlanDocument(snapshot: PlanSnapshot): string {
     const checked = item.status === "completed" ? "x" : " ";
     for (const criterion of item.acceptanceCriteria) {
       lines.push(`- [${checked}] ${criterion}`);
+    }
+    if (item.completionEvidence?.length) {
+      lines.push("", "**Completion evidence:**", "");
+      for (const evidence of item.completionEvidence) {
+        lines.push(`- ${evidence}`);
+      }
     }
   }
   return `${lines.join("\n")}\n`;
@@ -230,6 +262,39 @@ export function parsePlanSnapshot(value: unknown): PlanSnapshot {
         return normalized;
       },
     );
+    let completionEvidence: readonly string[] | undefined;
+    if (candidate.completionEvidence !== undefined) {
+      if (
+        !Array.isArray(candidate.completionEvidence) ||
+        candidate.completionEvidence.length < 1 ||
+        candidate.completionEvidence.length > 8
+      ) {
+        throw new Error(
+          `plan[${index}].completionEvidence must contain 1-8 items`,
+        );
+      }
+      const evidenceSeen = new Set<string>();
+      completionEvidence = candidate.completionEvidence.map(
+        (evidence, evidenceIndex) => {
+          const normalized =
+            typeof evidence === "string"
+              ? evidence.replace(/\s+/g, " ").trim()
+              : "";
+          if (!normalized || normalized.length > 500) {
+            throw new Error(
+              `plan[${index}].completionEvidence[${evidenceIndex}] must be 1-500 characters`,
+            );
+          }
+          if (evidenceSeen.has(normalized)) {
+            throw new Error(
+              `plan[${index}].completionEvidence items must be unique`,
+            );
+          }
+          evidenceSeen.add(normalized);
+          return normalized;
+        },
+      );
+    }
 
     const status = candidate.status;
     if (
@@ -242,7 +307,13 @@ export function parsePlanSnapshot(value: unknown): PlanSnapshot {
       );
     }
     if (status === "in_progress") activeSteps += 1;
-    return { step, details, acceptanceCriteria, status };
+    return {
+      step,
+      details,
+      acceptanceCriteria,
+      ...(completionEvidence ? { completionEvidence } : {}),
+      status,
+    };
   });
   if (activeSteps > 1) {
     throw new Error("plan may have at most one in_progress step");
@@ -258,8 +329,19 @@ export function parsePlanSnapshot(value: unknown): PlanSnapshot {
   if (explanation && explanation.length > 2000) {
     throw new Error("explanation must be at most 2000 characters");
   }
+  const revisionReason =
+    typeof value.revisionReason === "string"
+      ? value.revisionReason.replace(/\s+/g, " ").trim()
+      : undefined;
+  if (value.revisionReason !== undefined && !revisionReason) {
+    throw new Error("revisionReason must not be empty");
+  }
+  if (revisionReason && revisionReason.length > 1000) {
+    throw new Error("revisionReason must be at most 1000 characters");
+  }
   return {
     ...(explanation ? { explanation } : {}),
+    ...(revisionReason ? { revisionReason } : {}),
     plan,
   };
 }

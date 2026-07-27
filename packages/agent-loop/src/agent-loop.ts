@@ -123,26 +123,37 @@ export class AgentLoop {
     const usage = { ...EMPTY_USAGE };
     let state = options.modelState;
     let toolResults: ToolResult[] = [];
+    let continuationInput: string | undefined;
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
       emit({ type: "model.started", runId, step });
+      const controllerContext = { runId, step, tools };
+      const directive = options.controller?.beforeModel
+        ? await options.controller.beforeModel(controllerContext)
+        : {};
+      const advertisedTools = directive.tools ?? tools;
+      const instructions = directive.instructions
+        ? `${agent.instructions}\n\n${directive.instructions}`
+        : agent.instructions;
+      const modelInput =
+        step === 1
+          ? attachmentPrompt(input, availableAttachments)
+          : continuationInput;
+      continuationInput = undefined;
 
       const turn = await this.provider.generate(
         {
           model: agent.model,
-          instructions: agent.instructions,
-          input:
-            step === 1
-              ? attachmentPrompt(input, availableAttachments)
-              : undefined,
+          instructions,
+          input: modelInput,
           attachments:
             attachmentDelivery.pending.length > 0
               ? attachmentDelivery.pending
               : undefined,
           state,
           toolResults,
-          tools,
+          tools: advertisedTools,
           signal: options.signal,
         },
         {
@@ -173,6 +184,17 @@ export class AgentLoop {
       addUsage(usage, turn.usage);
 
       if (turn.toolCalls.length === 0) {
+        const completionError = options.controller?.validateCompletion
+          ? await options.controller.validateCompletion(
+              turn,
+              controllerContext,
+            )
+          : undefined;
+        if (completionError) {
+          continuationInput = completionError;
+          toolResults = [];
+          continue;
+        }
         emit({ type: "message.completed", runId, text: turn.text });
         emit({ type: "run.completed", runId, steps: step });
 
@@ -189,7 +211,14 @@ export class AgentLoop {
       for (const call of turn.toolCalls) {
         options.signal?.throwIfAborted();
         toolResults.push(
-          await this.executeTool(call, tools, runId, options, emit),
+          await this.executeTool(
+            call,
+            tools,
+            runId,
+            step,
+            options,
+            emit,
+          ),
         );
       }
     }
@@ -201,10 +230,27 @@ export class AgentLoop {
     call: ToolCall,
     tools: readonly Tool[],
     runId: string,
+    step: number,
     options: RunOptions,
     emit: (event: AgentEvent) => void,
   ): Promise<ToolResult> {
     const tool = tools.find((candidate) => candidate.name === call.name);
+    const controllerContext = { runId, step, tools };
+    const decision = options.controller?.beforeToolCall
+      ? await options.controller.beforeToolCall(
+          call,
+          tool,
+          controllerContext,
+        )
+      : undefined;
+    if (decision && !decision.allowed) {
+      return {
+        callId: call.id,
+        name: call.name,
+        output: decision.message ?? `Tool call rejected: ${call.name}`,
+        isError: true,
+      };
+    }
     if (!tool) {
       return {
         callId: call.id,
@@ -238,6 +284,13 @@ export class AgentLoop {
     }
 
     emit({ type: "tool.completed", runId, result });
+    if (options.controller?.afterToolCall) {
+      await options.controller.afterToolCall(
+        call,
+        result,
+        controllerContext,
+      );
+    }
     return result;
   }
 }

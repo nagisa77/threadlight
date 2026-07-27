@@ -117,6 +117,7 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
 
   return defineTool({
     name: "web_search",
+    mutability: "read",
     description:
       "Search the public internet and return page titles, URLs, and short descriptions.",
     parameters: {

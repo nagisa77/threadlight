@@ -141,6 +141,34 @@ export function parsePlanUpdate(
       }
       acceptanceCriteria = criteria;
     }
+    let completionEvidence: readonly string[] | undefined;
+    if (candidate.completionEvidence !== undefined) {
+      if (
+        !Array.isArray(candidate.completionEvidence) ||
+        candidate.completionEvidence.length < 1 ||
+        candidate.completionEvidence.length > 8
+      ) {
+        return;
+      }
+      const evidenceSeen = new Set<string>();
+      const evidence: string[] = [];
+      for (const item of candidate.completionEvidence) {
+        const normalized =
+          typeof item === "string"
+            ? item.replace(/\s+/g, " ").trim()
+            : "";
+        if (
+          !normalized ||
+          normalized.length > 500 ||
+          evidenceSeen.has(normalized)
+        ) {
+          return;
+        }
+        evidenceSeen.add(normalized);
+        evidence.push(normalized);
+      }
+      completionEvidence = evidence;
+    }
     const status = candidate.status;
     if (
       status !== "pending" &&
@@ -154,6 +182,7 @@ export function parsePlanUpdate(
       step,
       ...(details ? { details } : {}),
       ...(acceptanceCriteria ? { acceptanceCriteria } : {}),
+      ...(completionEvidence ? { completionEvidence } : {}),
       status,
     });
   }

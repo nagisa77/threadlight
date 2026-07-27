@@ -11,6 +11,11 @@ export interface Tool {
   description: string;
   parameters: JsonSchema;
   kind?: "function" | "computer";
+  /**
+   * Whether calling the tool can change workspace or external state.
+   * Restrictive controllers treat unannotated tools as write-capable.
+   */
+  mutability?: "read" | "write";
   execute(arguments_: unknown, context: ToolContext): Promise<unknown>;
 }
 
@@ -127,7 +132,58 @@ export interface RunOptions {
   toolScopeId?: string;
   modelState?: unknown;
   attachments?: readonly ModelAttachment[];
+  controller?: RunController;
   onEvent?: (event: AgentEvent) => void;
+}
+
+export interface RunControllerContext {
+  runId: string;
+  step: number;
+  tools: readonly Tool[];
+}
+
+export interface RunControllerModelDirective {
+  /** Appended to the base agent instructions for this model turn only. */
+  instructions?: string;
+  /** Tools advertised to the model for this turn. Defaults to every tool. */
+  tools?: readonly Tool[];
+}
+
+export interface RunControllerToolDecision {
+  allowed: boolean;
+  /** Returned as a recoverable tool error when the call is disallowed. */
+  message?: string;
+}
+
+/**
+ * Provider-neutral execution control for a run.
+ *
+ * A controller may narrow tools, inject ephemeral state, reject calls before
+ * execution, observe results, and require another model turn instead of
+ * accepting a premature final answer.
+ */
+export interface RunController {
+  beforeModel?(
+    context: RunControllerContext,
+  ):
+    | RunControllerModelDirective
+    | Promise<RunControllerModelDirective>;
+  beforeToolCall?(
+    call: ToolCall,
+    tool: Tool | undefined,
+    context: RunControllerContext,
+  ):
+    | RunControllerToolDecision
+    | Promise<RunControllerToolDecision>;
+  afterToolCall?(
+    call: ToolCall,
+    result: ToolResult,
+    context: RunControllerContext,
+  ): void | Promise<void>;
+  validateCompletion?(
+    turn: Pick<ModelTurn, "text">,
+    context: RunControllerContext,
+  ): string | undefined | Promise<string | undefined>;
 }
 
 export interface RunResult {

@@ -52,7 +52,50 @@ describe("AppServer", () => {
             ],
           };
         }
-        return { text: "Plan ready", toolCalls: [] };
+        if (requests.length === 2) {
+          return {
+            text: "The first step is verified.",
+            toolCalls: [
+              {
+                id: "plan-2",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    {
+                      ...richPlanStep("Inspect architecture", "completed"),
+                      completionEvidence: ["Architecture paths were inspected."],
+                    },
+                    richPlanStep("Implement mode", "in_progress"),
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        if (requests.length === 3) {
+          return {
+            text: "The implementation is verified.",
+            toolCalls: [
+              {
+                id: "plan-3",
+                name: "update_plan",
+                arguments: {
+                  plan: [
+                    {
+                      ...richPlanStep("Inspect architecture", "completed"),
+                      completionEvidence: ["Architecture paths were inspected."],
+                    },
+                    {
+                      ...richPlanStep("Implement mode", "completed"),
+                      completionEvidence: ["The controlled mode was verified."],
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+        return { text: "Plan completed", toolCalls: [] };
       },
     };
     const server = new AppServer({
@@ -112,8 +155,14 @@ describe("AppServer", () => {
             plan: {
               source: "user",
               items: [
-                richPlanStep("Inspect architecture", "in_progress"),
-                richPlanStep("Implement mode", "pending"),
+                {
+                  ...richPlanStep("Inspect architecture", "completed"),
+                  completionEvidence: ["Architecture paths were inspected."],
+                },
+                {
+                  ...richPlanStep("Implement mode", "completed"),
+                  completionEvidence: ["The controlled mode was verified."],
+                },
               ],
             },
           },

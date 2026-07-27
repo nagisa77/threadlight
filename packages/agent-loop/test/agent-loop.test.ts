@@ -34,6 +34,69 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("lets a provider-neutral controller narrow tools and continue after rejecting completion", async () => {
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return requests.length === 1
+          ? { text: "Too early", toolCalls: [] }
+          : { text: "Accepted", toolCalls: [] };
+      },
+    };
+    let completionChecks = 0;
+    const readTool = defineTool({
+      name: "read",
+      mutability: "read",
+      description: "Read",
+      parameters: { type: "object" },
+      async execute() {
+        return "read";
+      },
+    });
+    const hiddenTool = defineTool({
+      name: "write",
+      mutability: "write",
+      description: "Write",
+      parameters: { type: "object" },
+      async execute() {
+        return "written";
+      },
+    });
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "controlled",
+        instructions: "Base instructions",
+        tools: [readTool, hiddenTool],
+      }),
+      "Start",
+      {
+        controller: {
+          beforeModel() {
+            return {
+              instructions: "Controller state",
+              tools: [readTool],
+            };
+          },
+          validateCompletion() {
+            completionChecks += 1;
+            return completionChecks === 1
+              ? "Completion rejected; continue."
+              : undefined;
+          },
+        },
+      },
+    );
+
+    expect(result.output).toBe("Accepted");
+    expect(requests[0]?.instructions).toBe(
+      "Base instructions\n\nController state",
+    );
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["read"]);
+    expect(requests[1]?.input).toBe("Completion rejected; continue.");
+  });
+
   it("uploads an attachment only after the model calls the attachment tool", async () => {
     const requests: ModelRequest[] = [];
     let uploads = 0;

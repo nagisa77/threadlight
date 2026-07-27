@@ -132,6 +132,8 @@ export interface PlanItemData {
   details?: string;
   /** Observable completion conditions. Optional for legacy plan items. */
   acceptanceCriteria?: readonly string[];
+  /** Concrete evidence recorded when a controlled step completed. */
+  completionEvidence?: readonly string[];
   status: PlanItemStatusData;
 }
 

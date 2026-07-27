@@ -19,6 +19,7 @@ export function createAttachmentContextTool(
 
   return {
     name: ATTACH_TO_MODEL_CONTEXT_TOOL,
+    mutability: "read",
     description:
       "Attach one user-provided local attachment to the model context. Call this only when you need the model to inspect the file or image contents directly; local file operations should use the listed path instead.",
     parameters: {

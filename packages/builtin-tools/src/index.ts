@@ -24,7 +24,11 @@ export {
   UPDATE_PLAN_TOOL_NAME,
   USER_SELECTED_PLAN_INSTRUCTIONS,
 } from "./update-plan.js";
+export {
+  PlanExecutionController,
+} from "./plan-execution-controller.js";
 export { createWebSearchTool } from "./web-search.js";
+export { createWorkspaceInspectTool } from "./workspace-inspect.js";
 
 export type {
   ComputerUseAction,
@@ -66,6 +70,12 @@ export type {
   UpdatePlanToolOptions,
 } from "./update-plan.js";
 export type {
+  PlanExecutionPhase,
+} from "./plan-execution-controller.js";
+export type {
   WebSearchResult,
   WebSearchToolOptions,
 } from "./web-search.js";
+export type {
+  WorkspaceInspectToolOptions,
+} from "./workspace-inspect.js";
