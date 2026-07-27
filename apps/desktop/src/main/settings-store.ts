@@ -12,11 +12,13 @@ import type {
   DesktopModelProvider,
   DesktopSettingsSnapshot,
   DesktopSettingsUpdate,
+  DesktopTheme,
 } from "../shared/desktop-api.js";
 
 interface StoredSettings {
   version: 1;
   language?: DesktopLanguage;
+  theme?: DesktopTheme;
   provider?: DesktopModelProvider;
   encryptedOpenAIApiKey?: string;
   encryptedDeepSeekApiKey?: string;
@@ -61,6 +63,7 @@ export class SettingsStore {
     const settings = this.runtimeSettings(environment);
     return {
       language: parseLanguage(this.read().language),
+      theme: parseTheme(this.read().theme),
       provider: settings.provider,
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
@@ -79,6 +82,7 @@ export class SettingsStore {
     const next: StoredSettings = {
       ...current,
       language: update.language ?? current.language,
+      theme: update.theme ?? current.theme,
       provider: update.provider,
       qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl),
       model: requireNonEmpty(update.model, "Model"),
@@ -245,7 +249,8 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.encryptedSearchApiKey) &&
     optionalString(settings.qwenBaseUrl) &&
     optionalString(settings.model) &&
-    optionalLanguage(settings.language)
+    optionalLanguage(settings.language) &&
+    optionalTheme(settings.theme)
   );
 }
 
@@ -268,11 +273,29 @@ function optionalLanguage(value: unknown): boolean {
 }
 
 function isLanguage(value: unknown): value is DesktopLanguage {
-  return value === "zh-CN" || value === "en" || value === "ja";
+  return (
+    value === "zh-CN" ||
+    value === "zh-TW" ||
+    value === "en" ||
+    value === "ja" ||
+    value === "ko"
+  );
 }
 
 function parseLanguage(value: unknown): DesktopLanguage {
   return isLanguage(value) ? value : "zh-CN";
+}
+
+function optionalTheme(value: unknown): boolean {
+  return value === undefined || isTheme(value);
+}
+
+function isTheme(value: unknown): value is DesktopTheme {
+  return value === "system" || value === "light" || value === "dark";
+}
+
+function parseTheme(value: unknown): DesktopTheme {
+  return isTheme(value) ? value : "system";
 }
 
 function isProvider(value: unknown): value is DesktopModelProvider {

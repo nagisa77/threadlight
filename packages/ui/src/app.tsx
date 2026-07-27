@@ -55,6 +55,11 @@ import {
   type Language,
   type Translate,
 } from "./i18n.js";
+import {
+  ThemeProvider,
+  isThemePreference,
+  type ThemePreference,
+} from "./theme.js";
 import { TerminalPanel, type TerminalAdapter } from "./terminal.js";
 import {
   WorkspacePanel,
@@ -150,6 +155,7 @@ type VoiceInputStatus =
 
 export function ThreadlightApp(props: ThreadlightAppProps) {
   const [language, setLanguage] = useState<Language>("zh-CN");
+  const [theme, setTheme] = useState<ThemePreference>("system");
 
   useEffect(() => {
     let active = true;
@@ -157,6 +163,7 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
       ?.load()
       .then((snapshot) => {
         if (active && isLanguage(snapshot.language)) setLanguage(snapshot.language);
+        if (active && isThemePreference(snapshot.theme)) setTheme(snapshot.theme);
       })
       .catch(() => {});
     return () => {
@@ -165,12 +172,15 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
   }, [props.settings]);
 
   return (
-    <I18nProvider language={language}>
-      <ThreadlightAppContent
-        {...props}
-        onLanguageChange={setLanguage}
-      />
-    </I18nProvider>
+    <ThemeProvider preference={theme}>
+      <I18nProvider language={language}>
+        <ThreadlightAppContent
+          {...props}
+          onLanguageChange={setLanguage}
+          onThemeChange={setTheme}
+        />
+      </I18nProvider>
+    </ThemeProvider>
   );
 }
 
@@ -186,8 +196,10 @@ function ThreadlightAppContent({
   terminal,
   workspace,
   onLanguageChange,
+  onThemeChange,
 }: ThreadlightAppProps & {
   onLanguageChange(language: Language): void;
+  onThemeChange(theme: ThemePreference): void;
 }) {
   const { t } = useI18n();
   const {
@@ -1079,6 +1091,7 @@ function ThreadlightAppContent({
             adapter={settings}
             onRuntimeRestart={reconnectRuntime}
             onLanguageChange={onLanguageChange}
+            onThemeChange={onThemeChange}
           />
         ) : projects && !currentProject ? (
           <ProjectEmptyState

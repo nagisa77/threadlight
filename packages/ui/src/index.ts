@@ -19,7 +19,17 @@ export {
   isLanguage,
   useI18n,
 } from "./i18n.js";
-export { SettingsPage, createSettingsUpdate } from "./settings.js";
+export {
+  THEME_PREFERENCES,
+  ThemeProvider,
+  isThemePreference,
+  useTheme,
+} from "./theme.js";
+export {
+  SettingsPage,
+  ThemePicker,
+  createSettingsUpdate,
+} from "./settings.js";
 export { TerminalPanel } from "./terminal.js";
 export {
   buildChangeTree,
@@ -65,6 +75,10 @@ export type {
 } from "./session.js";
 export type { ScrollMetrics } from "./scroll.js";
 export type { Language, Translate } from "./i18n.js";
+export type {
+  ResolvedTheme,
+  ThemePreference,
+} from "./theme.js";
 export type {
   ModelProviderId,
   ProviderSecretDrafts,

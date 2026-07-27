@@ -720,7 +720,10 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
     throw new Error("provider must be openai, deepseek, or qwen");
   }
   if (update.language !== undefined && !isLanguage(update.language)) {
-    throw new Error("language must be zh-CN, en, or ja");
+    throw new Error("language must be zh-CN, zh-TW, en, ja, or ko");
+  }
+  if (update.theme !== undefined && !isTheme(update.theme)) {
+    throw new Error("theme must be system, light, or dark");
   }
   if (!isOptionalSecret(update.openAIApiKey)) {
     throw new Error("openAIApiKey must be a string or null");
@@ -742,6 +745,7 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   }
   return {
     ...(update.language !== undefined ? { language: update.language } : {}),
+    ...(update.theme !== undefined ? { theme: update.theme } : {}),
     provider: update.provider,
     model: update.model.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
@@ -763,7 +767,19 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
 function isLanguage(
   value: unknown,
 ): value is NonNullable<DesktopSettingsUpdate["language"]> {
-  return value === "zh-CN" || value === "en" || value === "ja";
+  return (
+    value === "zh-CN" ||
+    value === "zh-TW" ||
+    value === "en" ||
+    value === "ja" ||
+    value === "ko"
+  );
+}
+
+function isTheme(
+  value: unknown,
+): value is NonNullable<DesktopSettingsUpdate["theme"]> {
+  return value === "system" || value === "light" || value === "dark";
 }
 
 function isModelProvider(

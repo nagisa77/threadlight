@@ -31,8 +31,10 @@ describe("i18n", () => {
   it("ships Chinese, English, and Japanese language choices", () => {
     expect(LANGUAGE_OPTIONS).toEqual([
       { value: "zh-CN", label: "简体中文" },
+      { value: "zh-TW", label: "繁體中文" },
       { value: "en", label: "English" },
       { value: "ja", label: "日本語" },
+      { value: "ko", label: "한국어" },
     ]);
   });
 
@@ -45,5 +47,11 @@ describe("i18n", () => {
     expect(renderLanguage("ja")).toContain("<h1>設定</h1>");
     expect(renderLanguage("ja")).toContain("3 件のファイルを変更");
     expect(renderLanguage("ja")).toContain("<label>言語</label>");
+  });
+
+  it("renders Traditional Chinese and Korean strings", () => {
+    expect(renderLanguage("zh-TW")).toContain("<h1>設定</h1>");
+    expect(renderLanguage("ko")).toContain("<h1>설정</h1>");
+    expect(renderLanguage("ko")).toContain("파일 변경됨");
   });
 });

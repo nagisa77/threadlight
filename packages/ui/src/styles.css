@@ -2327,6 +2327,168 @@ body.is-resizing-workspace {
   padding: 2px 18px;
 }
 
+.theme-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 15px 0 17px;
+  border: 0;
+}
+
+.theme-picker legend {
+  padding: 0;
+  color: #3c3b35;
+  font-size: 11px;
+  font-weight: 640;
+}
+
+.theme-picker > p {
+  margin: 3px 0 11px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.theme-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.theme-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.theme-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
+.theme-preview {
+  --preview-shell: #f2f2f0;
+  --preview-card: #fff;
+  --preview-line: #dededb;
+  --preview-muted: #c9c9c6;
+  display: block;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.52;
+  overflow: hidden;
+  border: 1px solid #d8d8d5;
+  border-radius: 10px;
+  background: var(--preview-shell);
+}
+
+.theme-preview.dark {
+  --preview-shell: #555659;
+  --preview-card: #242528;
+  --preview-line: #414246;
+  --preview-muted: #919296;
+  border-color: #55565a;
+}
+
+.theme-preview.system {
+  --preview-shell: linear-gradient(90deg, #eee 0 50%, #555659 50%);
+  --preview-card: linear-gradient(90deg, #fff 0 50%, #242528 50%);
+  --preview-line: linear-gradient(90deg, #dededb 0 50%, #414246 50%);
+  --preview-muted: linear-gradient(90deg, #c9c9c6 0 50%, #919296 50%);
+  border-color: #a9a9a7;
+}
+
+.theme-preview-title,
+.theme-preview-subtitle {
+  position: absolute;
+  left: 50%;
+  display: block;
+  border-radius: 999px;
+  background: var(--preview-muted);
+  transform: translateX(-50%);
+}
+
+.theme-preview-title {
+  top: 20%;
+  width: 34%;
+  height: 6%;
+}
+
+.theme-preview-subtitle {
+  top: 30%;
+  width: 54%;
+  height: 4%;
+}
+
+.theme-preview-card {
+  position: absolute;
+  inset: 42% 9% -8%;
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  border-radius: 9px 9px 0 0;
+  background: var(--preview-card);
+}
+
+.theme-preview-card > span {
+  position: relative;
+  display: block;
+  min-height: 31%;
+  border-bottom: 1px solid transparent;
+}
+
+.theme-preview-card > span::before,
+.theme-preview-card > span::after {
+  position: absolute;
+  left: 8%;
+  display: block;
+  height: 8%;
+  border-radius: 999px;
+  background: var(--preview-muted);
+  content: "";
+}
+
+.theme-preview-card > span::before {
+  top: 28%;
+  width: 34%;
+}
+
+.theme-preview-card > span::after {
+  top: 52%;
+  width: 52%;
+  background: var(--preview-line);
+}
+
+.theme-option.selected .theme-preview {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+.theme-option input:focus-visible + .theme-preview {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
+  outline-offset: 2px;
+}
+
+.theme-option-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 580;
+  text-align: center;
+}
+
+.theme-option.selected .theme-option-label {
+  color: var(--ink);
+  font-weight: 660;
+}
+
+.theme-picker + .settings-field {
+  border-top: 1px solid rgb(228 226 219 / 82%);
+}
+
 .settings-field {
   padding: 15px 0 17px;
 }
@@ -3544,5 +3706,440 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
   to {
     opacity: 1;
+  }
+}
+
+html[data-theme="dark"] {
+  color: #ededeb;
+  background: #191a1c;
+  --surface: #191a1c;
+  --sidebar: #151618;
+  --panel: #222326;
+  --ink: #ededeb;
+  --muted: #aaa9a4;
+  --subtle: #777773;
+  --line: #303135;
+  --line-strong: #3c3d42;
+  --accent: #df7b4d;
+  --accent-soft: #3b2a23;
+  --success: #72ab84;
+  --danger: #e2746d;
+}
+
+html[data-theme="dark"] :is(
+  .project-row,
+  .thread-item-select,
+  .settings-field-label label,
+  .theme-picker legend,
+  .memory-file-label,
+  .composer-share-copy strong,
+  .file-source,
+  .workspace-tree-row,
+  .review-file-header > span:nth-child(2)
+) {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] :is(
+  .icon-button.active,
+  .settings-nav-button.active,
+  .thread-item.active,
+  .secondary,
+  .suggestion,
+  .activity-list,
+  .conversation-changes-button,
+  .memory-open-button,
+  .memory-loading,
+  .settings-loading
+) {
+  background: rgb(255 255 255 / 6%);
+}
+
+html[data-theme="dark"] :is(
+  .project-empty-icon,
+  .empty-mark,
+  .message.user .message-body,
+  .dialog-button.secondary,
+  .header-terminal-button.active
+) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: #28292d;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .running-badge {
+  border-color: #614737;
+  color: #e2a47e;
+  background: #362b24;
+}
+
+html[data-theme="dark"] .markdown-content {
+  color: #dededa;
+}
+
+html[data-theme="dark"] .markdown-content h2 {
+  border-bottom-color: var(--line);
+}
+
+html[data-theme="dark"] :is(
+  .delete-dialog,
+  .composer,
+  .memory-document,
+  .settings-section,
+  .workspace-panel,
+  .review-file,
+  .review-toolbar,
+  .file-view-toolbar,
+  .file-preview,
+  .file-source,
+  .workspace-panel-state > span,
+  .panel-empty-action,
+  .workspace-tree-search input
+) {
+  border-color: var(--line-strong);
+  background: var(--panel);
+  box-shadow: none;
+}
+
+html[data-theme="dark"] :is(
+  .secret-input-wrap,
+  .model-select-wrap,
+  .settings-select-popover,
+  .panel-add-popover
+) {
+  border-color: var(--line-strong);
+  background: #292a2e;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 30%);
+}
+
+html[data-theme="dark"] :is(
+  .settings-select-option[aria-selected="true"],
+  .panel-icon-button.active,
+  .workspace-tab.active,
+  .workspace-tree-row.selected,
+  .diff-layout-toggle button.active,
+  .memory-mode-switch button[aria-selected="true"]
+) {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: #34353a;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] :is(
+  .terminal-panel,
+  .terminal-view,
+  .review-scroll,
+  .workspace-tree,
+  .file-source-line-number
+) {
+  background: #1f2022;
+}
+
+html[data-theme="dark"] :is(
+  .terminal-toolbar,
+  .workspace-panel-tabs,
+  .memory-document-toolbar,
+  .review-file-header
+) {
+  border-color: var(--line);
+  background: rgb(37 38 41 / 96%);
+}
+
+html[data-theme="dark"] .terminal-tab.active {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  background: #303135;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .terminal-exited {
+  border-color: var(--line);
+  background: rgb(31 32 34 / 92%);
+}
+
+html[data-theme="dark"] :is(
+  .activity-list[open] .activity-heading,
+  .activity-item + .activity-item,
+  .settings-section-heading,
+  .settings-field + .settings-field,
+  .theme-picker + .settings-field,
+  .memory-document-toolbar
+) {
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] :is(
+  .activity-count,
+  .activity-item pre,
+  .activity-item .command-output pre,
+  .markdown-content pre,
+  .markdown-content code,
+  .markdown-content th,
+  .memory-mode-switch,
+  .diff-layout-toggle
+) {
+  border-color: var(--line);
+  color: var(--ink);
+  background: #28292d;
+}
+
+html[data-theme="dark"] :is(
+  .activity-item code,
+  .activity-item pre,
+  .command-output summary,
+  .memory-source
+) {
+  color: #c5c5c0;
+}
+
+html[data-theme="dark"] .markdown-content a {
+  color: #ee946b;
+  text-decoration-color: #9a6048;
+}
+
+html[data-theme="dark"] .markdown-content blockquote {
+  color: var(--muted);
+  border-left-color: #7f513d;
+}
+
+html[data-theme="dark"] :is(
+  .connection-error,
+  .memory-error
+) {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--line));
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  box-shadow: none;
+}
+
+html[data-theme="dark"] :is(
+  .connection-error p,
+  .memory-error p
+) {
+  color: #c4a09d;
+}
+
+html[data-theme="dark"] :is(
+  .error-icon,
+  .connection-error .error-icon
+) {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+html[data-theme="dark"] .process-terminate-button {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  color: #e69a83;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+html[data-theme="dark"] .composer-wrap {
+  background: linear-gradient(
+    to bottom,
+    rgb(25 26 28 / 0%),
+    var(--surface) 24%
+  );
+}
+
+html[data-theme="dark"] .conversation-changes-button {
+  border-color: rgb(255 255 255 / 9%);
+  box-shadow:
+    0 8px 24px rgb(0 0 0 / 24%),
+    inset 0 0 0 1px rgb(255 255 255 / 5%);
+}
+
+html[data-theme="dark"] .composer-share {
+  border-color: var(--line);
+  background: linear-gradient(135deg, #292a2e, #242529);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+html[data-theme="dark"] :is(
+  .composer-share-icon,
+  .composer-share-action,
+  .memory-retry-button
+) {
+  border-color: var(--line-strong);
+  color: var(--muted);
+  background: #2d2e32;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .delete-dialog-icon {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+html[data-theme="dark"] .composer-share-icon > span {
+  border-color: #2d2e32;
+}
+
+html[data-theme="dark"] .composer textarea::placeholder,
+html[data-theme="dark"] .secret-input-wrap input::placeholder {
+  color: var(--subtle);
+}
+
+html[data-theme="dark"] :is(
+  .composer-action.send,
+  .settings-save-button,
+  .project-open-button,
+  .dialog-button.primary
+) {
+  border-color: #deded9;
+  color: #222326;
+  background: #deded9;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] :is(
+  .composer-action.stop,
+  .dialog-button.danger
+) {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  color: #f0aaa4;
+  background: color-mix(in srgb, var(--danger) 13%, var(--panel));
+}
+
+html[data-theme="dark"] .memory-document {
+  background: #202124;
+}
+
+html[data-theme="dark"] .key-status {
+  border-color: color-mix(in srgb, var(--success) 36%, var(--line));
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+html[data-theme="dark"] .key-status.pending {
+  border-color: #654b3a;
+  color: #d9a47c;
+  background: #362b24;
+}
+
+html[data-theme="dark"] .settings-section-icon {
+  color: #e79a75;
+}
+
+html[data-theme="dark"] .theme-picker + .settings-field {
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .theme-preview.light {
+  border-color: #77787b;
+}
+
+html[data-theme="dark"] .review-file {
+  border-bottom-color: var(--line-strong);
+}
+
+html[data-theme="dark"] .workspace-tree {
+  border-left-color: var(--line);
+}
+
+html[data-theme="dark"] .file-source-line-number {
+  border-right-color: var(--line);
+  color: #777773;
+}
+
+html[data-theme="dark"] .file-source {
+  color: #dededa;
+}
+
+html[data-theme="dark"] :is(
+  .file-source .token.comment,
+  .file-source .token.prolog,
+  .file-source .token.doctype,
+  .file-source .token.cdata
+) {
+  color: #92928d;
+}
+
+html[data-theme="dark"] .file-source .token.punctuation {
+  color: #b5b5b0;
+}
+
+html[data-theme="dark"] :is(
+  .file-source .token.property,
+  .file-source .token.tag,
+  .file-source .token.constant,
+  .file-source .token.symbol,
+  .file-source .token.deleted
+) {
+  color: #ee8179;
+}
+
+html[data-theme="dark"] :is(
+  .file-source .token.boolean,
+  .file-source .token.number,
+  .file-source .token.function,
+  .file-source .token.class-name
+) {
+  color: #c59bd3;
+}
+
+html[data-theme="dark"] :is(
+  .file-source .token.selector,
+  .file-source .token.attr-name,
+  .file-source .token.string,
+  .file-source .token.char,
+  .file-source .token.builtin,
+  .file-source .token.inserted
+) {
+  color: #80c692;
+}
+
+html[data-theme="dark"] :is(
+  .file-source .token.operator,
+  .file-source .token.entity,
+  .file-source .token.url,
+  .file-source .token.atrule,
+  .file-source .token.attr-value,
+  .file-source .token.keyword,
+  .file-source .token.regex,
+  .file-source .token.important,
+  .file-source .token.variable
+) {
+  color: #e6a16f;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  html[data-theme="dark"] :is(
+    .new-thread-button:hover,
+    .secondary:hover,
+    .settings-nav-button:hover,
+    .memory-open-button:hover:not(:disabled),
+    .memory-retry-button:hover,
+    .project-row:hover:not(:disabled),
+    .suggestion:hover,
+    .settings-select-option:hover,
+    .panel-add-option:hover,
+    .workspace-tree-row:hover,
+    .workspace-tab:hover:not(.active),
+    .terminal-tab-close:hover,
+    .terminal-panel-close:hover,
+    .panel-icon-button:hover:not(:disabled),
+    .workspace-tab-close:hover,
+    .icon-button:hover:not(:disabled),
+    .memory-refresh-button:hover:not(:disabled),
+    .project-conversations .thread-item:hover
+  ) {
+    border-color: var(--line-strong);
+    color: var(--ink);
+    background: #303135;
+  }
+
+  html[data-theme="dark"] :is(
+    .header-terminal-button:hover,
+    .composer-action.voice:hover:not(:disabled):not(.recording),
+    .composer-action.attach:hover:not(:disabled)
+  ) {
+    color: var(--ink);
+    background: #303135;
+  }
+
+  html[data-theme="dark"] :is(
+    .settings-save-button:hover:not(:disabled),
+    .project-open-button:hover:not(:disabled)
+  ) {
+    background: #f0f0ec;
   }
 }

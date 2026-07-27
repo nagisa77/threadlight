@@ -29,6 +29,7 @@ import tsx from "refractor/tsx";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
 import { useI18n, type Translate } from "./i18n.js";
+import { useTheme } from "./theme.js";
 import {
   TerminalView,
   type TerminalAdapter,
@@ -448,6 +449,7 @@ function ReviewFile({
   layout: "unified" | "split";
 }) {
   const { t } = useI18n();
+  const { resolvedTheme } = useTheme();
   return (
     <section className="review-file" id={reviewFileId(file.path)}>
       <header className="review-file-header">
@@ -463,6 +465,7 @@ function ReviewFile({
             oldValue={file.oldContent ?? ""}
             newValue={file.newContent ?? ""}
             splitView={layout === "split"}
+            useDarkTheme={resolvedTheme === "dark"}
             showDiffOnly
             extraLinesSurroundingDiff={3}
             hideSummary
@@ -1232,6 +1235,29 @@ const diffStyles = {
       addedGutterColor: "#2f8149",
       removedGutterColor: "#b14942",
       codeFoldContentColor: "#77766f",
+    },
+    dark: {
+      diffViewerBackground: "#202124",
+      diffViewerColor: "#dededa",
+      addedBackground: "#183426",
+      addedColor: "#83c596",
+      removedBackground: "#3b2224",
+      removedColor: "#ef938c",
+      wordAddedBackground: "#285239",
+      wordRemovedBackground: "#613237",
+      addedGutterBackground: "#203e2d",
+      removedGutterBackground: "#48282b",
+      gutterBackground: "#25262a",
+      gutterBackgroundDark: "#2d2e32",
+      highlightBackground: "#423b24",
+      highlightGutterBackground: "#554b29",
+      codeFoldGutterBackground: "#292a2e",
+      codeFoldBackground: "#25262a",
+      emptyLineBackground: "#222326",
+      gutterColor: "#858581",
+      addedGutterColor: "#79bb8b",
+      removedGutterColor: "#e1857f",
+      codeFoldContentColor: "#a7a7a2",
     },
   },
   diffContainer: {

@@ -50,6 +50,7 @@ describe("SettingsStore", () => {
 
     expect(snapshot).toEqual({
       language: "zh-CN",
+      theme: "system",
       provider: "deepseek",
       openAIApiKeyConfigured: true,
       deepSeekApiKeyConfigured: true,
@@ -146,6 +147,7 @@ describe("SettingsStore", () => {
     });
     expect(store.snapshot({})).toMatchObject({
       language: "zh-CN",
+      theme: "system",
       provider: "openai",
       model: "gpt-5.6-sol",
     });
@@ -170,6 +172,28 @@ describe("SettingsStore", () => {
     expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
       version: 1,
       language: "ja",
+    });
+  });
+
+  it("persists the theme preference without affecting runtime settings", () => {
+    const { path, store } = createStore();
+    const before = store.runtimeSettings({});
+
+    const snapshot = store.update(
+      {
+        theme: "dark",
+        provider: "openai",
+        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+        model: "gpt-5.6-sol",
+      },
+      {},
+    );
+
+    expect(snapshot.theme).toBe("dark");
+    expect(store.runtimeSettings({})).toEqual(before);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+      version: 1,
+      theme: "dark",
     });
   });
 });

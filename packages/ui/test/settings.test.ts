@@ -6,10 +6,26 @@ import {
   DEFAULT_QWEN_BASE_URL,
   PROVIDER_OPTIONS,
   SettingsSelectField,
+  ThemePicker,
   createSettingsUpdate,
 } from "../src/settings.js";
 
 describe("settings", () => {
+  it("renders Codex-style system, light, and dark theme previews", () => {
+    const html = renderToStaticMarkup(
+      createElement(ThemePicker, {
+        value: "system",
+        onChange: () => {},
+      }),
+    );
+
+    expect(html).toContain('class="theme-preview system"');
+    expect(html).toContain('class="theme-preview light"');
+    expect(html).toContain('class="theme-preview dark"');
+    expect(html).toContain('type="radio"');
+    expect(html).toContain('checked="" value="system"');
+  });
+
   it("renders the custom accessible settings popover instead of a native select", () => {
     const html = renderToStaticMarkup(
       createElement(SettingsSelectField, {
@@ -76,6 +92,7 @@ describe("settings", () => {
       ),
     ).toEqual({
       language: "zh-CN",
+      theme: "system",
       provider: "deepseek",
       deepSeekApiKey: "ds-new",
       qwenApiKey: null,
@@ -99,6 +116,7 @@ describe("settings", () => {
       ),
     ).toEqual({
       language: "zh-CN",
+      theme: "system",
       provider: "qwen",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "qwen3.7-plus",
@@ -120,5 +138,23 @@ describe("settings", () => {
         "ja",
       ).language,
     ).toBe("ja");
+  });
+
+  it("includes the selected theme in persisted settings", () => {
+    expect(
+      createSettingsUpdate(
+        {
+          openai: { value: "", cleared: false },
+          deepseek: { value: "", cleared: false },
+          qwen: { value: "", cleared: false },
+        },
+        { value: "", cleared: false },
+        "openai",
+        DEFAULT_QWEN_BASE_URL,
+        "gpt-5.6-sol",
+        "zh-CN",
+        "dark",
+      ).theme,
+    ).toBe("dark");
   });
 });

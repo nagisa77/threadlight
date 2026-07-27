@@ -10,9 +10,9 @@ import {
   Eye,
   EyeOff,
   KeyRound,
-  Languages,
   Link2,
   LoaderCircle,
+  Palette,
   Search,
   Sparkles,
 } from "lucide-react";
@@ -23,6 +23,7 @@ import {
   type Language,
   type Translate,
 } from "./i18n.js";
+import { type ThemePreference } from "./theme.js";
 
 export type ModelProviderId = "openai" | "deepseek" | "qwen";
 
@@ -148,6 +149,7 @@ export const DEFAULT_QWEN_BASE_URL =
 
 export interface SettingsSnapshot {
   language: Language;
+  theme: ThemePreference;
   provider: ModelProviderId;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -159,6 +161,7 @@ export interface SettingsSnapshot {
 
 export interface SettingsUpdate {
   language: Language;
+  theme: ThemePreference;
   provider: ModelProviderId;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;
@@ -191,10 +194,12 @@ export function SettingsPage({
   adapter,
   onRuntimeRestart,
   onLanguageChange,
+  onThemeChange,
 }: {
   adapter: SettingsAdapter;
   onRuntimeRestart(): Promise<void>;
   onLanguageChange?(language: Language): void;
+  onThemeChange?(theme: ThemePreference): void;
 }) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<SettingsSnapshot>();
@@ -206,6 +211,7 @@ export function SettingsPage({
   const [qwenBaseUrl, setQwenBaseUrl] = useState(DEFAULT_QWEN_BASE_URL);
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
   const [language, setLanguage] = useState<Language>("zh-CN");
+  const [theme, setTheme] = useState<ThemePreference>("system");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedWithRestart, setSavedWithRestart] = useState(false);
@@ -220,6 +226,8 @@ export function SettingsPage({
         setSettings(snapshot);
         setLanguage(snapshot.language);
         onLanguageChange?.(snapshot.language);
+        setTheme(snapshot.theme);
+        onThemeChange?.(snapshot.theme);
         setProvider(snapshot.provider);
         setQwenBaseUrl(snapshot.qwenBaseUrl);
         setModel(snapshot.model);
@@ -243,7 +251,8 @@ export function SettingsPage({
       provider !== settings.provider ||
       qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
       model !== settings.model ||
-      language !== settings.language
+      language !== settings.language ||
+      theme !== settings.theme
     : false;
   const runtimeDirty = settings
     ? Object.values(providerKeys).some(
@@ -297,6 +306,7 @@ export function SettingsPage({
           qwenBaseUrl,
           model,
           language,
+          theme,
         ),
       );
       setSettings(snapshot);
@@ -340,7 +350,7 @@ export function SettingsPage({
               >
                 <div className="settings-section-heading">
                   <span className="settings-section-icon">
-                    <Languages size={16} />
+                    <Palette size={16} />
                   </span>
                   <div>
                     <h3 id="language-title">{t("interface")}</h3>
@@ -348,6 +358,14 @@ export function SettingsPage({
                   </div>
                 </div>
                 <div className="settings-fields">
+                  <ThemePicker
+                    value={theme}
+                    onChange={(nextTheme) => {
+                      setTheme(nextTheme);
+                      onThemeChange?.(nextTheme);
+                      markEdited();
+                    }}
+                  />
                   <SettingsSelectField
                     id="language-select"
                     label={t("language")}
@@ -675,6 +693,64 @@ export function SettingsSelectField({
   );
 }
 
+export function ThemePicker({
+  value,
+  onChange,
+}: {
+  value: ThemePreference;
+  onChange(value: ThemePreference): void;
+}) {
+  const { t } = useI18n();
+  const options: readonly {
+    value: ThemePreference;
+    label: string;
+  }[] = [
+    { value: "system", label: t("themeSystem") },
+    { value: "light", label: t("themeLight") },
+    { value: "dark", label: t("themeDark") },
+  ];
+
+  return (
+    <fieldset className="theme-picker">
+      <legend>{t("theme")}</legend>
+      <p>{t("themeDescription")}</p>
+      <div
+        className="theme-options"
+        role="radiogroup"
+        aria-label={t("themeChoice")}
+      >
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className={`theme-option pressable${option.value === value ? " selected" : ""}`}
+          >
+            <input
+              type="radio"
+              name="theme"
+              value={option.value}
+              checked={option.value === value}
+              onChange={() => onChange(option.value)}
+            />
+            <span
+              className={`theme-preview ${option.value}`}
+              aria-hidden="true"
+            >
+              <span className="theme-preview-title" />
+              <span className="theme-preview-subtitle" />
+              <span className="theme-preview-card">
+                <span />
+                <span />
+                <span />
+              </span>
+            </span>
+            <span className="theme-option-label">{option.label}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function SecretField({
   id,
   label,
@@ -795,9 +871,11 @@ export function createSettingsUpdate(
   qwenBaseUrl: string,
   model: string,
   language: Language = "zh-CN",
+  theme: ThemePreference = "system",
 ): SettingsUpdate {
   return {
     language,
+    theme,
     provider,
     qwenBaseUrl: qwenBaseUrl.trim(),
     model,
