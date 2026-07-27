@@ -10,6 +10,7 @@ import { Terminal as XtermTerminal } from "@xterm/xterm";
 import { File, SquareTerminal, X } from "lucide-react";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
+import { useI18n, type Translate } from "./i18n.js";
 import {
   FileView,
   type WorkspaceAdapter,
@@ -75,9 +76,10 @@ export function TerminalPanel({
   projectName?: string;
   onClose(): void;
 }) {
+  const { t } = useI18n();
   const nextTerminalNumber = useRef(1);
   const [tabs, setTabs] = useState<BottomPanelTab[]>(() => [
-    createTerminalTab(1),
+    createTerminalTab(1, t),
   ]);
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const [panelHeight, setPanelHeight] = useState(260);
@@ -86,8 +88,8 @@ export function TerminalPanel({
   function addTab(kind: PanelViewKind) {
     const tab =
       kind === "terminal"
-        ? createTerminalTab(++nextTerminalNumber.current)
-        : createBottomFileTab();
+        ? createTerminalTab(++nextTerminalNumber.current, t)
+        : createBottomFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
   }
@@ -143,7 +145,7 @@ export function TerminalPanel({
     <section
       className="terminal-panel panel-container"
       style={{ height: panelHeight }}
-      aria-label="底部面板"
+      aria-label={t("bottomPanel")}
     >
       <div
         className="terminal-resize-handle"
@@ -151,7 +153,7 @@ export function TerminalPanel({
         onPointerDown={startResize}
       />
       <div className="terminal-toolbar">
-        <div className="terminal-tabs" role="tablist" aria-label="底部面板标签">
+        <div className="terminal-tabs" role="tablist" aria-label={t("panelTabs")}>
           <div className="terminal-tab-strip">
             {tabs.map((tab) => (
               <div
@@ -175,8 +177,8 @@ export function TerminalPanel({
                 <button
                   type="button"
                   className="terminal-tab-close pressable"
-                  aria-label={`关闭 ${tab.title}`}
-                  title="关闭标签"
+                  aria-label={t("closeTab", { title: tab.title })}
+                  title={t("closeTab", { title: tab.title })}
                   onClick={() => closeTab(tab.id)}
                 >
                   <X size={12} />
@@ -192,8 +194,8 @@ export function TerminalPanel({
         <button
           type="button"
           className="terminal-panel-close pressable"
-          aria-label="关闭底部面板"
-          title="关闭底部面板"
+          aria-label={t("closePanel")}
+          title={t("closePanel")}
           onClick={onClose}
         >
           <X size={15} />
@@ -231,13 +233,15 @@ export function TerminalView({
   adapter,
   projectId,
   hidden = false,
-  label = "终端",
+  label,
 }: {
   adapter: TerminalAdapter;
   projectId: string;
   hidden?: boolean;
   label?: string;
 }) {
+  const { t } = useI18n();
+  const accessibleLabel = label ?? t("terminal");
   const [session, setSession] = useState<TerminalSessionInfo>();
   const [exitCode, setExitCode] = useState<number>();
   const [error, setError] = useState<string>();
@@ -304,7 +308,7 @@ export function TerminalView({
     <div
       className="terminal-view"
       role="tabpanel"
-      aria-label={label}
+      aria-label={accessibleLabel}
       hidden={hidden}
     >
       {session ? (
@@ -316,12 +320,14 @@ export function TerminalView({
             registerOutputWriter={registerOutputWriter}
           />
           {exitCode !== undefined && (
-            <div className="terminal-exited">终端已退出（{exitCode}）</div>
+            <div className="terminal-exited">
+              {t("terminalExited", { code: exitCode })}
+            </div>
           )}
         </>
       ) : (
         <div className={`terminal-empty ${error ? "error" : ""}`}>
-          {error ?? "正在启动终端…"}
+          {error ?? t("startingTerminal")}
         </div>
       )}
     </div>
@@ -434,19 +440,19 @@ function TerminalViewport({
   return <div ref={container} className="terminal-viewport" />;
 }
 
-function createTerminalTab(number: number): BottomPanelTab {
+function createTerminalTab(number: number, t: Translate): BottomPanelTab {
   return {
     id: crypto.randomUUID(),
     kind: "terminal",
-    title: `终端 ${number}`,
+    title: t("terminalNumber", { number }),
   };
 }
 
-function createBottomFileTab(): BottomPanelTab {
+function createBottomFileTab(t: Translate): BottomPanelTab {
   return {
     id: crypto.randomUUID(),
     kind: "file",
-    title: "打开文件",
+    title: t("openFile"),
   };
 }
 

@@ -1,3 +1,5 @@
+import type { Translate } from "./i18n.js";
+
 export interface VoiceRecording {
   audio: ArrayBuffer;
   mimeType: string;
@@ -37,15 +39,31 @@ export function appendVoiceTranscript(
   return current + separator + normalized;
 }
 
-export function voiceInputErrorMessage(error: unknown): string {
+export function voiceInputErrorMessage(
+  error: unknown,
+  t?: Translate,
+): string {
   if (error instanceof DOMException) {
     if (error.name === "NotAllowedError" || error.name === "SecurityError") {
-      return "未获得麦克风权限，请在系统设置中允许 Threadlight 访问麦克风。";
+      return t
+        ? t("microphonePermissionDenied")
+        : "未获得麦克风权限，请在系统设置中允许 Threadlight 访问麦克风。";
     }
-    if (error.name === "NotFoundError") return "没有找到可用的麦克风。";
+    if (error.name === "NotFoundError") {
+      return t ? t("microphoneNotFound") : "没有找到可用的麦克风。";
+    }
     if (error.name === "NotReadableError") {
-      return "麦克风暂时不可用，请检查是否被其他应用占用。";
+      return t
+        ? t("microphoneUnavailable")
+        : "麦克风暂时不可用，请检查是否被其他应用占用。";
     }
+  }
+  if (
+    t &&
+    error instanceof Error &&
+    error.message === "请先在设置中配置 OpenAI API Key，再使用语音输入。"
+  ) {
+    return t("configureOpenAIForVoice");
   }
   return error instanceof Error ? error.message : String(error);
 }

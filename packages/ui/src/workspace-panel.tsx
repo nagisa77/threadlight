@@ -28,6 +28,7 @@ import { refractor } from "refractor";
 import tsx from "refractor/tsx";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
+import { useI18n, type Translate } from "./i18n.js";
 import {
   TerminalView,
   type TerminalAdapter,
@@ -115,8 +116,9 @@ export function WorkspacePanel({
   onResetSize(): void;
   onRefreshChanges(): void;
 }) {
+  const { t } = useI18n();
   const [tabs, setTabs] = useState<WorkspaceTab[]>(() => [
-    createFileTab(),
+    createFileTab(t),
   ]);
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const [diffLayout, setDiffLayout] = useState<"unified" | "split">("unified");
@@ -130,17 +132,33 @@ export function WorkspacePanel({
         setActiveTabId(review.id);
         return current;
       }
-      const next = createReviewTab();
+      const next = createReviewTab(t);
       setActiveTabId(next.id);
       return [...current, next];
     });
   }, [reviewRequest]);
 
   useEffect(() => {
-    setTabs([createFileTab()]);
+    setTabs([createFileTab(t)]);
     setActiveTabId("");
     setDiffLayout("unified");
   }, [projectId]);
+
+  useEffect(() => {
+    setTabs((current) =>
+      current.map((tab) => ({
+        ...tab,
+        title:
+          tab.kind === "review"
+            ? t("review")
+            : tab.kind === "terminal"
+              ? t("terminal")
+              : tab.path
+                ? tab.title
+                : t("openFile"),
+      })),
+    );
+  }, [t]);
 
   useEffect(() => {
     if (tabs.length > 0 && !tabs.some((tab) => tab.id === activeTabId)) {
@@ -149,7 +167,8 @@ export function WorkspacePanel({
   }, [activeTabId, tabs]);
 
   function addTab(kind: PanelViewKind) {
-    const tab = kind === "terminal" ? createTerminalTab() : createFileTab();
+    const tab =
+      kind === "terminal" ? createTerminalTab(t) : createFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
   }
@@ -184,17 +203,17 @@ export function WorkspacePanel({
   return (
     <aside
       className="workspace-panel"
-      aria-label="右侧面板"
+      aria-label={t("rightPanel")}
       aria-hidden={hidden}
       hidden={hidden}
     >
       <div
         className="workspace-split-handle"
         role="separator"
-        aria-label="调整聊天与右侧面板宽度"
+        aria-label={t("resizeRightPanel")}
         aria-orientation="vertical"
         tabIndex={0}
-        title="拖动调整宽度，双击恢复等宽"
+        title={t("resizeRightPanelHint")}
         onPointerDown={onResizeStart}
         onDoubleClick={onResetSize}
         onKeyDown={(event) => {
@@ -211,7 +230,7 @@ export function WorkspacePanel({
         }}
       />
       <div className="workspace-panel-tabs">
-        <div className="workspace-tab-strip" role="tablist" aria-label="面板标签">
+        <div className="workspace-tab-strip" role="tablist" aria-label={t("panelTabs")}>
           {tabs.map((tab) => (
             <button
               key={tab.id}
@@ -233,7 +252,7 @@ export function WorkspacePanel({
                 role="button"
                 tabIndex={0}
                 className="workspace-tab-close pressable"
-                aria-label={`关闭${tab.title}标签`}
+                aria-label={t("closeTab", { title: tab.title })}
                 onClick={(event) => {
                   event.stopPropagation();
                   closeTab(tab.id);
@@ -310,6 +329,7 @@ export function ReviewView({
   onLayoutChange(layout: "unified" | "split"): void;
   onRefresh(): void;
 }) {
+  const { t } = useI18n();
   const [treeVisible, setTreeVisible] = useState(false);
   const [selectedPath, setSelectedPath] = useState<string>();
 
@@ -334,7 +354,7 @@ export function ReviewView({
     <div className="review-view">
       <div className="review-toolbar">
         <div className="review-summary">
-          <strong>本次对话</strong>
+          <strong>{t("thisConversation")}</strong>
           {changes && (
             <ChangeCounts
               additions={changes.additions}
@@ -346,20 +366,20 @@ export function ReviewView({
           <button
             type="button"
             className="panel-icon-button pressable"
-            aria-label="刷新本次文件修改"
-            title="刷新"
+            aria-label={t("refreshChanges")}
+            title={t("refresh")}
             onClick={onRefresh}
             disabled={loading}
           >
             <RefreshCw className={loading ? "spin" : undefined} size={15} />
           </button>
-          <div className="diff-layout-toggle" aria-label="Diff 显示方式">
+          <div className="diff-layout-toggle" aria-label={t("diffLayout")}>
             <button
               type="button"
               className={`pressable ${layout === "unified" ? "active" : ""}`}
-              aria-label="单边 Diff"
+              aria-label={t("unifiedDiff")}
               aria-pressed={layout === "unified"}
-              title="单边 Diff"
+              title={t("unifiedDiff")}
               onClick={() => onLayoutChange("unified")}
             >
               <Rows3 size={15} />
@@ -367,9 +387,9 @@ export function ReviewView({
             <button
               type="button"
               className={`pressable ${layout === "split" ? "active" : ""}`}
-              aria-label="双边 Diff"
+              aria-label={t("splitDiff")}
               aria-pressed={layout === "split"}
-              title="双边 Diff"
+              title={t("splitDiff")}
               onClick={() => onLayoutChange("split")}
             >
               <Columns2 size={15} />
@@ -378,9 +398,9 @@ export function ReviewView({
           <button
             type="button"
             className={`panel-icon-button pressable ${treeVisible ? "active" : ""}`}
-            aria-label={treeVisible ? "隐藏变更文件树" : "显示变更文件树"}
+            aria-label={treeVisible ? t("hideChangesTree") : t("showChangesTree")}
             aria-pressed={treeVisible}
-            title={treeVisible ? "隐藏变更文件树" : "显示变更文件树"}
+            title={treeVisible ? t("hideChangesTree") : t("showChangesTree")}
             onClick={() => setTreeVisible((visible) => !visible)}
           >
             <FolderTree size={16} />
@@ -392,7 +412,7 @@ export function ReviewView({
         <div className="review-scroll">
           {loading && !changes ? (
             <PanelState icon={<LoaderCircle className="spin" size={20} />}>
-              正在读取本次文件修改…
+              {t("loadingChanges")}
             </PanelState>
           ) : error ? (
             <PanelState icon={<FileDiff size={20} />} error>
@@ -400,7 +420,7 @@ export function ReviewView({
             </PanelState>
           ) : !changes || changes.files.length === 0 ? (
             <PanelState icon={<FileDiff size={20} />}>
-              本次对话还没有修改文件
+              {t("noChanges")}
             </PanelState>
           ) : (
             changes.files.map((file) => (
@@ -427,6 +447,7 @@ function ReviewFile({
   file: ConversationFileChange;
   layout: "unified" | "split";
 }) {
+  const { t } = useI18n();
   return (
     <section className="review-file" id={reviewFileId(file.path)}>
       <header className="review-file-header">
@@ -435,7 +456,7 @@ function ReviewFile({
         <ChangeCounts additions={file.additions} deletions={file.deletions} />
       </header>
       {file.binary || file.oldContent === undefined && file.newContent === undefined ? (
-        <div className="review-binary">二进制文件或文件过大，无法显示 Diff</div>
+        <div className="review-binary">{t("binaryDiff")}</div>
       ) : (
         <div className="review-diff">
           <DiffViewer
@@ -470,6 +491,7 @@ export function FileView({
   hidden?: boolean;
   onSelectFile(path: string): void;
 }) {
+  const { t } = useI18n();
   const [file, setFile] = useState<WorkspaceFile>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
@@ -507,9 +529,9 @@ export function FileView({
         <button
           type="button"
           className={`panel-icon-button pressable ${treeVisible ? "active" : ""}`}
-          aria-label={treeVisible ? "隐藏文件树" : "显示文件树"}
+          aria-label={treeVisible ? t("hideFileTree") : t("showFileTree")}
           aria-pressed={treeVisible}
-          title={treeVisible ? "隐藏文件树" : "显示文件树"}
+          title={treeVisible ? t("hideFileTree") : t("showFileTree")}
           onClick={() => setTreeVisible((visible) => !visible)}
         >
           <FolderTree size={16} />
@@ -519,7 +541,7 @@ export function FileView({
         <div className="file-preview">
           {loading ? (
             <PanelState icon={<LoaderCircle className="spin" size={20} />}>
-              正在打开文件…
+              {t("openingFile")}
             </PanelState>
           ) : error ? (
             <PanelState icon={<FileCode2 size={20} />} error>
@@ -527,12 +549,12 @@ export function FileView({
             </PanelState>
           ) : !path ? (
             <PanelState icon={<FolderOpen size={22} />}>
-              <strong>打开文件</strong>
-              <span>从工作区目录树中选择文件</span>
+              <strong>{t("openFile")}</strong>
+              <span>{t("selectFile")}</span>
             </PanelState>
           ) : file?.binary || file?.content === undefined ? (
             <PanelState icon={<FileCode2 size={20} />}>
-              该文件是二进制文件或体积过大，无法预览
+              {t("binaryPreview")}
             </PanelState>
           ) : (
             <FileSource name={file.name} content={file.content} />
@@ -558,12 +580,17 @@ export function FileSource({
   name: string;
   content: string;
 }) {
+  const { t } = useI18n();
   const lines = useMemo(
     () => highlightedFileLines(name, content),
     [content, name],
   );
   return (
-    <div className="file-source" role="region" aria-label={`${name} 源代码`}>
+    <div
+      className="file-source"
+      role="region"
+      aria-label={t("sourceCode", { name })}
+    >
       {lines.map((segments, index) => (
         <div className="file-source-line" key={index}>
           <span className="file-source-line-number" aria-hidden="true">
@@ -673,6 +700,7 @@ export function ReviewChangesTree({
   selectedPath?: string;
   onSelectFile(path: string): void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const tree = useMemo(() => buildChangeTree(files), [files]);
@@ -688,13 +716,16 @@ export function ReviewChangesTree({
   }
 
   return (
-    <aside className="workspace-tree review-changes-tree" aria-label="变更文件树">
+    <aside
+      className="workspace-tree review-changes-tree"
+      aria-label={t("changesTree")}
+    >
       <label className="workspace-tree-search">
-        <span className="visually-hidden">筛选变更文件</span>
+        <span className="visually-hidden">{t("filterChangedFiles")}</span>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="筛选文件…"
+          placeholder={t("filterFiles")}
         />
       </label>
       <div className="workspace-tree-scroll">
@@ -729,6 +760,7 @@ function ChangeTreeLevel({
   onToggle(path: string): void;
   onSelectFile(path: string): void;
 }) {
+  const { t } = useI18n();
   return (
     <>
       {nodes.map((node) => {
@@ -771,7 +803,7 @@ function ChangeTreeLevel({
               {isDirectory ? (
                 <span
                   className="review-change-directory-indicator"
-                  aria-label="包含修改"
+                  aria-label={t("containsChanges")}
                 />
               ) : node.change ? (
                 <ChangeStatus status={node.change.status} />
@@ -800,8 +832,13 @@ function ChangeStatus({
 }: {
   status: ConversationFileChange["status"];
 }) {
+  const { t } = useI18n();
   const label =
-    status === "added" ? "新增" : status === "deleted" ? "删除" : "修改";
+    status === "added"
+      ? t("added")
+      : status === "deleted"
+        ? t("deleted")
+        : t("modified");
   return (
     <span className={`review-change-status ${status}`} aria-label={label}>
       {status === "added" ? "+" : status === "deleted" ? "−" : "•"}
@@ -820,6 +857,7 @@ export function WorkspaceTree({
   selectedPath?: string;
   onSelectFile(path: string): void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [entries, setEntries] = useState<
@@ -868,20 +906,20 @@ export function WorkspaceTree({
   const normalizedQuery = query.trim().toLocaleLowerCase();
 
   return (
-    <aside className="workspace-tree" aria-label="工作区文件树">
+    <aside className="workspace-tree" aria-label={t("workspaceTree")}>
       <label className="workspace-tree-search">
-        <span className="visually-hidden">筛选文件</span>
+        <span className="visually-hidden">{t("filterFiles")}</span>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="筛选文件…"
+          placeholder={t("filterFiles")}
         />
       </label>
       <div className="workspace-tree-scroll">
         {error && <p className="workspace-tree-error">{error}</p>}
         {loading.has("") && !entries.has("") ? (
           <div className="workspace-tree-loading">
-            <LoaderCircle className="spin" size={15} /> 正在读取…
+            <LoaderCircle className="spin" size={15} /> {t("loading")}
           </div>
         ) : (
           <TreeLevel
@@ -988,9 +1026,10 @@ function Breadcrumb({
   projectName: string;
   path?: string;
 }) {
+  const { t } = useI18n();
   const parts = path?.split("/") ?? [];
   return (
-    <nav className="file-breadcrumb" aria-label="文件路径">
+    <nav className="file-breadcrumb" aria-label={t("filePath")}>
       <span>{projectName}</span>
       {parts.map((part, index) => (
         <span key={`${part}-${index}`}>
@@ -1037,37 +1076,38 @@ function PanelState({
 }
 
 function WorkspacePanelEmpty({ onAdd }: { onAdd(): void }) {
+  const { t } = useI18n();
   return (
     <PanelState icon={<FolderTree size={22} />}>
-      <strong>没有打开的标签</strong>
+      <strong>{t("noOpenTabs")}</strong>
       <button type="button" className="panel-empty-action pressable" onClick={onAdd}>
-        <Plus size={14} /> 新建文件标签
+        <Plus size={14} /> {t("newFileTab")}
       </button>
     </PanelState>
   );
 }
 
-function createReviewTab(): WorkspaceTab {
+function createReviewTab(t: Translate): WorkspaceTab {
   return {
     id: crypto.randomUUID(),
     kind: "review",
-    title: "审阅",
+    title: t("review"),
   };
 }
 
-function createFileTab(): WorkspaceTab {
+function createFileTab(t: Translate): WorkspaceTab {
   return {
     id: crypto.randomUUID(),
     kind: "file",
-    title: "打开文件",
+    title: t("openFile"),
   };
 }
 
-function createTerminalTab(): WorkspaceTab {
+function createTerminalTab(t: Translate): WorkspaceTab {
   return {
     id: crypto.randomUUID(),
     kind: "terminal",
-    title: "终端",
+    title: t("terminal"),
   };
 }
 

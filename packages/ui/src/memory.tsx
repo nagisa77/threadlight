@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { MarkdownContent } from "./markdown.js";
+import { useI18n } from "./i18n.js";
 
 export interface ProjectMemorySnapshot {
   path: string;
@@ -29,6 +30,7 @@ export function ProjectMemoryPage({
   projectId: string;
   projectName: string;
 }) {
+  const { t } = useI18n();
   const [snapshot, setSnapshot] = useState<ProjectMemorySnapshot>();
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
@@ -72,7 +74,7 @@ export function ProjectMemoryPage({
     <>
       <header className="workspace-header memory-header">
         <div>
-          <h1>项目记忆</h1>
+          <h1>{t("projectMemory")}</h1>
           <p>{projectName} · {snapshot?.path ?? ".threadlight/MEMORY.md"}</p>
         </div>
         <button
@@ -86,24 +88,22 @@ export function ProjectMemoryPage({
           ) : (
             <ExternalLink size={13} />
           )}
-          {opening ? "正在打开…" : "在默认编辑器中打开"}
+          {opening ? t("opening") : t("openInEditor")}
         </button>
       </header>
 
       <section className="memory-scroll">
         <div className="memory-page">
           <div className="memory-intro">
-            <h2>项目的长期上下文</h2>
-            <p>
-              Threadlight 会在每个新任务开始时载入这份 Markdown。内容应当简短、稳定、可验证；已有任务保持创建时的快照。
-            </p>
+            <h2>{t("longTermContext")}</h2>
+            <p>{t("memoryDescription")}</p>
           </div>
 
           {error && (
             <div className="memory-error" role="alert">
               <TriangleAlert size={15} />
               <div>
-                <strong>无法读取项目记忆</strong>
+                <strong>{t("memoryReadFailed")}</strong>
                 <p>{error}</p>
               </div>
             </div>
@@ -111,7 +111,7 @@ export function ProjectMemoryPage({
 
           {loading && !snapshot ? (
             <div className="memory-loading">
-              <LoaderCircle className="spin" size={16} /> 正在读取记忆…
+              <LoaderCircle className="spin" size={16} /> {t("loadingMemory")}
             </div>
           ) : snapshot ? (
             <MemoryDocument
@@ -125,7 +125,7 @@ export function ProjectMemoryPage({
               className="memory-retry-button pressable"
               onClick={() => setReload((value) => value + 1)}
             >
-              重试
+              {t("retry")}
             </button>
           )}
         </div>
@@ -143,24 +143,25 @@ export function MemoryDocument({
   refreshing: boolean;
   onRefresh(): void;
 }) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<"preview" | "source">("preview");
 
   return (
-    <section className="memory-document" aria-label="项目记忆文件">
+    <section className="memory-document" aria-label={t("projectMemoryFile")}>
       <div className="memory-document-toolbar">
         <div className="memory-file-label" title={snapshot.path}>
           <FileText size={14} />
           <span>{snapshot.path}</span>
         </div>
         <div className="memory-document-actions">
-          <div className="memory-mode-switch" role="tablist" aria-label="查看方式">
+          <div className="memory-mode-switch" role="tablist" aria-label={t("viewMode")}>
             <button
               type="button"
               role="tab"
               aria-selected={mode === "preview"}
               onClick={() => setMode("preview")}
             >
-              预览
+              {t("preview")}
             </button>
             <button
               type="button"
@@ -174,8 +175,8 @@ export function MemoryDocument({
           <button
             type="button"
             className="memory-refresh-button pressable"
-            title="重新读取文件"
-            aria-label="重新读取记忆文件"
+            title={t("rereadFile")}
+            aria-label={t("rereadMemory")}
             disabled={refreshing}
             onClick={onRefresh}
           >

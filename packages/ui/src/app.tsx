@@ -48,6 +48,13 @@ import {
 } from "./memory.js";
 import { isNearBottom } from "./scroll.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
+import {
+  I18nProvider,
+  isLanguage,
+  useI18n,
+  type Language,
+  type Translate,
+} from "./i18n.js";
 import { TerminalPanel, type TerminalAdapter } from "./terminal.js";
 import {
   WorkspacePanel,
@@ -141,13 +148,33 @@ type VoiceInputStatus =
   | "recording"
   | "transcribing";
 
-const suggestions = [
-  "解释这个代码库的架构",
-  "运行测试并修复失败",
-  "帮我规划下一个功能",
-];
+export function ThreadlightApp(props: ThreadlightAppProps) {
+  const [language, setLanguage] = useState<Language>("zh-CN");
 
-export function ThreadlightApp({
+  useEffect(() => {
+    let active = true;
+    void props.settings
+      ?.load()
+      .then((snapshot) => {
+        if (active && isLanguage(snapshot.language)) setLanguage(snapshot.language);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [props.settings]);
+
+  return (
+    <I18nProvider language={language}>
+      <ThreadlightAppContent
+        {...props}
+        onLanguageChange={setLanguage}
+      />
+    </I18nProvider>
+  );
+}
+
+function ThreadlightAppContent({
   client,
   settings,
   projects,
@@ -158,7 +185,11 @@ export function ThreadlightApp({
   computerShare,
   terminal,
   workspace,
-}: ThreadlightAppProps) {
+  onLanguageChange,
+}: ThreadlightAppProps & {
+  onLanguageChange(language: Language): void;
+}) {
+  const { t } = useI18n();
   const {
     state,
     retry,
@@ -445,10 +476,10 @@ export function ThreadlightApp({
       await voiceInput.prepare?.();
       if (operation !== voiceOperation.current) return;
       if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error("当前环境不支持麦克风录音。");
+        throw new Error(t("microphoneRecordingUnsupported"));
       }
       if (typeof MediaRecorder === "undefined") {
-        throw new Error("当前环境不支持语音输入。");
+        throw new Error(t("voiceInputUnsupported"));
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -479,7 +510,7 @@ export function ThreadlightApp({
         if (operation !== voiceOperation.current) return;
         releaseVoiceCapture();
         setVoiceStatus("idle");
-        setVoiceError("录音意外中断，请重试。");
+        setVoiceError(t("recordingInterrupted"));
       };
       recorder.onstop = () => {
         void finishVoiceInput(recorder, operation);
@@ -490,7 +521,7 @@ export function ThreadlightApp({
       if (operation !== voiceOperation.current) return;
       releaseVoiceCapture();
       setVoiceStatus("idle");
-      setVoiceError(voiceInputErrorMessage(error));
+      setVoiceError(voiceInputErrorMessage(error, t));
     }
   }
 
@@ -526,9 +557,9 @@ export function ThreadlightApp({
 
     try {
       const recording = new Blob(chunks, { type: mimeType });
-      if (recording.size === 0) throw new Error("没有录到声音，请重试。");
+      if (recording.size === 0) throw new Error(t("emptyRecording"));
       if (recording.size > MAX_VOICE_AUDIO_BYTES) {
-        throw new Error("录音超过 25 MB，请缩短后重试。");
+        throw new Error(t("recordingTooLarge"));
       }
       const transcript = await voiceInput.transcribe({
         audio: await recording.arrayBuffer(),
@@ -545,7 +576,7 @@ export function ThreadlightApp({
       });
     } catch (error) {
       if (operation === voiceOperation.current) {
-        setVoiceError(voiceInputErrorMessage(error));
+        setVoiceError(voiceInputErrorMessage(error, t));
       }
     } finally {
       if (operation === voiceOperation.current) setVoiceStatus("idle");
@@ -674,10 +705,14 @@ export function ThreadlightApp({
             projectId: currentProject.id,
             id: state.threadId,
             title: shouldNameConversation
-              ? conversationTitle(value || stagedAttachments[0]?.name || "新任务")
+              ? conversationTitle(value || stagedAttachments[0]?.name || t("task"), t)
               : (existingTitle ??
                 conversationTitle(
-                  state.messages[0]?.text || value || stagedAttachments[0]?.name || "新任务",
+                  state.messages[0]?.text ||
+                    value ||
+                    stagedAttachments[0]?.name ||
+                    t("task"),
+                  t,
                 )),
           });
           setProjectSnapshot(snapshot);
@@ -896,23 +931,27 @@ export function ThreadlightApp({
           }
         >
           <SquarePen size={16} />
-          <span>新建任务</span>
+          <span>{t("newTask")}</span>
         </button>
 
-        <nav className="thread-list" aria-label="项目与任务列表">
+        <nav className="thread-list" aria-label={t("projectsAndTasks")}>
           {projects ? (
             <>
               <div className="project-list-heading">
-                <p className="section-label">项目</p>
+                <p className="section-label">{t("projects")}</p>
                 <div className="project-heading-actions">
                   {memory && currentProject && (
                     <button
                       type="button"
                       className={`icon-button pressable ${view === "memory" ? "active" : ""}`}
                       aria-current={view === "memory" ? "page" : undefined}
-                      aria-label={`${currentProject.name} 的项目记忆`}
+                      aria-label={t("projectMemoryFor", {
+                        project: currentProject.name,
+                      })}
                       disabled={switchingProject || voiceStatus !== "idle"}
-                      title={`${currentProject.name} 的项目记忆`}
+                      title={t("projectMemoryFor", {
+                        project: currentProject.name,
+                      })}
                       onClick={() => {
                         cancelVoiceInput();
                         setView("memory");
@@ -924,8 +963,8 @@ export function ThreadlightApp({
                   <button
                     className="icon-button pressable"
                     type="button"
-                    title="通过文件夹打开项目"
-                    aria-label="通过文件夹打开项目"
+                    title={t("openProjectFolder")}
+                    aria-label={t("openProjectFolder")}
                     disabled={
                       switchingProject ||
                       voiceStatus !== "idle"
@@ -959,22 +998,22 @@ export function ThreadlightApp({
                   />
                 ))}
                 {projectSnapshot?.projects.length === 0 && (
-                  <div className="thread-placeholder">打开一个文件夹开始</div>
+                  <div className="thread-placeholder">{t("openFolderToStart")}</div>
                 )}
               </div>
             </>
           ) : (
             <>
-              <p className="section-label">当前</p>
+              <p className="section-label">{t("current")}</p>
               {state.threadId ? (
                 <div className="thread-item active" aria-current="page">
                   <span className="thread-title">
-                    {state.messages[0]?.text || "新任务"}
+                    {state.messages[0]?.text || t("task")}
                   </span>
                   <span className="thread-id">{shortId(state.threadId)}</span>
                 </div>
               ) : (
-                <div className="thread-placeholder">正在准备任务…</div>
+                <div className="thread-placeholder">{t("preparingTask")}</div>
               )}
             </>
           )}
@@ -992,7 +1031,7 @@ export function ThreadlightApp({
               }}
             >
               <Settings size={15} />
-              设置
+              {t("settings")}
             </button>
           )}
           <div className="sidebar-status">
@@ -1001,10 +1040,10 @@ export function ThreadlightApp({
             />
             <span>
               {currentProject || !projects
-                ? connectionLabel(state.connection)
-                : "未打开项目"}
+                ? connectionLabel(state.connection, t)
+                : t("noProjectOpen")}
             </span>
-            <span className="status-mode">本地</span>
+            <span className="status-mode">{t("local")}</span>
           </div>
         </div>
       </aside>
@@ -1039,6 +1078,7 @@ export function ThreadlightApp({
           <SettingsPage
             adapter={settings}
             onRuntimeRestart={reconnectRuntime}
+            onLanguageChange={onLanguageChange}
           />
         ) : projects && !currentProject ? (
           <ProjectEmptyState
@@ -1050,7 +1090,7 @@ export function ThreadlightApp({
           <>
             <header className="workspace-header">
               <div>
-                <h1>{state.messages[0]?.text || "新任务"}</h1>
+                <h1>{state.messages[0]?.text || t("task")}</h1>
                 <p>
                   {currentProject?.basePath ?? "Agent runtime"} ·{" "}
                   {shortId(state.threadId)}
@@ -1059,7 +1099,7 @@ export function ThreadlightApp({
               <div className="workspace-header-actions">
                 {state.isRunning && (
                   <span className="running-badge">
-                    <LoaderCircle size={13} /> 正在运行
+                    <LoaderCircle size={13} /> {t("running")}
                   </span>
                 )}
               </div>
@@ -1076,7 +1116,9 @@ export function ThreadlightApp({
               <div className="conversation-inner">
                 {state.connection === "error" && (
                   <ConnectionError
-                    message={state.connectionError ?? "无法连接 app-server"}
+                    message={
+                      state.connectionError ?? t("appServerConnectionFailed")
+                    }
                     onRetry={() => void retry()}
                     onOpenSettings={settings ? () => setView("settings") : undefined}
                   />
@@ -1151,7 +1193,7 @@ export function ThreadlightApp({
                         {state.isThinking && (
                           <div className="thinking-row">
                             <LoaderCircle size={15} />
-                            正在思考…
+                            {t("thinking")}
                           </div>
                         )}
                       </div>
@@ -1217,8 +1259,8 @@ export function ThreadlightApp({
                         preparingAttachments ||
                         pendingAttachments.length >= MAX_COMPOSER_ATTACHMENTS
                       }
-                      aria-label="添加图片或文件"
-                      title="添加图片或文件"
+                      aria-label={t("addAttachment")}
+                      title={t("addAttachment")}
                     >
                       <Paperclip size={17} />
                     </button>
@@ -1229,8 +1271,8 @@ export function ThreadlightApp({
                     rows={1}
                     placeholder={
                       voiceStatus === "recording"
-                        ? "正在聆听…"
-                        : "向 Threadlight 提问…"
+                        ? t("listening")
+                        : t("askThreadlight")
                     }
                     disabled={state.connection !== "ready"}
                     onChange={(event) => {
@@ -1242,7 +1284,7 @@ export function ThreadlightApp({
                       event.currentTarget.style.height = "auto";
                       event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
                     }}
-                    aria-label="消息"
+                    aria-label={t("message")}
                     aria-describedby="composer-hint"
                   />
                   {voiceInput && !state.isRunning && (
@@ -1260,15 +1302,19 @@ export function ThreadlightApp({
                     }
                     aria-label={
                       voiceStatus === "recording"
-                        ? "结束录音"
+                        ? t("stopRecording")
                         : voiceStatus === "requesting"
-                          ? "正在请求麦克风权限"
+                          ? t("requestingMicrophone")
                         : voiceStatus === "transcribing"
-                          ? "正在转写语音"
-                          : "语音输入"
+                          ? t("transcribingVoice")
+                          : t("voiceInput")
                     }
                     aria-pressed={voiceStatus === "recording"}
-                    title={voiceStatus === "recording" ? "结束录音" : "语音输入"}
+                    title={
+                      voiceStatus === "recording"
+                        ? t("stopRecording")
+                        : t("voiceInput")
+                    }
                   >
                     {voiceStatus === "requesting" ||
                     voiceStatus === "transcribing" ? (
@@ -1284,8 +1330,8 @@ export function ThreadlightApp({
                   <button
                     className="composer-action stop pressable"
                     onClick={stopRunningTurn}
-                    aria-label="停止运行"
-                    title="停止"
+                    aria-label={t("stopRun")}
+                    title={t("stop")}
                   >
                     <CircleStop size={18} />
                   </button>
@@ -1299,8 +1345,8 @@ export function ThreadlightApp({
                       voiceStatus !== "idle" ||
                       preparingAttachments
                     }
-                    aria-label="发送消息"
-                    title="发送"
+                    aria-label={t("sendMessage")}
+                    title={t("send")}
                   >
                     <ArrowUp size={18} strokeWidth={2.4} />
                   </button>
@@ -1319,6 +1365,7 @@ export function ThreadlightApp({
                   state.submissionError,
                   pendingAttachments,
                   preparingAttachments,
+                  t,
                 )}
               </p>
             </footer>
@@ -1326,7 +1373,7 @@ export function ThreadlightApp({
               <div className="attachment-drop-overlay" aria-hidden="true">
                 <div>
                   <Paperclip size={20} />
-                  <span>拖到这里添加到对话</span>
+                  <span>{t("dropFiles")}</span>
                 </div>
               </div>
             )}
@@ -1339,9 +1386,9 @@ export function ThreadlightApp({
               <button
                 type="button"
                 className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
-                aria-label={terminalOpen ? "关闭终端" : "打开终端"}
+                aria-label={terminalOpen ? t("closeTerminal") : t("openTerminal")}
                 aria-pressed={terminalOpen}
-                title={`${terminalOpen ? "关闭" : "打开"}终端（⌘J）`}
+                title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")}（⌘J）`}
                 onClick={() => setTerminalOpen((open) => !open)}
               >
                 <SquareTerminal size={16} />
@@ -1352,10 +1399,10 @@ export function ThreadlightApp({
                 type="button"
                 className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
                 aria-label={
-                  workspacePanelOpen ? "关闭右侧面板" : "打开右侧面板"
+                  workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")
                 }
                 aria-pressed={workspacePanelOpen}
-                title={workspacePanelOpen ? "关闭右侧面板" : "打开右侧面板"}
+                title={workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")}
                 onClick={() => setWorkspacePanelOpen((open) => !open)}
               >
                 <PanelRight size={16} />
@@ -1414,6 +1461,7 @@ export function ConversationChangesButton({
   changes: ConversationChangesSnapshot;
   onOpen(): void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="conversation-changes-float">
       <button
@@ -1422,7 +1470,7 @@ export function ConversationChangesButton({
         onClick={onOpen}
       >
         <FileDiff size={14} />
-        <span>{changes.files.length} 个文件已更改</span>
+        <span>{t("filesChanged", { count: changes.files.length })}</span>
         <span className="change-additions">+{changes.additions}</span>
         <span className="change-deletions">-{changes.deletions}</span>
       </button>
@@ -1473,6 +1521,7 @@ export function ComputerShareStatus({
   onShow(): void;
   onStop(): void;
 }) {
+  const { t } = useI18n();
   const applications = [
     ...new Set(
       snapshot.targets.map(
@@ -1483,7 +1532,7 @@ export function ComputerShareStatus({
   const targetLabel =
     applications.length > 0
       ? applications.join("、")
-      : `${snapshot.targets.length} 个窗口`;
+      : t("windowsCount", { count: snapshot.targets.length });
 
   return (
     <div className="composer-share" aria-live="polite">
@@ -1493,9 +1542,9 @@ export function ComputerShareStatus({
       </span>
       <span className="composer-share-copy">
         <strong>
-          正在共享
+          {t("sharing")}
           {snapshot.targets.length > 1
-            ? ` ${snapshot.targets.length} 个窗口`
+            ? ` ${t("windowsCount", { count: snapshot.targets.length })}`
             : ""}
         </strong>
         <small title={targetLabel}>{error ?? targetLabel}</small>
@@ -1507,15 +1556,15 @@ export function ComputerShareStatus({
         onClick={onShow}
       >
         {busy && !stopping && <LoaderCircle className="spin" size={12} />}
-        {snapshot.pictureInPicture ? "显示画中画" : "重新打开"}
+        {snapshot.pictureInPicture ? t("showPictureInPicture") : t("reopen")}
       </button>
       <button
         type="button"
         className="composer-share-stop pressable"
         disabled={busy}
         onClick={onStop}
-        aria-label="停止共享"
-        title="停止共享"
+        aria-label={t("stopSharing")}
+        title={t("stopSharing")}
       >
         {stopping ? (
           <LoaderCircle className="spin" size={12} />
@@ -1546,6 +1595,7 @@ export function ProjectGroup({
   onSelect(threadId?: string): void;
   onDelete?(conversation: ConversationSummary): void;
 }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const projectRunning = project.conversations.some((conversation) =>
     runningThreadIds.includes(conversation.id),
@@ -1580,12 +1630,12 @@ export function ProjectGroup({
               <LoaderCircle
                 className="project-runtime-indicator spin"
                 size={13}
-                aria-label={`${project.name} 中有任务正在运行`}
+                aria-label={t("projectTaskRunning", { project: project.name })}
               />
             )}
             {showsProjectLevelActivity(expanded, projectUsingComputer) && (
               <ComputerUseIndicator
-                label={`${project.name} 中有任务正在使用电脑`}
+                label={t("projectTaskUsingComputer", { project: project.name })}
               />
             )}
           </span>
@@ -1607,7 +1657,7 @@ export function ProjectGroup({
             />
           ))}
           {project.conversations.length === 0 && (
-            <span className="project-empty-label">暂无任务</span>
+            <span className="project-empty-label">{t("noTasks")}</span>
           )}
         </div>
       )}
@@ -1632,6 +1682,7 @@ export function ProjectConversationItem({
   onSelect(): void;
   onDelete?(): void;
 }) {
+  const { t } = useI18n();
   return (
     <div className={`thread-item ${active ? "active" : ""}`}>
       <button
@@ -1649,12 +1700,12 @@ export function ProjectConversationItem({
               <LoaderCircle
                 className="thread-runtime-indicator spin"
                 size={13}
-                aria-label={`${conversation.title}正在运行`}
+                aria-label={t("taskRunning", { title: conversation.title })}
               />
             )}
             {computerActive && (
               <ComputerUseIndicator
-                label={`${conversation.title}正在使用电脑`}
+                label={t("taskUsingComputer", { title: conversation.title })}
               />
             )}
           </span>
@@ -1665,8 +1716,8 @@ export function ProjectConversationItem({
           type="button"
           className="thread-delete-button pressable"
           disabled={disabled}
-          title={`删除“${conversation.title}”`}
-          aria-label={`删除任务“${conversation.title}”`}
+          title={t("deleteNamedTask", { title: conversation.title })}
+          aria-label={t("deleteNamedTask", { title: conversation.title })}
           onClick={onDelete}
         >
           <Trash2 size={13} />
@@ -1717,6 +1768,7 @@ export function DeleteConversationDialog({
   onCancel(): void;
   onConfirm(): void;
 }) {
+  const { t } = useI18n();
   const cancelButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -1746,9 +1798,9 @@ export function DeleteConversationDialog({
           <Trash2 size={18} />
         </span>
         <div className="delete-dialog-copy">
-          <h2 id="delete-dialog-title">删除任务？</h2>
+          <h2 id="delete-dialog-title">{t("deleteTaskQuestion")}</h2>
           <p id="delete-dialog-description">
-            “{conversation.title}”及其对话记录将被永久删除，此操作无法撤销。
+            {t("deleteTaskDescription", { title: conversation.title })}
           </p>
           {error && <p className="delete-dialog-error">{error}</p>}
         </div>
@@ -1760,7 +1812,7 @@ export function DeleteConversationDialog({
             disabled={deleting}
             onClick={onCancel}
           >
-            取消
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -1769,7 +1821,7 @@ export function DeleteConversationDialog({
             onClick={onConfirm}
           >
             {deleting && <LoaderCircle className="spin" size={14} />}
-            {deleting ? "正在删除…" : "删除任务"}
+            {deleting ? t("deleting") : t("deleteTask")}
           </button>
         </div>
       </section>
@@ -1786,15 +1838,14 @@ function ProjectEmptyState({
   opening: boolean;
   onOpen(): void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="project-empty-state">
       <span className="project-empty-icon" aria-hidden="true">
         <FolderOpen size={23} />
       </span>
-      <h1>打开一个项目</h1>
-      <p>
-        选择项目文件夹后，任务会按项目整理，运行时也会以该目录为 base 地址。
-      </p>
+      <h1>{t("openProject")}</h1>
+      <p>{t("openProjectDescription")}</p>
       {error && <p className="project-open-error">{error}</p>}
       <button
         type="button"
@@ -1807,7 +1858,7 @@ function ProjectEmptyState({
         ) : (
           <FolderPlus size={15} />
         )}
-        {opening ? "正在打开…" : "通过文件夹打开"}
+        {opening ? t("opening") : t("openViaFolder")}
       </button>
     </div>
   );
@@ -1820,13 +1871,19 @@ function EmptyState({
   connecting: boolean;
   onSelect(value: string): void;
 }) {
+  const { t } = useI18n();
+  const suggestions = [
+    t("suggestionArchitecture"),
+    t("suggestionTests"),
+    t("suggestionFeature"),
+  ];
   return (
     <div className="empty-state">
       <div className="empty-mark" aria-hidden="true">
         <Sparkles size={22} />
       </div>
-      <h2>{connecting ? "正在连接运行时…" : "今天想推进什么？"}</h2>
-      <p>描述目标，Threadlight 会展示每一步模型调用和工具执行。</p>
+      <h2>{connecting ? t("connectingRuntime") : t("whatToDo")}</h2>
+      <p>{t("emptyDescription")}</p>
       {!connecting && (
         <div className="suggestions">
           {suggestions.map((suggestion) => (
@@ -1885,6 +1942,7 @@ export function ActivityList({
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
 }) {
+  const { t } = useI18n();
   const hasFailedActivity = activities.some(
     (activity) =>
       activity.status === "failed" || activity.status === "terminated",
@@ -1903,7 +1961,11 @@ export function ActivityList({
       <summary className="activity-heading">
         <SquareTerminal size={14} />
         <span>
-          {live ? (hasRunningActivity ? "执行中" : "已执行") : "执行记录"}
+          {live
+            ? hasRunningActivity
+              ? t("executing")
+              : t("executed")
+            : t("executionLog")}
         </span>
         <span className="activity-count">{activities.length}</span>
         <ChevronRight className="activity-chevron" size={13} aria-hidden="true" />
@@ -1944,6 +2006,7 @@ function ActivityStatus({ status }: Pick<ToolActivity, "status">) {
 }
 
 function CommandOutput({ process }: Pick<ToolActivity, "process">) {
+  const { t } = useI18n();
   if (!process) return null;
   const output = [
     process.stdout,
@@ -1955,10 +2018,10 @@ function CommandOutput({ process }: Pick<ToolActivity, "process">) {
     <details className="command-output">
       <summary>
         <ChevronRight size={12} aria-hidden="true" />
-        <span>命令行输出</span>
-        {process.truncated && <span className="output-note">已截断</span>}
+        <span>{t("commandOutput")}</span>
+        {process.truncated && <span className="output-note">{t("truncated")}</span>}
       </summary>
-      <pre>{output || "暂无输出"}</pre>
+      <pre>{output || t("noOutput")}</pre>
     </details>
   );
 }
@@ -1970,6 +2033,7 @@ function TerminateProcessButton({
   sessionId: string;
   onTerminate(sessionId: string): Promise<unknown>;
 }) {
+  const { t } = useI18n();
   const [terminating, setTerminating] = useState(false);
   const [error, setError] = useState(false);
 
@@ -1979,8 +2043,8 @@ function TerminateProcessButton({
         type="button"
         className="process-terminate-button pressable"
         disabled={terminating}
-        title="结束该命令"
-        aria-label="结束该命令"
+        title={t("terminateCommand")}
+        aria-label={t("terminateCommand")}
         onClick={() => {
           setTerminating(true);
           setError(false);
@@ -1995,11 +2059,11 @@ function TerminateProcessButton({
         ) : (
           <CircleStop size={12} />
         )}
-        {terminating ? "正在结束" : "结束"}
+        {terminating ? t("terminating") : t("terminate")}
       </button>
       {error && (
         <span className="process-action-error" role="status">
-          结束失败
+          {t("terminateFailed")}
         </span>
       )}
     </>
@@ -2015,23 +2079,24 @@ function ConnectionError({
   onRetry(): void;
   onOpenSettings?(): void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="connection-error">
       <span className="error-icon">
         <X size={16} />
       </span>
       <div>
-        <strong>无法连接到运行时</strong>
+        <strong>{t("runtimeConnectionFailed")}</strong>
         <p>{message}</p>
-        <p className="error-help">请在设置中检查模型厂商与 API Key，然后重新连接。</p>
+        <p className="error-help">{t("runtimeConnectionHelp")}</p>
         <div className="connection-actions">
           {onOpenSettings && (
             <button className="primary pressable" onClick={onOpenSettings}>
-              打开设置
+              {t("openSettings")}
             </button>
           )}
           <button className="secondary pressable" onClick={onRetry}>
-            重新连接
+            {t("reconnect")}
           </button>
         </div>
       </div>
@@ -2046,6 +2111,7 @@ export function MessageAttachments({
   attachments: readonly AttachmentData[];
   attachmentPreview?: AttachmentPreviewAdapter;
 }) {
+  const { t } = useI18n();
   const images = attachments
     .filter((attachment) => attachment.kind === "image")
     .flatMap((attachment) => {
@@ -2055,7 +2121,7 @@ export function MessageAttachments({
   const imageIds = new Set(images.map(({ attachment }) => attachment.id));
   const files = attachments.filter((attachment) => !imageIds.has(attachment.id));
   return (
-    <div className="message-attachments" aria-label="消息附件">
+    <div className="message-attachments" aria-label={t("messageAttachments")}>
       {images.length > 0 && (
         <div className="message-image-grid">
           {images.map(({ attachment, url }) => (
@@ -2107,8 +2173,9 @@ function ComposerAttachments({
   onRemove(id: string): void;
   disabled: boolean;
 }) {
+  const { t } = useI18n();
   return (
-    <div className="composer-attachments" aria-label="待发送附件">
+    <div className="composer-attachments" aria-label={t("pendingAttachments")}>
       {attachments.map((attachment) => {
         const isImage = attachment.file.type.startsWith("image/");
         return (
@@ -2135,8 +2202,8 @@ function ComposerAttachments({
               className="attachment-remove pressable"
               onClick={() => onRemove(attachment.id)}
               disabled={disabled}
-              aria-label={`移除 ${attachment.file.name}`}
-              title="移除"
+              aria-label={t("removeFile", { name: attachment.file.name })}
+              title={t("remove")}
             >
               <X size={12} />
             </button>
@@ -2151,18 +2218,22 @@ function shortId(id?: string): string {
   return id ? id.slice(0, 8) : "—";
 }
 
-function connectionLabel(connection: string): string {
-  if (connection === "ready") return "运行时已连接";
-  if (connection === "error") return "运行时离线";
-  return "正在连接";
+function connectionLabel(connection: string, t: Translate): string {
+  if (connection === "ready") return t("runtimeConnected");
+  if (connection === "error") return t("runtimeOffline");
+  return t("connectionConnecting");
 }
 
-function voiceInputHint(status: VoiceInputStatus, error?: string): string {
+function voiceInputHint(
+  status: VoiceInputStatus,
+  error: string | undefined,
+  t: Translate,
+): string {
   if (error) return error;
-  if (status === "requesting") return "正在请求麦克风权限…";
-  if (status === "recording") return "正在聆听 · 点击红色按钮完成 · Esc 取消";
-  if (status === "transcribing") return "正在将语音转成文字…";
-  return "Enter 发送 · Shift + Enter 换行";
+  if (status === "requesting") return t("microphoneRequestHint");
+  if (status === "recording") return t("recordingHint");
+  if (status === "transcribing") return t("transcribingHint");
+  return t("composerHint");
 }
 
 function attachmentHint(
@@ -2172,13 +2243,18 @@ function attachmentHint(
   submissionError: string | undefined,
   attachments: readonly PendingAttachment[],
   preparing: boolean,
+  t: Translate,
 ): string {
-  if (voiceError || status !== "idle") return voiceInputHint(status, voiceError);
+  if (voiceError || status !== "idle") {
+    return voiceInputHint(status, voiceError, t);
+  }
   if (attachmentError) return attachmentError;
-  if (submissionError) return `发送失败：${submissionError}`;
-  if (preparing) return "正在准备附件…";
-  if (attachments.length > 0) return `已添加 ${attachments.length} 个附件 · Enter 发送`;
-  return voiceInputHint(status);
+  if (submissionError) return t("sendFailed", { message: submissionError });
+  if (preparing) return t("preparingAttachments");
+  if (attachments.length > 0) {
+    return t("attachmentsAdded", { count: attachments.length });
+  }
+  return voiceInputHint(status, undefined, t);
 }
 
 function hasFiles(dataTransfer: DataTransfer): boolean {
@@ -2191,9 +2267,9 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function conversationTitle(value: string): string {
+function conversationTitle(value: string, t: Translate): string {
   const title = value.trim().replace(/\s+/g, " ");
-  return title.length > 56 ? `${title.slice(0, 56)}…` : title || "新任务";
+  return title.length > 56 ? `${title.slice(0, 56)}…` : title || t("task");
 }
 
 export function hasUserInput(

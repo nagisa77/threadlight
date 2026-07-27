@@ -719,6 +719,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (!isModelProvider(update.provider)) {
     throw new Error("provider must be openai, deepseek, or qwen");
   }
+  if (update.language !== undefined && !isLanguage(update.language)) {
+    throw new Error("language must be zh-CN, en, or ja");
+  }
   if (!isOptionalSecret(update.openAIApiKey)) {
     throw new Error("openAIApiKey must be a string or null");
   }
@@ -738,6 +741,7 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
     throw new Error("qwenBaseUrl must be a non-empty string");
   }
   return {
+    ...(update.language !== undefined ? { language: update.language } : {}),
     provider: update.provider,
     model: update.model.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
@@ -754,6 +758,12 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
       ? { searchApiKey: update.searchApiKey }
       : {}),
   } as DesktopSettingsUpdate;
+}
+
+function isLanguage(
+  value: unknown,
+): value is NonNullable<DesktopSettingsUpdate["language"]> {
+  return value === "zh-CN" || value === "en" || value === "ja";
 }
 
 function isModelProvider(

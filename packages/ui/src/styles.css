@@ -2273,13 +2273,18 @@ body.is-resizing-workspace {
 }
 
 .settings-section {
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgb(207 205 196 / 78%);
   border-radius: 13px;
   background: rgb(255 255 255 / 68%);
   box-shadow:
     0 1px 2px rgb(31 30 27 / 3%),
     0 10px 34px rgb(56 49 42 / 3%);
+}
+
+.settings-section:focus-within {
+  position: relative;
+  z-index: 10;
 }
 
 .settings-section + .settings-section {
@@ -2433,16 +2438,21 @@ body.is-resizing-workspace {
     box-shadow 160ms ease;
 }
 
-.model-select-wrap:focus-within {
+.model-select-wrap:focus-within,
+.model-select-wrap.open {
   border-color: #aaa69b;
   box-shadow:
     0 0 0 3px rgb(213 106 58 / 9%),
     0 1px 2px rgb(31 30 27 / 4%);
 }
 
-.model-select-wrap select {
+.model-select-trigger {
+  display: flex;
   width: 100%;
   height: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 0 38px 0 11px;
   border: 0;
   outline: 0;
@@ -2450,15 +2460,84 @@ body.is-resizing-workspace {
   background: transparent;
   font-size: 11px;
   font-weight: 570;
-  appearance: none;
+  text-align: left;
   cursor: pointer;
 }
 
-.model-select-wrap svg {
+.model-select-trigger > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-select-trigger > svg {
   position: absolute;
   right: 11px;
+  flex: 0 0 auto;
   color: var(--subtle);
   pointer-events: none;
+}
+
+.model-select-wrap.open .model-select-trigger > svg {
+  transform: rotate(180deg);
+}
+
+.settings-select-popover {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  max-height: 252px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid rgb(205 203 196 / 90%);
+  border-radius: 11px;
+  background: rgb(255 255 255 / 98%);
+  box-shadow:
+    0 12px 32px rgb(31 30 27 / 13%),
+    0 2px 7px rgb(31 30 27 / 7%);
+  scrollbar-color: #cfcdc4 transparent;
+  scrollbar-width: thin;
+  transform-origin: top center;
+}
+
+.settings-select-popover[hidden] {
+  display: none;
+}
+
+.settings-select-option {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-select-option[aria-selected="true"] {
+  background: #f1f1ee;
+  font-weight: 620;
+}
+
+.settings-select-option > span {
+  min-width: 0;
+}
+
+.settings-select-option > svg {
+  flex: 0 0 auto;
+  color: #8f4a2f;
 }
 
 .secret-action,
@@ -3341,6 +3420,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .conversation-changes-button:hover,
   .panel-add-trigger:hover,
   .panel-add-option:hover,
+  .settings-select-option:hover,
   .workspace-panel-close:hover,
   .panel-icon-button:hover:not(:disabled),
   .workspace-tab-close:hover {

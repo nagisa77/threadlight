@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Files, Plus, SquareTerminal } from "lucide-react";
+import { useI18n } from "./i18n.js";
 
 export type PanelViewKind = "terminal" | "file";
 
@@ -10,6 +11,7 @@ export function PanelAddMenu({
   available: readonly PanelViewKind[];
   onSelect(kind: PanelViewKind): void;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
 
@@ -34,10 +36,10 @@ export function PanelAddMenu({
       <button
         type="button"
         className="panel-add-trigger pressable"
-        aria-label="新建面板标签"
+        aria-label={t("newPanelTab")}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="新建面板标签"
+        title={t("newPanelTab")}
         onClick={() => setOpen((current) => !current)}
       >
         <Plus size={16} />
@@ -54,7 +56,7 @@ export function PanelAddMenu({
             }}
           >
             <SquareTerminal size={16} />
-            <span>终端</span>
+            <span>{t("terminal")}</span>
           </button>
         )}
         {available.includes("file") && (
@@ -68,7 +70,7 @@ export function PanelAddMenu({
             }}
           >
             <Files size={16} />
-            <span>文件</span>
+            <span>{t("file")}</span>
           </button>
         )}
       </div>

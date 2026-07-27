@@ -1,15 +1,28 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
 import {
   Check,
   ChevronDown,
   Eye,
   EyeOff,
   KeyRound,
+  Languages,
   Link2,
   LoaderCircle,
   Search,
   Sparkles,
 } from "lucide-react";
+
+import {
+  LANGUAGE_OPTIONS,
+  useI18n,
+  type Language,
+  type Translate,
+} from "./i18n.js";
 
 export type ModelProviderId = "openai" | "deepseek" | "qwen";
 
@@ -134,6 +147,7 @@ export const DEFAULT_QWEN_BASE_URL =
   "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 export interface SettingsSnapshot {
+  language: Language;
   provider: ModelProviderId;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -144,6 +158,7 @@ export interface SettingsSnapshot {
 }
 
 export interface SettingsUpdate {
+  language: Language;
   provider: ModelProviderId;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;
@@ -175,10 +190,13 @@ const EMPTY_PROVIDER_SECRETS: ProviderSecretDrafts = {
 export function SettingsPage({
   adapter,
   onRuntimeRestart,
+  onLanguageChange,
 }: {
   adapter: SettingsAdapter;
   onRuntimeRestart(): Promise<void>;
+  onLanguageChange?(language: Language): void;
 }) {
+  const { t } = useI18n();
   const [settings, setSettings] = useState<SettingsSnapshot>();
   const [providerKeys, setProviderKeys] = useState<ProviderSecretDrafts>(
     EMPTY_PROVIDER_SECRETS,
@@ -187,8 +205,10 @@ export function SettingsPage({
   const [provider, setProvider] = useState<ModelProviderId>("openai");
   const [qwenBaseUrl, setQwenBaseUrl] = useState(DEFAULT_QWEN_BASE_URL);
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
+  const [language, setLanguage] = useState<Language>("zh-CN");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedWithRestart, setSavedWithRestart] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
@@ -198,6 +218,8 @@ export function SettingsPage({
       .then((snapshot) => {
         if (!active) return;
         setSettings(snapshot);
+        setLanguage(snapshot.language);
+        onLanguageChange?.(snapshot.language);
         setProvider(snapshot.provider);
         setQwenBaseUrl(snapshot.qwenBaseUrl);
         setModel(snapshot.model);
@@ -220,11 +242,23 @@ export function SettingsPage({
       searchKey.cleared ||
       provider !== settings.provider ||
       qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
+      model !== settings.model ||
+      language !== settings.language
+    : false;
+  const runtimeDirty = settings
+    ? Object.values(providerKeys).some(
+        (draft) => draft.value.trim().length > 0 || draft.cleared,
+      ) ||
+      searchKey.value.trim().length > 0 ||
+      searchKey.cleared ||
+      provider !== settings.provider ||
+      qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
       model !== settings.model
     : false;
 
   function markEdited() {
     setSaved(false);
+    setSavedWithRestart(false);
     setError(undefined);
   }
 
@@ -254,6 +288,7 @@ export function SettingsPage({
     setError(undefined);
 
     try {
+      const shouldRestart = runtimeDirty;
       const snapshot = await adapter.save(
         createSettingsUpdate(
           providerKeys,
@@ -261,13 +296,15 @@ export function SettingsPage({
           provider,
           qwenBaseUrl,
           model,
+          language,
         ),
       );
       setSettings(snapshot);
       setProviderKeys(EMPTY_PROVIDER_SECRETS);
       setSearchKey(EMPTY_SECRET);
       setSaved(true);
-      await onRuntimeRestart();
+      setSavedWithRestart(shouldRestart);
+      if (shouldRestart) await onRuntimeRestart();
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -279,24 +316,54 @@ export function SettingsPage({
     <>
       <header className="workspace-header settings-header">
         <div>
-          <h1>设置</h1>
-          <p>模型服务与搜索</p>
+          <h1>{t("settings")}</h1>
+          <p>{t("settingsSubtitle")}</p>
         </div>
       </header>
 
       <section className="settings-scroll">
         <div className="settings-page">
           <div className="settings-intro">
-            <h2>偏好设置</h2>
-            <p>密钥会使用系统安全存储加密，并且不会写入项目文件或日志。</p>
+            <h2>{t("preferences")}</h2>
+            <p>{t("secretsNotice")}</p>
           </div>
 
           {!settings && !error ? (
             <div className="settings-loading">
-              <LoaderCircle className="spin" size={16} /> 正在读取设置…
+              <LoaderCircle className="spin" size={16} /> {t("loadingSettings")}
             </div>
           ) : (
             <>
+              <section
+                className="settings-section"
+                aria-labelledby="language-title"
+              >
+                <div className="settings-section-heading">
+                  <span className="settings-section-icon">
+                    <Languages size={16} />
+                  </span>
+                  <div>
+                    <h3 id="language-title">{t("interface")}</h3>
+                    <p>{t("interfaceDescription")}</p>
+                  </div>
+                </div>
+                <div className="settings-fields">
+                  <SettingsSelectField
+                    id="language-select"
+                    label={t("language")}
+                    description={t("languageDescription")}
+                    value={language}
+                    onChange={(value) => {
+                      const nextLanguage = value as Language;
+                      setLanguage(nextLanguage);
+                      onLanguageChange?.(nextLanguage);
+                      markEdited();
+                    }}
+                    options={LANGUAGE_OPTIONS}
+                  />
+                </div>
+              </section>
+
               <section
                 className="settings-section"
                 aria-labelledby="model-title"
@@ -306,16 +373,16 @@ export function SettingsPage({
                     <Sparkles size={16} />
                   </span>
                   <div>
-                    <h3 id="model-title">模型服务</h3>
-                    <p>选择服务厂商；可用模型和连接配置会随厂商切换。</p>
+                    <h3 id="model-title">{t("modelService")}</h3>
+                    <p>{t("modelServiceDescription")}</p>
                   </div>
                 </div>
 
                 <div className="settings-fields">
-                  <SelectField
+                  <SettingsSelectField
                     id="provider-select"
-                    label="服务厂商"
-                    description={providerOption.description}
+                    label={t("provider")}
+                    description={providerDescription(provider, t)}
                     value={provider}
                     onChange={(value) => {
                       const nextProvider = value as ModelProviderId;
@@ -325,13 +392,13 @@ export function SettingsPage({
                     }}
                     options={PROVIDER_OPTIONS.map((option) => ({
                       value: option.value,
-                      label: option.label,
+                      label: providerLabel(option.value, t),
                     }))}
                   />
-                  <SelectField
+                  <SettingsSelectField
                     id="model-select"
-                    label="默认模型"
-                    description={modelDescription(provider, model)}
+                    label={t("defaultModel")}
+                    description={modelDescription(provider, model, t)}
                     value={model}
                     onChange={(value) => {
                       setModel(value);
@@ -339,11 +406,11 @@ export function SettingsPage({
                     }}
                     options={[
                       ...(!isKnownModel(provider, model)
-                        ? [{ value: model, label: `${model}（当前配置）` }]
+                        ? [{ value: model, label: `${model} (${t("currentConfiguration")})` }]
                         : []),
                       ...providerOption.models.map((option) => ({
                         value: option.value,
-                        label: `${option.label} — ${option.qualifier}`,
+                        label: `${option.label} — ${modelQualifier(option.value, t)}`,
                       })),
                     ]}
                   />
@@ -356,8 +423,8 @@ export function SettingsPage({
                     <KeyRound size={16} />
                   </span>
                   <div>
-                    <h3 id="api-title">连接与 API 密钥</h3>
-                    <p>配置模型、语音输入和联网搜索所需的凭据。</p>
+                    <h3 id="api-title">{t("connectionAndKeys")}</h3>
+                    <p>{t("connectionAndKeysDescription")}</p>
                   </div>
                 </div>
 
@@ -365,8 +432,12 @@ export function SettingsPage({
                   <SecretField
                     key={provider}
                     id={`${provider}-api-key`}
-                    label={providerOption.keyLabel}
-                    description={providerOption.keyDescription}
+                    label={
+                      provider === "qwen"
+                        ? t("qwenApiKey")
+                        : providerOption.keyLabel
+                    }
+                    description={providerKeyDescription(provider, t)}
                     configured={providerKeyConfigured(settings, provider)}
                     draft={providerKey}
                     onChange={(value) => editProviderSecret(provider, value)}
@@ -375,8 +446,10 @@ export function SettingsPage({
                   {provider !== "openai" && (
                     <SecretField
                       id="voice-openai-api-key"
-                      label="OpenAI API Key（语音输入）"
-                      description={`仅用于把录音转成文字；当前对话仍使用 ${providerOption.label}。`}
+                      label={t("voiceOpenAIKey")}
+                      description={t("voiceKeyDescription", {
+                        provider: providerLabel(provider, t),
+                      })}
                       configured={providerKeyConfigured(settings, "openai")}
                       draft={providerKeys.openai}
                       onChange={(value) => editProviderSecret("openai", value)}
@@ -387,7 +460,7 @@ export function SettingsPage({
                     <TextField
                       id="qwen-base-url"
                       label="Base URL"
-                      description="默认连接北京地域；其他地域或业务空间请填写对应兼容接口地址。"
+                      description={t("qwenBaseUrlDescription")}
                       value={qwenBaseUrl}
                       onChange={(value) => {
                         setQwenBaseUrl(value);
@@ -397,8 +470,8 @@ export function SettingsPage({
                   )}
                   <SecretField
                     id="search-api-key"
-                    label="搜索 API Key"
-                    description="用于 Brave Search 联网搜索。"
+                    label={t("searchApiKey")}
+                    description={t("searchApiKeyDescription")}
                     configured={settings?.searchApiKeyConfigured ?? false}
                     draft={searchKey}
                     icon="search"
@@ -423,10 +496,11 @@ export function SettingsPage({
                 <span className="settings-error">{error}</span>
               ) : saved ? (
                 <span className="settings-saved">
-                  <Check size={13} /> 已保存并重新连接
+                  <Check size={13} />{" "}
+                  {savedWithRestart ? t("savedAndReconnected") : t("saved")}
                 </span>
               ) : (
-                <span>保存后会重启当前项目运行时，并恢复当前任务。</span>
+                <span>{t("saveRestartNotice")}</span>
               )}
             </div>
             <button
@@ -436,7 +510,7 @@ export function SettingsPage({
               onClick={() => void save()}
             >
               {saving && <LoaderCircle className="spin" size={14} />}
-              {saving ? "正在保存…" : "保存更改"}
+              {saving ? t("saving") : t("saveChanges")}
             </button>
           </div>
         </div>
@@ -445,7 +519,7 @@ export function SettingsPage({
   );
 }
 
-function SelectField({
+export function SettingsSelectField({
   id,
   label,
   description,
@@ -460,27 +534,142 @@ function SelectField({
   options: readonly { value: string; label: string }[];
   onChange(value: string): void;
 }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const optionButtons = useRef<Array<HTMLButtonElement | null>>([]);
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === value),
+  );
+  const selectedOption = options[selectedIndex];
+
+  useEffect(() => {
+    if (!open) return;
+    const closeFromOutside = (event: PointerEvent) => {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeFromKeyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    window.addEventListener("pointerdown", closeFromOutside);
+    window.addEventListener("keydown", closeFromKeyboard);
+    return () => {
+      window.removeEventListener("pointerdown", closeFromOutside);
+      window.removeEventListener("keydown", closeFromKeyboard);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [options, value]);
+
+  function openAndFocus(index = selectedIndex) {
+    setOpen(true);
+    requestAnimationFrame(() => optionButtons.current[index]?.focus());
+  }
+
+  function choose(nextValue: string) {
+    onChange(nextValue);
+    setOpen(false);
+    requestAnimationFrame(() => trigger.current?.focus());
+  }
+
+  function handleTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      openAndFocus(open ? Math.min(selectedIndex + 1, options.length - 1) : selectedIndex);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      openAndFocus(open ? Math.max(selectedIndex - 1, 0) : selectedIndex);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      openAndFocus(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      openAndFocus(options.length - 1);
+    }
+  }
+
+  function handleOptionKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) {
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowDown") {
+      nextIndex = Math.min(index + 1, options.length - 1);
+    } else if (event.key === "ArrowUp") {
+      nextIndex = Math.max(index - 1, 0);
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = options.length - 1;
+    }
+    if (nextIndex === undefined) return;
+    event.preventDefault();
+    optionButtons.current[nextIndex]?.focus();
+  }
+
   return (
     <div className="settings-field model-field">
       <div className="settings-field-label">
         <div>
-          <label htmlFor={id}>{label}</label>
+          <label id={`${id}-label`} htmlFor={id}>{label}</label>
           <p>{description}</p>
         </div>
       </div>
-      <div className="model-select-wrap">
-        <select
+      <div
+        className={`model-select-wrap ${open ? "open" : ""}`}
+        ref={root}
+      >
+        <button
+          ref={trigger}
+          type="button"
           id={id}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          className="model-select-trigger pressable"
+          role="combobox"
+          aria-labelledby={`${id}-label ${id}`}
+          aria-controls={`${id}-options`}
+          aria-expanded={open}
+          aria-haspopup="listbox"
+          onClick={() => {
+            if (open) setOpen(false);
+            else openAndFocus();
+          }}
+          onKeyDown={handleTriggerKeyDown}
+        >
+          <span>{selectedOption?.label ?? value}</span>
+          <ChevronDown size={14} aria-hidden="true" />
+        </button>
+        <div
+          id={`${id}-options`}
+          className="settings-select-popover"
+          role="listbox"
+          aria-labelledby={`${id}-label`}
+          hidden={!open}
         >
           {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
+            <button
+              key={option.value}
+              ref={(element) => {
+                optionButtons.current[options.indexOf(option)] = element;
+              }}
+              type="button"
+              className="settings-select-option pressable"
+              role="option"
+              aria-selected={option.value === value}
+              onClick={() => choose(option.value)}
+              onKeyDown={(event) =>
+                handleOptionKeyDown(event, options.indexOf(option))
+              }
+            >
+              <span>{option.label}</span>
+              {option.value === value && <Check size={14} aria-hidden="true" />}
+            </button>
           ))}
-        </select>
-        <ChevronDown size={14} aria-hidden="true" />
+        </div>
       </div>
     </div>
   );
@@ -505,6 +694,7 @@ function SecretField({
   onChange(value: string): void;
   onClear(): void;
 }) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   const active = configured && !draft.cleared;
 
@@ -516,9 +706,9 @@ function SecretField({
           <p>{description}</p>
         </div>
         {draft.cleared ? (
-          <span className="key-status pending">待移除</span>
+          <span className="key-status pending">{t("pendingRemoval")}</span>
         ) : active ? (
-          <span className="key-status">已配置</span>
+          <span className="key-status">{t("configured")}</span>
         ) : null}
       </div>
       <div className="secret-input-wrap">
@@ -531,14 +721,16 @@ function SecretField({
           value={draft.value}
           autoComplete="off"
           spellCheck={false}
-          placeholder={active ? "输入新密钥以替换" : "粘贴 API Key"}
+          placeholder={active ? t("replaceKey") : t("pasteApiKey")}
           onChange={(event) => onChange(event.target.value)}
         />
         <button
           type="button"
           className="secret-action pressable"
-          aria-label={visible ? `隐藏 ${label}` : `显示 ${label}`}
-          title={visible ? "隐藏" : "显示"}
+          aria-label={
+            visible ? t("hideLabel", { label }) : t("showLabel", { label })
+          }
+          title={visible ? t("hide") : t("show")}
           onClick={() => setVisible((value) => !value)}
         >
           {visible ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -549,7 +741,7 @@ function SecretField({
             className="secret-clear pressable"
             onClick={onClear}
           >
-            清除
+            {t("clear")}
           </button>
         )}
       </div>
@@ -602,8 +794,10 @@ export function createSettingsUpdate(
   provider: ModelProviderId,
   qwenBaseUrl: string,
   model: string,
+  language: Language = "zh-CN",
 ): SettingsUpdate {
   return {
+    language,
     provider,
     qwenBaseUrl: qwenBaseUrl.trim(),
     model,
@@ -635,11 +829,67 @@ function isKnownModel(provider: ModelProviderId, model: string): boolean {
   return providerDetails(provider).models.some((option) => option.value === model);
 }
 
-function modelDescription(provider: ModelProviderId, model: string): string {
+function providerDescription(
+  provider: ModelProviderId,
+  t: Translate,
+): string {
+  if (provider === "deepseek") return t("providerDeepSeekDescription");
+  if (provider === "qwen") return t("providerQwenDescription");
+  return t("providerOpenAIDescription");
+}
+
+function providerLabel(provider: ModelProviderId, t: Translate): string {
+  if (provider === "qwen") return t("providerQwenLabel");
+  return providerDetails(provider).label;
+}
+
+function providerKeyDescription(
+  provider: ModelProviderId,
+  t: Translate,
+): string {
+  if (provider === "deepseek") return t("providerDeepSeekKeyDescription");
+  if (provider === "qwen") return t("providerQwenKeyDescription");
+  return t("providerOpenAIKeyDescription");
+}
+
+function modelDescription(
+  provider: ModelProviderId,
+  model: string,
+  t: Translate,
+): string {
+  const descriptions: Record<string, Parameters<Translate>[0]> = {
+    "gpt-5.6-sol": "modelComplex",
+    "gpt-5.6-terra": "modelBalanced",
+    "gpt-5.6-luna": "modelCost",
+    "gpt-5.4-mini": "modelFastCoding",
+    "gpt-5-mini": "modelClearGoals",
+    "gpt-4.1-mini": "modelNoReasoning",
+    "deepseek-v4-pro": "modelAgentComplex",
+    "deepseek-v4-flash": "modelAgentFast",
+    "qwen3.7-max": "modelQwenMax",
+    "qwen3.7-plus": "modelQwenPlus",
+    "qwen3.6-flash": "modelQwenFlash",
+  };
+  const key = descriptions[model];
   return (
+    (key ? t(key) : undefined) ??
     providerDetails(provider).models.find((option) => option.value === model)
-      ?.description ?? "当前模型由外部配置提供；选择其他模型后将覆盖它。"
+      ?.description ??
+    t("externalModelDescription")
   );
+}
+
+function modelQualifier(model: string, t: Translate): string {
+  if (model === "gpt-5.6-sol" || model === "deepseek-v4-pro" || model === "qwen3.7-max") {
+    return t("performanceFirst");
+  }
+  if (model === "gpt-5.6-terra" || model === "qwen3.7-plus") return t("balanced");
+  if (model === "gpt-5.6-luna") return t("costFirst");
+  if (model === "gpt-5.4-mini") return t("powerfulMini");
+  if (model === "gpt-5-mini") return t("economicalMini");
+  if (model === "gpt-4.1-mini") return t("lowLatencyMini");
+  if (model === "deepseek-v4-flash") return t("speedFirst");
+  return t("lowLatency");
 }
 
 function secretUpdate<K extends keyof Pick<

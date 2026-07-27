@@ -12,6 +12,13 @@ export {
   useThreadlightSession,
 } from "./session.js";
 export { isNearBottom } from "./scroll.js";
+export {
+  I18nProvider,
+  LANGUAGE_OPTIONS,
+  SUPPORTED_LANGUAGES,
+  isLanguage,
+  useI18n,
+} from "./i18n.js";
 export { SettingsPage, createSettingsUpdate } from "./settings.js";
 export { TerminalPanel } from "./terminal.js";
 export {
@@ -57,6 +64,7 @@ export type {
   ToolActivity,
 } from "./session.js";
 export type { ScrollMetrics } from "./scroll.js";
+export type { Language, Translate } from "./i18n.js";
 export type {
   ModelProviderId,
   ProviderSecretDrafts,

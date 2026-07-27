@@ -49,6 +49,7 @@ describe("SettingsStore", () => {
     );
 
     expect(snapshot).toEqual({
+      language: "zh-CN",
       provider: "deepseek",
       openAIApiKeyConfigured: true,
       deepSeekApiKeyConfigured: true,
@@ -144,8 +145,31 @@ describe("SettingsStore", () => {
       model: "qwen3.7-plus",
     });
     expect(store.snapshot({})).toMatchObject({
+      language: "zh-CN",
       provider: "openai",
       model: "gpt-5.6-sol",
+    });
+  });
+
+  it("persists the interface language without affecting runtime settings", () => {
+    const { path, store } = createStore();
+    const before = store.runtimeSettings({});
+
+    const snapshot = store.update(
+      {
+        language: "ja",
+        provider: "openai",
+        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+        model: "gpt-5.6-sol",
+      },
+      {},
+    );
+
+    expect(snapshot.language).toBe("ja");
+    expect(store.runtimeSettings({})).toEqual(before);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+      version: 1,
+      language: "ja",
     });
   });
 });

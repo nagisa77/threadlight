@@ -1,12 +1,37 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_QWEN_BASE_URL,
   PROVIDER_OPTIONS,
+  SettingsSelectField,
   createSettingsUpdate,
 } from "../src/settings.js";
 
 describe("settings", () => {
+  it("renders the custom accessible settings popover instead of a native select", () => {
+    const html = renderToStaticMarkup(
+      createElement(SettingsSelectField, {
+        id: "provider-select",
+        label: "服务厂商",
+        description: "选择服务厂商",
+        value: "openai",
+        options: [
+          { value: "openai", label: "OpenAI" },
+          { value: "deepseek", label: "DeepSeek" },
+        ],
+        onChange: () => {},
+      }),
+    );
+
+    expect(html).toContain('role="combobox"');
+    expect(html).toContain('role="listbox"');
+    expect(html).toContain('role="option"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).not.toContain("<select");
+  });
+
   it("scopes the available models to each provider", () => {
     expect(
       PROVIDER_OPTIONS.map((provider) => ({
@@ -50,6 +75,7 @@ describe("settings", () => {
         "deepseek-v4-pro",
       ),
     ).toEqual({
+      language: "zh-CN",
       provider: "deepseek",
       deepSeekApiKey: "ds-new",
       qwenApiKey: null,
@@ -72,9 +98,27 @@ describe("settings", () => {
         "qwen3.7-plus",
       ),
     ).toEqual({
+      language: "zh-CN",
       provider: "qwen",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "qwen3.7-plus",
     });
+  });
+
+  it("includes the selected interface language in persisted settings", () => {
+    expect(
+      createSettingsUpdate(
+        {
+          openai: { value: "", cleared: false },
+          deepseek: { value: "", cleared: false },
+          qwen: { value: "", cleared: false },
+        },
+        { value: "", cleared: false },
+        "openai",
+        DEFAULT_QWEN_BASE_URL,
+        "gpt-5.6-sol",
+        "ja",
+      ).language,
+    ).toBe("ja");
   });
 });

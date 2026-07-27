@@ -43,8 +43,10 @@ export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
   "threadlight:workspace-file:get";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
+export type DesktopLanguage = "zh-CN" | "en" | "ja";
 
 export interface DesktopSettingsSnapshot {
+  language: DesktopLanguage;
   provider: DesktopModelProvider;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -55,6 +57,7 @@ export interface DesktopSettingsSnapshot {
 }
 
 export interface DesktopSettingsUpdate {
+  language?: DesktopLanguage;
   provider: DesktopModelProvider;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;

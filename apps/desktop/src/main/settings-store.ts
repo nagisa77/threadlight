@@ -8,6 +8,7 @@ import {
 import { dirname } from "node:path";
 
 import type {
+  DesktopLanguage,
   DesktopModelProvider,
   DesktopSettingsSnapshot,
   DesktopSettingsUpdate,
@@ -15,6 +16,7 @@ import type {
 
 interface StoredSettings {
   version: 1;
+  language?: DesktopLanguage;
   provider?: DesktopModelProvider;
   encryptedOpenAIApiKey?: string;
   encryptedDeepSeekApiKey?: string;
@@ -58,6 +60,7 @@ export class SettingsStore {
   snapshot(environment: NodeJS.ProcessEnv = process.env): DesktopSettingsSnapshot {
     const settings = this.runtimeSettings(environment);
     return {
+      language: parseLanguage(this.read().language),
       provider: settings.provider,
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
@@ -75,6 +78,7 @@ export class SettingsStore {
     const current = this.read();
     const next: StoredSettings = {
       ...current,
+      language: update.language ?? current.language,
       provider: update.provider,
       qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl),
       model: requireNonEmpty(update.model, "Model"),
@@ -240,7 +244,8 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.encryptedQwenApiKey) &&
     optionalString(settings.encryptedSearchApiKey) &&
     optionalString(settings.qwenBaseUrl) &&
-    optionalString(settings.model)
+    optionalString(settings.model) &&
+    optionalLanguage(settings.language)
   );
 }
 
@@ -256,6 +261,18 @@ function optionalString(value: unknown): boolean {
 
 function optionalProvider(value: unknown): boolean {
   return value === undefined || isProvider(value);
+}
+
+function optionalLanguage(value: unknown): boolean {
+  return value === undefined || isLanguage(value);
+}
+
+function isLanguage(value: unknown): value is DesktopLanguage {
+  return value === "zh-CN" || value === "en" || value === "ja";
+}
+
+function parseLanguage(value: unknown): DesktopLanguage {
+  return isLanguage(value) ? value : "zh-CN";
 }
 
 function isProvider(value: unknown): value is DesktopModelProvider {
