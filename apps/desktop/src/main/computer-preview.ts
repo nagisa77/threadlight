@@ -293,8 +293,32 @@ export function computerPreviewHtml(): string {
 
       function stopCapture(capture) {
         for (const track of capture.stream.getTracks()) track.stop();
+        capture.peer.close();
         capture.video.srcObject = null;
         capture.video.remove();
+      }
+
+      function waitForIceGathering(peer) {
+        if (peer.iceGatheringState === "complete") return Promise.resolve();
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error("Timed out connecting the preview stream"));
+          }, 10000);
+          const onStateChange = () => {
+            if (peer.iceGatheringState !== "complete") return;
+            cleanup();
+            resolve();
+          };
+          const cleanup = () => {
+            clearTimeout(timeout);
+            peer.removeEventListener(
+              "icegatheringstatechange",
+              onStateChange
+            );
+          };
+          peer.addEventListener("icegatheringstatechange", onStateChange);
+        });
       }
 
       function cardFor(tile) {
@@ -390,29 +414,17 @@ export function computerPreviewHtml(): string {
       }
 
       window.threadlightPreview = {
-        async start(key) {
+        async acceptOffer(key, offer) {
           const current = captures.get(key);
-          if (
-            current &&
-            current.stream.getVideoTracks().some(
-              (track) => track.readyState === "live"
-            )
-          ) {
-            return {
-              width: current.video.videoWidth,
-              height: current.video.videoHeight
-            };
-          }
           if (current) {
             stopCapture(current);
             captures.delete(key);
           }
-          const stream = await navigator.mediaDevices.getDisplayMedia({
-            audio: false,
-            video: {
-              width: { ideal: 1920 },
-              height: { ideal: 1200 },
-              frameRate: { ideal: 15, max: 30 }
+          const peer = new RTCPeerConnection();
+          const stream = new MediaStream();
+          peer.addEventListener("track", (event) => {
+            if (!stream.getTracks().includes(event.track)) {
+              stream.addTrack(event.track);
             }
           });
           const video = document.createElement("video");
@@ -420,9 +432,25 @@ export function computerPreviewHtml(): string {
           video.muted = true;
           video.playsInline = true;
           video.srcObject = stream;
+          captures.set(key, { peer, stream, video });
+          await peer.setRemoteDescription(offer);
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          await waitForIceGathering(peer);
+          return {
+            type: peer.localDescription.type,
+            sdp: peer.localDescription.sdp
+          };
+        },
+
+        async waitForStream(key) {
+          const capture = captures.get(key);
+          if (!capture) {
+            throw new Error("Missing relayed preview stream: " + key);
+          }
+          const video = capture.video;
           await video.play();
           await waitForVideo(video);
-          captures.set(key, { stream, video });
           return {
             width: video.videoWidth,
             height: video.videoHeight
@@ -440,9 +468,13 @@ export function computerPreviewHtml(): string {
         status() {
           return [...captures.entries()].map(([key, capture]) => ({
             key,
-            active: capture.stream
-              .getVideoTracks()
-              .some((track) => track.readyState === "live")
+            active:
+              capture.peer.connectionState !== "failed" &&
+              capture.peer.connectionState !== "closed" &&
+              capture.peer.connectionState !== "disconnected" &&
+              capture.stream
+                .getVideoTracks()
+                .some((track) => track.readyState === "live")
           }));
         },
 

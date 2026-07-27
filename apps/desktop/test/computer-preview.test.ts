@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { computerCaptureHtml } from "../src/main/computer-capture.js";
 import {
   COMPUTER_PREVIEW_WINDOW_APPEARANCE,
   computerPreviewHtml,
@@ -17,12 +18,14 @@ describe("computer share picture in picture", () => {
     });
   });
 
-  it("uses a frameless stack with one hover glass close control", () => {
+  it("renders the live shared stream in a frameless stack", () => {
     const html = computerPreviewHtml();
 
     expect(html).toContain('id="cards"');
     expect(html).toContain("window.threadlightPreview");
-    expect(html).toContain("navigator.mediaDevices.getDisplayMedia");
+    expect(html).toContain("new RTCPeerConnection()");
+    expect(html).toContain("async acceptOffer(key, offer)");
+    expect(html).toContain("async waitForStream(key)");
     expect(html).toContain("video.srcObject = stream");
     expect(html).toContain("frame.append(capture.video)");
     expect(html).toContain("bringToFront");
@@ -39,6 +42,18 @@ describe("computer share picture in picture", () => {
     expect(html).not.toContain("#111210");
     expect(html).not.toContain("image.toDataURL");
     expect(html).not.toContain("drawImage");
+    expect(html).not.toContain("navigator.mediaDevices.getDisplayMedia");
+  });
+
+  it("relays the existing capture stream instead of capturing each source twice", () => {
+    const captureHtml = computerCaptureHtml();
+
+    expect(captureHtml).toContain("async createPreviewOffer(key)");
+    expect(captureHtml).toContain(
+      "peer.addTrack(track, capture.stream)",
+    );
+    expect(captureHtml).toContain("async acceptPreviewAnswer(key, answer)");
+    expect(captureHtml).toContain("stopPreviewRelays()");
   });
 
   it("fans windows far enough apart to expose the back card", () => {

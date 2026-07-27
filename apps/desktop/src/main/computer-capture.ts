@@ -101,6 +101,7 @@ export function computerCaptureHtml(): string {
     <script>
       const canvas = document.getElementById("canvas");
       const captures = new Map();
+      const previewPeers = new Map();
 
       function waitForVideo(video) {
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -132,6 +133,36 @@ export function computerCaptureHtml(): string {
         for (const track of capture.stream.getTracks()) track.stop();
         capture.video.srcObject = null;
         capture.video.remove();
+      }
+
+      function closePreviewPeer(key) {
+        const peer = previewPeers.get(key);
+        if (!peer) return;
+        peer.close();
+        previewPeers.delete(key);
+      }
+
+      function waitForIceGathering(peer) {
+        if (peer.iceGatheringState === "complete") return Promise.resolve();
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            cleanup();
+            reject(new Error("Timed out relaying the shared stream"));
+          }, 10000);
+          const onStateChange = () => {
+            if (peer.iceGatheringState !== "complete") return;
+            cleanup();
+            resolve();
+          };
+          const cleanup = () => {
+            clearTimeout(timeout);
+            peer.removeEventListener(
+              "icegatheringstatechange",
+              onStateChange
+            );
+          };
+          peer.addEventListener("icegatheringstatechange", onStateChange);
+        });
       }
 
       window.threadlightCapture = {
@@ -176,9 +207,44 @@ export function computerCaptureHtml(): string {
         },
 
         async stopAll() {
+          for (const key of previewPeers.keys()) closePreviewPeer(key);
           for (const capture of captures.values()) stopCapture(capture);
           captures.clear();
           canvas.replaceChildren();
+          return true;
+        },
+
+        async createPreviewOffer(key) {
+          const capture = captures.get(key);
+          if (!capture) {
+            throw new Error("Missing shared stream for preview: " + key);
+          }
+          closePreviewPeer(key);
+          const peer = new RTCPeerConnection();
+          previewPeers.set(key, peer);
+          for (const track of capture.stream.getVideoTracks()) {
+            peer.addTrack(track, capture.stream);
+          }
+          const offer = await peer.createOffer();
+          await peer.setLocalDescription(offer);
+          await waitForIceGathering(peer);
+          return {
+            type: peer.localDescription.type,
+            sdp: peer.localDescription.sdp
+          };
+        },
+
+        async acceptPreviewAnswer(key, answer) {
+          const peer = previewPeers.get(key);
+          if (!peer) {
+            throw new Error("Missing preview relay for shared stream: " + key);
+          }
+          await peer.setRemoteDescription(answer);
+          return true;
+        },
+
+        stopPreviewRelays() {
+          for (const key of previewPeers.keys()) closePreviewPeer(key);
           return true;
         },
 

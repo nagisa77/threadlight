@@ -193,6 +193,7 @@ export class DesktopComputerService {
 
   dispose(): void {
     this.stopPreviewHealthChecks();
+    void this.stopPreviewRelays();
     this.preview?.destroy();
     this.preview = undefined;
     this.captureWindow?.destroy();
@@ -477,40 +478,47 @@ export class DesktopComputerService {
     source: ActiveCaptureSource,
   ): Promise<ComputerCaptureStreamMetadata> {
     const capture = await this.ensureCaptureWindow();
-    return this.startMediaStreamIn(
-      capture.webContents,
-      "threadlightCapture",
-      source,
-    );
-  }
-
-  private async startMediaStreamIn(
-    webContents: WebContents,
-    bridge: "threadlightCapture" | "threadlightPreview",
-    source: ActiveCaptureSource,
-  ): Promise<ComputerCaptureStreamMetadata> {
     const desktopSource = await this.resolveDesktopSource(source);
     this.pendingDisplayRequest = {
-      webContents,
+      webContents: capture.webContents,
       source: desktopSource,
     };
     try {
-      const result = (await webContents.executeJavaScript(
-        `window.${bridge}.start(${JSON.stringify(source.key)})`,
+      const result = (await capture.webContents.executeJavaScript(
+        `window.threadlightCapture.start(${JSON.stringify(source.key)})`,
       )) as unknown;
-      if (
-        !isObject(result) ||
-        typeof result.width !== "number" ||
-        typeof result.height !== "number" ||
-        result.width <= 0 ||
-        result.height <= 0
-      ) {
-        throw new Error(`Could not start live capture for ${source.name}`);
-      }
-      return { width: result.width, height: result.height };
+      return requireStreamMetadata(result, source.name);
     } finally {
       this.pendingDisplayRequest = undefined;
     }
+  }
+
+  private async startPreviewStream(
+    preview: WebContents,
+    source: ActiveCaptureSource,
+  ): Promise<ComputerCaptureStreamMetadata> {
+    const capture = await this.ensureCaptureWindow();
+    const offer = (await capture.webContents.executeJavaScript(
+      `window.threadlightCapture.createPreviewOffer(${JSON.stringify(
+        source.key,
+      )})`,
+    )) as unknown;
+    requireSessionDescription(offer, "offer", source.name);
+    const answer = (await preview.executeJavaScript(
+      `window.threadlightPreview.acceptOffer(${JSON.stringify(
+        source.key,
+      )}, ${JSON.stringify(offer)})`,
+    )) as unknown;
+    requireSessionDescription(answer, "answer", source.name);
+    await capture.webContents.executeJavaScript(
+      `window.threadlightCapture.acceptPreviewAnswer(${JSON.stringify(
+        source.key,
+      )}, ${JSON.stringify(answer)})`,
+    );
+    const result = (await preview.executeJavaScript(
+      `window.threadlightPreview.waitForStream(${JSON.stringify(source.key)})`,
+    )) as unknown;
+    return requireStreamMetadata(result, source.name);
   }
 
   private async resolveDesktopSource(
@@ -764,9 +772,7 @@ export class DesktopComputerService {
       if (this.preview !== preview) return;
       this.preview = undefined;
       this.stopPreviewHealthChecks();
-      if (this.pendingDisplayRequest?.webContents === preview.webContents) {
-        this.pendingDisplayRequest = undefined;
-      }
+      void this.stopPreviewRelays();
       this.selection = {
         ...this.selection,
         pictureInPicture: false,
@@ -780,6 +786,7 @@ export class DesktopComputerService {
 
   private closePreview(): void {
     this.stopPreviewHealthChecks();
+    void this.stopPreviewRelays();
     const preview = this.preview;
     this.preview = undefined;
     if (preview && !preview.isDestroyed()) preview.destroy();
@@ -796,15 +803,13 @@ export class DesktopComputerService {
       await preview.webContents.executeJavaScript(
         "window.threadlightPreview.stopAll()",
       );
+      await this.stopPreviewRelays();
       try {
         for (const source of sources) {
-          await this.startMediaStreamIn(
-            preview.webContents,
-            "threadlightPreview",
-            source,
-          );
+          await this.startPreviewStream(preview.webContents, source);
         }
       } catch (error) {
+        await this.stopPreviewRelays();
         await preview.webContents
           .executeJavaScript("window.threadlightPreview.stopAll()")
           .catch(() => undefined);
@@ -824,6 +829,14 @@ export class DesktopComputerService {
     );
     if (!preview.isVisible()) preview.showInactive();
     this.startPreviewHealthChecks();
+  }
+
+  private async stopPreviewRelays(): Promise<void> {
+    const capture = this.captureWindow;
+    if (!capture || capture.isDestroyed()) return;
+    await capture.webContents
+      .executeJavaScript("window.threadlightCapture.stopPreviewRelays()")
+      .catch(() => undefined);
   }
 
   private async previewCaptureStatuses(
@@ -1011,6 +1024,37 @@ function isCaptureStatus(value: unknown): value is ComputerCaptureStreamStatus {
     typeof value.key === "string" &&
     typeof value.active === "boolean"
   );
+}
+
+function requireStreamMetadata(
+  value: unknown,
+  sourceName: string,
+): ComputerCaptureStreamMetadata {
+  if (
+    !isObject(value) ||
+    typeof value.width !== "number" ||
+    typeof value.height !== "number" ||
+    value.width <= 0 ||
+    value.height <= 0
+  ) {
+    throw new Error(`Could not start live capture for ${sourceName}`);
+  }
+  return { width: value.width, height: value.height };
+}
+
+function requireSessionDescription(
+  value: unknown,
+  expectedType: "offer" | "answer",
+  sourceName: string,
+): asserts value is { type: "offer" | "answer"; sdp: string } {
+  if (
+    !isObject(value) ||
+    value.type !== expectedType ||
+    typeof value.sdp !== "string" ||
+    !value.sdp
+  ) {
+    throw new Error(`Could not relay the shared stream for ${sourceName}`);
+  }
 }
 
 function bestWindowMatch(

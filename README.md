@@ -288,7 +288,7 @@ Electron 桌面端进一步提供 `computer_share`：
 
 - 枚举并选择一个或多个 App、窗口或显示器。
 - 将目标组合成 1440 × 900 的稳定画布。
-- 使用不抢焦点的置顶画中画同步展示 Agent 视野。
+- 使用不抢焦点的置顶画中画复用实时采集流，同步展示 Agent 视野。
 - 优先通过 macOS Accessibility action 向目标进程定向输入。
 - 在桌面或不支持定向输入的界面显式使用 system input 兼容模式。
 
