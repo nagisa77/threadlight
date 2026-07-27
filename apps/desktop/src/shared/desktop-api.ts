@@ -36,6 +36,11 @@ export const DESKTOP_TERMINAL_WRITE_CHANNEL = "threadlight:terminal:write";
 export const DESKTOP_TERMINAL_RESIZE_CHANNEL = "threadlight:terminal:resize";
 export const DESKTOP_TERMINAL_CLOSE_CHANNEL = "threadlight:terminal:close";
 export const DESKTOP_TERMINAL_EVENT_CHANNEL = "threadlight:terminal:event";
+export const DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL =
+  "threadlight:conversation-changes:get";
+export const DESKTOP_WORKSPACE_LIST_CHANNEL = "threadlight:workspace:list";
+export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
+  "threadlight:workspace-file:get";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 
@@ -155,6 +160,53 @@ export type DesktopTerminalEvent =
       exitCode: number;
     };
 
+export interface DesktopConversationChangesRequest {
+  projectId: string;
+  threadId: string;
+}
+
+export interface DesktopConversationFileChange {
+  path: string;
+  status: "added" | "modified" | "deleted";
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  oldContent?: string;
+  newContent?: string;
+}
+
+export interface DesktopConversationChangesSnapshot {
+  threadId: string;
+  additions: number;
+  deletions: number;
+  revision: string;
+  files: readonly DesktopConversationFileChange[];
+}
+
+export interface DesktopWorkspaceListRequest {
+  projectId: string;
+  path?: string;
+}
+
+export interface DesktopWorkspaceEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+}
+
+export interface DesktopWorkspaceFileRequest {
+  projectId: string;
+  path: string;
+}
+
+export interface DesktopWorkspaceFile {
+  path: string;
+  name: string;
+  content?: string;
+  binary: boolean;
+  size: number;
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -192,4 +244,13 @@ export interface DesktopApi {
   onTerminalEvent(
     listener: (event: DesktopTerminalEvent) => void,
   ): () => void;
+  getConversationChanges(
+    request: DesktopConversationChangesRequest,
+  ): Promise<DesktopConversationChangesSnapshot>;
+  listWorkspace(
+    request: DesktopWorkspaceListRequest,
+  ): Promise<readonly DesktopWorkspaceEntry[]>;
+  getWorkspaceFile(
+    request: DesktopWorkspaceFileRequest,
+  ): Promise<DesktopWorkspaceFile>;
 }

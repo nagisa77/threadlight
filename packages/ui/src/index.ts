@@ -11,6 +11,14 @@ export { isNearBottom } from "./scroll.js";
 export { SettingsPage, createSettingsUpdate } from "./settings.js";
 export { TerminalPanel } from "./terminal.js";
 export {
+  buildChangeTree,
+  FileSource,
+  ReviewChangesTree,
+  ReviewView,
+  WorkspacePanel,
+  WorkspaceTree,
+} from "./workspace-panel.js";
+export {
   appendVoiceTranscript,
   preferredRecordingMimeType,
   voiceInputErrorMessage,
@@ -59,3 +67,10 @@ export type {
   TerminalEvent,
   TerminalSessionInfo,
 } from "./terminal.js";
+export type {
+  ConversationChangesSnapshot,
+  ConversationFileChange,
+  WorkspaceAdapter,
+  WorkspaceEntry,
+  WorkspaceFile,
+} from "./workspace-panel.js";

@@ -10,6 +10,7 @@ import {
   type SettingsAdapter,
   type TerminalAdapter,
   type VoiceInputAdapter,
+  type WorkspaceAdapter,
 } from "@threadlight/ui";
 import "@threadlight/ui/styles.css";
 
@@ -69,6 +70,14 @@ const terminal: TerminalAdapter = {
   subscribe: (listener) =>
     window.threadlightDesktop.onTerminalEvent(listener),
 };
+const workspace: WorkspaceAdapter = {
+  getChanges: (projectId, threadId) =>
+    window.threadlightDesktop.getConversationChanges({ projectId, threadId }),
+  list: (projectId, path) =>
+    window.threadlightDesktop.listWorkspace({ projectId, path }),
+  read: (projectId, path) =>
+    window.threadlightDesktop.getWorkspaceFile({ projectId, path }),
+};
 const root = document.getElementById("root");
 
 if (!root) throw new Error("Missing root element");
@@ -84,5 +93,6 @@ createRoot(root).render(
     attachmentPreview={attachmentPreview}
     computerShare={computerShare}
     terminal={terminal}
+    workspace={workspace}
   />,
 );

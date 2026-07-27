@@ -1,0 +1,424 @@
+import { createHash, randomUUID } from "node:crypto";
+import {
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+
+import { diffLines } from "diff";
+
+const SNAPSHOT_VERSION = 1;
+const MAX_REVIEW_FILE_BYTES = 2 * 1024 * 1024;
+const IGNORED_DIRECTORIES = new Set([
+  ".git",
+  ".threadlight",
+  ".next",
+  ".turbo",
+  "build",
+  "coverage",
+  "dist",
+  "node_modules",
+  "out",
+]);
+
+interface SnapshotEntry {
+  path: string;
+  hash: string;
+  size: number;
+  binary: boolean;
+  reviewable: boolean;
+}
+
+interface SnapshotManifest {
+  version: number;
+  projectId: string;
+  threadId: string;
+  createdAt: string;
+  entries: readonly SnapshotEntry[];
+}
+
+export interface ConversationFileChange {
+  path: string;
+  status: "added" | "modified" | "deleted";
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  oldContent?: string;
+  newContent?: string;
+}
+
+export interface ConversationChangesSnapshot {
+  threadId: string;
+  additions: number;
+  deletions: number;
+  revision: string;
+  files: readonly ConversationFileChange[];
+}
+
+export interface WorkspaceEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+}
+
+export interface WorkspaceFile {
+  path: string;
+  name: string;
+  content?: string;
+  binary: boolean;
+  size: number;
+}
+
+export class ConversationChangeTracker {
+  private readonly captures = new Map<string, Promise<void>>();
+
+  constructor(private readonly snapshotRoot: string) {}
+
+  async beginPendingSnapshot(
+    projectId: string,
+    requestId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const target = this.pendingPath(projectId, requestId);
+    await this.capture(target, projectId, `pending:${requestId}`, workspacePath);
+  }
+
+  async commitPendingSnapshot(
+    projectId: string,
+    requestId: string,
+    threadId: string,
+  ): Promise<void> {
+    const pending = this.pendingPath(projectId, requestId);
+    const target = this.threadPath(projectId, threadId);
+    try {
+      await stat(target);
+      await rm(pending, { recursive: true, force: true });
+      return;
+    } catch {
+      // The task does not have a committed baseline yet.
+    }
+    await mkdir(dirname(target), { recursive: true });
+    await rewriteManifestThreadId(pending, threadId);
+    await rename(pending, target);
+  }
+
+  async discardPendingSnapshot(
+    projectId: string,
+    requestId: string,
+  ): Promise<void> {
+    await rm(this.pendingPath(projectId, requestId), {
+      recursive: true,
+      force: true,
+    });
+  }
+
+  async ensureSnapshot(
+    projectId: string,
+    threadId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const target = this.threadPath(projectId, threadId);
+    try {
+      await stat(join(target, "manifest.json"));
+      return;
+    } catch {
+      const pending = this.captures.get(target);
+      if (pending) {
+        await pending;
+        return;
+      }
+      const capture = this.capture(
+        target,
+        projectId,
+        threadId,
+        workspacePath,
+      ).finally(() => {
+        this.captures.delete(target);
+      });
+      this.captures.set(target, capture);
+      await capture;
+    }
+  }
+
+  async deleteSnapshot(projectId: string, threadId: string): Promise<void> {
+    await rm(this.threadPath(projectId, threadId), {
+      recursive: true,
+      force: true,
+    });
+  }
+
+  async changes(
+    projectId: string,
+    threadId: string,
+    workspacePath: string,
+  ): Promise<ConversationChangesSnapshot> {
+    await this.ensureSnapshot(projectId, threadId, workspacePath);
+    const snapshotPath = this.threadPath(projectId, threadId);
+    const manifest = await readManifest(snapshotPath);
+    const current = await scanWorkspace(workspacePath);
+    const baselineByPath = new Map(
+      manifest.entries.map((entry) => [entry.path, entry]),
+    );
+    const currentByPath = new Map(current.map((entry) => [entry.path, entry]));
+    const paths = [...new Set([...baselineByPath.keys(), ...currentByPath.keys()])]
+      .sort((left, right) => left.localeCompare(right));
+    const files: ConversationFileChange[] = [];
+
+    for (const path of paths) {
+      const before = baselineByPath.get(path);
+      const after = currentByPath.get(path);
+      if (before?.hash === after?.hash) continue;
+
+      const binary = !!before?.binary || !!after?.binary;
+      const oldContent =
+        before?.reviewable && !binary
+          ? await readFile(join(snapshotPath, "files", path), "utf8")
+          : undefined;
+      const newContent =
+        after?.reviewable && !binary
+          ? await readFile(resolveWorkspacePath(workspacePath, path), "utf8")
+          : undefined;
+      const counts = binary
+        ? { additions: 0, deletions: 0 }
+        : lineChangeCounts(oldContent ?? "", newContent ?? "");
+
+      files.push({
+        path,
+        status: !before ? "added" : !after ? "deleted" : "modified",
+        additions: counts.additions,
+        deletions: counts.deletions,
+        binary,
+        ...(oldContent !== undefined ? { oldContent } : {}),
+        ...(newContent !== undefined ? { newContent } : {}),
+      });
+    }
+
+    const additions = files.reduce((sum, file) => sum + file.additions, 0);
+    const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
+    return {
+      threadId,
+      additions,
+      deletions,
+      revision: createHash("sha256")
+        .update(
+          files
+            .map((file) => `${file.status}:${file.path}:${file.additions}:${file.deletions}`)
+            .join("\n"),
+        )
+        .digest("hex"),
+      files,
+    };
+  }
+
+  async listWorkspace(
+    workspacePath: string,
+    relativePath = "",
+  ): Promise<readonly WorkspaceEntry[]> {
+    const directory = resolveWorkspacePath(workspacePath, relativePath);
+    await assertInsideWorkspace(workspacePath, directory);
+    const entries = await readdir(directory, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() || entry.isFile())
+      .map((entry) => ({
+        name: entry.name,
+        path: normalizeRelativePath(join(relativePath, entry.name)),
+        type: entry.isDirectory() ? "directory" as const : "file" as const,
+      }))
+      .sort((left, right) => {
+        if (left.type !== right.type) return left.type === "directory" ? -1 : 1;
+        return left.name.localeCompare(right.name);
+      });
+  }
+
+  async readWorkspaceFile(
+    workspacePath: string,
+    relativePath: string,
+  ): Promise<WorkspaceFile> {
+    const absolutePath = resolveWorkspacePath(workspacePath, relativePath);
+    await assertInsideWorkspace(workspacePath, absolutePath);
+    const metadata = await stat(absolutePath);
+    if (!metadata.isFile()) throw new Error("Workspace path is not a file");
+    const content = await readFile(absolutePath);
+    const binary = isBinary(content);
+    return {
+      path: normalizeRelativePath(relativePath),
+      name: basename(relativePath),
+      binary,
+      size: content.byteLength,
+      ...(!binary && content.byteLength <= MAX_REVIEW_FILE_BYTES
+        ? { content: content.toString("utf8") }
+        : {}),
+    };
+  }
+
+  private async capture(
+    target: string,
+    projectId: string,
+    threadId: string,
+    workspacePath: string,
+  ): Promise<void> {
+    const temporary = `${target}.creating-${process.pid}-${randomUUID()}`;
+    await rm(temporary, { recursive: true, force: true });
+    await mkdir(join(temporary, "files"), { recursive: true });
+    const entries = await scanWorkspace(workspacePath);
+
+    for (const entry of entries) {
+      if (!entry.reviewable || entry.binary) continue;
+      const source = resolveWorkspacePath(workspacePath, entry.path);
+      const destination = join(temporary, "files", entry.path);
+      await mkdir(dirname(destination), { recursive: true });
+      await cp(source, destination);
+    }
+
+    const manifest: SnapshotManifest = {
+      version: SNAPSHOT_VERSION,
+      projectId,
+      threadId,
+      createdAt: new Date().toISOString(),
+      entries,
+    };
+    await writeFile(
+      join(temporary, "manifest.json"),
+      `${JSON.stringify(manifest)}\n`,
+      "utf8",
+    );
+    await rm(target, { recursive: true, force: true });
+    await mkdir(dirname(target), { recursive: true });
+    await rename(temporary, target);
+  }
+
+  private pendingPath(projectId: string, requestId: string): string {
+    return join(
+      this.snapshotRoot,
+      key(projectId),
+      "pending",
+      key(requestId),
+    );
+  }
+
+  private threadPath(projectId: string, threadId: string): string {
+    return join(
+      this.snapshotRoot,
+      key(projectId),
+      "threads",
+      key(threadId),
+    );
+  }
+}
+
+async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
+  const root = await realpath(workspacePath);
+  const entries: SnapshotEntry[] = [];
+
+  async function visit(directory: string, relativeDirectory: string) {
+    const children = await readdir(directory, { withFileTypes: true });
+    for (const child of children) {
+      const childRelative = normalizeRelativePath(
+        join(relativeDirectory, child.name),
+      );
+      if (child.isDirectory()) {
+        if (!IGNORED_DIRECTORIES.has(child.name)) {
+          await visit(join(directory, child.name), childRelative);
+        }
+        continue;
+      }
+      if (!child.isFile()) continue;
+      const absolutePath = join(root, childRelative);
+      const content = await readFile(absolutePath);
+      const binary = isBinary(content);
+      entries.push({
+        path: childRelative,
+        hash: createHash("sha256").update(content).digest("hex"),
+        size: content.byteLength,
+        binary,
+        reviewable: !binary && content.byteLength <= MAX_REVIEW_FILE_BYTES,
+      });
+    }
+  }
+
+  await visit(root, "");
+  return entries.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function resolveWorkspacePath(workspacePath: string, relativePath: string) {
+  const normalized = normalizeRelativePath(relativePath);
+  const root = resolve(workspacePath);
+  const target = resolve(root, normalized);
+  if (target !== root && !target.startsWith(`${root}${sep}`)) {
+    throw new Error("Workspace path escapes the project");
+  }
+  return target;
+}
+
+async function assertInsideWorkspace(
+  workspacePath: string,
+  targetPath: string,
+): Promise<void> {
+  const root = await realpath(workspacePath);
+  const target = await realpath(targetPath);
+  if (target !== root && !target.startsWith(`${root}${sep}`)) {
+    throw new Error("Workspace path escapes the project");
+  }
+}
+
+function normalizeRelativePath(value: string): string {
+  const normalized = value.split(sep).join("/").replace(/^\.\/+/, "");
+  if (
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../")
+  ) {
+    throw new Error("Workspace path escapes the project");
+  }
+  return normalized;
+}
+
+function isBinary(content: Buffer): boolean {
+  return content.subarray(0, Math.min(content.length, 8_000)).includes(0);
+}
+
+function lineChangeCounts(
+  before: string,
+  after: string,
+): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const part of diffLines(before, after)) {
+    if (part.added) additions += part.count ?? 0;
+    if (part.removed) deletions += part.count ?? 0;
+  }
+  return { additions, deletions };
+}
+
+async function readManifest(snapshotPath: string): Promise<SnapshotManifest> {
+  const value = JSON.parse(
+    await readFile(join(snapshotPath, "manifest.json"), "utf8"),
+  ) as SnapshotManifest;
+  if (value.version !== SNAPSHOT_VERSION || !Array.isArray(value.entries)) {
+    throw new Error("Unsupported conversation change snapshot");
+  }
+  return value;
+}
+
+async function rewriteManifestThreadId(
+  snapshotPath: string,
+  threadId: string,
+): Promise<void> {
+  const manifest = await readManifest(snapshotPath);
+  await writeFile(
+    join(snapshotPath, "manifest.json"),
+    `${JSON.stringify({ ...manifest, threadId })}\n`,
+    "utf8",
+  );
+}
+
+function key(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}

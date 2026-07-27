@@ -17,12 +17,14 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
+  FileDiff,
   FileText,
   LoaderCircle,
   Mic,
   Monitor,
   NotebookText,
   Paperclip,
+  PanelRight,
   PictureInPicture2,
   Settings,
   Sparkles,
@@ -46,6 +48,11 @@ import {
 import { isNearBottom } from "./scroll.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
 import { TerminalPanel, type TerminalAdapter } from "./terminal.js";
+import {
+  WorkspacePanel,
+  type ConversationChangesSnapshot,
+  type WorkspaceAdapter,
+} from "./workspace-panel.js";
 import {
   MAX_VOICE_AUDIO_BYTES,
   appendVoiceTranscript,
@@ -71,6 +78,7 @@ export interface ThreadlightAppProps {
   attachmentPreview?: AttachmentPreviewAdapter;
   computerShare?: ComputerShareAdapter;
   terminal?: TerminalAdapter;
+  workspace?: WorkspaceAdapter;
 }
 
 export interface AttachmentStageAdapter {
@@ -133,6 +141,7 @@ export function ThreadlightApp({
   attachmentPreview,
   computerShare,
   terminal,
+  workspace,
 }: ThreadlightAppProps) {
   const {
     state,
@@ -170,6 +179,14 @@ export function ThreadlightApp({
   const [showingComputerShare, setShowingComputerShare] = useState(false);
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
+  const [conversationChanges, setConversationChanges] =
+    useState<ConversationChangesSnapshot>();
+  const [conversationChangesLoading, setConversationChangesLoading] =
+    useState(false);
+  const [conversationChangesError, setConversationChangesError] =
+    useState<string>();
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -181,6 +198,42 @@ export function ThreadlightApp({
   const conversation = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const currentProject = activeProject(projectSnapshot);
+
+  const refreshConversationChanges = useCallback(async () => {
+    if (!workspace || !currentProject || !state.threadId) {
+      setConversationChanges(undefined);
+      setConversationChangesError(undefined);
+      return;
+    }
+    const projectId = currentProject.id;
+    const threadId = state.threadId;
+    setConversationChangesLoading(true);
+    setConversationChangesError(undefined);
+    try {
+      const snapshot = await workspace.getChanges(projectId, threadId);
+      if (
+        projectId === currentProject.id &&
+        threadId === state.threadId
+      ) {
+        setConversationChanges(snapshot);
+      }
+    } catch (error) {
+      setConversationChangesError(errorMessage(error));
+    } finally {
+      setConversationChangesLoading(false);
+    }
+  }, [currentProject, state.threadId, workspace]);
+
+  useEffect(() => {
+    void refreshConversationChanges();
+  }, [refreshConversationChanges, state.isRunning, state.messages.length]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    const handleFocus = () => void refreshConversationChanges();
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [refreshConversationChanges, workspace]);
 
   useEffect(() => {
     if (!terminal || !currentProject) return;
@@ -691,6 +744,12 @@ export function ThreadlightApp({
     void interrupt();
   }
 
+  function openReviewPanel() {
+    setWorkspacePanelOpen(true);
+    setWorkspaceReviewRequest((request) => request + 1);
+    void refreshConversationChanges();
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Escape" && voiceStatus === "recording") {
       event.preventDefault();
@@ -837,7 +896,7 @@ export function ThreadlightApp({
       </aside>
 
       <main
-        className={`workspace ${terminalOpen ? "has-terminal" : ""} ${isDraggingFiles ? "is-dragging-files" : ""}`}
+        className={`workspace ${terminalOpen ? "has-terminal" : ""} ${workspacePanelOpen && workspace && currentProject ? "has-workspace-panel" : ""} ${isDraggingFiles ? "is-dragging-files" : ""}`}
         onPaste={handlePaste}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
@@ -888,6 +947,22 @@ export function ThreadlightApp({
                     onClick={() => setTerminalOpen((open) => !open)}
                   >
                     <Terminal size={15} />
+                  </button>
+                )}
+                {workspace && currentProject && (
+                  <button
+                    type="button"
+                    className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
+                    aria-label={
+                      workspacePanelOpen ? "关闭审阅与文件侧边栏" : "打开审阅与文件侧边栏"
+                    }
+                    aria-pressed={workspacePanelOpen}
+                    title={
+                      workspacePanelOpen ? "关闭侧边栏" : "打开侧边栏"
+                    }
+                    onClick={() => setWorkspacePanelOpen((open) => !open)}
+                  >
+                    <PanelRight size={16} />
                   </button>
                 )}
               </div>
@@ -991,6 +1066,25 @@ export function ThreadlightApp({
             </section>
 
             <footer className="composer-wrap">
+              {workspace &&
+                currentProject &&
+                conversationChanges &&
+                conversationChanges.files.length > 0 && (
+                  <button
+                    type="button"
+                    className="conversation-changes-button pressable"
+                    onClick={openReviewPanel}
+                  >
+                    <FileDiff size={14} />
+                    <span>{conversationChanges.files.length} 个文件已更改</span>
+                    <span className="change-additions">
+                      +{conversationChanges.additions}
+                    </span>
+                    <span className="change-deletions">
+                      -{conversationChanges.deletions}
+                    </span>
+                  </button>
+                )}
               <div
                 className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
               >
@@ -1155,6 +1249,20 @@ export function ThreadlightApp({
           </>
         )}
         </div>
+        {workspace && currentProject && (
+          <WorkspacePanel
+            adapter={workspace}
+            projectId={currentProject.id}
+            projectName={currentProject.name}
+            changes={conversationChanges}
+            changesLoading={conversationChangesLoading}
+            changesError={conversationChangesError}
+            reviewRequest={workspaceReviewRequest}
+            hidden={!workspacePanelOpen}
+            onClose={() => setWorkspacePanelOpen(false)}
+            onRefreshChanges={() => void refreshConversationChanges()}
+          />
+        )}
         {terminalOpen && terminal && currentProject && (
           <TerminalPanel
             key={currentProject.id}

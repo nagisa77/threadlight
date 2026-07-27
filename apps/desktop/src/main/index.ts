@@ -16,6 +16,7 @@ import {
 import {
   THREADLIGHT_METHODS,
   type AttachmentData,
+  type JsonRpcId,
   type JsonRpcOutgoing,
   type JsonRpcRequest,
   type ThreadlightMethod,
@@ -41,6 +42,7 @@ import {
   transcribeAudio,
 } from "./audio-transcription.js";
 import { createExternalWindowHandler } from "./external-links.js";
+import { ConversationChangeTracker } from "./conversation-changes.js";
 import {
   DEFAULT_MODEL,
   DEFAULT_QWEN_BASE_URL,
@@ -59,6 +61,7 @@ import {
   DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
   DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
   DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
+  DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
@@ -75,13 +78,18 @@ import {
   DESKTOP_TERMINAL_EVENT_CHANNEL,
   DESKTOP_TERMINAL_RESIZE_CHANNEL,
   DESKTOP_TERMINAL_WRITE_CHANNEL,
+  DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
+  DESKTOP_WORKSPACE_LIST_CHANNEL,
   type DesktopAttachmentReferenceRequest,
   type DesktopConversationTarget,
   type DesktopConversationUpdate,
+  type DesktopConversationChangesRequest,
   type DesktopSettingsUpdate,
   type DesktopTerminalCreateRequest,
   type DesktopTerminalResizeRequest,
   type DesktopTerminalWriteRequest,
+  type DesktopWorkspaceFileRequest,
+  type DesktopWorkspaceListRequest,
 } from "../shared/desktop-api.js";
 import {
   DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
@@ -120,6 +128,8 @@ let settingsStore: SettingsStore | null = null;
 let projectStore: ProjectStore | null = null;
 let computerService: DesktopComputerService | null = null;
 let terminalService: TerminalSessionManager | null = null;
+let conversationChangeTracker: ConversationChangeTracker | null = null;
+let rendererMessageQueue = Promise.resolve();
 const appIconPath = resolve(
   import.meta.dirname,
   "../../resources/app-icon.png",
@@ -228,8 +238,14 @@ function ensureAppServer(
       },
     ),
     send: (message) => {
-      recordProjectMessage(projectId, message);
-      sendToRenderer(window, message);
+      rendererMessageQueue = rendererMessageQueue
+        .then(async () => {
+          await recordProjectMessage(projectId, message);
+          sendToRenderer(window, message);
+        })
+        .catch(() => {
+          sendToRenderer(window, message);
+        });
     },
     handleComputerRequest: (request) => {
       if (!computerService) {
@@ -250,10 +266,10 @@ function stopAppServers(): void {
   pendingThreadStarts.clear();
 }
 
-function recordProjectMessage(
+async function recordProjectMessage(
   projectId: string,
   message: JsonRpcOutgoing,
-): void {
+): Promise<void> {
   if ("method" in message) {
     const threadId = (message.params as { threadId?: unknown } | undefined)
       ?.threadId;
@@ -265,7 +281,19 @@ function recordProjectMessage(
   pendingThreadStarts.delete(message.id);
   const threadId = (message.result as { threadId?: unknown } | undefined)
     ?.threadId;
-  if (typeof threadId === "string") threadProjects.set(threadId, projectId);
+  if (typeof threadId === "string") {
+    threadProjects.set(threadId, projectId);
+    await conversationChangeTracker?.commitPendingSnapshot(
+      projectId,
+      requestKey(message.id),
+      threadId,
+    );
+  } else {
+    await conversationChangeTracker?.discardPendingSnapshot(
+      projectId,
+      requestKey(message.id),
+    );
+  }
 }
 
 function projectIdForThread(threadId: string): string | undefined {
@@ -293,7 +321,7 @@ function projectForRequest(request: JsonRpcRequest) {
   return projectId ? projectStore?.project(projectId) : undefined;
 }
 
-function handleRequest(event: IpcMainEvent, value: unknown): void {
+async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void> {
   if (
     !mainWindow ||
     event.sender !== mainWindow.webContents ||
@@ -324,7 +352,54 @@ function handleRequest(event: IpcMainEvent, value: unknown): void {
     return;
   }
   if (value.method === "thread/start" && value.id !== undefined) {
+    try {
+      await conversationChangeTracker?.beginPendingSnapshot(
+        project.id,
+        requestKey(value.id),
+        project.basePath,
+      );
+    } catch (error) {
+      if (value.id !== undefined) {
+        sendToRenderer(mainWindow, {
+          jsonrpc: "2.0",
+          id: value.id,
+          error: {
+            code: -32011,
+            message: `Unable to record the task workspace baseline: ${errorMessage(error)}`,
+          },
+        });
+      }
+      return;
+    }
     pendingThreadStarts.set(value.id, project.id);
+  }
+  if (
+    (value.method === "thread/resume" || value.method === "turn/start") &&
+    value.params &&
+    typeof value.params === "object"
+  ) {
+    const threadId = (value.params as Record<string, unknown>).threadId;
+    if (typeof threadId === "string") {
+      try {
+        await conversationChangeTracker?.ensureSnapshot(
+          project.id,
+          threadId,
+          project.basePath,
+        );
+      } catch (error) {
+        if (value.id !== undefined) {
+          sendToRenderer(mainWindow, {
+            jsonrpc: "2.0",
+            id: value.id,
+            error: {
+              code: -32011,
+              message: `Unable to record the task workspace baseline: ${errorMessage(error)}`,
+            },
+          });
+        }
+        return;
+      }
+    }
   }
   ensureAppServer(mainWindow, project.id, project.basePath).send(value);
 }
@@ -403,7 +478,59 @@ function handleConversationDelete(event: IpcMainInvokeEvent, value: unknown) {
   if (!projectStore) throw new Error("Projects are not available");
   const target = parseConversationTarget(value);
   threadProjects.delete(target.id);
+  void conversationChangeTracker
+    ?.deleteSnapshot(target.projectId, target.id)
+    .catch(() => undefined);
   return projectStore.deleteConversation(target);
+}
+
+async function handleConversationChangesGet(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!conversationChangeTracker) {
+    throw new Error("Conversation change tracking is not available");
+  }
+  const request = parseConversationChangesRequest(value);
+  const project = requireProject(request.projectId);
+  return conversationChangeTracker.changes(
+    project.id,
+    request.threadId,
+    project.basePath,
+  );
+}
+
+async function handleWorkspaceList(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!conversationChangeTracker) {
+    throw new Error("Workspace browsing is not available");
+  }
+  const request = parseWorkspaceListRequest(value);
+  const project = requireProject(request.projectId);
+  return conversationChangeTracker.listWorkspace(
+    project.basePath,
+    request.path,
+  );
+}
+
+async function handleWorkspaceFileGet(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!conversationChangeTracker) {
+    throw new Error("Workspace browsing is not available");
+  }
+  const request = parseWorkspaceFileRequest(value);
+  const project = requireProject(request.projectId);
+  return conversationChangeTracker.readWorkspaceFile(
+    project.basePath,
+    request.path,
+  );
 }
 
 async function handleProjectMemoryGet(
@@ -665,6 +792,57 @@ function parseConversationTarget(value: unknown): DesktopConversationTarget {
   return { projectId: target.projectId, id: target.id };
 }
 
+function parseConversationChangesRequest(
+  value: unknown,
+): DesktopConversationChangesRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid conversation changes request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    typeof request.threadId !== "string"
+  ) {
+    throw new Error("Invalid conversation changes request");
+  }
+  return { projectId: request.projectId, threadId: request.threadId };
+}
+
+function parseWorkspaceListRequest(
+  value: unknown,
+): DesktopWorkspaceListRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid workspace list request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    (request.path !== undefined && typeof request.path !== "string")
+  ) {
+    throw new Error("Invalid workspace list request");
+  }
+  return {
+    projectId: request.projectId,
+    ...(typeof request.path === "string" ? { path: request.path } : {}),
+  };
+}
+
+function parseWorkspaceFileRequest(
+  value: unknown,
+): DesktopWorkspaceFileRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid workspace file request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    typeof request.path !== "string"
+  ) {
+    throw new Error("Invalid workspace file request");
+  }
+  return { projectId: request.projectId, path: request.path };
+}
+
 function parseAttachmentReferenceRequest(
   value: unknown,
 ): DesktopAttachmentReferenceRequest {
@@ -768,11 +946,22 @@ function extractId(value: unknown): string | number | null | undefined {
   if (id === null || typeof id === "string" || typeof id === "number") return id;
 }
 
+function requestKey(id: JsonRpcId): string {
+  return `${id === null ? "null" : typeof id}:${String(id)}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 app.whenReady().then(() => {
   if (process.platform === "darwin") app.dock?.setIcon(appIconPath);
 
   const threadlightHome =
     process.env.THREADLIGHT_HOME ?? join(app.getPath("home"), ".threadlight");
+  conversationChangeTracker = new ConversationChangeTracker(
+    join(threadlightHome, "review-snapshots"),
+  );
   settingsStore = new SettingsStore(
     join(threadlightHome, "settings.json"),
     {
@@ -827,7 +1016,9 @@ app.whenReady().then(() => {
   });
   const initialWorkspace = process.env.THREADLIGHT_WORKSPACE;
   if (initialWorkspace) projectStore.register(initialWorkspace);
-  ipcMain.on(DESKTOP_REQUEST_CHANNEL, handleRequest);
+  ipcMain.on(DESKTOP_REQUEST_CHANNEL, (event, value) => {
+    void handleRequest(event, value);
+  });
   ipcMain.handle(DESKTOP_SETTINGS_GET_CHANNEL, handleSettingsGet);
   ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);
   ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
@@ -855,6 +1046,12 @@ app.whenReady().then(() => {
   ipcMain.on(DESKTOP_TERMINAL_WRITE_CHANNEL, handleTerminalWrite);
   ipcMain.on(DESKTOP_TERMINAL_RESIZE_CHANNEL, handleTerminalResize);
   ipcMain.handle(DESKTOP_TERMINAL_CLOSE_CHANNEL, handleTerminalClose);
+  ipcMain.handle(
+    DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
+    handleConversationChangesGet,
+  );
+  ipcMain.handle(DESKTOP_WORKSPACE_LIST_CHANNEL, handleWorkspaceList);
+  ipcMain.handle(DESKTOP_WORKSPACE_FILE_GET_CHANNEL, handleWorkspaceFileGet);
   ipcMain.on(
     DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
     handleComputerPreviewClose,
