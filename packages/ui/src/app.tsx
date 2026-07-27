@@ -20,6 +20,7 @@ import {
   FileText,
   LoaderCircle,
   Mic,
+  Monitor,
   NotebookText,
   Paperclip,
   PictureInPicture2,
@@ -44,6 +45,7 @@ import {
 } from "./memory.js";
 import { isNearBottom } from "./scroll.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
+import { TerminalPanel, type TerminalAdapter } from "./terminal.js";
 import {
   MAX_VOICE_AUDIO_BYTES,
   appendVoiceTranscript,
@@ -68,6 +70,7 @@ export interface ThreadlightAppProps {
   attachmentStage?: AttachmentStageAdapter;
   attachmentPreview?: AttachmentPreviewAdapter;
   computerShare?: ComputerShareAdapter;
+  terminal?: TerminalAdapter;
 }
 
 export interface AttachmentStageAdapter {
@@ -87,6 +90,7 @@ export interface ComputerShareTarget {
 export interface ComputerShareSnapshot {
   active: boolean;
   pictureInPicture: boolean;
+  ownerThreadId?: string;
   targets: readonly ComputerShareTarget[];
 }
 
@@ -128,6 +132,7 @@ export function ThreadlightApp({
   attachmentStage,
   attachmentPreview,
   computerShare,
+  terminal,
 }: ThreadlightAppProps) {
   const {
     state,
@@ -164,6 +169,7 @@ export function ThreadlightApp({
   const [computerShareError, setComputerShareError] = useState<string>();
   const [showingComputerShare, setShowingComputerShare] = useState(false);
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
+  const [terminalOpen, setTerminalOpen] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -175,6 +181,22 @@ export function ThreadlightApp({
   const conversation = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
   const currentProject = activeProject(projectSnapshot);
+
+  useEffect(() => {
+    if (!terminal || !currentProject) return;
+    const handleShortcut = (event: globalThis.KeyboardEvent) => {
+      if (
+        event.key.toLowerCase() === "j" &&
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey
+      ) {
+        event.preventDefault();
+        setTerminalOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [currentProject, terminal]);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
@@ -749,6 +771,7 @@ export function ThreadlightApp({
                     active={project.id === projectSnapshot.activeProjectId}
                     activeThreadId={state.threadId}
                     runningThreadIds={runningThreadIds}
+                    computerThreadId={computerShareSnapshot?.ownerThreadId}
                     disabled={
                       switchingProject ||
                       voiceStatus !== "idle"
@@ -814,13 +837,14 @@ export function ThreadlightApp({
       </aside>
 
       <main
-        className={`workspace ${isDraggingFiles ? "is-dragging-files" : ""}`}
+        className={`workspace ${terminalOpen ? "has-terminal" : ""} ${isDraggingFiles ? "is-dragging-files" : ""}`}
         onPaste={handlePaste}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        <div className="workspace-primary">
         {view === "memory" && memory && currentProject ? (
           <ProjectMemoryPage
             adapter={memory}
@@ -848,11 +872,25 @@ export function ThreadlightApp({
                   {shortId(state.threadId)}
                 </p>
               </div>
-              {state.isRunning && (
-                <span className="running-badge">
-                  <LoaderCircle size={13} /> 正在运行
-                </span>
-              )}
+              <div className="workspace-header-actions">
+                {state.isRunning && (
+                  <span className="running-badge">
+                    <LoaderCircle size={13} /> 正在运行
+                  </span>
+                )}
+                {terminal && currentProject && (
+                  <button
+                    type="button"
+                    className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
+                    aria-label={terminalOpen ? "关闭终端" : "打开终端"}
+                    aria-pressed={terminalOpen}
+                    title={`${terminalOpen ? "关闭" : "打开"}终端（⌘J）`}
+                    onClick={() => setTerminalOpen((open) => !open)}
+                  >
+                    <Terminal size={15} />
+                  </button>
+                )}
+              </div>
             </header>
 
             <section
@@ -967,7 +1005,10 @@ export function ThreadlightApp({
                     event.currentTarget.value = "";
                   }}
                 />
-                {computerShareSnapshot?.active && (
+                {ownsActiveComputerShare(
+                  computerShareSnapshot,
+                  state.threadId,
+                ) && (
                   <ComputerShareStatus
                     snapshot={computerShareSnapshot}
                     busy={
@@ -1113,6 +1154,15 @@ export function ThreadlightApp({
             )}
           </>
         )}
+        </div>
+        {terminalOpen && terminal && currentProject && (
+          <TerminalPanel
+            key={currentProject.id}
+            adapter={terminal}
+            projectId={currentProject.id}
+            onClose={() => setTerminalOpen(false)}
+          />
+        )}
       </main>
       {pendingDelete && (
         <DeleteConversationDialog
@@ -1204,6 +1254,7 @@ export function ProjectGroup({
   active,
   activeThreadId,
   runningThreadIds = [],
+  computerThreadId,
   disabled,
   onSelect,
   onDelete,
@@ -1212,6 +1263,7 @@ export function ProjectGroup({
   active: boolean;
   activeThreadId?: string;
   runningThreadIds?: readonly string[];
+  computerThreadId?: string;
   disabled: boolean;
   onSelect(threadId?: string): void;
   onDelete?(conversation: ConversationSummary): void;
@@ -1219,6 +1271,9 @@ export function ProjectGroup({
   const [expanded, setExpanded] = useState(false);
   const projectRunning = project.conversations.some((conversation) =>
     runningThreadIds.includes(conversation.id),
+  );
+  const projectUsingComputer = project.conversations.some(
+    (conversation) => conversation.id === computerThreadId,
   );
 
   function toggleExpanded() {
@@ -1239,13 +1294,23 @@ export function ProjectGroup({
         onClick={toggleExpanded}
       >
         {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
-        <span>{project.name}</span>
-        {projectRunning && (
-          <LoaderCircle
-            className="project-runtime-indicator spin"
-            size={13}
-            aria-label={`${project.name} 中有任务正在运行`}
-          />
+        <span className="project-name">{project.name}</span>
+        {(showsProjectLevelActivity(expanded, projectRunning) ||
+          showsProjectLevelActivity(expanded, projectUsingComputer)) && (
+          <span className="project-live-indicators">
+            {showsProjectLevelActivity(expanded, projectRunning) && (
+              <LoaderCircle
+                className="project-runtime-indicator spin"
+                size={13}
+                aria-label={`${project.name} 中有任务正在运行`}
+              />
+            )}
+            {showsProjectLevelActivity(expanded, projectUsingComputer) && (
+              <ComputerUseIndicator
+                label={`${project.name} 中有任务正在使用电脑`}
+              />
+            )}
+          </span>
         )}
         <ChevronRight className="project-chevron" size={14} />
       </button>
@@ -1257,6 +1322,7 @@ export function ProjectGroup({
               conversation={conversation}
               active={active && conversation.id === activeThreadId}
               running={runningThreadIds.includes(conversation.id)}
+              computerActive={conversation.id === computerThreadId}
               disabled={disabled}
               onSelect={() => onSelect(conversation.id)}
               onDelete={onDelete ? () => onDelete(conversation) : undefined}
@@ -1275,6 +1341,7 @@ export function ProjectConversationItem({
   conversation,
   active,
   running = false,
+  computerActive = false,
   disabled,
   onSelect,
   onDelete,
@@ -1282,6 +1349,7 @@ export function ProjectConversationItem({
   conversation: ConversationSummary;
   active: boolean;
   running?: boolean;
+  computerActive?: boolean;
   disabled: boolean;
   onSelect(): void;
   onDelete?(): void;
@@ -1297,15 +1365,24 @@ export function ProjectConversationItem({
         onClick={onSelect}
       >
         <span className="thread-title">{conversation.title}</span>
-        {running && (
-          <LoaderCircle
-            className="thread-runtime-indicator spin"
-            size={13}
-            aria-label={`${conversation.title}正在运行`}
-          />
+        {(running || computerActive) && (
+          <span className="thread-live-indicators">
+            {running && (
+              <LoaderCircle
+                className="thread-runtime-indicator spin"
+                size={13}
+                aria-label={`${conversation.title}正在运行`}
+              />
+            )}
+            {computerActive && (
+              <ComputerUseIndicator
+                label={`${conversation.title}正在使用电脑`}
+              />
+            )}
+          </span>
         )}
       </button>
-      {onDelete && !running && (
+      {onDelete && !running && !computerActive && (
         <button
           type="button"
           className="thread-delete-button pressable"
@@ -1318,6 +1395,34 @@ export function ProjectConversationItem({
         </button>
       )}
     </div>
+  );
+}
+
+export function showsProjectLevelActivity(
+  expanded: boolean,
+  active: boolean,
+): boolean {
+  return active && !expanded;
+}
+
+export function ownsActiveComputerShare(
+  snapshot: ComputerShareSnapshot | undefined,
+  threadId: string | undefined,
+): snapshot is ComputerShareSnapshot {
+  return !!snapshot?.active && snapshot.ownerThreadId === threadId;
+}
+
+function ComputerUseIndicator({ label }: { label: string }) {
+  return (
+    <span
+      className="computer-use-indicator"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Monitor size={13} aria-hidden="true" />
+      <span aria-hidden="true" />
+    </span>
   );
 }
 

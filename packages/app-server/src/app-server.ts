@@ -386,6 +386,7 @@ export class AppServer {
 
     try {
       const result = await this.loop.run(thread.agent, input, {
+        toolScopeId: threadId,
         modelState: thread.conversation.modelState,
         attachments,
         signal: controller.signal,

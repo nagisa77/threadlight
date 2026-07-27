@@ -8,6 +8,7 @@ import {
   type ProjectMemoryAdapter,
   type ProjectsAdapter,
   type SettingsAdapter,
+  type TerminalAdapter,
   type VoiceInputAdapter,
 } from "@threadlight/ui";
 import "@threadlight/ui/styles.css";
@@ -60,6 +61,14 @@ const computerShare: ComputerShareAdapter = {
   subscribe: (listener) =>
     window.threadlightDesktop.onComputerShareChanged(listener),
 };
+const terminal: TerminalAdapter = {
+  create: (request) => window.threadlightDesktop.createTerminal(request),
+  write: (request) => window.threadlightDesktop.writeTerminal(request),
+  resize: (request) => window.threadlightDesktop.resizeTerminal(request),
+  close: (sessionId) => window.threadlightDesktop.closeTerminal(sessionId),
+  subscribe: (listener) =>
+    window.threadlightDesktop.onTerminalEvent(listener),
+};
 const root = document.getElementById("root");
 
 if (!root) throw new Error("Missing root element");
@@ -74,5 +83,6 @@ createRoot(root).render(
     attachmentStage={attachmentStage}
     attachmentPreview={attachmentPreview}
     computerShare={computerShare}
+    terminal={terminal}
   />,
 );

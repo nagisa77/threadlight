@@ -44,6 +44,10 @@ import {
   nextComputerPreviewScale,
   scaledComputerPreviewSize,
 } from "./computer-preview.js";
+import {
+  ComputerSessionLease,
+  type ComputerSessionOwner,
+} from "./computer-session-lease.js";
 
 interface WindowMetadata {
   windowId: number;
@@ -108,6 +112,7 @@ export class DesktopComputerService {
   private layout?: ComputerFrameLayout;
   private cursor?: CursorPosition;
   private activeProcessId?: number;
+  private readonly sessionLease = new ComputerSessionLease();
   private pendingDisplayRequest?: {
     webContents: WebContents;
     source: DesktopCapturerSource;
@@ -128,9 +133,11 @@ export class DesktopComputerService {
   ) {}
 
   shareSnapshot(): DesktopComputerShareSnapshot {
+    const owner = this.sessionLease.owner;
     return {
       active: this.selection.mode !== "none",
       pictureInPicture: this.selection.pictureInPicture,
+      ...(owner ? { ownerThreadId: owner.threadId } : {}),
       targets: this.selectedTargets.map((target) => ({
         id: target.id,
         name: target.name,
@@ -171,11 +178,11 @@ export class DesktopComputerService {
     return this.serialize(async () => {
       switch (request.method) {
         case "computer/list":
-          return this.list();
+          return this.list(parseComputerOwner(request.params));
         case "computer/configure":
           return this.configure(parseConfigureParams(request.params));
         case "computer/clear":
-          return this.clear();
+          return this.clear(parseComputerOwner(request.params));
         case "computer/execute":
           return this.execute(parseExecuteParams(request.params));
       }
@@ -273,14 +280,49 @@ export class DesktopComputerService {
     this.layout = undefined;
     this.cursor = undefined;
     this.activeProcessId = undefined;
+    this.sessionLease.release();
   }
 
-  private async list(): Promise<readonly ComputerShareTarget[]> {
-    const catalog = await this.loadCatalog(true);
-    return catalog.targets;
+  private async list(
+    owner: ComputerSessionOwner,
+  ): Promise<readonly ComputerShareTarget[]> {
+    const acquired = this.sessionLease.acquire(owner);
+    if (acquired) this.notifyShareChanged();
+    try {
+      const catalog = await this.loadCatalog(true);
+      return catalog.targets;
+    } catch (error) {
+      if (acquired) {
+        this.sessionLease.release(owner);
+        this.notifyShareChanged();
+      }
+      throw error;
+    }
   }
 
   private async configure(options: {
+    runId: string;
+    threadId: string;
+    mode: "applications" | "windows" | "display";
+    targetIds: readonly string[];
+    pictureInPicture: boolean;
+    inputMode: "virtual" | "system";
+  }) {
+    const owner = { runId: options.runId, threadId: options.threadId };
+    const acquired = this.sessionLease.acquire(owner);
+    if (acquired) this.notifyShareChanged();
+    try {
+      return await this.configureSelection(options);
+    } catch (error) {
+      if (acquired) {
+        this.sessionLease.release(owner);
+        this.notifyShareChanged();
+      }
+      throw error;
+    }
+  }
+
+  private async configureSelection(options: {
     mode: "applications" | "windows" | "display";
     targetIds: readonly string[];
     pictureInPicture: boolean;
@@ -336,7 +378,10 @@ export class DesktopComputerService {
     }
   }
 
-  private async clear() {
+  private async clear(owner?: ComputerSessionOwner) {
+    if (owner && this.sessionLease.owner) {
+      this.sessionLease.assertOwnedBy(owner);
+    }
     await this.captureSession.stop();
     this.selection = EMPTY_SELECTION;
     this.selectedTargets = [];
@@ -345,11 +390,32 @@ export class DesktopComputerService {
     this.activeProcessId = undefined;
     this.previewScale = 1;
     this.closePreview();
+    this.sessionLease.release(owner);
     this.notifyShareChanged();
     return this.state();
   }
 
-  private async execute(actions: readonly ComputerUseAction[]) {
+  private async execute({
+    actions,
+    owner,
+  }: {
+    actions: readonly ComputerUseAction[];
+    owner: ComputerSessionOwner;
+  }) {
+    const acquired = this.sessionLease.acquire(owner);
+    if (acquired) this.notifyShareChanged();
+    try {
+      return await this.executeActions(actions);
+    } catch (error) {
+      if (acquired) {
+        this.sessionLease.release(owner);
+        this.notifyShareChanged();
+      }
+      throw error;
+    }
+  }
+
+  private async executeActions(actions: readonly ComputerUseAction[]) {
     if (this.selection.mode === "none") {
       throw new Error(
         "No content is shared. Call computer_share list and set before using computer.",
@@ -1073,12 +1139,15 @@ function layoutActiveSources(
 }
 
 function parseConfigureParams(value: unknown): {
+  runId: string;
+  threadId: string;
   mode: "applications" | "windows" | "display";
   targetIds: readonly string[];
   pictureInPicture: boolean;
   inputMode: "virtual" | "system";
 } {
   if (!isObject(value)) throw new Error("Invalid computer configure request");
+  const owner = parseComputerOwner(value);
   if (
     value.mode !== "applications" &&
     value.mode !== "windows" &&
@@ -1100,6 +1169,7 @@ function parseConfigureParams(value: unknown): {
     throw new Error("Invalid computer share options");
   }
   return {
+    ...owner,
     mode: value.mode,
     targetIds: value.targetIds,
     pictureInPicture: value.pictureInPicture,
@@ -1107,11 +1177,30 @@ function parseConfigureParams(value: unknown): {
   };
 }
 
-function parseExecuteParams(value: unknown): readonly ComputerUseAction[] {
+function parseExecuteParams(value: unknown): {
+  actions: readonly ComputerUseAction[];
+  owner: ComputerSessionOwner;
+} {
   if (!isObject(value) || !Array.isArray(value.actions)) {
     throw new Error("Invalid computer execute request");
   }
-  return value.actions as ComputerUseAction[];
+  return {
+    actions: value.actions as ComputerUseAction[],
+    owner: parseComputerOwner(value),
+  };
+}
+
+function parseComputerOwner(value: unknown): ComputerSessionOwner {
+  if (
+    !isObject(value) ||
+    typeof value.runId !== "string" ||
+    !value.runId ||
+    typeof value.threadId !== "string" ||
+    !value.threadId
+  ) {
+    throw new Error("Invalid computer task ownership");
+  }
+  return { runId: value.runId, threadId: value.threadId };
 }
 
 function isCaptureStatus(value: unknown): value is ComputerCaptureStreamStatus {

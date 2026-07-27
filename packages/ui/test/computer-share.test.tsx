@@ -3,9 +3,22 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ComputerShareStatus,
+  ownsActiveComputerShare,
 } from "../src/app.js";
 
 describe("computer share composer status", () => {
+  it("only belongs in the composer of the owning task", () => {
+    const snapshot = {
+      active: true,
+      pictureInPicture: true,
+      ownerThreadId: "thread-a",
+      targets: [],
+    };
+
+    expect(ownsActiveComputerShare(snapshot, "thread-a")).toBe(true);
+    expect(ownsActiveComputerShare(snapshot, "thread-b")).toBe(false);
+  });
+
   it("offers to reopen a closed picture in picture while sharing continues", () => {
     const html = renderToStaticMarkup(
       <ComputerShareStatus

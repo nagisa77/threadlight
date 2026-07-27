@@ -220,6 +220,7 @@ export class AgentLoop {
     try {
       const output = await tool.execute(call.arguments, {
         runId,
+        ...(options.toolScopeId ? { scopeId: options.toolScopeId } : {}),
         signal: options.signal ?? new AbortController().signal,
       });
       result = {

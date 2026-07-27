@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "build:native": "node scripts/build-computer-input.cjs",
+    "build:native": "node scripts/build-computer-input.cjs && node scripts/prepare-terminal.cjs",
     "dev": "npm run build:native && electron-vite dev",
     "build": "npm run typecheck && npm run build:native && electron-vite build",
     "icon:render": "electron scripts/render-app-icon.cjs",
@@ -18,6 +18,7 @@
     "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0",
     "@threadlight/ui": "0.1.0",
+    "node-pty": "^1.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

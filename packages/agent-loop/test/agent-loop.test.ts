@@ -274,6 +274,33 @@ describe("AgentLoop", () => {
     expect(requests).toHaveLength(3);
   });
 
+  it("passes the provider-neutral task scope to tools", async () => {
+    const provider = new ScriptedProvider();
+    let receivedScopeId: string | undefined;
+
+    await new AgentLoop(provider).run(
+      defineAgent({
+        name: "test",
+        instructions: "Use the tool",
+        tools: [
+          defineTool({
+            name: "double",
+            description: "Double a number",
+            parameters: { type: "object" },
+            async execute(_arguments, context) {
+              receivedScopeId = context.scopeId;
+              return 42;
+            },
+          }),
+        ],
+      }),
+      "Double 21",
+      { toolScopeId: "thread-1" },
+    );
+
+    expect(receivedScopeId).toBe("thread-1");
+  });
+
   it("forwards the selected model through every scripted model turn", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);

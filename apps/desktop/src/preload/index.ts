@@ -19,8 +19,14 @@ import {
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
+  DESKTOP_TERMINAL_CLOSE_CHANNEL,
+  DESKTOP_TERMINAL_CREATE_CHANNEL,
+  DESKTOP_TERMINAL_EVENT_CHANNEL,
+  DESKTOP_TERMINAL_RESIZE_CHANNEL,
+  DESKTOP_TERMINAL_WRITE_CHANNEL,
   type DesktopApi,
   type DesktopComputerShareSnapshot,
+  type DesktopTerminalEvent,
 } from "../shared/desktop-api.js";
 
 const api: DesktopApi = {
@@ -94,6 +100,27 @@ const api: DesktopApi = {
         DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
         handler,
       );
+  },
+  createTerminal(request) {
+    return ipcRenderer.invoke(DESKTOP_TERMINAL_CREATE_CHANNEL, request);
+  },
+  writeTerminal(request) {
+    ipcRenderer.send(DESKTOP_TERMINAL_WRITE_CHANNEL, request);
+  },
+  resizeTerminal(request) {
+    ipcRenderer.send(DESKTOP_TERMINAL_RESIZE_CHANNEL, request);
+  },
+  closeTerminal(sessionId) {
+    return ipcRenderer.invoke(DESKTOP_TERMINAL_CLOSE_CHANNEL, sessionId);
+  },
+  onTerminalEvent(listener) {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      terminalEvent: DesktopTerminalEvent,
+    ) => listener(terminalEvent);
+    ipcRenderer.on(DESKTOP_TERMINAL_EVENT_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(DESKTOP_TERMINAL_EVENT_CHANNEL, handler);
   },
 };
 

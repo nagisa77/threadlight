@@ -60,7 +60,7 @@ describe("DesktopComputerClient", () => {
         pictureInPicture: true,
         inputMode: "virtual",
       },
-      { runId: "run-1", signal },
+      { runId: "run-1", scopeId: "thread-1", signal },
     );
 
     await expect(client.clearForRun("other-run")).resolves.toBe(false);
@@ -81,11 +81,11 @@ describe("DesktopComputerClient", () => {
         pictureInPicture: true,
         inputMode: "virtual",
       },
-      { runId: "run-2", signal },
+      { runId: "run-2", scopeId: "thread-2", signal },
     );
     await client.execute(
       [{ type: "screenshot" }],
-      { runId: "run-3", signal },
+      { runId: "run-3", scopeId: "thread-3", signal },
     );
 
     await expect(client.clearForRun("run-2")).resolves.toBe(false);
@@ -96,6 +96,32 @@ describe("DesktopComputerClient", () => {
       "computer/configure",
       "computer/execute",
       "computer/clear",
+    ]);
+
+    client.dispose();
+  });
+
+  it("sends task ownership with every computer request", async () => {
+    const transport = new ScriptedComputerTransport();
+    const client = new DesktopComputerClient(transport);
+    const context = {
+      runId: "run-1",
+      scopeId: "thread-1",
+      signal: new AbortController().signal,
+    };
+
+    await client.list(context);
+    await client.execute([{ type: "screenshot" }], context);
+    await client.clear(context);
+
+    expect(transport.requests.map((request) => request.params)).toEqual([
+      { runId: "run-1", threadId: "thread-1" },
+      {
+        actions: [{ type: "screenshot" }],
+        runId: "run-1",
+        threadId: "thread-1",
+      },
+      { runId: "run-1", threadId: "thread-1" },
     ]);
 
     client.dispose();

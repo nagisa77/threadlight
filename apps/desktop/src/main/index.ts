@@ -49,6 +49,10 @@ import {
 } from "./settings-store.js";
 import { ProjectStore } from "./project-store.js";
 import {
+  TerminalSessionManager,
+  type TerminalSessionEvent,
+} from "./terminal-session.js";
+import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
   DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
@@ -66,10 +70,18 @@ import {
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
+  DESKTOP_TERMINAL_CLOSE_CHANNEL,
+  DESKTOP_TERMINAL_CREATE_CHANNEL,
+  DESKTOP_TERMINAL_EVENT_CHANNEL,
+  DESKTOP_TERMINAL_RESIZE_CHANNEL,
+  DESKTOP_TERMINAL_WRITE_CHANNEL,
   type DesktopAttachmentReferenceRequest,
   type DesktopConversationTarget,
   type DesktopConversationUpdate,
   type DesktopSettingsUpdate,
+  type DesktopTerminalCreateRequest,
+  type DesktopTerminalResizeRequest,
+  type DesktopTerminalWriteRequest,
 } from "../shared/desktop-api.js";
 import {
   DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
@@ -107,6 +119,7 @@ const pendingThreadStarts = new Map<
 let settingsStore: SettingsStore | null = null;
 let projectStore: ProjectStore | null = null;
 let computerService: DesktopComputerService | null = null;
+let terminalService: TerminalSessionManager | null = null;
 const appIconPath = resolve(
   import.meta.dirname,
   "../../resources/app-icon.png",
@@ -178,6 +191,7 @@ function createWindow(): void {
     if (mainWindow === window) mainWindow = null;
     stopAppServers();
     computerService?.dispose();
+    terminalService?.dispose();
   });
 
   const activeProject = projectStore?.activeProject();
@@ -459,6 +473,50 @@ function handleComputerShareStop(event: IpcMainInvokeEvent) {
   return computerService.stopSharing();
 }
 
+function handleTerminalCreate(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!terminalService) throw new Error("Terminal is not available");
+  const request = parseTerminalCreateRequest(value);
+  const project = requireProject(request.projectId);
+  return terminalService.create(project.basePath, request.cols, request.rows);
+}
+
+function handleTerminalWrite(event: IpcMainEvent, value: unknown): void {
+  if (!isTrustedSender(event) || !terminalService) return;
+  try {
+    const request = parseTerminalWriteRequest(value);
+    terminalService.write(request.sessionId, request.data);
+  } catch {
+    // Input can race with a shell exiting. A fire-and-forget IPC event has
+    // nowhere useful to surface that stale write, so safely ignore it.
+  }
+}
+
+function handleTerminalResize(event: IpcMainEvent, value: unknown): void {
+  if (!isTrustedSender(event) || !terminalService) return;
+  try {
+    const request = parseTerminalResizeRequest(value);
+    terminalService.resize(request.sessionId, request.cols, request.rows);
+  } catch {
+    // ResizeObserver can emit once more while an exited terminal is unmounting.
+  }
+}
+
+function handleTerminalClose(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): void {
+  requireTrustedSender(event);
+  if (!terminalService) return;
+  if (typeof value !== "string" || !value) {
+    throw new Error("Invalid terminal session id");
+  }
+  terminalService.close(value);
+}
+
 function handleComputerPreviewClose(event: IpcMainEvent): void {
   if (!computerService?.ownsPreviewWebContents(event.sender)) return;
   computerService.closePictureInPicture();
@@ -511,13 +569,19 @@ function requireProject(value: unknown) {
 }
 
 function requireTrustedSender(event: IpcMainInvokeEvent): void {
-  if (
-    !mainWindow ||
-    event.sender !== mainWindow.webContents ||
-    event.senderFrame !== mainWindow.webContents.mainFrame
-  ) {
+  if (!isTrustedSender(event)) {
     throw new Error("Desktop request came from an untrusted frame");
   }
+}
+
+function isTrustedSender(
+  event: IpcMainEvent | IpcMainInvokeEvent,
+): boolean {
+  return (
+    !!mainWindow &&
+    event.sender === mainWindow.webContents &&
+    event.senderFrame === mainWindow.webContents.mainFrame
+  );
 }
 
 function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
@@ -624,6 +688,64 @@ function parseAttachmentReferenceRequest(
   };
 }
 
+function parseTerminalCreateRequest(
+  value: unknown,
+): DesktopTerminalCreateRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid terminal create request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    typeof request.cols !== "number" ||
+    typeof request.rows !== "number"
+  ) {
+    throw new Error("Invalid terminal create request");
+  }
+  return {
+    projectId: request.projectId,
+    cols: request.cols,
+    rows: request.rows,
+  };
+}
+
+function parseTerminalWriteRequest(
+  value: unknown,
+): DesktopTerminalWriteRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid terminal input");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.sessionId !== "string" ||
+    typeof request.data !== "string"
+  ) {
+    throw new Error("Invalid terminal input");
+  }
+  return { sessionId: request.sessionId, data: request.data };
+}
+
+function parseTerminalResizeRequest(
+  value: unknown,
+): DesktopTerminalResizeRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid terminal resize");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.sessionId !== "string" ||
+    typeof request.cols !== "number" ||
+    typeof request.rows !== "number"
+  ) {
+    throw new Error("Invalid terminal resize");
+  }
+  return {
+    sessionId: request.sessionId,
+    cols: request.cols,
+    rows: request.rows,
+  };
+}
+
 function sendToRenderer(window: BrowserWindow, message: JsonRpcOutgoing): void {
   if (!window.isDestroyed()) {
     window.webContents.send(DESKTOP_MESSAGE_CHANNEL, message);
@@ -665,6 +787,13 @@ app.whenReady().then(() => {
     if (!window || window.isDestroyed()) return;
     window.webContents.send(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, snapshot);
   });
+  terminalService = new TerminalSessionManager(
+    (terminalEvent: TerminalSessionEvent) => {
+      const window = mainWindow;
+      if (!window || window.isDestroyed()) return;
+      window.webContents.send(DESKTOP_TERMINAL_EVENT_CHANNEL, terminalEvent);
+    },
+  );
   protocol.handle("threadlight-computer", (request) => {
     if (request.url === COMPUTER_CAPTURE_URL) {
       return new Response(computerCaptureHtml(), {
@@ -722,6 +851,10 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_GET_CHANNEL, handleComputerShareGet);
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL, handleComputerShareShow);
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_STOP_CHANNEL, handleComputerShareStop);
+  ipcMain.handle(DESKTOP_TERMINAL_CREATE_CHANNEL, handleTerminalCreate);
+  ipcMain.on(DESKTOP_TERMINAL_WRITE_CHANNEL, handleTerminalWrite);
+  ipcMain.on(DESKTOP_TERMINAL_RESIZE_CHANNEL, handleTerminalResize);
+  ipcMain.handle(DESKTOP_TERMINAL_CLOSE_CHANNEL, handleTerminalClose);
   ipcMain.on(
     DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
     handleComputerPreviewClose,
@@ -744,6 +877,7 @@ app.whenReady().then(() => {
 app.on("before-quit", () => {
   stopAppServers();
   computerService?.dispose();
+  terminalService?.dispose();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

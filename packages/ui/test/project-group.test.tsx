@@ -7,6 +7,7 @@ import {
   hasUserInput,
   ProjectConversationItem,
   ProjectGroup,
+  showsProjectLevelActivity,
   ThreadlightApp,
 } from "../src/app.js";
 
@@ -113,13 +114,24 @@ describe("ProjectGroup", () => {
         active
         activeThreadId="thread-1"
         runningThreadIds={["thread-1"]}
+        computerThreadId="thread-1"
         disabled={false}
         onSelect={vi.fn()}
       />,
     );
 
     expect(html).toContain("project-runtime-indicator spin");
+    expect(html).toContain("project-live-indicators");
+    expect(html).toContain("computer-use-indicator");
     expect(html).toContain("ResourceFinder 中有任务正在运行");
+    expect(html.indexOf("project-runtime-indicator")).toBeLessThan(
+      html.indexOf("computer-use-indicator"),
+    );
+  });
+
+  it("moves project activity down to the task layer while expanded", () => {
+    expect(showsProjectLevelActivity(false, true)).toBe(true);
+    expect(showsProjectLevelActivity(true, true)).toBe(false);
   });
 
   it("keeps a running task selectable but hides its delete action", () => {
@@ -142,6 +154,33 @@ describe("ProjectGroup", () => {
     expect(html).toContain("thread-runtime-indicator spin");
     expect(html).not.toContain("删除任务");
     expect(html).not.toContain('disabled=""');
+  });
+
+  it("shows computer use after the running indicator on its task", () => {
+    const html = renderToStaticMarkup(
+      <ProjectConversationItem
+        conversation={{
+          id: "thread-1",
+          title: "整理发布说明",
+          createdAt: "2026-07-21T00:00:00.000Z",
+          updatedAt: "2026-07-21T00:00:00.000Z",
+        }}
+        active={false}
+        running
+        computerActive
+        disabled={false}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("thread-live-indicators");
+    expect(html).toContain("thread-runtime-indicator spin");
+    expect(html).toContain("computer-use-indicator");
+    expect(html.indexOf("thread-runtime-indicator")).toBeLessThan(
+      html.indexOf("computer-use-indicator"),
+    );
+    expect(html).not.toContain("删除任务");
   });
 
   it("describes task deletion as irreversible in an alert dialog", () => {

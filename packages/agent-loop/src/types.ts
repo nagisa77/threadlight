@@ -2,6 +2,7 @@ export type JsonSchema = Record<string, unknown>;
 
 export interface ToolContext {
   runId: string;
+  scopeId?: string;
   signal: AbortSignal;
 }
 
@@ -123,6 +124,7 @@ export type AgentEvent =
 
 export interface RunOptions {
   signal?: AbortSignal;
+  toolScopeId?: string;
   modelState?: unknown;
   attachments?: readonly ModelAttachment[];
   onEvent?: (event: AgentEvent) => void;

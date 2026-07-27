@@ -31,6 +31,11 @@ export const DESKTOP_COMPUTER_SHARE_STOP_CHANNEL =
   "threadlight:computer-share:stop";
 export const DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL =
   "threadlight:computer-share:changed";
+export const DESKTOP_TERMINAL_CREATE_CHANNEL = "threadlight:terminal:create";
+export const DESKTOP_TERMINAL_WRITE_CHANNEL = "threadlight:terminal:write";
+export const DESKTOP_TERMINAL_RESIZE_CHANNEL = "threadlight:terminal:resize";
+export const DESKTOP_TERMINAL_CLOSE_CHANNEL = "threadlight:terminal:close";
+export const DESKTOP_TERMINAL_EVENT_CHANNEL = "threadlight:terminal:event";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 
@@ -112,8 +117,43 @@ export interface DesktopComputerShareTarget {
 export interface DesktopComputerShareSnapshot {
   active: boolean;
   pictureInPicture: boolean;
+  ownerThreadId?: string;
   targets: readonly DesktopComputerShareTarget[];
 }
+
+export interface DesktopTerminalCreateRequest {
+  projectId: string;
+  cols: number;
+  rows: number;
+}
+
+export interface DesktopTerminalSession {
+  id: string;
+  shell: string;
+}
+
+export interface DesktopTerminalWriteRequest {
+  sessionId: string;
+  data: string;
+}
+
+export interface DesktopTerminalResizeRequest {
+  sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+export type DesktopTerminalEvent =
+  | {
+      type: "data";
+      sessionId: string;
+      data: string;
+    }
+  | {
+      type: "exit";
+      sessionId: string;
+      exitCode: number;
+    };
 
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
@@ -142,5 +182,14 @@ export interface DesktopApi {
   stopComputerShare(): Promise<DesktopComputerShareSnapshot>;
   onComputerShareChanged(
     listener: (snapshot: DesktopComputerShareSnapshot) => void,
+  ): () => void;
+  createTerminal(
+    request: DesktopTerminalCreateRequest,
+  ): Promise<DesktopTerminalSession>;
+  writeTerminal(request: DesktopTerminalWriteRequest): void;
+  resizeTerminal(request: DesktopTerminalResizeRequest): void;
+  closeTerminal(sessionId: string): Promise<void>;
+  onTerminalEvent(
+    listener: (event: DesktopTerminalEvent) => void,
   ): () => void;
 }

@@ -31,7 +31,9 @@ export class DesktopComputerClient
     }
   >();
   private nextId = 1;
-  private shareOwnerRunId: string | undefined;
+  private shareOwner:
+    | { runId: string; threadId: string }
+    | undefined;
 
   constructor(private readonly transport: Duplex) {
     this.lines = createInterface({ input: transport });
@@ -43,11 +45,14 @@ export class DesktopComputerClient
   }
 
   async list(context: ToolContext): Promise<readonly ComputerShareTarget[]> {
-    return this.request<ComputerShareTarget[]>(
+    const owner = computerOwner(context);
+    const targets = await this.request<ComputerShareTarget[]>(
       "computer/list",
-      {},
+      owner,
       context.signal,
     );
+    this.shareOwner = owner;
+    return targets;
   }
 
   async configure(
@@ -59,33 +64,39 @@ export class DesktopComputerClient
     },
     context: ToolContext,
   ): Promise<ComputerShareState> {
-    this.shareOwnerRunId = context.runId;
-    return this.request<ComputerShareState>(
+    const owner = computerOwner(context);
+    const state = await this.request<ComputerShareState>(
       "computer/configure",
-      options,
+      { ...options, ...owner },
       context.signal,
     );
+    this.shareOwner = owner;
+    return state;
   }
 
   async clear(context: ToolContext): Promise<ComputerShareState> {
+    const owner = computerOwner(context);
     const state = await this.request<ComputerShareState>(
       "computer/clear",
-      {},
+      owner,
       context.signal,
     );
-    this.shareOwnerRunId = undefined;
+    if (this.shareOwner?.runId === owner.runId) {
+      this.shareOwner = undefined;
+    }
     return state;
   }
 
   async clearForRun(runId: string): Promise<boolean> {
-    if (this.shareOwnerRunId !== runId) return false;
+    if (this.shareOwner?.runId !== runId) return false;
+    const owner = this.shareOwner;
     await this.request<ComputerShareState>(
       "computer/clear",
-      {},
+      owner,
       AbortSignal.timeout(5_000),
     );
-    if (this.shareOwnerRunId === runId) {
-      this.shareOwnerRunId = undefined;
+    if (this.shareOwner?.runId === runId) {
+      this.shareOwner = undefined;
     }
     return true;
   }
@@ -94,12 +105,13 @@ export class DesktopComputerClient
     actions: readonly ComputerUseAction[],
     context: ToolContext,
   ): Promise<Uint8Array> {
-    this.shareOwnerRunId = context.runId;
+    const owner = computerOwner(context);
     const result = await this.request<{ screenshot: string }>(
       "computer/execute",
-      { actions },
+      { actions, ...owner },
       context.signal,
     );
+    this.shareOwner = owner;
     return Buffer.from(result.screenshot, "base64");
   }
 
@@ -169,6 +181,16 @@ export class DesktopComputerClient
     }
     this.pending.clear();
   }
+}
+
+function computerOwner(context: ToolContext): {
+  runId: string;
+  threadId: string;
+} {
+  if (!context.scopeId) {
+    throw new Error("Computer use requires a task scope");
+  }
+  return { runId: context.runId, threadId: context.scopeId };
 }
 
 export function createDesktopComputerClientFromEnvironment(

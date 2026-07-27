@@ -19,6 +19,8 @@
   "dependencies": {
     "@threadlight/client": "0.1.0",
     "@threadlight/protocol": "0.1.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
     "lucide-react": "^1.25.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"

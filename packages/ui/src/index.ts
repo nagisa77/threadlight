@@ -9,6 +9,7 @@ export {
 } from "./session.js";
 export { isNearBottom } from "./scroll.js";
 export { SettingsPage, createSettingsUpdate } from "./settings.js";
+export { TerminalPanel } from "./terminal.js";
 export {
   appendVoiceTranscript,
   preferredRecordingMimeType,
@@ -53,3 +54,8 @@ export type {
   SettingsUpdate,
 } from "./settings.js";
 export type { VoiceInputAdapter, VoiceRecording } from "./voice-input.js";
+export type {
+  TerminalAdapter,
+  TerminalEvent,
+  TerminalSessionInfo,
+} from "./terminal.js";
