@@ -75,7 +75,7 @@ export class AgentLoop {
         `${ATTACH_TO_MODEL_CONTEXT_TOOL} is reserved by the agent loop`,
       );
     }
-    const maxSteps = agent.maxSteps ?? 20;
+    const maxSteps = agent.maxSteps ?? 100;
     const usage = { ...EMPTY_USAGE };
     let state = options.modelState;
     let toolResults: ToolResult[] = [];

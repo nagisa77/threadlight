@@ -21,7 +21,10 @@ describe("computer share picture in picture", () => {
     const html = computerPreviewHtml();
 
     expect(html).toContain('id="cards"');
-    expect(html).toContain("threadlightRenderStack");
+    expect(html).toContain("window.threadlightPreview");
+    expect(html).toContain("navigator.mediaDevices.getDisplayMedia");
+    expect(html).toContain("video.srcObject = stream");
+    expect(html).toContain("frame.append(capture.video)");
     expect(html).toContain("bringToFront");
     expect(html).toContain('aria-label="关闭画中画"');
     expect(html.match(/id="close"/g)).toHaveLength(1);
@@ -34,6 +37,8 @@ describe("computer share picture in picture", () => {
     expect(html).not.toContain("card-title");
     expect(html).not.toContain("color-scheme: dark");
     expect(html).not.toContain("#111210");
+    expect(html).not.toContain("image.toDataURL");
+    expect(html).not.toContain("drawImage");
   });
 
   it("fans windows far enough apart to expose the back card", () => {

@@ -176,6 +176,133 @@ describe("OpenAIResponsesProvider", () => {
     expect(second).toMatchObject({ text: "done", toolCalls: [] });
   });
 
+  it("returns computer execution errors to the model so it can recover", async () => {
+    const response = {
+      output_text: "",
+      output: [
+        {
+          type: "function_call",
+          id: "function-item-1",
+          call_id: "share-call-1",
+          name: "computer_share",
+          arguments:
+            '{"action":"list","mode":null,"target_ids":null,"picture_in_picture":null,"input_mode":null}',
+          status: "completed",
+        },
+      ],
+    } as unknown as OpenAI.Responses.Response;
+    const responseStream = {
+      on() {
+        return responseStream;
+      },
+      async finalResponse() {
+        return response;
+      },
+    };
+    const stream = vi.fn(() => responseStream);
+    const client = { responses: { stream } } as unknown as OpenAI;
+    const provider = new OpenAIResponsesProvider({ client });
+    const turn = await provider.generate({
+      instructions: "Recover from tool errors",
+      state: [
+        {
+          type: "computer_call_output",
+          call_id: "previous-computer-call",
+          output: {
+            type: "computer_screenshot",
+            image_url: "data:image/png;base64,iVBORw==",
+          },
+        },
+        {
+          type: "computer_call",
+          call_id: "computer-call-2",
+          actions: [{ type: "keypress", keys: ["CMD", "L"] }],
+          pending_safety_checks: [
+            {
+              id: "safety-2",
+              code: "confirm_action",
+              message: "Confirm navigation",
+            },
+          ],
+          status: "completed",
+        },
+      ],
+      toolResults: [
+        {
+          callId: "computer-call-2",
+          name: "computer",
+          output:
+            "No content is shared. Call computer_share list and set before using computer.",
+          isError: true,
+        },
+      ],
+      tools: [
+        {
+          name: "computer",
+          description: "Control the computer",
+          parameters: {},
+          kind: "computer",
+        },
+        {
+          name: "computer_share",
+          description: "Select shared content",
+          parameters: { type: "object" },
+        },
+      ],
+    });
+
+    const params = stream.mock.calls[0]?.[0] as
+      | OpenAI.Responses.ResponseCreateParams
+      | undefined;
+    expect(params?.input).toEqual([
+      expect.objectContaining({
+        type: "computer_call_output",
+        call_id: "previous-computer-call",
+      }),
+      expect.objectContaining({
+        type: "computer_call",
+        call_id: "computer-call-2",
+      }),
+      {
+        type: "computer_call_output",
+        call_id: "computer-call-2",
+        status: "incomplete",
+        output: {
+          type: "computer_screenshot",
+          image_url: expect.stringMatching(
+            /^data:image\/png;base64,/,
+          ),
+        },
+        acknowledged_safety_checks: [
+          {
+            id: "safety-2",
+            code: "confirm_action",
+            message: "Confirm navigation",
+          },
+        ],
+      },
+      {
+        role: "developer",
+        content: expect.stringContaining(
+          "No content is shared. Call computer_share list and set",
+        ),
+      },
+    ]);
+    expect(turn.toolCalls).toEqual([
+      {
+        id: "share-call-1",
+        name: "computer_share",
+        arguments: {
+          action: "list",
+          mode: null,
+          target_ids: null,
+          picture_in_picture: null,
+          input_mode: null,
+        },
+      },
+    ]);
+  });
+
   it("disables strict mode for open MCP-style argument objects", async () => {
     const response = {
       output_text: "done",

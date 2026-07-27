@@ -5,7 +5,6 @@ import {
   desktopCapturer,
   screen,
   type DesktopCapturerSource,
-  type NativeImage,
   type WebContents,
 } from "electron";
 import type {
@@ -17,6 +16,8 @@ import type { DesktopComputerShareSnapshot } from "../shared/desktop-api.js";
 
 import {
   ComputerCaptureSession,
+  captureStatusesMatchSources,
+  sameCaptureSources,
   type ComputerCaptureSource,
   type ComputerCaptureStreamMetadata,
   type ComputerCaptureStreamStatus,
@@ -36,8 +37,8 @@ import {
   type ComputerSourceBounds,
 } from "./computer-layout.js";
 import {
+  COMPUTER_PREVIEW_URL,
   COMPUTER_PREVIEW_WINDOW_APPEARANCE,
-  computerPreviewHtml,
   computerPreviewSize,
 } from "./computer-preview.js";
 
@@ -46,6 +47,7 @@ interface WindowMetadata {
   title: string;
   applicationName: string;
   processId: number;
+  layer: number;
   bounds: ComputerSourceBounds;
 }
 
@@ -101,8 +103,11 @@ export class DesktopComputerService {
   private layout?: ComputerFrameLayout;
   private cursor?: CursorPosition;
   private activeProcessId?: number;
-  private pendingDisplaySource?: DesktopCapturerSource;
-  private previewTimer?: ReturnType<typeof setInterval>;
+  private pendingDisplayRequest?: {
+    webContents: WebContents;
+    source: DesktopCapturerSource;
+  };
+  private previewHealthTimer?: ReturnType<typeof setInterval>;
   private childWindowCaptureConfigured = false;
   private operation = Promise.resolve();
   private readonly captureSession =
@@ -138,7 +143,6 @@ export class DesktopComputerService {
       this.selection = { ...this.selection, pictureInPicture: true };
       try {
         await this.captureSharedFrame();
-        this.startPreviewUpdates();
         this.preview?.showInactive();
         this.preview?.moveTop();
         this.notifyShareChanged();
@@ -175,21 +179,25 @@ export class DesktopComputerService {
   }
 
   ownsCaptureWebContents(webContents: WebContents | null): boolean {
-    return (
-      !!webContents &&
+    if (!webContents) return false;
+    const ownsHiddenCapture =
       !!this.captureWindow &&
       !this.captureWindow.isDestroyed() &&
-      webContents === this.captureWindow.webContents
-    );
+      webContents === this.captureWindow.webContents;
+    const ownsPreview =
+      !!this.preview &&
+      !this.preview.isDestroyed() &&
+      webContents === this.preview.webContents;
+    return ownsHiddenCapture || ownsPreview;
   }
 
   dispose(): void {
-    this.stopPreviewUpdates();
+    this.stopPreviewHealthChecks();
     this.preview?.destroy();
     this.preview = undefined;
     this.captureWindow?.destroy();
     this.captureWindow = undefined;
-    this.pendingDisplaySource = undefined;
+    this.pendingDisplayRequest = undefined;
     this.selection = EMPTY_SELECTION;
     this.selectedTargets = [];
     this.layout = undefined;
@@ -244,7 +252,6 @@ export class DesktopComputerService {
       )?.processId;
       this.layout = layoutActiveSources(activeSources);
       await this.captureSharedFrame();
-      if (options.pictureInPicture) this.startPreviewUpdates();
       this.notifyShareChanged();
       return this.state();
     } catch (error) {
@@ -363,6 +370,7 @@ export class DesktopComputerService {
 
   private async captureSharedFrame(): Promise<Buffer> {
     await this.ensureCaptureStreams();
+    if (this.selection.pictureInPicture) await this.syncLivePreview();
     const capture = await this.ensureCaptureWindow();
     await this.renderLiveFrame();
     await capture.webContents.executeJavaScript(
@@ -384,13 +392,17 @@ export class DesktopComputerService {
       height: COMPUTER_CANVAS_HEIGHT,
       quality: "best",
     });
-    if (this.selection.pictureInPicture) await this.renderPreview(normalized);
     return normalized.toPNG();
   }
 
   private async ensureCaptureStreams(): Promise<void> {
     const inactive = await this.captureSession.inactiveKeys();
-    if (!inactive.length) return;
+    if (
+      !inactive.length &&
+      this.selection.mode !== "applications"
+    ) {
+      return;
+    }
 
     const catalog = await this.loadCatalog(true);
     const records = this.resolveSelectedRecords(catalog);
@@ -400,6 +412,12 @@ export class DesktopComputerService {
         "The shared application closed all of its windows. Select a new share target.",
       );
     }
+    if (
+      !inactive.length &&
+      sameCaptureSources(this.captureSession.activeSources, sources)
+    ) {
+      return;
+    }
     const activeSources = await this.captureSession.replace(sources);
     this.selection = {
       ...this.selection,
@@ -407,6 +425,9 @@ export class DesktopComputerService {
     };
     this.selectedTargets = records.map((record) => record.target);
     this.layout = layoutActiveSources(activeSources);
+    if (this.selection.pictureInPicture) {
+      await this.syncLivePreview(true);
+    }
   }
 
   private resolveSelectedRecords(catalog: CaptureCatalog): CaptureRecord[] {
@@ -456,11 +477,26 @@ export class DesktopComputerService {
     source: ActiveCaptureSource,
   ): Promise<ComputerCaptureStreamMetadata> {
     const capture = await this.ensureCaptureWindow();
+    return this.startMediaStreamIn(
+      capture.webContents,
+      "threadlightCapture",
+      source,
+    );
+  }
+
+  private async startMediaStreamIn(
+    webContents: WebContents,
+    bridge: "threadlightCapture" | "threadlightPreview",
+    source: ActiveCaptureSource,
+  ): Promise<ComputerCaptureStreamMetadata> {
     const desktopSource = await this.resolveDesktopSource(source);
-    this.pendingDisplaySource = desktopSource;
+    this.pendingDisplayRequest = {
+      webContents,
+      source: desktopSource,
+    };
     try {
-      const result = (await capture.webContents.executeJavaScript(
-        `window.threadlightCapture.start(${JSON.stringify(source.key)})`,
+      const result = (await webContents.executeJavaScript(
+        `window.${bridge}.start(${JSON.stringify(source.key)})`,
       )) as unknown;
       if (
         !isObject(result) ||
@@ -473,7 +509,7 @@ export class DesktopComputerService {
       }
       return { width: result.width, height: result.height };
     } finally {
-      this.pendingDisplaySource = undefined;
+      this.pendingDisplayRequest = undefined;
     }
   }
 
@@ -600,8 +636,10 @@ export class DesktopComputerService {
         processId: metadata.processId,
         bounds: metadata.bounds,
       };
-      records.set(id, record);
       sourceRecords.set(source.id, record);
+      if (metadata.layer === 0 && metadata.title) {
+        records.set(id, record);
+      }
     }
 
     const byApplication = new Map<number, CaptureRecord[]>();
@@ -672,20 +710,22 @@ export class DesktopComputerService {
     });
     capture.webContents.session.setDisplayMediaRequestHandler(
       (request, callback) => {
-        const source = this.pendingDisplaySource;
+        const pending = this.pendingDisplayRequest;
         if (
-          !source ||
-          request.frame !== capture.webContents.mainFrame
+          !pending ||
+          request.frame !== pending.webContents.mainFrame
         ) {
           callback({});
           return;
         }
-        callback({ video: source });
+        callback({ video: pending.source });
       },
     );
     capture.on("closed", () => {
       if (this.captureWindow === capture) this.captureWindow = undefined;
-      this.pendingDisplaySource = undefined;
+      if (this.pendingDisplayRequest?.webContents === capture.webContents) {
+        this.pendingDisplayRequest = undefined;
+      }
     });
     await capture.loadURL(COMPUTER_CAPTURE_URL);
     this.captureWindow = capture;
@@ -723,28 +763,54 @@ export class DesktopComputerService {
     preview.on("closed", () => {
       if (this.preview !== preview) return;
       this.preview = undefined;
-      this.stopPreviewUpdates();
+      this.stopPreviewHealthChecks();
+      if (this.pendingDisplayRequest?.webContents === preview.webContents) {
+        this.pendingDisplayRequest = undefined;
+      }
       this.selection = {
         ...this.selection,
         pictureInPicture: false,
       };
       this.notifyShareChanged();
     });
-    await preview.loadURL(htmlDataUrl(computerPreviewHtml()));
+    await preview.loadURL(COMPUTER_PREVIEW_URL);
     this.preview = preview;
     return preview;
   }
 
   private closePreview(): void {
-    this.stopPreviewUpdates();
+    this.stopPreviewHealthChecks();
     const preview = this.preview;
     this.preview = undefined;
     if (preview && !preview.isDestroyed()) preview.destroy();
   }
 
-  private async renderPreview(image: NativeImage): Promise<void> {
+  private async syncLivePreview(force = false): Promise<void> {
     if (!this.selection.pictureInPicture || !this.layout) return;
     const preview = await this.ensurePreview();
+    const sources = this.captureSession.activeSources;
+    const status = force
+      ? []
+      : await this.previewCaptureStatuses(preview.webContents);
+    if (force || !captureStatusesMatchSources(status, sources)) {
+      await preview.webContents.executeJavaScript(
+        "window.threadlightPreview.stopAll()",
+      );
+      try {
+        for (const source of sources) {
+          await this.startMediaStreamIn(
+            preview.webContents,
+            "threadlightPreview",
+            source,
+          );
+        }
+      } catch (error) {
+        await preview.webContents
+          .executeJavaScript("window.threadlightPreview.stopAll()")
+          .catch(() => undefined);
+        throw error;
+      }
+    }
     const previewSize = computerPreviewSize(this.layout);
     const contentBounds = preview.getContentBounds();
     if (
@@ -754,15 +820,24 @@ export class DesktopComputerService {
       preview.setContentSize(previewSize.width, previewSize.height, false);
     }
     await preview.webContents.executeJavaScript(
-      `window.threadlightRenderStack(${JSON.stringify(
-        image.toDataURL(),
-      )}, ${JSON.stringify(this.layout)})`,
+      `window.threadlightPreview.render(${JSON.stringify(this.layout)})`,
     );
     if (!preview.isVisible()) preview.showInactive();
+    this.startPreviewHealthChecks();
   }
 
-  private startPreviewUpdates(): void {
-    this.stopPreviewUpdates();
+  private async previewCaptureStatuses(
+    webContents: WebContents,
+  ): Promise<readonly ComputerCaptureStreamStatus[]> {
+    const value = (await webContents.executeJavaScript(
+      "window.threadlightPreview.status()",
+    )) as unknown;
+    if (!Array.isArray(value)) return [];
+    return value.filter(isCaptureStatus);
+  }
+
+  private startPreviewHealthChecks(): void {
+    if (this.previewHealthTimer) return;
     const timer = setInterval(() => {
       void this.serialize(async () => {
         if (
@@ -772,19 +847,20 @@ export class DesktopComputerService {
           return;
         }
         try {
-          await this.captureSharedFrame();
+          await this.ensureCaptureStreams();
+          await this.syncLivePreview();
         } catch {
           // The next tool call surfaces a persistent stream error.
         }
       });
     }, 1_500);
     timer.unref();
-    this.previewTimer = timer;
+    this.previewHealthTimer = timer;
   }
 
-  private stopPreviewUpdates(): void {
-    if (this.previewTimer) clearInterval(this.previewTimer);
-    this.previewTimer = undefined;
+  private stopPreviewHealthChecks(): void {
+    if (this.previewHealthTimer) clearInterval(this.previewHealthTimer);
+    this.previewHealthTimer = undefined;
   }
 
   private notifyShareChanged(): void {
@@ -937,10 +1013,6 @@ function isCaptureStatus(value: unknown): value is ComputerCaptureStreamStatus {
   );
 }
 
-function htmlDataUrl(html: string): string {
-  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-}
-
 function bestWindowMatch(
   source: DesktopCapturerSource,
   windows: readonly WindowMetadata[],
@@ -1014,6 +1086,7 @@ function isWindowMetadata(value: unknown): value is WindowMetadata {
     typeof value.title === "string" &&
     typeof value.applicationName === "string" &&
     typeof value.processId === "number" &&
+    typeof value.layer === "number" &&
     typeof value.bounds.x === "number" &&
     typeof value.bounds.y === "number" &&
     typeof value.bounds.width === "number" &&
@@ -1042,18 +1115,13 @@ function run() {
   for (let index = 0; index < Number(rows.count); index += 1) {
     const window = ObjC.deepUnwrap(rows.objectAtIndex(index));
     const bounds = window.kCGWindowBounds;
-    if (
-      window.kCGWindowLayer !== 0 ||
-      !window.kCGWindowName ||
-      !bounds ||
-      bounds.Width <= 1 ||
-      bounds.Height <= 1
-    ) continue;
+    if (!bounds || bounds.Width <= 1 || bounds.Height <= 1) continue;
     output.push({
       windowId: window.kCGWindowNumber,
-      title: window.kCGWindowName,
+      title: window.kCGWindowName || "",
       applicationName: window.kCGWindowOwnerName,
       processId: window.kCGWindowOwnerPID,
+      layer: window.kCGWindowLayer,
       bounds: {
         x: bounds.X,
         y: bounds.Y,

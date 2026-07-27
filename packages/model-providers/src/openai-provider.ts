@@ -173,7 +173,22 @@ export class OpenAIResponsesProvider implements ModelProvider {
       );
       if (tool?.kind === "computer") {
         if (result.isError) {
-          throw new Error(`Computer tool failed: ${result.output}`);
+          input.push(
+            computerCallErrorOutput(
+              result.callId,
+              input,
+            ),
+          );
+          input.push({
+            role: "developer",
+            content:
+              "The computer tool returned a recoverable execution error: " +
+              `${truncateToolError(result.output)}. ` +
+              "Inspect the error and use the available tools to recover, " +
+              "including computer_share list/set when sharing is missing or stale. " +
+              "Do not end the turn solely because this tool call failed.",
+          });
+          continue;
         }
         input.push(computerCallOutput(result.callId, result.output));
       } else {
@@ -285,6 +300,48 @@ export class OpenAIResponsesProvider implements ModelProvider {
         : undefined,
     };
   }
+}
+
+const EMPTY_COMPUTER_SCREENSHOT =
+  "data:image/png;base64," +
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+function computerCallErrorOutput(
+  callId: string,
+  input: OpenAI.Responses.ResponseInput,
+): OpenAI.Responses.ResponseInputItem {
+  return {
+    type: "computer_call_output",
+    call_id: callId,
+    status: "incomplete",
+    output: {
+      type: "computer_screenshot",
+      image_url: EMPTY_COMPUTER_SCREENSHOT,
+    },
+    acknowledged_safety_checks: computerCallSafetyChecks(input, callId),
+  } as OpenAI.Responses.ResponseInputItem;
+}
+
+function computerCallSafetyChecks(
+  input: OpenAI.Responses.ResponseInput,
+  callId: string,
+): Array<{ id: string; code?: string | null; message?: string | null }> {
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const item = input[index];
+    if (
+      isObject(item) &&
+      item.type === "computer_call" &&
+      item.call_id === callId &&
+      Array.isArray(item.pending_safety_checks)
+    ) {
+      return item.pending_safety_checks.filter(isSafetyCheck);
+    }
+  }
+  return [];
+}
+
+function truncateToolError(value: string, limit = 2_000): string {
+  return value.length > limit ? `${value.slice(0, limit)}…` : value;
 }
 
 function computerCallOutput(

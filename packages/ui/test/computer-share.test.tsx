@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ComputerShareStatus,
-  shouldStopComputerShare,
 } from "../src/app.js";
 
 describe("computer share composer status", () => {
@@ -27,18 +26,40 @@ describe("computer share composer status", () => {
           ],
         }}
         busy={false}
+        stopping={false}
         onShow={vi.fn()}
+        onStop={vi.fn()}
       />,
     );
 
     expect(html).toContain("正在共享 2 个窗口");
     expect(html).toContain("Safari、Calendar");
     expect(html).toContain("重新打开");
+    expect(html).toContain('aria-label="停止共享"');
   });
 
-  it("ends sharing only on a running-to-idle turn transition", () => {
-    expect(shouldStopComputerShare(true, false)).toBe(true);
-    expect(shouldStopComputerShare(false, false)).toBe(false);
-    expect(shouldStopComputerShare(true, true)).toBe(false);
+  it("keeps the explicit stop action available while the preview is open", () => {
+    const html = renderToStaticMarkup(
+      <ComputerShareStatus
+        snapshot={{
+          active: true,
+          pictureInPicture: true,
+          targets: [
+            {
+              id: "application:1",
+              name: "Safari",
+              applicationName: "Safari",
+            },
+          ],
+        }}
+        busy={false}
+        stopping={false}
+        onShow={vi.fn()}
+        onStop={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("显示画中画");
+    expect(html).toContain('title="停止共享"');
   });
 });

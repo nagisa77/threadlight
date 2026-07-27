@@ -57,7 +57,7 @@ export function createComputerShareTool(
   return defineTool({
     name: "computer_share",
     description:
-      "List and select the applications, windows, or display that the computer tool may see. Use list before set. Select only the content needed for the task. Use virtual input to avoid moving the physical mouse.",
+      "List and select the applications, windows, or display that the computer tool may see. Use list before set. Prefer an application target when the task opens search panels, popovers, or additional windows. Select only the content needed for the task. Use virtual input to avoid moving the physical mouse.",
     parameters: {
       type: "object",
       properties: {
@@ -107,7 +107,7 @@ export function createComputerShareTool(
         return JSON.stringify({
           targets: await options.runtime.list(context),
           guidance:
-            "Choose application ids to share all of an app's visible windows, window ids for precise capture, or one display id for desktop work.",
+            "Choose application ids for apps that may open search panels, popovers, or additional windows; application sharing follows newly visible windows. Choose window ids for precise capture, or one display id for desktop work.",
         });
       }
       if (request.action === "clear") {

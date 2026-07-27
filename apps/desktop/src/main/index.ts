@@ -27,6 +27,10 @@ import {
   COMPUTER_CAPTURE_URL,
   computerCaptureHtml,
 } from "./computer-capture.js";
+import {
+  COMPUTER_PREVIEW_URL,
+  computerPreviewHtml,
+} from "./computer-preview.js";
 import { DesktopComputerService } from "./computer-service.js";
 import {
   createAttachmentReference,
@@ -528,12 +532,17 @@ app.whenReady().then(() => {
     window.webContents.send(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, snapshot);
   });
   protocol.handle("threadlight-computer", (request) => {
-    if (request.url !== COMPUTER_CAPTURE_URL) {
-      return new Response("Not found", { status: 404 });
+    if (request.url === COMPUTER_CAPTURE_URL) {
+      return new Response(computerCaptureHtml(), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
     }
-    return new Response(computerCaptureHtml(), {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
+    if (request.url === COMPUTER_PREVIEW_URL) {
+      return new Response(computerPreviewHtml(), {
+        headers: { "Content-Type": "text/html; charset=utf-8" },
+      });
+    }
+    return new Response("Not found", { status: 404 });
   });
   protocol.handle("threadlight-attachment", (request) => {
     try {

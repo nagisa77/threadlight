@@ -38,6 +38,7 @@ class ScriptedShareProvider implements ModelProvider {
     if (this.turn === 2) {
       expect(JSON.parse(request.toolResults?.[0]?.output ?? "{}")).toMatchObject({
         targets: [{ id: "application:42", type: "application" }],
+        guidance: expect.stringContaining("newly visible windows"),
       });
       return {
         text: "",

@@ -200,6 +200,80 @@ describe("AgentLoop", () => {
     expect(events.some((event) => event.type === "run.failed")).toBe(false);
   });
 
+  it("lets a scripted model recover after a computer tool failure", async () => {
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I’ll continue in the shared app.",
+            toolCalls: [
+              {
+                id: "computer-call-1",
+                name: "computer",
+                arguments: {
+                  actions: [{ type: "keypress", keys: ["CMD", "L"] }],
+                },
+              },
+            ],
+          };
+        }
+        if (requests.length === 2) {
+          expect(request.toolResults).toEqual([
+            {
+              callId: "computer-call-1",
+              name: "computer",
+              output: "No content is shared",
+              isError: true,
+            },
+          ]);
+          return {
+            text: "The share ended, so I’ll restore it.",
+            toolCalls: [
+              {
+                id: "share-call-1",
+                name: "computer_share",
+                arguments: { action: "list" },
+              },
+            ],
+          };
+        }
+        return { text: "Recovered and continued.", toolCalls: [] };
+      },
+    };
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "test",
+        instructions: "Recover from computer errors",
+        tools: [
+          defineTool({
+            name: "computer",
+            kind: "computer",
+            description: "Control the computer",
+            parameters: { type: "object" },
+            async execute() {
+              throw new Error("No content is shared");
+            },
+          }),
+          defineTool({
+            name: "computer_share",
+            description: "Select shared content",
+            parameters: { type: "object" },
+            async execute() {
+              return { targets: ["Safari"] };
+            },
+          }),
+        ],
+      }),
+      "Continue researching",
+    );
+
+    expect(result.output).toBe("Recovered and continued.");
+    expect(requests).toHaveLength(3);
+  });
+
   it("forwards the selected model through every scripted model turn", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);

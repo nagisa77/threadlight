@@ -1,5 +1,7 @@
 import type { ComputerFrameLayout } from "./computer-layout.js";
 
+export const COMPUTER_PREVIEW_URL = "threadlight-computer://preview/";
+
 export const COMPUTER_PREVIEW_WINDOW_APPEARANCE = {
   frame: false,
   transparent: true,
@@ -63,7 +65,7 @@ export function computerPreviewHtml(): string {
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+      content="default-src 'none'; media-src 'self' blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
@@ -197,9 +199,6 @@ export function computerPreviewHtml(): string {
           0 0 0 3px rgba(112,108,98,.2),
           0 22px 52px rgba(68,64,56,.2);
       }
-      #cards[data-refreshing="true"] .source-card {
-        transition: none;
-      }
       .source-frame {
         position: relative;
         display: block;
@@ -207,10 +206,12 @@ export function computerPreviewHtml(): string {
         overflow: hidden;
         background: #f2f1ed;
       }
-      .source-frame canvas {
+      .source-frame video {
         display: block;
         width: 100%;
         height: 100%;
+        object-fit: fill;
+        pointer-events: none;
       }
       #empty {
         position: absolute;
@@ -259,13 +260,44 @@ export function computerPreviewHtml(): string {
     </main>
     <script>
       const cards = document.getElementById("cards");
-      const stage = document.getElementById("stage");
       const empty = document.getElementById("empty");
+      const captures = new Map();
       let frontOrder = [];
-      let currentFrame = { width: 1440, height: 900, tiles: [] };
-      let currentImageUrl = "";
+      let currentLayoutKey = "";
 
-      function cardFor(tile, image) {
+      function waitForVideo(video) {
+        if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+          return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error("Timed out waiting for a preview frame")),
+            10000
+          );
+          const finish = () => {
+            clearTimeout(timeout);
+            video.removeEventListener("loadeddata", finish);
+            video.removeEventListener("error", fail);
+            resolve();
+          };
+          const fail = () => {
+            clearTimeout(timeout);
+            video.removeEventListener("loadeddata", finish);
+            video.removeEventListener("error", fail);
+            reject(new Error("The preview video stream failed"));
+          };
+          video.addEventListener("loadeddata", finish, { once: true });
+          video.addEventListener("error", fail, { once: true });
+        });
+      }
+
+      function stopCapture(capture) {
+        for (const track of capture.stream.getTracks()) track.stop();
+        capture.video.srcObject = null;
+        capture.video.remove();
+      }
+
+      function cardFor(tile) {
         const card = document.createElement("button");
         card.type = "button";
         card.className = "source-card";
@@ -277,23 +309,11 @@ export function computerPreviewHtml(): string {
         const aspect = Math.max(.45, Math.min(2.4, tile.content.width / tile.content.height));
         card.dataset.aspect = String(aspect);
         frame.style.aspectRatio = String(aspect);
-        const canvas = document.createElement("canvas");
-        const pixelWidth = Math.max(1, Math.round(tile.content.width));
-        const pixelHeight = Math.max(1, Math.round(tile.content.height));
-        canvas.width = pixelWidth;
-        canvas.height = pixelHeight;
-        canvas.getContext("2d").drawImage(
-          image,
-          tile.content.x,
-          tile.content.y,
-          tile.content.width,
-          tile.content.height,
-          0,
-          0,
-          pixelWidth,
-          pixelHeight
-        );
-        frame.append(canvas);
+        const capture = captures.get(tile.sourceId);
+        if (!capture) {
+          throw new Error("Missing live preview stream: " + tile.sourceId);
+        }
+        frame.append(capture.video);
         card.append(frame);
         card.addEventListener("click", () => bringToFront(tile.sourceId));
         return card;
@@ -331,10 +351,15 @@ export function computerPreviewHtml(): string {
         }
       }
 
-      async function render(imageUrl, frame) {
-        currentImageUrl = imageUrl;
-        currentFrame = frame;
+      async function render(frame) {
         const sourceIds = frame.tiles.map((tile) => tile.sourceId);
+        const layoutKey = JSON.stringify(
+          frame.tiles.map((tile) => [
+            tile.sourceId,
+            tile.content.width,
+            tile.content.height
+          ])
+        );
         frontOrder = frontOrder.filter((id) => sourceIds.includes(id));
         for (const id of sourceIds) {
           if (!frontOrder.includes(id)) frontOrder.push(id);
@@ -342,27 +367,87 @@ export function computerPreviewHtml(): string {
         empty.style.display = frame.tiles.length ? "none" : "grid";
         if (!frame.tiles.length) {
           cards.replaceChildren();
+          currentLayoutKey = layoutKey;
           return true;
         }
-
-        const image = new Image();
-        const loaded = new Promise((resolve) => {
-          image.onload = resolve;
-          image.onerror = resolve;
-        });
-        image.src = imageUrl;
-        await loaded;
-        if (imageUrl !== currentImageUrl || frame !== currentFrame) return false;
-        cards.dataset.refreshing = "true";
-        cards.replaceChildren(...frame.tiles.map((tile) => cardFor(tile, image)));
+        if (layoutKey === currentLayoutKey) {
+          arrangeCards();
+          return true;
+        }
+        await Promise.all(
+          sourceIds.map((sourceId) => {
+            const capture = captures.get(sourceId);
+            if (!capture) {
+              throw new Error("Missing live preview stream: " + sourceId);
+            }
+            return waitForVideo(capture.video);
+          })
+        );
+        cards.replaceChildren(...frame.tiles.map((tile) => cardFor(tile)));
+        currentLayoutKey = layoutKey;
         arrangeCards();
-        requestAnimationFrame(() => {
-          delete cards.dataset.refreshing;
-        });
         return true;
       }
 
-      window.threadlightRenderStack = render;
+      window.threadlightPreview = {
+        async start(key) {
+          const current = captures.get(key);
+          if (
+            current &&
+            current.stream.getVideoTracks().some(
+              (track) => track.readyState === "live"
+            )
+          ) {
+            return {
+              width: current.video.videoWidth,
+              height: current.video.videoHeight
+            };
+          }
+          if (current) {
+            stopCapture(current);
+            captures.delete(key);
+          }
+          const stream = await navigator.mediaDevices.getDisplayMedia({
+            audio: false,
+            video: {
+              width: { ideal: 1920 },
+              height: { ideal: 1200 },
+              frameRate: { ideal: 15, max: 30 }
+            }
+          });
+          const video = document.createElement("video");
+          video.autoplay = true;
+          video.muted = true;
+          video.playsInline = true;
+          video.srcObject = stream;
+          await video.play();
+          await waitForVideo(video);
+          captures.set(key, { stream, video });
+          return {
+            width: video.videoWidth,
+            height: video.videoHeight
+          };
+        },
+
+        async stopAll() {
+          for (const capture of captures.values()) stopCapture(capture);
+          captures.clear();
+          cards.replaceChildren();
+          currentLayoutKey = "";
+          return true;
+        },
+
+        status() {
+          return [...captures.entries()].map(([key, capture]) => ({
+            key,
+            active: capture.stream
+              .getVideoTracks()
+              .some((track) => track.readyState === "live")
+          }));
+        },
+
+        render
+      };
       document.getElementById("close").addEventListener("click", () => window.close());
     </script>
   </body>

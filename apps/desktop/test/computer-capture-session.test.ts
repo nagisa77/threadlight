@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ComputerCaptureSession,
+  captureStatusesMatchSources,
+  sameCaptureSources,
   type ComputerCaptureAdapter,
   type ComputerCaptureSource,
 } from "../src/main/computer-capture-session.js";
@@ -11,6 +13,53 @@ interface TestSource extends ComputerCaptureSource {
 }
 
 describe("persistent computer capture session", () => {
+  it("detects newly opened application windows without depending on source order", () => {
+    const current = [
+      { key: "window:10", sourceId: "window:10:0" },
+      { key: "window:11", sourceId: "window:11:0" },
+    ];
+
+    expect(sameCaptureSources(current, [...current].reverse())).toBe(true);
+    expect(
+      sameCaptureSources(current, [
+        ...current,
+        { key: "window:12", sourceId: "window:12:0" },
+      ]),
+    ).toBe(false);
+    expect(
+      sameCaptureSources(current, [
+        { key: "window:10", sourceId: "window:10:1" },
+        current[1]!,
+      ]),
+    ).toBe(false);
+  });
+
+  it("requires one healthy preview stream for every shared source", () => {
+    const sources = [
+      { key: "window:10", sourceId: "window:10:0" },
+      { key: "window:11", sourceId: "window:11:0" },
+    ];
+
+    expect(
+      captureStatusesMatchSources(
+        [
+          { key: "window:11", active: true },
+          { key: "window:10", active: true },
+        ],
+        sources,
+      ),
+    ).toBe(true);
+    expect(
+      captureStatusesMatchSources(
+        [
+          { key: "window:10", active: true },
+          { key: "window:11", active: false },
+        ],
+        sources,
+      ),
+    ).toBe(false);
+  });
+
   it("starts each selected source once and keeps it alive across status checks", async () => {
     const adapter: ComputerCaptureAdapter<TestSource> = {
       start: vi.fn(async (source) => ({

@@ -1442,6 +1442,24 @@ button:disabled {
     transform 140ms var(--ease-out);
 }
 
+.composer-share-stop {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--subtle);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    transform 140ms var(--ease-out);
+}
+
 .composer-attachments {
   display: flex;
   max-width: 100%;
@@ -2312,6 +2330,11 @@ button:disabled {
     border-color: #bdb9ae;
     color: #3f3e39;
     background: rgb(255 255 255 / 88%);
+  }
+
+  .composer-share-stop:hover:not(:disabled) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
   }
 
   .dialog-button.danger:hover:not(:disabled) {

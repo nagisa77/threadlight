@@ -25,6 +25,30 @@ export type ActiveComputerCaptureSource<
   Source extends ComputerCaptureSource,
 > = Source & ComputerCaptureStreamMetadata;
 
+export function sameCaptureSources(
+  current: readonly ComputerCaptureSource[],
+  desired: readonly ComputerCaptureSource[],
+): boolean {
+  if (current.length !== desired.length) return false;
+  const currentByKey = new Map(
+    current.map((source) => [source.key, source.sourceId]),
+  );
+  return desired.every(
+    (source) => currentByKey.get(source.key) === source.sourceId,
+  );
+}
+
+export function captureStatusesMatchSources(
+  statuses: readonly ComputerCaptureStreamStatus[],
+  sources: readonly ComputerCaptureSource[],
+): boolean {
+  if (statuses.length !== sources.length) return false;
+  const active = new Set(
+    statuses.filter((status) => status.active).map((status) => status.key),
+  );
+  return sources.every((source) => active.has(source.key));
+}
+
 export class ComputerCaptureSession<
   Source extends ComputerCaptureSource,
 > {
