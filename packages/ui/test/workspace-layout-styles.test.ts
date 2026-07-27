@@ -13,7 +13,7 @@ describe("workspace titlebar hit regions", () => {
     );
   });
 
-  it("keeps the global terminal and panel controls clickable above file tabs", () => {
+  it("keeps closed-panel controls clickable and lays open-panel actions beside tabs", () => {
     expect(styles).toMatch(
       /\.workspace-global-actions\s*\{[^}]*pointer-events:\s*none;[^}]*-webkit-app-region:\s*no-drag;/s,
     );
@@ -22,6 +22,15 @@ describe("workspace titlebar hit regions", () => {
     );
     expect(styles).toMatch(
       /\.workspace-panel-tabs\s*\{[^}]*-webkit-app-region:\s*no-drag;/s,
+    );
+    expect(styles).toMatch(
+      /\.workspace-panel-tab-flow\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 auto;/s,
+    );
+    expect(styles).toMatch(
+      /\.workspace-tab-strip\s*\{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;/s,
+    );
+    expect(styles).toMatch(
+      /\.workspace-panel-actions\s*\{[^}]*flex:\s*0 0 auto;/s,
     );
   });
 });

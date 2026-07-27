@@ -24,6 +24,12 @@ import {
   type Translate,
 } from "./i18n.js";
 import { type ThemePreference } from "./theme.js";
+import {
+  ProjectOpenerIcon,
+  resolvePreferredProjectOpener,
+  type ProjectOpenerId,
+  type ProjectOpenerOption,
+} from "./project-opener.js";
 
 export type ModelProviderId = "openai" | "deepseek" | "qwen";
 
@@ -150,6 +156,7 @@ export const DEFAULT_QWEN_BASE_URL =
 export interface SettingsSnapshot {
   language: Language;
   theme: ThemePreference;
+  preferredProjectOpener: ProjectOpenerId;
   provider: ModelProviderId;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -162,6 +169,7 @@ export interface SettingsSnapshot {
 export interface SettingsUpdate {
   language: Language;
   theme: ThemePreference;
+  preferredProjectOpener: ProjectOpenerId;
   provider: ModelProviderId;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;
@@ -195,11 +203,15 @@ export function SettingsPage({
   onRuntimeRestart,
   onLanguageChange,
   onThemeChange,
+  projectOpeners = [],
+  onPreferredProjectOpenerChange,
 }: {
   adapter: SettingsAdapter;
   onRuntimeRestart(): Promise<void>;
   onLanguageChange?(language: Language): void;
   onThemeChange?(theme: ThemePreference): void;
+  projectOpeners?: readonly ProjectOpenerOption[];
+  onPreferredProjectOpenerChange?(opener: ProjectOpenerId): void;
 }) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<SettingsSnapshot>();
@@ -212,6 +224,8 @@ export function SettingsPage({
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
   const [language, setLanguage] = useState<Language>("zh-CN");
   const [theme, setTheme] = useState<ThemePreference>("system");
+  const [preferredProjectOpener, setPreferredProjectOpener] =
+    useState<ProjectOpenerId>("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedWithRestart, setSavedWithRestart] = useState(false);
@@ -228,6 +242,8 @@ export function SettingsPage({
         onLanguageChange?.(snapshot.language);
         setTheme(snapshot.theme);
         onThemeChange?.(snapshot.theme);
+        setPreferredProjectOpener(snapshot.preferredProjectOpener);
+        onPreferredProjectOpenerChange?.(snapshot.preferredProjectOpener);
         setProvider(snapshot.provider);
         setQwenBaseUrl(snapshot.qwenBaseUrl);
         setModel(snapshot.model);
@@ -239,6 +255,19 @@ export function SettingsPage({
       active = false;
     };
   }, [adapter]);
+
+  useEffect(() => {
+    if (!settings || !preferredProjectOpener || projectOpeners.length === 0) {
+      return;
+    }
+    const resolved = resolvePreferredProjectOpener(
+      projectOpeners,
+      preferredProjectOpener,
+    );
+    if (resolved && resolved.id !== preferredProjectOpener) {
+      setPreferredProjectOpener(resolved.id);
+    }
+  }, [preferredProjectOpener, projectOpeners, settings]);
 
   const providerOption = providerDetails(provider);
   const providerKey = providerKeys[provider];
@@ -252,7 +281,8 @@ export function SettingsPage({
       qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
       model !== settings.model ||
       language !== settings.language ||
-      theme !== settings.theme
+      theme !== settings.theme ||
+      preferredProjectOpener !== settings.preferredProjectOpener
     : false;
   const runtimeDirty = settings
     ? Object.values(providerKeys).some(
@@ -307,6 +337,7 @@ export function SettingsPage({
           model,
           language,
           theme,
+          preferredProjectOpener,
         ),
       );
       setSettings(snapshot);
@@ -314,6 +345,8 @@ export function SettingsPage({
       setSearchKey(EMPTY_SECRET);
       setSaved(true);
       setSavedWithRestart(shouldRestart);
+      setPreferredProjectOpener(snapshot.preferredProjectOpener);
+      onPreferredProjectOpenerChange?.(snapshot.preferredProjectOpener);
       if (shouldRestart) await onRuntimeRestart();
     } catch (reason) {
       setError(errorMessage(reason));
@@ -379,6 +412,27 @@ export function SettingsPage({
                     }}
                     options={LANGUAGE_OPTIONS}
                   />
+                  {projectOpeners.length > 0 && (
+                    <SettingsSelectField
+                      id="project-opener-select"
+                      label={t("preferredProjectOpener")}
+                      description={t("preferredProjectOpenerDescription")}
+                      value={preferredProjectOpener}
+                      onChange={(value) => {
+                        setPreferredProjectOpener(value as ProjectOpenerId);
+                        markEdited();
+                      }}
+                      options={projectOpeners.map((opener) => ({
+                        value: opener.id,
+                        label: opener.available
+                          ? opener.label
+                          : `${opener.label}（${t("notInstalled")}）`,
+                        iconDataUrl: opener.iconDataUrl,
+                        disabled: !opener.available,
+                        opener,
+                      }))}
+                    />
+                  )}
                 </div>
               </section>
 
@@ -549,7 +603,13 @@ export function SettingsSelectField({
   label: string;
   description: string;
   value: string;
-  options: readonly { value: string; label: string }[];
+  options: readonly {
+    value: string;
+    label: string;
+    iconDataUrl?: string;
+    disabled?: boolean;
+    opener?: ProjectOpenerOption;
+  }[];
   onChange(value: string): void;
 }) {
   const [open, setOpen] = useState(false);
@@ -586,7 +646,10 @@ export function SettingsSelectField({
 
   function openAndFocus(index = selectedIndex) {
     setOpen(true);
-    requestAnimationFrame(() => optionButtons.current[index]?.focus());
+    const targetIndex = options[index]?.disabled
+      ? options.findIndex((option) => !option.disabled)
+      : index;
+    requestAnimationFrame(() => optionButtons.current[targetIndex]?.focus());
   }
 
   function choose(nextValue: string) {
@@ -658,7 +721,12 @@ export function SettingsSelectField({
           }}
           onKeyDown={handleTriggerKeyDown}
         >
-          <span>{selectedOption?.label ?? value}</span>
+          <span className="settings-select-value">
+            {selectedOption?.opener && (
+              <ProjectOpenerIcon opener={selectedOption.opener} />
+            )}
+            <span>{selectedOption?.label ?? value}</span>
+          </span>
           <ChevronDown size={14} aria-hidden="true" />
         </button>
         <div
@@ -678,12 +746,16 @@ export function SettingsSelectField({
               className="settings-select-option pressable"
               role="option"
               aria-selected={option.value === value}
+              disabled={option.disabled}
               onClick={() => choose(option.value)}
               onKeyDown={(event) =>
                 handleOptionKeyDown(event, options.indexOf(option))
               }
             >
-              <span>{option.label}</span>
+              <span className="settings-select-option-label">
+                {option.opener && <ProjectOpenerIcon opener={option.opener} />}
+                <span>{option.label}</span>
+              </span>
               {option.value === value && <Check size={14} aria-hidden="true" />}
             </button>
           ))}
@@ -872,10 +944,12 @@ export function createSettingsUpdate(
   model: string,
   language: Language = "zh-CN",
   theme: ThemePreference = "system",
+  preferredProjectOpener: ProjectOpenerId = "",
 ): SettingsUpdate {
   return {
     language,
     theme,
+    preferredProjectOpener,
     provider,
     qwenBaseUrl: qwenBaseUrl.trim(),
     model,

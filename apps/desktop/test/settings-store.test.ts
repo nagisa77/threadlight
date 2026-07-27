@@ -51,6 +51,7 @@ describe("SettingsStore", () => {
     expect(snapshot).toEqual({
       language: "zh-CN",
       theme: "system",
+      preferredProjectOpener: "",
       provider: "deepseek",
       openAIApiKeyConfigured: true,
       deepSeekApiKeyConfigured: true,
@@ -148,6 +149,7 @@ describe("SettingsStore", () => {
     expect(store.snapshot({})).toMatchObject({
       language: "zh-CN",
       theme: "system",
+      preferredProjectOpener: "",
       provider: "openai",
       model: "gpt-5.6-sol",
     });
@@ -194,6 +196,28 @@ describe("SettingsStore", () => {
     expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
       version: 1,
       theme: "dark",
+    });
+  });
+
+  it("persists the preferred project opener without affecting runtime settings", () => {
+    const { path, store } = createStore();
+    const before = store.runtimeSettings({});
+
+    const snapshot = store.update(
+      {
+        preferredProjectOpener: "cursor",
+        provider: "openai",
+        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+        model: "gpt-5.6-sol",
+      },
+      {},
+    );
+
+    expect(snapshot.preferredProjectOpener).toBe("cursor");
+    expect(store.runtimeSettings({})).toEqual(before);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+      version: 1,
+      preferredProjectOpener: "cursor",
     });
   });
 });

@@ -1,4 +1,9 @@
-import { mkdtemp, realpath } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -26,6 +31,18 @@ import {
   createUpdatePlanTool,
   parsePlanSnapshot,
 } from "../src/update-plan.js";
+
+function richStep(
+  step: string,
+  status: "pending" | "in_progress" | "completed",
+) {
+  return {
+    step,
+    details: `Carry out ${step.trim()} with the relevant project constraints and edge cases.`,
+    acceptanceCriteria: [`${step.trim()} is complete and verified.`],
+    status,
+  };
+}
 
 class ScriptedToolProvider implements ModelProvider {
   readonly requests: ModelRequest[] = [];
@@ -133,6 +150,76 @@ class ScriptedProcessProvider implements ModelProvider {
 }
 
 describe("builtin tools", () => {
+  it("writes each plan update to a readable workspace document", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-plan-"));
+    try {
+      const result = await createUpdatePlanTool({
+        workspaceRoot,
+      }).execute(
+        {
+          explanation: "Keep the implementation visible.",
+          plan: [
+            richStep("Inspect architecture", "completed"),
+            richStep("Open the plan document", "in_progress"),
+            richStep("Verify behavior", "pending"),
+          ],
+        },
+        {
+          runId: "run-1",
+          scopeId: "thread-1",
+          signal: new AbortController().signal,
+        },
+      );
+      expect(result).toMatchObject({
+        documentPath: ".threadlight/plans/run-1.md",
+        documentVersion: expect.stringMatching(/^[a-f0-9]{16}$/),
+      });
+      const firstDocument = await readFile(
+        join(workspaceRoot, ".threadlight", "plans", "run-1.md"),
+        "utf8",
+      );
+      expect(firstDocument).toContain(
+        "### 2. Open the plan document",
+      );
+      expect(firstDocument).toContain(
+        "Carry out Open the plan document with the relevant project constraints and edge cases.",
+      );
+      expect(firstDocument).toContain(
+        "- [ ] Open the plan document is complete and verified.",
+      );
+
+      const nextTurn = await createUpdatePlanTool({
+        workspaceRoot,
+      }).execute(
+        {
+          plan: [richStep("Handle the next request", "in_progress")],
+        },
+        {
+          runId: "run-2",
+          scopeId: "thread-1",
+          signal: new AbortController().signal,
+        },
+      );
+      expect(nextTurn).toMatchObject({
+        documentPath: ".threadlight/plans/run-2.md",
+      });
+      await expect(
+        readFile(
+          join(workspaceRoot, ".threadlight", "plans", "run-1.md"),
+          "utf8",
+        ),
+      ).resolves.toContain("### 2. Open the plan document");
+      await expect(
+        readFile(
+          join(workspaceRoot, ".threadlight", "plans", "run-2.md"),
+          "utf8",
+        ),
+      ).resolves.toContain("### 1. Handle the next request");
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("tracks a scripted provider plan through the provider-neutral tool loop", async () => {
     const requests: ModelRequest[] = [];
     const updates: unknown[] = [];
@@ -148,8 +235,8 @@ describe("builtin tools", () => {
                 name: "update_plan",
                 arguments: {
                   plan: [
-                    { step: "Inspect the code", status: "in_progress" },
-                    { step: "Implement the change", status: "pending" },
+                    richStep("Inspect the code", "in_progress"),
+                    richStep("Implement the change", "pending"),
                   ],
                 },
               },
@@ -160,8 +247,8 @@ describe("builtin tools", () => {
           expect(JSON.parse(request.toolResults?.[0]?.output ?? "{}"))
             .toMatchObject({
               plan: [
-                { step: "Inspect the code", status: "in_progress" },
-                { step: "Implement the change", status: "pending" },
+                richStep("Inspect the code", "in_progress"),
+                richStep("Implement the change", "pending"),
               ],
             });
           return {
@@ -172,8 +259,8 @@ describe("builtin tools", () => {
                 name: "update_plan",
                 arguments: {
                   plan: [
-                    { step: "Inspect the code", status: "completed" },
-                    { step: "Implement the change", status: "in_progress" },
+                    richStep("Inspect the code", "completed"),
+                    richStep("Implement the change", "in_progress"),
                   ],
                 },
               },
@@ -212,17 +299,22 @@ describe("builtin tools", () => {
   it("rejects ambiguous or duplicate plan updates offline", () => {
     expect(() =>
       parsePlanSnapshot({
+        plan: [{ step: "Build", status: "in_progress" }],
+      }),
+    ).toThrow("details");
+    expect(() =>
+      parsePlanSnapshot({
         plan: [
-          { step: "Build", status: "in_progress" },
-          { step: "Test", status: "in_progress" },
+          richStep("Build", "in_progress"),
+          richStep("Test", "in_progress"),
         ],
       }),
     ).toThrow("at most one");
     expect(() =>
       parsePlanSnapshot({
         plan: [
-          { step: "Build", status: "pending" },
-          { step: " Build ", status: "completed" },
+          richStep("Build", "pending"),
+          richStep(" Build ", "completed"),
         ],
       }),
     ).toThrow("unique");

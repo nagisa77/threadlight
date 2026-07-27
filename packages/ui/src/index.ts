@@ -2,6 +2,7 @@ export {
   clampWorkspacePanelWidth,
   ConversationChangesButton,
   currentPlanStep,
+  planDocumentOpenRequest,
   ThreadlightApp,
   TurnStatusPill,
 } from "./app.js";
@@ -37,6 +38,11 @@ export {
   createSettingsUpdate,
 } from "./settings.js";
 export { TerminalPanel } from "./terminal.js";
+export {
+  ProjectOpenControl,
+  ProjectOpenerIcon,
+  resolvePreferredProjectOpener,
+} from "./project-opener.js";
 export {
   buildChangeTree,
   FileSource,
@@ -104,6 +110,11 @@ export type {
   TerminalEvent,
   TerminalSessionInfo,
 } from "./terminal.js";
+export type {
+  ProjectOpenerAdapter,
+  ProjectOpenerId,
+  ProjectOpenerOption,
+} from "./project-opener.js";
 export type {
   ConversationChangesSnapshot,
   ConversationFileChange,

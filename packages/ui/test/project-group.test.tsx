@@ -10,6 +10,7 @@ import {
   ConversationChangesButton,
   currentPlanStep,
   hasUserInput,
+  planDocumentOpenRequest,
   ProjectConversationItem,
   ProjectGroup,
   showsProjectLevelActivity,
@@ -19,6 +20,59 @@ import {
 } from "../src/app.js";
 
 describe("ThreadlightApp", () => {
+  it("opens a generated plan document once, then refreshes without stealing focus", () => {
+    const plan = {
+      source: "user" as const,
+      items: [{ step: "Inspect", status: "in_progress" as const }],
+      documentPath: ".threadlight/plans/run-1.md",
+      documentVersion: "0123456789abcdef",
+    };
+    const first = planDocumentOpenRequest(
+      plan,
+      "thread-1",
+      undefined,
+      1,
+    );
+    const refresh = planDocumentOpenRequest(
+      { ...plan, documentVersion: "fedcba9876543210" },
+      "thread-1",
+      first?.documentKey,
+      2,
+    );
+    const nextTurn = planDocumentOpenRequest(
+      {
+        ...plan,
+        documentPath: ".threadlight/plans/run-2.md",
+        documentVersion: "0011223344556677",
+      },
+      "thread-1",
+      first?.documentKey,
+      3,
+    );
+
+    expect(first).toMatchObject({
+      openPanel: true,
+      request: {
+        path: ".threadlight/plans/run-1.md",
+        activate: true,
+      },
+    });
+    expect(refresh).toMatchObject({
+      openPanel: false,
+      request: {
+        path: ".threadlight/plans/run-1.md",
+        activate: false,
+      },
+    });
+    expect(nextTurn).toMatchObject({
+      openPanel: true,
+      request: {
+        path: ".threadlight/plans/run-2.md",
+        activate: true,
+      },
+    });
+  });
+
   it("starts the sidebar with the new task action instead of a brand row", () => {
     const client = new ThreadlightClient({
       send: vi.fn(),

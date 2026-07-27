@@ -128,6 +128,10 @@ export type PlanItemStatusData = "pending" | "in_progress" | "completed";
 
 export interface PlanItemData {
   step: string;
+  /** Detailed execution guidance. Optional for conversations saved before rich plans. */
+  details?: string;
+  /** Observable completion conditions. Optional for legacy plan items. */
+  acceptanceCriteria?: readonly string[];
   status: PlanItemStatusData;
 }
 
@@ -135,6 +139,8 @@ export interface AgentPlanData {
   source: PlanSource;
   explanation?: string;
   items: readonly PlanItemData[];
+  documentPath?: string;
+  documentVersion?: string;
 }
 
 export interface AttachmentData {

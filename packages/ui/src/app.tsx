@@ -94,6 +94,12 @@ import {
   type ProjectsAdapter,
   type ProjectsSnapshot,
 } from "./projects.js";
+import {
+  ProjectOpenControl,
+  type ProjectOpenerAdapter,
+  type ProjectOpenerId,
+  type ProjectOpenerOption,
+} from "./project-opener.js";
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
@@ -107,6 +113,7 @@ export interface ThreadlightAppProps {
   computerShare?: ComputerShareAdapter;
   terminal?: TerminalAdapter;
   workspace?: WorkspaceAdapter;
+  projectOpener?: ProjectOpenerAdapter;
 }
 
 export interface ClipboardAdapter {
@@ -181,6 +188,8 @@ type VoiceInputStatus =
 export function ThreadlightApp(props: ThreadlightAppProps) {
   const [language, setLanguage] = useState<Language>("zh-CN");
   const [theme, setTheme] = useState<ThemePreference>("system");
+  const [preferredProjectOpener, setPreferredProjectOpener] =
+    useState<ProjectOpenerId>("");
 
   useEffect(() => {
     let active = true;
@@ -189,6 +198,9 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
       .then((snapshot) => {
         if (active && isLanguage(snapshot.language)) setLanguage(snapshot.language);
         if (active && isThemePreference(snapshot.theme)) setTheme(snapshot.theme);
+        if (active) {
+          setPreferredProjectOpener(snapshot.preferredProjectOpener);
+        }
       })
       .catch(() => {});
     return () => {
@@ -203,6 +215,8 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
           {...props}
           onLanguageChange={setLanguage}
           onThemeChange={setTheme}
+          preferredProjectOpener={preferredProjectOpener}
+          onPreferredProjectOpenerChange={setPreferredProjectOpener}
         />
       </I18nProvider>
     </ThemeProvider>
@@ -221,11 +235,16 @@ function ThreadlightAppContent({
   computerShare,
   terminal,
   workspace,
+  projectOpener,
   onLanguageChange,
   onThemeChange,
+  preferredProjectOpener,
+  onPreferredProjectOpenerChange,
 }: ThreadlightAppProps & {
   onLanguageChange(language: Language): void;
   onThemeChange(theme: ThemePreference): void;
+  preferredProjectOpener: ProjectOpenerId;
+  onPreferredProjectOpenerChange(opener: ProjectOpenerId): void;
 }) {
   const { language, t } = useI18n();
   const {
@@ -279,8 +298,12 @@ function ThreadlightAppContent({
   const [suggestedQuestions, setSuggestedQuestions] =
     useState<SuggestedQuestionsState>();
   const [suggestionRetry, setSuggestionRetry] = useState(0);
+  const [projectOpeners, setProjectOpeners] = useState<
+    readonly ProjectOpenerOption[]
+  >([]);
   const conversationChangesRequest = useRef(0);
   const conversationChangesScope = useRef("");
+  const activePlanDocument = useRef<string | undefined>(undefined);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -309,6 +332,46 @@ function ThreadlightAppContent({
 
   const workspaceChangeRefreshKey =
     conversationChangesRefreshKey(state.progress);
+
+  useEffect(() => {
+    if (!projectOpener) return;
+    let active = true;
+    void projectOpener
+      .load(currentProject?.id)
+      .then((openers) => {
+        if (active) setProjectOpeners(openers);
+      })
+      .catch(() => {
+        if (active) setProjectOpeners([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentProject?.id, projectOpener]);
+
+  useEffect(() => {
+    const next = planDocumentOpenRequest(
+      state.plan,
+      state.threadId,
+      activePlanDocument.current,
+      (workspaceFileOpenRequest?.id ?? 0) + 1,
+    );
+    if (!next) {
+      activePlanDocument.current = undefined;
+      return;
+    }
+    if (!workspace || !currentProject || !state.threadId) return;
+
+    activePlanDocument.current = next.documentKey;
+    if (next.openPanel) setWorkspacePanelOpen(true);
+    setWorkspaceFileOpenRequest(next.request);
+  }, [
+    currentProject?.id,
+    state.plan?.documentPath,
+    state.plan?.documentVersion,
+    state.threadId,
+    workspace,
+  ]);
 
   useEffect(() => {
     if (
@@ -1044,6 +1107,48 @@ function ThreadlightAppContent({
     }
   }
 
+  const globalActions = currentProject ? (
+    <>
+      {projectOpener && projectOpeners.length > 0 && (
+        <ProjectOpenControl
+          adapter={projectOpener}
+          projectId={currentProject.id}
+          preferred={preferredProjectOpener}
+          openers={projectOpeners}
+        />
+      )}
+      {terminal && (
+        <button
+          type="button"
+          className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
+          aria-label={terminalOpen ? t("closeTerminal") : t("openTerminal")}
+          aria-pressed={terminalOpen}
+          title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")}（⌘J）`}
+          onClick={() => setTerminalOpen((open) => !open)}
+        >
+          <Terminal size={16} />
+        </button>
+      )}
+      {workspace && (
+        <button
+          type="button"
+          className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
+          aria-label={
+            workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")
+          }
+          aria-pressed={workspacePanelOpen}
+          title={`${workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")}（⇧⌘J）`}
+          onClick={() => setWorkspacePanelOpen((open) => !open)}
+        >
+          <PanelRight size={16} />
+        </button>
+      )}
+    </>
+  ) : null;
+  const globalActionsInPanel = Boolean(
+    workspacePanelOpen && workspace && currentProject,
+  );
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -1208,6 +1313,8 @@ function ThreadlightAppContent({
             onRuntimeRestart={reconnectRuntime}
             onLanguageChange={onLanguageChange}
             onThemeChange={onThemeChange}
+            projectOpeners={projectOpeners}
+            onPreferredProjectOpenerChange={onPreferredProjectOpenerChange}
           />
         ) : projects && !currentProject ? (
           <ProjectEmptyState
@@ -1572,34 +1679,11 @@ function ThreadlightAppContent({
           </>
         )}
         </div>
-        {currentProject && (terminal || workspace) && (
+        {!globalActionsInPanel &&
+          currentProject &&
+          (projectOpener || terminal || workspace) && (
           <div className="workspace-global-actions">
-            {terminal && (
-              <button
-                type="button"
-                className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
-                aria-label={terminalOpen ? t("closeTerminal") : t("openTerminal")}
-                aria-pressed={terminalOpen}
-                title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")}（⌘J）`}
-                onClick={() => setTerminalOpen((open) => !open)}
-              >
-                <Terminal size={16} />
-              </button>
-            )}
-            {workspace && (
-              <button
-                type="button"
-                className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
-                aria-label={
-                  workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")
-                }
-                aria-pressed={workspacePanelOpen}
-                title={`${workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")}（⇧⌘J）`}
-                onClick={() => setWorkspacePanelOpen((open) => !open)}
-              >
-                <PanelRight size={16} />
-              </button>
-            )}
+            {globalActions}
           </div>
         )}
         {workspace && currentProject && (
@@ -1618,6 +1702,9 @@ function ThreadlightAppContent({
             onResizeBy={resizeWorkspacePanelBy}
             onResetSize={() => setWorkspacePanelWidth(undefined)}
             onRefreshChanges={() => void refreshConversationChanges()}
+            toolbarActions={
+              globalActionsInPanel ? globalActions : undefined
+            }
           />
         )}
         {terminalOpen && terminal && currentProject && (
@@ -1900,6 +1987,38 @@ export function currentPlanStep(plan: AgentPlanData): number | undefined {
   if (active >= 0) return active + 1;
   const pending = plan.items.findIndex((item) => item.status === "pending");
   return pending >= 0 ? pending + 1 : plan.items.length;
+}
+
+export function planDocumentOpenRequest(
+  plan: AgentPlanData | undefined,
+  threadId: string | undefined,
+  activeDocumentKey: string | undefined,
+  requestId: number,
+):
+  | {
+      documentKey: string;
+      openPanel: boolean;
+      request: WorkspaceFileOpenRequest;
+    }
+  | undefined {
+  if (
+    !threadId ||
+    !plan?.documentPath ||
+    !plan.documentVersion
+  ) {
+    return;
+  }
+  const documentKey = `${threadId}\u0000${plan.documentPath}`;
+  const openPanel = activeDocumentKey !== documentKey;
+  return {
+    documentKey,
+    openPanel,
+    request: {
+      id: requestId,
+      path: plan.documentPath,
+      activate: openPanel,
+    },
+  };
 }
 
 export function conversationChangesRefreshKey(

@@ -7,6 +7,7 @@ import {
   type ClipboardAdapter,
   type ComputerShareAdapter,
   type ProjectMemoryAdapter,
+  type ProjectOpenerAdapter,
   type ProjectsAdapter,
   type SettingsAdapter,
   type TerminalAdapter,
@@ -35,6 +36,11 @@ const projects: ProjectsAdapter = {
     window.threadlightDesktop.upsertConversation(update),
   deleteConversation: (target) =>
     window.threadlightDesktop.deleteConversation(target),
+};
+const projectOpener: ProjectOpenerAdapter = {
+  load: (projectId) => window.threadlightDesktop.getProjectOpeners(projectId),
+  open: (projectId, opener) =>
+    window.threadlightDesktop.openProjectWith({ projectId, opener }),
 };
 const memory: ProjectMemoryAdapter = {
   load: (projectId) => window.threadlightDesktop.getProjectMemory(projectId),
@@ -92,6 +98,7 @@ createRoot(root).render(
     clipboard={clipboard}
     settings={settings}
     projects={projects}
+    projectOpener={projectOpener}
     memory={memory}
     voiceInput={voiceInput}
     attachmentStage={attachmentStage}

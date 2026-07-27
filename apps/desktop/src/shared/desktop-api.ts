@@ -12,6 +12,10 @@ export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
 export const DESKTOP_PROJECTS_GET_CHANNEL = "threadlight:projects:get";
 export const DESKTOP_PROJECT_OPEN_CHANNEL = "threadlight:project:open";
 export const DESKTOP_PROJECT_ACTIVATE_CHANNEL = "threadlight:project:activate";
+export const DESKTOP_PROJECT_OPENERS_GET_CHANNEL =
+  "threadlight:project-openers:get";
+export const DESKTOP_PROJECT_OPEN_WITH_CHANNEL =
+  "threadlight:project-open-with";
 export const DESKTOP_CONVERSATION_UPSERT_CHANNEL =
   "threadlight:conversation:upsert";
 export const DESKTOP_CONVERSATION_DELETE_CHANNEL =
@@ -46,10 +50,12 @@ export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 export type DesktopLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
 export type DesktopTheme = "system" | "light" | "dark";
+export type DesktopProjectOpener = string;
 
 export interface DesktopSettingsSnapshot {
   language: DesktopLanguage;
   theme: DesktopTheme;
+  preferredProjectOpener: DesktopProjectOpener;
   provider: DesktopModelProvider;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -62,6 +68,7 @@ export interface DesktopSettingsSnapshot {
 export interface DesktopSettingsUpdate {
   language?: DesktopLanguage;
   theme?: DesktopTheme;
+  preferredProjectOpener?: DesktopProjectOpener;
   provider: DesktopModelProvider;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;
@@ -89,6 +96,19 @@ export interface DesktopProject {
 export interface DesktopProjectsSnapshot {
   activeProjectId?: string;
   projects: readonly DesktopProject[];
+}
+
+export interface DesktopProjectOpenerOption {
+  id: DesktopProjectOpener;
+  label: string;
+  available: boolean;
+  default: boolean;
+  iconDataUrl?: string;
+}
+
+export interface DesktopProjectOpenWithRequest {
+  projectId: string;
+  opener: DesktopProjectOpener;
 }
 
 export interface DesktopConversationUpdate {
@@ -225,6 +245,10 @@ export interface DesktopApi {
   getProjects(): Promise<DesktopProjectsSnapshot>;
   openProject(): Promise<DesktopProjectsSnapshot>;
   activateProject(projectId: string): Promise<DesktopProjectsSnapshot>;
+  getProjectOpeners(
+    projectId?: string,
+  ): Promise<readonly DesktopProjectOpenerOption[]>;
+  openProjectWith(request: DesktopProjectOpenWithRequest): Promise<void>;
   upsertConversation(
     update: DesktopConversationUpdate,
   ): Promise<DesktopProjectsSnapshot>;

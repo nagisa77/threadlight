@@ -202,6 +202,7 @@ function reduceAgentEvent(
       return {
         ...state,
         progress: projectAgentProgress(state.progress, event),
+        plan: projectAgentPlan(state.plan, event),
       };
     case "run.completed":
     case "run.failed":
