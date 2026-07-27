@@ -407,10 +407,10 @@ describe("AgentLoop", () => {
     ]);
   });
 
-  it("waits for approval before protected tools", async () => {
+  it("executes tool calls directly", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);
-    let approvals = 0;
+    let executions = 0;
 
     const result = await loop.run(
       defineAgent({
@@ -421,24 +421,18 @@ describe("AgentLoop", () => {
             name: "double",
             description: "Double a number",
             parameters: { type: "object" },
-            needsApproval: true,
             async execute() {
+              executions += 1;
               return 42;
             },
           }),
         ],
       }),
       "Double 21",
-      {
-        async approve() {
-          approvals += 1;
-          return true;
-        },
-      },
     );
 
     expect(result.output).toBe("The answer is 42");
-    expect(approvals).toBe(1);
+    expect(executions).toBe(1);
   });
 
   it("emits commentary before executing every tool in a multi-tool turn", async () => {

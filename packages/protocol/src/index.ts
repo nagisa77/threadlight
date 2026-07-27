@@ -83,12 +83,6 @@ export interface TokenUsageData {
   totalTokens: number;
 }
 
-export interface ApprovalRequestData {
-  id: string;
-  runId: string;
-  call: ToolCallData;
-}
-
 export interface ProcessSnapshotData {
   sessionId: string;
   command: string;
@@ -154,12 +148,6 @@ export type AgentEventData =
       toolCalls: readonly ToolCallData[];
       usage?: Partial<TokenUsageData>;
     }
-  | { type: "approval.requested"; request: ApprovalRequestData }
-  | {
-      type: "approval.resolved";
-      request: ApprovalRequestData;
-      approved: boolean;
-    }
   | { type: "tool.started"; runId: string; call: ToolCallData }
   | { type: "tool.completed"; runId: string; result: ToolResultData }
   | { type: "message.completed"; runId: string; text: string }
@@ -214,10 +202,6 @@ export interface ThreadlightMethodMap {
     params: { sessionId: string };
     result: ProcessSnapshotData;
   };
-  "approval/resolve": {
-    params: { requestId: string; approved: boolean };
-    result: { resolved: boolean };
-  };
 }
 
 export const THREADLIGHT_METHODS = [
@@ -231,7 +215,6 @@ export const THREADLIGHT_METHODS = [
   "process/read",
   "process/wait",
   "process/kill",
-  "approval/resolve",
 ] as const satisfies readonly (keyof ThreadlightMethodMap)[];
 
 export type ThreadlightMethod = keyof ThreadlightMethodMap;

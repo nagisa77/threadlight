@@ -8,9 +8,16 @@ export default defineConfig({
   preload: {
     build: {
       rollupOptions: {
+        input: {
+          index: resolve(import.meta.dirname, "src/preload/index.ts"),
+          "computer-preview": resolve(
+            import.meta.dirname,
+            "src/preload/computer-preview.ts",
+          ),
+        },
         output: {
           format: "cjs",
-          entryFileNames: "index.cjs",
+          entryFileNames: "[name].cjs",
         },
       },
     },

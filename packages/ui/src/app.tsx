@@ -35,7 +35,6 @@ import {
 import {
   useThreadlightSession,
   type ConversationProgress,
-  type PendingApproval,
   type ToolActivity,
 } from "./session.js";
 import { MarkdownContent } from "./markdown.js";
@@ -139,7 +138,6 @@ export function ThreadlightApp({
     send,
     interrupt,
     terminateProcess,
-    resolveApproval,
   } = useThreadlightSession(client, { autoConnect: !projects });
   const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
   const [input, setInput] = useState("");
@@ -290,7 +288,6 @@ export function ThreadlightApp({
     state.messages.length,
     state.progress,
     state.streamingText,
-    state.approval,
   ]);
 
   useEffect(
@@ -958,12 +955,6 @@ export function ThreadlightApp({
                       </div>
                     )}
 
-                    {state.approval && (
-                      <ApprovalCard
-                        approval={state.approval}
-                        onResolve={(approved) => void resolveApproval(approved)}
-                      />
-                    )}
                   </div>
                 )}
               </div>
@@ -1617,35 +1608,6 @@ function TerminateProcessButton({
   );
 }
 
-function ApprovalCard({
-  approval,
-  onResolve,
-}: {
-  approval: PendingApproval;
-  onResolve(approved: boolean): void;
-}) {
-  return (
-    <div className="approval-card">
-      <div className="approval-icon">
-        <Terminal size={16} />
-      </div>
-      <div className="approval-content">
-        <strong>允许执行 {approval.call.name}？</strong>
-        <p>此工具将以当前用户权限在本地运行。</p>
-        <pre>{formatArguments(approval.call.arguments)}</pre>
-        <div className="approval-actions">
-          <button className="secondary pressable" onClick={() => onResolve(false)}>
-            拒绝
-          </button>
-          <button className="primary pressable" onClick={() => onResolve(true)}>
-            允许
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function ConnectionError({
   message,
   onRetry,
@@ -1827,14 +1789,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatArguments(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 function conversationTitle(value: string): string {

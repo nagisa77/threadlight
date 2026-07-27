@@ -5,7 +5,6 @@ export { defineAgent, defineTool } from "./types.js";
 export type {
   Agent,
   AgentEvent,
-  ApprovalRequest,
   JsonSchema,
   ModelGenerateOptions,
   ModelAttachment,

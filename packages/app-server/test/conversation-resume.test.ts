@@ -163,7 +163,6 @@ describe("persistent conversations", () => {
         wait: () => running,
         kill: () => terminated,
       },
-      autoApproveAll: true,
       send(message) {
         messages.push(message);
         completed.receive(message);

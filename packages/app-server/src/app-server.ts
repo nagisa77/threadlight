@@ -6,7 +6,6 @@ import type {
   Agent,
   AgentEvent,
   AgentLoop,
-  ApprovalRequest,
   Tool,
 } from "@threadlight/agent-loop";
 import {
@@ -50,11 +49,6 @@ interface MutableConversationProgress {
   activities: ConversationActivityData[];
 }
 
-interface PendingApproval {
-  turnId: string;
-  resolve: (approved: boolean) => void;
-}
-
 export interface ProcessController {
   status(sessionId: string): ProcessSnapshotData | Promise<ProcessSnapshotData>;
   read(sessionId: string): ProcessSnapshotData | Promise<ProcessSnapshotData>;
@@ -68,7 +62,6 @@ export interface ProcessController {
 interface SharedAppServerOptions {
   loop: AgentLoop;
   send: SendMessage;
-  autoApproveAll?: boolean;
   conversationStore?: ConversationStore;
   processes?: ProcessController;
   threadRuntimeFactory?: ThreadRuntimeFactory;
@@ -104,7 +97,6 @@ export class AppServer {
   private readonly loop: AgentLoop;
   private readonly agentFactory: AgentFactory;
   private readonly send: SendMessage;
-  private readonly autoApproveAll: boolean;
   private readonly conversationStore: ConversationStore;
   private readonly processes?: ProcessController;
   private readonly threadRuntimeFactory?: ThreadRuntimeFactory;
@@ -112,14 +104,12 @@ export class AppServer {
   private readonly attachmentRoot?: string;
   private readonly turnCleanup?: SharedAppServerOptions["turnCleanup"];
   private readonly threads = new Map<string, ThreadState>();
-  private readonly approvals = new Map<string, PendingApproval>();
   private initialized = false;
 
   constructor(options: AppServerOptions) {
     this.loop = options.loop;
     this.agentFactory = options.agentFactory ?? (() => options.agent);
     this.send = options.send;
-    this.autoApproveAll = options.autoApproveAll ?? false;
     this.conversationStore =
       options.conversationStore ?? new MemoryConversationStore();
     this.processes = options.processes;
@@ -179,8 +169,6 @@ export class AppServer {
         return this.processRequest(params, "wait");
       case "process/kill":
         return this.processRequest(params, "kill");
-      case "approval/resolve":
-        return this.resolveApproval(params);
       default:
         throw new RpcError(-32601, `Method not found: ${method}`);
     }
@@ -245,7 +233,6 @@ export class AppServer {
       thread.activeTurn?.controller.abort(
         new Error("App server is shutting down"),
       );
-      if (thread.activeTurn) this.rejectApprovalsForTurn(thread.activeTurn.id);
     }
     await Promise.all(
       [...this.threads.values()].map((thread) =>
@@ -322,7 +309,6 @@ export class AppServer {
     if (!activeTurn) return { interrupted: false };
 
     activeTurn.controller.abort(new Error("Turn interrupted by client"));
-    this.rejectApprovalsForTurn(activeTurn.id);
     return { interrupted: true };
   }
 
@@ -342,21 +328,6 @@ export class AppServer {
           : "attachment path must be a readable local file",
       );
     }
-  }
-
-  private resolveApproval(params: unknown): { resolved: boolean } {
-    const { requestId, approved } = objectParams(params);
-    requireString(requestId, "requestId");
-    if (typeof approved !== "boolean") {
-      throw new RpcError(-32602, "approved must be a boolean");
-    }
-
-    const pending = this.approvals.get(requestId);
-    if (!pending) return { resolved: false };
-
-    this.approvals.delete(requestId);
-    pending.resolve(approved);
-    return { resolved: true };
   }
 
   private async processRequest(
@@ -425,13 +396,9 @@ export class AppServer {
         attachments,
         signal: controller.signal,
         onEvent: (event) => {
-          runId = "runId" in event ? event.runId : event.request.runId;
+          runId = event.runId;
           this.forwardEvent(threadId, turnId, thread, event);
         },
-        approve: (request) =>
-          this.autoApproveAll
-            ? Promise.resolve(true)
-            : this.waitForApproval(turnId, request),
       });
 
       const completedConversation = this.updateConversation(
@@ -488,7 +455,6 @@ export class AppServer {
     } finally {
       await cleanup();
       if (thread.activeTurn?.id === turnId) thread.activeTurn = undefined;
-      this.rejectApprovalsForTurn(turnId);
     }
   }
 
@@ -530,23 +496,6 @@ export class AppServer {
       messages,
       ...(modelState === undefined ? {} : { modelState }),
     };
-  }
-
-  private waitForApproval(
-    turnId: string,
-    request: ApprovalRequest,
-  ): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      this.approvals.set(request.id, { turnId, resolve });
-    });
-  }
-
-  private rejectApprovalsForTurn(turnId: string): void {
-    for (const [requestId, pending] of this.approvals) {
-      if (pending.turnId !== turnId) continue;
-      this.approvals.delete(requestId);
-      pending.resolve(false);
-    }
   }
 
   private notify<Method extends ThreadlightNotificationMethod>(

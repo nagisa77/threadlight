@@ -437,22 +437,4 @@ describe("sessionReducer", () => {
     ]);
   });
 
-  it("tracks and clears approval requests", () => {
-    const request = {
-      id: "approval-1",
-      runId: "run-1",
-      call: { id: "call-1", name: "exec_command", arguments: {} },
-    };
-    const waiting = sessionReducer(initialSessionState, {
-      type: "agent.event",
-      event: { type: "approval.requested", request },
-    });
-    const resolved = sessionReducer(waiting, {
-      type: "agent.event",
-      event: { type: "approval.resolved", request, approved: true },
-    });
-
-    expect(waiting.approval).toEqual({ id: "approval-1", call: request.call });
-    expect(resolved.approval).toBeUndefined();
-  });
 });

@@ -70,7 +70,6 @@ export function createProcessKillTool(options: ProcessToolOptions): Tool {
     name: "process_kill",
     description: "Terminate a managed process session and its process group.",
     parameters: sessionParameters(),
-    needsApproval: true,
     async execute(arguments_) {
       return options.processManager.kill(parseSessionId(arguments_));
     },

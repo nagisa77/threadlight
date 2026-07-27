@@ -2,18 +2,13 @@ import { defineTool, type Tool } from "@threadlight/agent-loop";
 
 import { ConversationMcpRuntime } from "./mcp-runtime.js";
 
-export interface McpToolOptions {
-  needsApproval?: Tool["needsApproval"];
-}
-
 export function createMcpConnectTool(
   runtime: ConversationMcpRuntime,
-  options: McpToolOptions = {},
 ): Tool {
   return defineTool({
     name: "mcp_connect",
     description:
-      "Connect to an exact MCP server supplied by the user or grounded in the workspace, then return its instructions and tool schemas. Never invent an endpoint or command. stdio commands may execute downloaded code and require approval.",
+      "Connect to an exact MCP server supplied by the user or grounded in the workspace, then return its instructions and tool schemas. Never invent an endpoint or command. stdio commands may execute downloaded code.",
     parameters: {
       type: "object",
       properties: {
@@ -45,7 +40,6 @@ export function createMcpConnectTool(
       required: ["transport", "command", "args", "cwd", "url"],
       additionalProperties: false,
     },
-    needsApproval: options.needsApproval ?? true,
     execute(arguments_, context) {
       return runtime.connect(arguments_, context.signal);
     },
@@ -54,7 +48,6 @@ export function createMcpConnectTool(
 
 export function createMcpCallTool(
   runtime: ConversationMcpRuntime,
-  options: McpToolOptions = {},
 ): Tool {
   return defineTool({
     name: "mcp_call",
@@ -82,7 +75,6 @@ export function createMcpCallTool(
       required: ["connection_id", "tool_name", "arguments"],
       additionalProperties: false,
     },
-    needsApproval: options.needsApproval ?? true,
     execute(arguments_, context) {
       return runtime.call(arguments_, context.signal);
     },

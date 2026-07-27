@@ -1142,8 +1142,7 @@ button:disabled {
   font-size: 9px;
 }
 
-.activity-item pre,
-.approval-card pre {
+.activity-item pre {
   overflow: auto;
   max-height: 160px;
   margin: 7px 0 0;
@@ -1206,7 +1205,6 @@ button:disabled {
   background: #efeee9;
 }
 
-.approval-card,
 .connection-error {
   display: flex;
   gap: 12px;
@@ -1224,14 +1222,12 @@ button:disabled {
 }
 
 @starting-style {
-  .approval-card,
   .connection-error {
     opacity: 0;
     transform: scale(0.98);
   }
 }
 
-.approval-icon,
 .error-icon {
   display: grid;
   width: 29px;
@@ -1243,37 +1239,16 @@ button:disabled {
   background: #f5dfd0;
 }
 
-.approval-content {
-  min-width: 0;
-  flex: 1;
-}
-
-.approval-content strong,
 .connection-error strong {
   font-size: 12px;
   font-weight: 650;
 }
 
-.approval-content > p,
 .connection-error p {
   margin: 3px 0 0;
   color: #806f64;
   font-size: 11px;
   line-height: 1.5;
-}
-
-.approval-content pre {
-  padding: 9px 10px;
-  border: 1px solid #ead6c8;
-  border-radius: 7px;
-  background: rgb(255 255 255 / 52%);
-}
-
-.approval-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 12px;
-  gap: 7px;
 }
 
 .primary,
@@ -1975,15 +1950,13 @@ button:disabled {
   margin-bottom: 9px;
 }
 
-.settings-field-label label,
-.settings-toggle-row strong {
+.settings-field-label label {
   color: #3c3b35;
   font-size: 11px;
   font-weight: 640;
 }
 
-.settings-field-label p,
-.settings-toggle-row p {
+.settings-field-label p {
   margin: 3px 0 0;
   color: var(--muted);
   font-size: 10px;
@@ -2122,87 +2095,6 @@ button:disabled {
   padding: 0 7px;
   border-left: 1px solid var(--line);
   font-size: 10px;
-}
-
-.settings-toggle-row {
-  display: flex;
-  min-height: 74px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 22px;
-  padding: 15px 18px;
-}
-
-.settings-switch {
-  position: relative;
-  width: 36px;
-  height: 21px;
-  flex: 0 0 auto;
-  padding: 0;
-  border: 1px solid #c9c6bd;
-  border-radius: 999px;
-  background: #d8d6ce;
-  cursor: pointer;
-  transition:
-    border-color 180ms ease,
-    background-color 180ms ease;
-}
-
-.settings-switch span {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 15px;
-  height: 15px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(35 33 29 / 24%);
-  transform: translateX(0);
-  transition: transform 180ms var(--ease-out);
-}
-
-.settings-switch.on {
-  border-color: #b1532c;
-  background: var(--accent);
-}
-
-.settings-switch.on span {
-  transform: translateX(15px);
-}
-
-.settings-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0 18px 16px;
-  padding: 10px 11px;
-  border: 1px solid #ead3c1;
-  border-radius: 8px;
-  color: #8f5838;
-  background: #fbf2ea;
-  opacity: 1;
-  transform: scale(1);
-  transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
-}
-
-@starting-style {
-  .settings-warning {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-}
-
-.settings-warning svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
-.settings-warning p {
-  margin: 0;
-  font-size: 10px;
-  line-height: 1.55;
 }
 
 .settings-save-row {
@@ -2367,11 +2259,7 @@ button:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .pressable,
-  .approval-card,
   .connection-error,
-  .settings-switch,
-  .settings-switch span,
-  .settings-warning,
   .activity-heading,
   .activity-chevron {
     transition-duration: 0ms;
@@ -2383,9 +2271,7 @@ button:disabled {
     transition-duration: 0ms;
   }
 
-  .approval-card,
-  .connection-error,
-  .settings-warning {
+  .connection-error {
     transform: none;
   }
 

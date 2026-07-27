@@ -42,7 +42,6 @@ export interface DesktopSettingsSnapshot {
   searchApiKeyConfigured: boolean;
   qwenBaseUrl: string;
   model: string;
-  autoApproveAll: boolean;
 }
 
 export interface DesktopSettingsUpdate {
@@ -53,7 +52,6 @@ export interface DesktopSettingsUpdate {
   searchApiKey?: string | null;
   qwenBaseUrl: string;
   model: string;
-  autoApproveAll: boolean;
 }
 
 export interface DesktopConversationSummary {

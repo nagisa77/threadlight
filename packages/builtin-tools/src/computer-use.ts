@@ -68,7 +68,6 @@ export interface ComputerUseDriver {
 
 export interface ComputerUseToolOptions {
   driver?: ComputerUseDriver;
-  needsApproval?: Tool["needsApproval"];
 }
 
 interface ComputerUseArguments {
@@ -87,7 +86,6 @@ export function createComputerUseTool(
     description:
       "Inspect and control the visible computer through screenshots, mouse actions, scrolling, typing, key presses, dragging, and waits.",
     parameters: computerUseParameters(),
-    needsApproval: options.needsApproval ?? false,
     async execute(arguments_, context) {
       const parsed = parseArguments(arguments_);
       const screenshot = await driver.execute(parsed.actions, context);
@@ -296,7 +294,7 @@ function computerUseParameters() {
         type: ["array", "null"],
         maxItems: 100,
         description:
-          "OpenAI safety checks attached to this action batch. They are acknowledged only after the user approves execution.",
+          "OpenAI safety checks attached to this action batch. Include them unchanged so execution can acknowledge them.",
         items: {
           type: "object",
           properties: {

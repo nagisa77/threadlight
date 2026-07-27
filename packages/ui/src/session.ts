@@ -35,11 +35,6 @@ export interface ConversationMessage {
   activities?: readonly ToolActivity[];
 }
 
-export interface PendingApproval {
-  id: string;
-  call: ToolCallData;
-}
-
 export interface SessionState {
   connection: "connecting" | "ready" | "error";
   connectionError?: string;
@@ -49,7 +44,6 @@ export interface SessionState {
   messages: readonly ConversationMessage[];
   progress: readonly ConversationProgress[];
   streamingText: string;
-  approval?: PendingApproval;
 }
 
 export type SessionAction =
@@ -110,7 +104,6 @@ export function sessionReducer(
         isThinking: true,
         progress: [],
         streamingText: "",
-        approval: undefined,
         messages: [
           ...state.messages,
           {
@@ -175,19 +168,9 @@ function reduceAgentEvent(
       };
     case "tool.completed":
       return completeTool(state, event.result);
-    case "approval.requested":
-      return {
-        ...state,
-        isThinking: false,
-        approval: { id: event.request.id, call: event.request.call },
-      };
     case "run.completed":
     case "run.failed":
       return { ...state, isThinking: false };
-    case "approval.resolved":
-      return state.approval?.id === event.request.id
-        ? { ...state, approval: undefined }
-        : state;
     default:
       return state;
   }
@@ -205,7 +188,6 @@ function completeTurn(
     isThinking: false,
     progress: [],
     streamingText: "",
-    approval: undefined,
     messages: [
       ...state.messages,
       {
@@ -556,18 +538,6 @@ export function useThreadlightSession(
     }
   }, [client, state.threadId]);
 
-  const resolveApproval = useCallback(
-    async (approved: boolean) => {
-      if (!state.approval) return;
-      try {
-        await client.resolveApproval(state.approval.id, approved);
-      } catch (error) {
-        dispatch({ type: "connection.failed", error: errorMessage(error) });
-      }
-    },
-    [client, state.approval],
-  );
-
   const terminateProcess = useCallback(
     async (sessionId: string) => {
       const process = await client.killProcess(sessionId);
@@ -586,6 +556,5 @@ export function useThreadlightSession(
     send,
     interrupt,
     terminateProcess,
-    resolveApproval,
   };
 }

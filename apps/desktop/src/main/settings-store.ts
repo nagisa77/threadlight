@@ -22,7 +22,6 @@ interface StoredSettings {
   encryptedSearchApiKey?: string;
   qwenBaseUrl?: string;
   model?: string;
-  autoApproveAll: boolean;
 }
 
 export interface SecretCodec {
@@ -38,7 +37,6 @@ export interface RuntimeSettings {
   searchApiKey?: string;
   qwenBaseUrl: string;
   model: string;
-  autoApproveAll: boolean;
 }
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
@@ -49,7 +47,6 @@ export const DEFAULT_QWEN_BASE_URL =
 
 const EMPTY_SETTINGS: StoredSettings = {
   version: 1,
-  autoApproveAll: false,
 };
 
 export class SettingsStore {
@@ -68,7 +65,6 @@ export class SettingsStore {
       searchApiKeyConfigured: Boolean(settings.searchApiKey),
       qwenBaseUrl: settings.qwenBaseUrl,
       model: settings.model,
-      autoApproveAll: settings.autoApproveAll,
     };
   }
 
@@ -82,7 +78,6 @@ export class SettingsStore {
       provider: update.provider,
       qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl),
       model: requireNonEmpty(update.model, "Model"),
-      autoApproveAll: update.autoApproveAll,
     };
 
     updateSecret(
@@ -142,7 +137,6 @@ export class SettingsStore {
         nonEmpty(stored.model) ??
         nonEmpty(environment.THREADLIGHT_MODEL) ??
         defaultModel(provider),
-      autoApproveAll: stored.autoApproveAll,
     };
   }
 
@@ -199,7 +193,6 @@ export function runtimeEnvironment(
       ? { DASHSCOPE_BASE_URL: settings.qwenBaseUrl }
       : {}),
     THREADLIGHT_MODEL: settings.model,
-    THREADLIGHT_AUTO_APPROVE: settings.autoApproveAll ? "1" : "0",
   };
 }
 
@@ -241,7 +234,6 @@ function isStoredSettings(value: unknown): value is StoredSettings {
   const settings = value as Record<string, unknown>;
   return (
     settings.version === 1 &&
-    typeof settings.autoApproveAll === "boolean" &&
     optionalProvider(settings.provider) &&
     optionalString(settings.encryptedOpenAIApiKey) &&
     optionalString(settings.encryptedDeepSeekApiKey) &&

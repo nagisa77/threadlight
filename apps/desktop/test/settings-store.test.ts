@@ -44,7 +44,6 @@ describe("SettingsStore", () => {
         searchApiKey: "search-secret",
         qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
         model: "  deepseek-v4-pro  ",
-        autoApproveAll: true,
       },
       {},
     );
@@ -57,7 +56,6 @@ describe("SettingsStore", () => {
       searchApiKeyConfigured: true,
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "deepseek-v4-pro",
-      autoApproveAll: true,
     });
     const stored = readFileSync(path, "utf8");
     for (const secret of [
@@ -76,7 +74,6 @@ describe("SettingsStore", () => {
       searchApiKey: "search-secret",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "deepseek-v4-pro",
-      autoApproveAll: true,
     });
   });
 
@@ -88,7 +85,6 @@ describe("SettingsStore", () => {
         openAIApiKey: "stored-key",
         qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
         model: "gpt-5.6-sol",
-        autoApproveAll: false,
       },
       {},
     );
@@ -99,7 +95,6 @@ describe("SettingsStore", () => {
         openAIApiKey: null,
         qwenBaseUrl: "https://example.test/compatible-mode/v1/",
         model: "qwen3.7-plus",
-        autoApproveAll: false,
       },
       { OPENAI_API_KEY: "environment-key" },
     );
@@ -114,7 +109,6 @@ describe("SettingsStore", () => {
       searchApiKey: undefined,
       qwenBaseUrl: "https://example.test/compatible-mode/v1",
       model: "qwen3.7-plus",
-      autoApproveAll: false,
     });
   });
 
@@ -128,7 +122,6 @@ describe("SettingsStore", () => {
         searchApiKey: "search",
         qwenBaseUrl: "https://qwen.example/v1",
         model: "qwen3.7-plus",
-        autoApproveAll: true,
       }),
     ).toEqual({
       THREADLIGHT_PROVIDER: "qwen",
@@ -136,7 +129,6 @@ describe("SettingsStore", () => {
       BRAVE_SEARCH_API_KEY: "search",
       DASHSCOPE_BASE_URL: "https://qwen.example/v1",
       THREADLIGHT_MODEL: "qwen3.7-plus",
-      THREADLIGHT_AUTO_APPROVE: "1",
     });
   });
 

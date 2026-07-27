@@ -71,6 +71,11 @@ import {
   type DesktopConversationUpdate,
   type DesktopSettingsUpdate,
 } from "../shared/desktop-api.js";
+import {
+  DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
+  DESKTOP_COMPUTER_PREVIEW_DRAG_CHANNEL,
+  DESKTOP_COMPUTER_PREVIEW_RESIZE_CHANNEL,
+} from "../shared/computer-preview-api.js";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -194,7 +199,6 @@ function startAppServer(window: BrowserWindow, cwd: string): void {
         provider: "openai",
         qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
         model: DEFAULT_MODEL,
-        autoApproveAll: false,
       },
     ),
     send: (message) => sendToRenderer(window, message),
@@ -364,6 +368,49 @@ function handleComputerShareStop(event: IpcMainInvokeEvent) {
   return computerService.stopSharing();
 }
 
+function handleComputerPreviewClose(event: IpcMainEvent): void {
+  if (!computerService?.ownsPreviewWebContents(event.sender)) return;
+  computerService.closePictureInPicture();
+}
+
+function handleComputerPreviewResize(
+  event: IpcMainEvent,
+  value: unknown,
+): void {
+  if (
+    !computerService?.ownsPreviewWebContents(event.sender) ||
+    typeof value !== "number"
+  ) {
+    return;
+  }
+  computerService.resizePictureInPicture(value);
+}
+
+function handleComputerPreviewDrag(
+  event: IpcMainEvent,
+  value: unknown,
+): void {
+  if (
+    !computerService?.ownsPreviewWebContents(event.sender) ||
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value)
+  ) {
+    return;
+  }
+  const drag = value as Record<string, unknown>;
+  if (
+    (drag.phase !== "start" &&
+      drag.phase !== "move" &&
+      drag.phase !== "end") ||
+    typeof drag.x !== "number" ||
+    typeof drag.y !== "number"
+  ) {
+    return;
+  }
+  computerService.dragPictureInPicture(drag.phase, drag.x, drag.y);
+}
+
 function requireProject(value: unknown) {
   if (!projectStore) throw new Error("Projects are not available");
   if (typeof value !== "string" || !value) throw new Error("Invalid project id");
@@ -387,9 +434,6 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
     throw new Error("Invalid settings update");
   }
   const update = value as Record<string, unknown>;
-  if (typeof update.autoApproveAll !== "boolean") {
-    throw new Error("autoApproveAll must be a boolean");
-  }
   if (!isModelProvider(update.provider)) {
     throw new Error("provider must be openai, deepseek, or qwen");
   }
@@ -415,7 +459,6 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
     provider: update.provider,
     model: update.model.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
-    autoApproveAll: update.autoApproveAll,
     ...(update.openAIApiKey !== undefined
       ? { openAIApiKey: update.openAIApiKey }
       : {}),
@@ -588,6 +631,18 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_GET_CHANNEL, handleComputerShareGet);
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL, handleComputerShareShow);
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_STOP_CHANNEL, handleComputerShareStop);
+  ipcMain.on(
+    DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
+    handleComputerPreviewClose,
+  );
+  ipcMain.on(
+    DESKTOP_COMPUTER_PREVIEW_RESIZE_CHANNEL,
+    handleComputerPreviewResize,
+  );
+  ipcMain.on(
+    DESKTOP_COMPUTER_PREVIEW_DRAG_CHANNEL,
+    handleComputerPreviewDrag,
+  );
   createWindow();
 
   app.on("activate", () => {

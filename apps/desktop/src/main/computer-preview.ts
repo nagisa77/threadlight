@@ -17,6 +17,10 @@ const STACK_MAX_Y = 36;
 const STACK_X_STEP = 86;
 const STACK_Y_STEP = 8;
 const PREVIEW_PADDING = 18;
+const PINCH_SENSITIVITY = 0.004;
+
+export const COMPUTER_PREVIEW_MIN_SCALE = 0.6;
+export const COMPUTER_PREVIEW_MAX_SCALE = 1.65;
 
 export interface ComputerPreviewSize {
   width: number;
@@ -58,6 +62,39 @@ export function computerPreviewSize(
   };
 }
 
+export function scaledComputerPreviewSize(
+  frame: ComputerFrameLayout,
+  scale: number,
+): ComputerPreviewSize {
+  const base = computerPreviewSize(frame);
+  const safeScale = clampComputerPreviewScale(scale);
+  return {
+    width: Math.round(base.width * safeScale),
+    height: Math.round(base.height * safeScale),
+  };
+}
+
+export function nextComputerPreviewScale(
+  currentScale: number,
+  pinchDeltaY: number,
+): number {
+  if (!Number.isFinite(pinchDeltaY)) {
+    return clampComputerPreviewScale(currentScale);
+  }
+  const boundedDelta = Math.max(-80, Math.min(80, pinchDeltaY));
+  return clampComputerPreviewScale(
+    currentScale * Math.exp(-boundedDelta * PINCH_SENSITIVITY),
+  );
+}
+
+function clampComputerPreviewScale(scale: number): number {
+  const safeScale = Number.isFinite(scale) ? scale : 1;
+  return Math.max(
+    COMPUTER_PREVIEW_MIN_SCALE,
+    Math.min(COMPUTER_PREVIEW_MAX_SCALE, safeScale),
+  );
+}
+
 export function computerPreviewHtml(): string {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -91,50 +128,43 @@ export function computerPreviewHtml(): string {
         height: 100%;
         overflow: hidden;
         background: transparent;
-        -webkit-app-region: drag;
+        -webkit-app-region: no-drag;
       }
       #controls {
         position: absolute;
         z-index: 100;
-        left: 10px;
-        top: 8px;
+        left: 12px;
+        top: 12px;
         display: inline-flex;
         align-items: center;
-        padding: 6px;
-        border: 1px solid rgba(255,255,255,.68);
-        border-radius: 12px;
         opacity: 0;
-        background: rgba(239,238,233,.7);
-        box-shadow:
-          0 12px 30px rgba(62,59,52,.2),
-          0 2px 8px rgba(62,59,52,.1),
-          inset 0 0 0 1px rgba(93,89,81,.06);
-        backdrop-filter: blur(18px) saturate(1.15);
-        -webkit-backdrop-filter: blur(18px) saturate(1.15);
         pointer-events: none;
         -webkit-app-region: no-drag;
-        transform: translateY(4px) scale(.96);
-        transform-origin: top left;
+        transform: scale(.96);
+        transform-origin: center;
         transition:
-          opacity 160ms ease,
-          transform 180ms var(--ease-out);
+          opacity 140ms ease,
+          transform 160ms var(--ease-out);
       }
       #shell:hover #controls,
       #controls:focus-within {
         opacity: 1;
         pointer-events: auto;
-        transform: translateY(0) scale(1);
+        transform: scale(1);
       }
       #close {
-        width: 29px;
-        height: 29px;
+        width: 28px;
+        height: 28px;
         display: grid;
         padding: 0;
         place-items: center;
         border: 0;
-        border-radius: 8px;
-        color: rgba(48,47,43,.72);
-        background: rgba(255,255,255,.38);
+        border-radius: 999px;
+        color: rgba(255,255,255,.92);
+        background: rgba(34,33,30,.58);
+        box-shadow: 0 3px 10px rgba(34,33,30,.18);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
         cursor: pointer;
         -webkit-app-region: no-drag;
         transition:
@@ -158,11 +188,13 @@ export function computerPreviewHtml(): string {
         position: absolute;
         inset: 0;
         overflow: hidden;
-        -webkit-app-region: drag;
+        -webkit-app-region: no-drag;
       }
       #cards {
         position: absolute;
         inset: 0;
+        transform: scale(var(--preview-scale, 1));
+        transform-origin: top left;
       }
       .source-card {
         position: absolute;
@@ -187,8 +219,8 @@ export function computerPreviewHtml(): string {
           box-shadow 180ms ease;
       }
       .source-card[data-front="true"] {
-        cursor: grab;
-        -webkit-app-region: drag;
+        cursor: default;
+        -webkit-app-region: no-drag;
         box-shadow:
           0 22px 52px rgba(68,64,56,.2),
           0 3px 9px rgba(68,64,56,.1),
@@ -224,8 +256,8 @@ export function computerPreviewHtml(): string {
       }
       @media (hover: hover) and (pointer: fine) {
         #close:hover {
-          color: rgba(36,35,32,.92);
-          background: rgba(255,255,255,.7);
+          color: #fff;
+          background: rgba(24,23,21,.76);
         }
         .source-card:not([data-front="true"]):hover {
           filter: saturate(1.04) brightness(1.015);
@@ -234,7 +266,7 @@ export function computerPreviewHtml(): string {
       @media (prefers-reduced-motion: reduce) {
         #controls {
           transform: none;
-          transition: opacity 140ms ease;
+          transition: opacity 120ms ease;
         }
         .source-card {
           transition:
@@ -264,6 +296,10 @@ export function computerPreviewHtml(): string {
       const captures = new Map();
       let frontOrder = [];
       let currentLayoutKey = "";
+      let pendingPinchDeltaY = 0;
+      let pinchFrame = 0;
+      let dragCandidate = null;
+      let suppressClickUntil = 0;
 
       function waitForVideo(video) {
         if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
@@ -339,7 +375,13 @@ export function computerPreviewHtml(): string {
         }
         frame.append(capture.video);
         card.append(frame);
-        card.addEventListener("click", () => bringToFront(tile.sourceId));
+        card.addEventListener("click", (event) => {
+          if (performance.now() < suppressClickUntil) {
+            event.preventDefault();
+            return;
+          }
+          bringToFront(tile.sourceId);
+        });
         return card;
       }
 
@@ -480,7 +522,92 @@ export function computerPreviewHtml(): string {
 
         render
       };
-      document.getElementById("close").addEventListener("click", () => window.close());
+      let closing = false;
+      function closePreview() {
+        if (closing) return;
+        closing = true;
+        window.threadlightComputerPreview.close();
+      }
+      const close = document.getElementById("close");
+      close.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        closePreview();
+      });
+      close.addEventListener("click", closePreview);
+      const shell = document.getElementById("shell");
+      shell.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0 || event.target.closest("#controls")) return;
+        const card = event.target.closest(".source-card");
+        if (card && card.dataset.front !== "true") return;
+        dragCandidate = {
+          pointerId: event.pointerId,
+          startX: event.screenX,
+          startY: event.screenY,
+          dragging: false
+        };
+        shell.setPointerCapture(event.pointerId);
+      });
+      shell.addEventListener("pointermove", (event) => {
+        const drag = dragCandidate;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (
+          !drag.dragging &&
+          Math.hypot(
+            event.screenX - drag.startX,
+            event.screenY - drag.startY
+          ) < 4
+        ) {
+          return;
+        }
+        if (!drag.dragging) {
+          drag.dragging = true;
+          window.threadlightComputerPreview.drag(
+            "start",
+            drag.startX,
+            drag.startY
+          );
+        }
+        event.preventDefault();
+        window.threadlightComputerPreview.drag(
+          "move",
+          event.screenX,
+          event.screenY
+        );
+      });
+      function finishDrag(event) {
+        const drag = dragCandidate;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        if (drag.dragging) {
+          suppressClickUntil = performance.now() + 250;
+          window.threadlightComputerPreview.drag(
+            "end",
+            event.screenX,
+            event.screenY
+          );
+        }
+        if (shell.hasPointerCapture(event.pointerId)) {
+          shell.releasePointerCapture(event.pointerId);
+        }
+        dragCandidate = null;
+      }
+      shell.addEventListener("pointerup", finishDrag);
+      shell.addEventListener("pointercancel", finishDrag);
+      window.addEventListener(
+        "wheel",
+        (event) => {
+          if (!event.ctrlKey) return;
+          event.preventDefault();
+          pendingPinchDeltaY += event.deltaY;
+          if (pinchFrame) return;
+          pinchFrame = requestAnimationFrame(() => {
+            window.threadlightComputerPreview.resize(pendingPinchDeltaY);
+            pendingPinchDeltaY = 0;
+            pinchFrame = 0;
+          });
+        },
+        { passive: false }
+      );
     </script>
   </body>
 </html>`;

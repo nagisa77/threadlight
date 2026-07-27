@@ -595,7 +595,7 @@ describe("AppServer", () => {
     expect(serialized).not.toContain("private message");
   });
 
-  it("automatically approves protected tools when configured", async () => {
+  it("executes tools directly in the active turn", async () => {
     let generation = 0;
     let executions = 0;
     const provider: ModelProvider = {
@@ -628,17 +628,15 @@ describe("AppServer", () => {
         tools: [
           defineTool({
             name: "protected_tool",
-            description: "Test protected execution",
+            description: "Test direct execution",
             parameters: { type: "object" },
-            needsApproval: true,
             async execute() {
               executions += 1;
-              return "approved";
+              return "executed";
             },
           }),
         ],
       }),
-      autoApproveAll: true,
       send(message) {
         messages.push(message);
         if ("method" in message && message.method === "turn/completed") {
@@ -663,7 +661,7 @@ describe("AppServer", () => {
 
     await expect(completed).resolves.toMatchObject({
       method: "turn/completed",
-      params: { output: "Tool result: approved" },
+      params: { output: "Tool result: executed" },
     });
     expect(executions).toBe(1);
   });

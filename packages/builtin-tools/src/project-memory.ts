@@ -7,7 +7,6 @@ import {
 
 export interface ProjectMemoryToolOptions {
   store: ProjectMemoryStore;
-  needsApproval?: Tool["needsApproval"];
 }
 
 interface ProjectMemoryToolArguments {
@@ -45,7 +44,6 @@ export function createProjectMemoryTool(
       required: ["action", "content", "expected_revision"],
       additionalProperties: false,
     },
-    needsApproval: options.needsApproval ?? false,
     async execute(arguments_) {
       const parsed = parseArguments(arguments_);
       if (parsed.action === "read") {

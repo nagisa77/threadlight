@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type {
   Agent,
   AgentEvent,
-  ApprovalRequest,
   ModelProvider,
   RunOptions,
   RunResult,
@@ -170,30 +169,6 @@ export class AgentLoop {
       };
     }
 
-    if (requiresApproval(tool, call.arguments)) {
-      const request: ApprovalRequest = {
-        id: randomUUID(),
-        runId,
-        call,
-      };
-
-      emit({ type: "approval.requested", request });
-      const approved = options.approve
-        ? await options.approve(request)
-        : false;
-      emit({ type: "approval.resolved", request, approved });
-      options.signal?.throwIfAborted();
-
-      if (!approved) {
-        return {
-          callId: call.id,
-          name: call.name,
-          output: "Tool execution was not approved",
-          isError: true,
-        };
-      }
-    }
-
     emit({ type: "tool.started", runId, call });
 
     let result: ToolResult;
@@ -219,12 +194,6 @@ export class AgentLoop {
     emit({ type: "tool.completed", runId, result });
     return result;
   }
-}
-
-function requiresApproval(tool: Tool, arguments_: unknown): boolean {
-  return typeof tool.needsApproval === "function"
-    ? tool.needsApproval(arguments_)
-    : (tool.needsApproval ?? false);
 }
 
 function serialize(value: unknown): string {

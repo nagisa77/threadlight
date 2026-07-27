@@ -77,7 +77,6 @@ export interface WebSearchToolOptions {
   endpoint?: string;
   defaultCount?: number;
   timeoutMs?: number;
-  needsApproval?: Tool["needsApproval"];
 }
 
 export interface WebSearchResult {
@@ -157,7 +156,6 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
       required: ["query", "count", "country", "search_lang", "freshness"],
       additionalProperties: false,
     },
-    needsApproval: options.needsApproval ?? false,
     async execute(arguments_, context) {
       const parsed = parseArguments(arguments_, defaultCount);
       const url = new URL(options.endpoint ?? DEFAULT_ENDPOINT);

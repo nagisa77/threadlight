@@ -94,7 +94,6 @@ describe("MCP tools", () => {
     });
     runtimes.push(runtime);
     const provider = new ScriptedMcpProvider(fixture);
-    let approvals = 0;
 
     const result = await new AgentLoop(provider).run(
       defineAgent({
@@ -106,15 +105,8 @@ describe("MCP tools", () => {
         ],
       }),
       "Double 21 with the supplied MCP server",
-      {
-        async approve() {
-          approvals += 1;
-          return true;
-        },
-      },
     );
 
-    expect(approvals).toBe(2);
     expect(provider.requests).toHaveLength(3);
     expect(provider.requests[1]?.state).toEqual([{ turn: "connect" }]);
     expect(provider.requests[2]?.state).toEqual([{ turn: "call" }]);

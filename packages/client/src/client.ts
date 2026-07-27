@@ -134,10 +134,6 @@ export class ThreadlightClient {
     return this.request("process/kill", { sessionId });
   }
 
-  resolveApproval(requestId: string, approved: boolean) {
-    return this.request("approval/resolve", { requestId, approved });
-  }
-
   subscribe(listener: (notification: JsonRpcNotification) => void) {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

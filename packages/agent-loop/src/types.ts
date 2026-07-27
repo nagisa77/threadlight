@@ -10,7 +10,6 @@ export interface Tool {
   description: string;
   parameters: JsonSchema;
   kind?: "function" | "computer";
-  needsApproval?: boolean | ((arguments_: unknown) => boolean);
   execute(arguments_: unknown, context: ToolContext): Promise<unknown>;
 }
 
@@ -95,12 +94,6 @@ export interface ModelProvider {
   ): Promise<ModelTurn>;
 }
 
-export interface ApprovalRequest {
-  id: string;
-  runId: string;
-  call: ToolCall;
-}
-
 export type AgentEvent =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
@@ -118,12 +111,6 @@ export type AgentEvent =
       toolCalls: readonly ToolCall[];
       usage?: Partial<TokenUsage>;
     }
-  | { type: "approval.requested"; request: ApprovalRequest }
-  | {
-      type: "approval.resolved";
-      request: ApprovalRequest;
-      approved: boolean;
-    }
   | { type: "tool.started"; runId: string; call: ToolCall }
   | { type: "tool.completed"; runId: string; result: ToolResult }
   | { type: "message.completed"; runId: string; text: string }
@@ -135,7 +122,6 @@ export interface RunOptions {
   modelState?: unknown;
   attachments?: readonly ModelAttachment[];
   onEvent?: (event: AgentEvent) => void;
-  approve?: (request: ApprovalRequest) => Promise<boolean>;
 }
 
 export interface RunResult {

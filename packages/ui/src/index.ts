@@ -39,7 +39,6 @@ export type {
 export type {
   ConversationMessage,
   ConversationProgress,
-  PendingApproval,
   SessionAction,
   SessionState,
   ToolActivity,

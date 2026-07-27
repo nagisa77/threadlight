@@ -36,7 +36,6 @@ export type {
   ExecCommandResult,
   ExecCommandToolOptions,
 } from "./exec-command.js";
-export type { McpToolOptions } from "./mcp-tools.js";
 export type {
   ConversationMcpRuntimeOptions,
   McpConnection,

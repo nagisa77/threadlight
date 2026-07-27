@@ -129,7 +129,7 @@ class ScriptedProcessProvider implements ModelProvider {
 }
 
 describe("builtin tools", () => {
-  it("executes a computer action batch without approval and returns a PNG screenshot", async () => {
+  it("executes a computer action batch and returns a PNG screenshot", async () => {
     const execute = vi.fn(async () =>
       Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
     );
@@ -164,11 +164,6 @@ describe("builtin tools", () => {
         tools: [tool],
       }),
       "Inspect the screen",
-      {
-        async approve() {
-          throw new Error("computer should not request approval");
-        },
-      },
     );
 
     expect(tool.kind).toBe("computer");
@@ -190,7 +185,7 @@ describe("builtin tools", () => {
     });
   });
 
-  it("executes an approved command and returns structured output to the model", async () => {
+  it("executes a command directly and returns structured output to the model", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-exec-"));
     const provider = new ScriptedToolProvider({
       id: "call_exec",
@@ -201,7 +196,6 @@ describe("builtin tools", () => {
         timeout_ms: null,
       },
     });
-    let approvals = 0;
     const tool = createExecCommandTool({ workspaceRoot });
 
     expect(tool.parameters).toMatchObject({
@@ -221,12 +215,6 @@ describe("builtin tools", () => {
         tools: [tool],
       }),
       "Run a command",
-      {
-        async approve() {
-          approvals += 1;
-          return true;
-        },
-      },
     );
 
     const output = JSON.parse(result.output) as {
@@ -234,7 +222,6 @@ describe("builtin tools", () => {
       exitCode: number;
       stdout: string;
     };
-    expect(approvals).toBe(1);
     expect(output).toMatchObject({
       cwd: await realpath(workspaceRoot),
       exitCode: 0,
@@ -275,8 +262,6 @@ describe("builtin tools", () => {
       createProcessWaitTool({ processManager }),
       createProcessKillTool({ processManager }),
     ];
-    let approvals = 0;
-
     const result = await new AgentLoop(provider).run(
       defineAgent({
         name: "managed-process-test",
@@ -284,15 +269,8 @@ describe("builtin tools", () => {
         tools,
       }),
       "Run a managed command",
-      {
-        async approve() {
-          approvals += 1;
-          return true;
-        },
-      },
     );
 
-    expect(approvals).toBe(2);
     expect(JSON.parse(result.output)).toMatchObject({
       sessionId: "session_opaque_1",
       status: "terminated",

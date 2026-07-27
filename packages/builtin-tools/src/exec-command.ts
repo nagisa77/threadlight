@@ -20,7 +20,6 @@ export interface ExecCommandToolOptions {
   maxOutputChars?: number;
   shell?: string;
   environment?: NodeJS.ProcessEnv;
-  needsApproval?: Tool["needsApproval"];
   processManager?: ProcessManager;
 }
 
@@ -84,7 +83,6 @@ export function createExecCommandTool(
       required: ["command", "cwd", "timeout_ms"],
       additionalProperties: false,
     },
-    needsApproval: options.needsApproval ?? true,
     async execute(arguments_, context) {
       const parsed = parseArguments(arguments_, defaultTimeoutMs, maxTimeoutMs);
       const cwd = await resolveWorkingDirectory(

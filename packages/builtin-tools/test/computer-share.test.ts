@@ -65,7 +65,7 @@ class ScriptedShareProvider implements ModelProvider {
 }
 
 describe("computer_share", () => {
-  it("lets a scripted model list and select shared applications without approval", async () => {
+  it("lets a scripted model list and select shared applications", async () => {
     const runtime: ComputerShareRuntime = {
       list: vi.fn(async () => [
         {
@@ -104,11 +104,6 @@ describe("computer_share", () => {
         tools: [createComputerShareTool({ runtime })],
       }),
       "Open Safari",
-      {
-        approve: async () => {
-          throw new Error("computer_share should not request approval");
-        },
-      },
     );
 
     expect(runtime.list).toHaveBeenCalledOnce();

@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { resolve } from "node:path";
 
 import {
   BrowserWindow,
@@ -17,7 +18,6 @@ import type { DesktopComputerShareSnapshot } from "../shared/desktop-api.js";
 import {
   ComputerCaptureSession,
   captureStatusesMatchSources,
-  sameCaptureSources,
   type ComputerCaptureSource,
   type ComputerCaptureStreamMetadata,
   type ComputerCaptureStreamStatus,
@@ -37,9 +37,12 @@ import {
   type ComputerSourceBounds,
 } from "./computer-layout.js";
 import {
+  COMPUTER_PREVIEW_MAX_SCALE,
+  COMPUTER_PREVIEW_MIN_SCALE,
   COMPUTER_PREVIEW_URL,
   COMPUTER_PREVIEW_WINDOW_APPEARANCE,
-  computerPreviewSize,
+  nextComputerPreviewScale,
+  scaledComputerPreviewSize,
 } from "./computer-preview.js";
 
 interface WindowMetadata {
@@ -100,6 +103,8 @@ export class DesktopComputerService {
   private catalogLoadedAt = 0;
   private captureWindow?: BrowserWindow;
   private preview?: BrowserWindow;
+  private previewScale = 1;
+  private previewDragOffset?: { x: number; y: number };
   private layout?: ComputerFrameLayout;
   private cursor?: CursorPosition;
   private activeProcessId?: number;
@@ -107,7 +112,6 @@ export class DesktopComputerService {
     webContents: WebContents;
     source: DesktopCapturerSource;
   };
-  private previewHealthTimer?: ReturnType<typeof setInterval>;
   private childWindowCaptureConfigured = false;
   private operation = Promise.resolve();
   private readonly captureSession =
@@ -191,11 +195,76 @@ export class DesktopComputerService {
     return ownsHiddenCapture || ownsPreview;
   }
 
+  ownsPreviewWebContents(webContents: WebContents | null): boolean {
+    return (
+      !!webContents &&
+      !!this.preview &&
+      !this.preview.isDestroyed() &&
+      webContents === this.preview.webContents
+    );
+  }
+
+  closePictureInPicture(): DesktopComputerShareSnapshot {
+    const changed =
+      this.selection.pictureInPicture ||
+      (!!this.preview && !this.preview.isDestroyed());
+    this.selection = {
+      ...this.selection,
+      pictureInPicture: false,
+    };
+    this.closePreview();
+    if (changed) this.notifyShareChanged();
+    return this.shareSnapshot();
+  }
+
+  resizePictureInPicture(pinchDeltaY: number): void {
+    if (!Number.isFinite(pinchDeltaY) || !this.layout) return;
+    const preview = this.preview;
+    if (!preview || preview.isDestroyed()) return;
+    const nextScale = nextComputerPreviewScale(
+      this.previewScale,
+      pinchDeltaY,
+    );
+    if (nextScale === this.previewScale) return;
+    this.previewScale = nextScale;
+    this.resizePreview(preview, this.layout);
+  }
+
+  dragPictureInPicture(
+    phase: "start" | "move" | "end",
+    x: number,
+    y: number,
+  ): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const preview = this.preview;
+    if (!preview || preview.isDestroyed()) return;
+    if (phase === "start") {
+      const bounds = preview.getBounds();
+      this.previewDragOffset = {
+        x: x - bounds.x,
+        y: y - bounds.y,
+      };
+      return;
+    }
+    if (phase === "end") {
+      this.previewDragOffset = undefined;
+      return;
+    }
+    const offset = this.previewDragOffset;
+    if (!offset) return;
+    preview.setPosition(
+      Math.round(x - offset.x),
+      Math.round(y - offset.y),
+      false,
+    );
+  }
+
   dispose(): void {
-    this.stopPreviewHealthChecks();
     void this.stopPreviewRelays();
     this.preview?.destroy();
     this.preview = undefined;
+    this.previewScale = 1;
+    this.previewDragOffset = undefined;
     this.captureWindow?.destroy();
     this.captureWindow = undefined;
     this.pendingDisplayRequest = undefined;
@@ -274,6 +343,7 @@ export class DesktopComputerService {
     this.layout = undefined;
     this.cursor = undefined;
     this.activeProcessId = undefined;
+    this.previewScale = 1;
     this.closePreview();
     this.notifyShareChanged();
     return this.state();
@@ -371,7 +441,12 @@ export class DesktopComputerService {
 
   private async captureSharedFrame(): Promise<Buffer> {
     await this.ensureCaptureStreams();
-    if (this.selection.pictureInPicture) await this.syncLivePreview();
+    if (
+      this.selection.pictureInPicture &&
+      (!this.preview || this.preview.isDestroyed())
+    ) {
+      await this.syncLivePreview();
+    }
     const capture = await this.ensureCaptureWindow();
     await this.renderLiveFrame();
     await capture.webContents.executeJavaScript(
@@ -398,33 +473,17 @@ export class DesktopComputerService {
 
   private async ensureCaptureStreams(): Promise<void> {
     const inactive = await this.captureSession.inactiveKeys();
-    if (
-      !inactive.length &&
-      this.selection.mode !== "applications"
-    ) {
-      return;
-    }
+    if (!inactive.length) return;
 
-    const catalog = await this.loadCatalog(true);
-    const records = this.resolveSelectedRecords(catalog);
-    const sources = expandCaptureSources(records, catalog);
+    const sources = this.captureSession.activeSources.map(
+      ({ width: _width, height: _height, ...source }) => source,
+    );
     if (!sources.length) {
       throw new Error(
-        "The shared application closed all of its windows. Select a new share target.",
+        "The shared capture stopped. Select the share targets again.",
       );
     }
-    if (
-      !inactive.length &&
-      sameCaptureSources(this.captureSession.activeSources, sources)
-    ) {
-      return;
-    }
     const activeSources = await this.captureSession.replace(sources);
-    this.selection = {
-      ...this.selection,
-      targetIds: records.map((record) => record.target.id),
-    };
-    this.selectedTargets = records.map((record) => record.target);
     this.layout = layoutActiveSources(activeSources);
     if (this.selection.pictureInPicture) {
       await this.syncLivePreview(true);
@@ -743,11 +802,27 @@ export class DesktopComputerService {
   private async ensurePreview(): Promise<BrowserWindow> {
     if (this.preview && !this.preview.isDestroyed()) return this.preview;
     const previewSize = this.layout
-      ? computerPreviewSize(this.layout)
+      ? scaledComputerPreviewSize(this.layout, this.previewScale)
       : { width: 180, height: 120 };
+    const minimumSize = this.layout
+      ? scaledComputerPreviewSize(
+          this.layout,
+          COMPUTER_PREVIEW_MIN_SCALE,
+        )
+      : { width: 108, height: 72 };
+    const maximumSize = this.layout
+      ? scaledComputerPreviewSize(
+          this.layout,
+          COMPUTER_PREVIEW_MAX_SCALE,
+        )
+      : { width: 297, height: 198 };
     const preview = new BrowserWindow({
       width: previewSize.width,
       height: previewSize.height,
+      minWidth: minimumSize.width,
+      minHeight: minimumSize.height,
+      maxWidth: maximumSize.width,
+      maxHeight: maximumSize.height,
       show: false,
       resizable: false,
       minimizable: false,
@@ -758,6 +833,10 @@ export class DesktopComputerService {
       title: "Threadlight · Computer Use",
       ...COMPUTER_PREVIEW_WINDOW_APPEARANCE,
       webPreferences: {
+        preload: resolve(
+          import.meta.dirname,
+          "../preload/computer-preview.cjs",
+        ),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -771,7 +850,6 @@ export class DesktopComputerService {
     preview.on("closed", () => {
       if (this.preview !== preview) return;
       this.preview = undefined;
-      this.stopPreviewHealthChecks();
       void this.stopPreviewRelays();
       this.selection = {
         ...this.selection,
@@ -785,10 +863,10 @@ export class DesktopComputerService {
   }
 
   private closePreview(): void {
-    this.stopPreviewHealthChecks();
     void this.stopPreviewRelays();
     const preview = this.preview;
     this.preview = undefined;
+    this.previewDragOffset = undefined;
     if (preview && !preview.isDestroyed()) preview.destroy();
   }
 
@@ -816,19 +894,64 @@ export class DesktopComputerService {
         throw error;
       }
     }
-    const previewSize = computerPreviewSize(this.layout);
-    const contentBounds = preview.getContentBounds();
-    if (
-      contentBounds.width !== previewSize.width ||
-      contentBounds.height !== previewSize.height
-    ) {
-      preview.setContentSize(previewSize.width, previewSize.height, false);
-    }
+    this.resizePreview(preview, this.layout);
     await preview.webContents.executeJavaScript(
       `window.threadlightPreview.render(${JSON.stringify(this.layout)})`,
     );
     if (!preview.isVisible()) preview.showInactive();
-    this.startPreviewHealthChecks();
+  }
+
+  private resizePreview(
+    preview: BrowserWindow,
+    layout: ComputerFrameLayout,
+  ): void {
+    const minimumSize = scaledComputerPreviewSize(
+      layout,
+      COMPUTER_PREVIEW_MIN_SCALE,
+    );
+    const maximumSize = scaledComputerPreviewSize(
+      layout,
+      COMPUTER_PREVIEW_MAX_SCALE,
+    );
+    const previewSize = scaledComputerPreviewSize(
+      layout,
+      this.previewScale,
+    );
+    preview.setMinimumSize(0, 0);
+    preview.setMaximumSize(maximumSize.width, maximumSize.height);
+    preview.setMinimumSize(minimumSize.width, minimumSize.height);
+
+    const current = preview.getBounds();
+    if (
+      current.width !== previewSize.width ||
+      current.height !== previewSize.height
+    ) {
+      const workArea = screen.getDisplayMatching(current).workArea;
+      const centeredX = Math.round(
+        current.x + (current.width - previewSize.width) / 2,
+      );
+      const centeredY = Math.round(
+        current.y + (current.height - previewSize.height) / 2,
+      );
+      const maximumX = workArea.x + workArea.width - previewSize.width;
+      const maximumY = workArea.y + workArea.height - previewSize.height;
+      preview.setBounds(
+        {
+          x: Math.max(workArea.x, Math.min(maximumX, centeredX)),
+          y: Math.max(workArea.y, Math.min(maximumY, centeredY)),
+          width: previewSize.width,
+          height: previewSize.height,
+        },
+        false,
+      );
+    }
+    void preview.webContents
+      .executeJavaScript(
+        `document.documentElement.style.setProperty("--preview-scale", ${JSON.stringify(
+          this.previewScale,
+        )})`,
+      )
+      .catch(() => undefined);
   }
 
   private async stopPreviewRelays(): Promise<void> {
@@ -847,33 +970,6 @@ export class DesktopComputerService {
     )) as unknown;
     if (!Array.isArray(value)) return [];
     return value.filter(isCaptureStatus);
-  }
-
-  private startPreviewHealthChecks(): void {
-    if (this.previewHealthTimer) return;
-    const timer = setInterval(() => {
-      void this.serialize(async () => {
-        if (
-          !this.selection.pictureInPicture ||
-          this.selection.mode === "none"
-        ) {
-          return;
-        }
-        try {
-          await this.ensureCaptureStreams();
-          await this.syncLivePreview();
-        } catch {
-          // The next tool call surfaces a persistent stream error.
-        }
-      });
-    }, 1_500);
-    timer.unref();
-    this.previewHealthTimer = timer;
-  }
-
-  private stopPreviewHealthChecks(): void {
-    if (this.previewHealthTimer) clearInterval(this.previewHealthTimer);
-    this.previewHealthTimer = undefined;
   }
 
   private notifyShareChanged(): void {

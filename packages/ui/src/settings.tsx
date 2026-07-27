@@ -8,9 +8,7 @@ import {
   Link2,
   LoaderCircle,
   Search,
-  ShieldCheck,
   Sparkles,
-  TriangleAlert,
 } from "lucide-react";
 
 export type ModelProviderId = "openai" | "deepseek" | "qwen";
@@ -143,7 +141,6 @@ export interface SettingsSnapshot {
   searchApiKeyConfigured: boolean;
   qwenBaseUrl: string;
   model: string;
-  autoApproveAll: boolean;
 }
 
 export interface SettingsUpdate {
@@ -154,7 +151,6 @@ export interface SettingsUpdate {
   searchApiKey?: string | null;
   qwenBaseUrl: string;
   model: string;
-  autoApproveAll: boolean;
 }
 
 export interface SettingsAdapter {
@@ -191,7 +187,6 @@ export function SettingsPage({
   const [provider, setProvider] = useState<ModelProviderId>("openai");
   const [qwenBaseUrl, setQwenBaseUrl] = useState(DEFAULT_QWEN_BASE_URL);
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
-  const [autoApproveAll, setAutoApproveAll] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string>();
@@ -206,7 +201,6 @@ export function SettingsPage({
         setProvider(snapshot.provider);
         setQwenBaseUrl(snapshot.qwenBaseUrl);
         setModel(snapshot.model);
-        setAutoApproveAll(snapshot.autoApproveAll);
       })
       .catch((reason) => {
         if (active) setError(errorMessage(reason));
@@ -226,8 +220,7 @@ export function SettingsPage({
       searchKey.cleared ||
       provider !== settings.provider ||
       qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
-      model !== settings.model ||
-      autoApproveAll !== settings.autoApproveAll
+      model !== settings.model
     : false;
 
   function markEdited() {
@@ -268,7 +261,6 @@ export function SettingsPage({
           provider,
           qwenBaseUrl,
           model,
-          autoApproveAll,
         ),
       );
       setSettings(snapshot);
@@ -288,7 +280,7 @@ export function SettingsPage({
       <header className="workspace-header settings-header">
         <div>
           <h1>设置</h1>
-          <p>模型服务、搜索与工具权限</p>
+          <p>模型服务与搜索</p>
         </div>
       </header>
 
@@ -422,49 +414,6 @@ export function SettingsPage({
                 </div>
               </section>
 
-              <section
-                className="settings-section"
-                aria-labelledby="permissions-title"
-              >
-                <div className="settings-section-heading">
-                  <span className="settings-section-icon">
-                    <ShieldCheck size={16} />
-                  </span>
-                  <div>
-                    <h3 id="permissions-title">工具权限</h3>
-                    <p>决定工具执行前是否需要逐次确认。</p>
-                  </div>
-                </div>
-
-                <div className="settings-toggle-row">
-                  <div>
-                    <strong>自动同意所有询问</strong>
-                    <p>跳过工具调用的确认步骤，让任务连续运行。</p>
-                  </div>
-                  <button
-                    type="button"
-                    className={`settings-switch ${autoApproveAll ? "on" : ""}`}
-                    role="switch"
-                    aria-checked={autoApproveAll}
-                    aria-label="自动同意所有询问"
-                    onClick={() => {
-                      setAutoApproveAll((value) => !value);
-                      markEdited();
-                    }}
-                  >
-                    <span />
-                  </button>
-                </div>
-
-                {autoApproveAll && (
-                  <div className="settings-warning" role="status">
-                    <TriangleAlert size={15} />
-                    <p>
-                      开启后，本地命令等受保护工具也会直接执行。仅在你信任任务内容和当前工作区时使用。
-                    </p>
-                  </div>
-                )}
-              </section>
             </>
           )}
 
@@ -653,13 +602,11 @@ export function createSettingsUpdate(
   provider: ModelProviderId,
   qwenBaseUrl: string,
   model: string,
-  autoApproveAll: boolean,
 ): SettingsUpdate {
   return {
     provider,
     qwenBaseUrl: qwenBaseUrl.trim(),
     model,
-    autoApproveAll,
     ...secretUpdate("openAIApiKey", providerKeys.openai),
     ...secretUpdate("deepSeekApiKey", providerKeys.deepseek),
     ...secretUpdate("qwenApiKey", providerKeys.qwen),

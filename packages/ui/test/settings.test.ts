@@ -48,7 +48,6 @@ describe("settings", () => {
         "deepseek",
         DEFAULT_QWEN_BASE_URL,
         "deepseek-v4-pro",
-        true,
       ),
     ).toEqual({
       provider: "deepseek",
@@ -56,7 +55,6 @@ describe("settings", () => {
       qwenApiKey: null,
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "deepseek-v4-pro",
-      autoApproveAll: true,
     });
   });
 
@@ -72,13 +70,11 @@ describe("settings", () => {
         "qwen",
         `  ${DEFAULT_QWEN_BASE_URL}  `,
         "qwen3.7-plus",
-        false,
       ),
     ).toEqual({
       provider: "qwen",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       model: "qwen3.7-plus",
-      autoApproveAll: false,
     });
   });
 });

@@ -48,7 +48,6 @@ export interface ComputerShareRuntime {
 
 export interface ComputerShareToolOptions {
   runtime: ComputerShareRuntime;
-  needsApproval?: Tool["needsApproval"];
 }
 
 export function createComputerShareTool(
@@ -100,7 +99,6 @@ export function createComputerShareTool(
       ],
       additionalProperties: false,
     },
-    needsApproval: options.needsApproval ?? false,
     async execute(arguments_, context) {
       const request = parseComputerShareArguments(arguments_);
       if (request.action === "list") {

@@ -129,7 +129,6 @@ const server = new AppServer({
     resolve(workspaceRoot, ".threadlight", "conversations"),
   ),
   processes: processManager,
-  autoApproveAll: process.env.THREADLIGHT_AUTO_APPROVE === "1",
   async turnCleanup({ runId }) {
     if (runId) await desktopComputer?.clearForRun(runId);
   },

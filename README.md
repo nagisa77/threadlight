@@ -230,10 +230,6 @@ const result = await loop.run(
   }),
   "运行测试并总结结果",
   {
-    approve: async (request) => {
-      console.log("Approval requested:", request.call);
-      return true;
-    },
     onEvent: (event) => console.log(event),
   },
 );
@@ -365,7 +361,6 @@ app-server 当前暴露以下方法：
 | Thread | `thread/start`、`thread/resume`、`thread/delete` |
 | Turn | `turn/start`、`turn/interrupt` |
 | Process | `process/status`、`process/read`、`process/wait`、`process/kill` |
-| Approval | `approval/resolve` |
 
 运行期间通过 `agent/event` 转发 Agent Loop 事件；最终发送 `turn/completed` 或
 `turn/failed`。文本 delta 只用于临时呈现，完整响应才是持久化和 opaque model
