@@ -98,7 +98,12 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
-let appServer: AppServerProcess | null = null;
+const appServers = new Map<string, AppServerProcess>();
+const threadProjects = new Map<string, string>();
+const pendingThreadStarts = new Map<
+  string | number | null,
+  string
+>();
 let settingsStore: SettingsStore | null = null;
 let projectStore: ProjectStore | null = null;
 let computerService: DesktopComputerService | null = null;
@@ -171,13 +176,12 @@ function createWindow(): void {
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
-    appServer?.stop();
-    appServer = null;
+    stopAppServers();
     computerService?.dispose();
   });
 
   const activeProject = projectStore?.activeProject();
-  if (activeProject) startAppServer(window, activeProject.basePath);
+  if (activeProject) ensureAppServer(window, activeProject.id, activeProject.basePath);
 
   const developmentUrl = process.env.ELECTRON_RENDERER_URL;
   if (developmentUrl) {
@@ -187,9 +191,17 @@ function createWindow(): void {
   }
 }
 
-function startAppServer(window: BrowserWindow, cwd: string): void {
-  appServer?.stop();
-  appServer = new AppServerProcess({
+function ensureAppServer(
+  window: BrowserWindow,
+  projectId: string,
+  cwd: string,
+): AppServerProcess {
+  const existing = appServers.get(projectId);
+  if (existing) {
+    existing.start();
+    return existing;
+  }
+  const appServer = new AppServerProcess({
     entry:
       process.env.THREADLIGHT_APP_SERVER_PATH ??
       resolve(app.getAppPath(), "../../packages/app-server/dist/bin.js"),
@@ -201,7 +213,10 @@ function startAppServer(window: BrowserWindow, cwd: string): void {
         model: DEFAULT_MODEL,
       },
     ),
-    send: (message) => sendToRenderer(window, message),
+    send: (message) => {
+      recordProjectMessage(projectId, message);
+      sendToRenderer(window, message);
+    },
     handleComputerRequest: (request) => {
       if (!computerService) {
         throw new Error("Desktop computer service is not available");
@@ -209,7 +224,59 @@ function startAppServer(window: BrowserWindow, cwd: string): void {
       return computerService.handle(request);
     },
   });
+  appServers.set(projectId, appServer);
   appServer.start();
+  return appServer;
+}
+
+function stopAppServers(): void {
+  for (const appServer of appServers.values()) appServer.stop();
+  appServers.clear();
+  threadProjects.clear();
+  pendingThreadStarts.clear();
+}
+
+function recordProjectMessage(
+  projectId: string,
+  message: JsonRpcOutgoing,
+): void {
+  if ("method" in message) {
+    const threadId = (message.params as { threadId?: unknown } | undefined)
+      ?.threadId;
+    if (typeof threadId === "string") threadProjects.set(threadId, projectId);
+    return;
+  }
+  const pendingProjectId = pendingThreadStarts.get(message.id);
+  if (pendingProjectId !== projectId) return;
+  pendingThreadStarts.delete(message.id);
+  const threadId = (message.result as { threadId?: unknown } | undefined)
+    ?.threadId;
+  if (typeof threadId === "string") threadProjects.set(threadId, projectId);
+}
+
+function projectIdForThread(threadId: string): string | undefined {
+  const known = threadProjects.get(threadId);
+  if (known) return known;
+  const project = projectStore
+    ?.snapshot()
+    .projects.find((candidate) =>
+      candidate.conversations.some((conversation) => conversation.id === threadId),
+    );
+  if (project) threadProjects.set(threadId, project.id);
+  return project?.id;
+}
+
+function projectForRequest(request: JsonRpcRequest) {
+  const params =
+    request.params && typeof request.params === "object"
+      ? (request.params as Record<string, unknown>)
+      : undefined;
+  const threadId = params?.threadId;
+  const projectId =
+    typeof threadId === "string"
+      ? projectIdForThread(threadId)
+      : projectStore?.snapshot().activeProjectId;
+  return projectId ? projectStore?.project(projectId) : undefined;
 }
 
 function handleRequest(event: IpcMainEvent, value: unknown): void {
@@ -231,7 +298,21 @@ function handleRequest(event: IpcMainEvent, value: unknown): void {
     }
     return;
   }
-  appServer?.send(value);
+  const project = projectForRequest(value);
+  if (!project) {
+    if (value.id !== undefined) {
+      sendToRenderer(mainWindow, {
+        jsonrpc: "2.0",
+        id: value.id,
+        error: { code: -32010, message: "No project runtime is available" },
+      });
+    }
+    return;
+  }
+  if (value.method === "thread/start" && value.id !== undefined) {
+    pendingThreadStarts.set(value.id, project.id);
+  }
+  ensureAppServer(mainWindow, project.id, project.basePath).send(value);
 }
 
 function handleSettingsGet(event: IpcMainInvokeEvent) {
@@ -246,9 +327,11 @@ function handleSettingsUpdate(event: IpcMainInvokeEvent, value: unknown) {
 
   const update = parseSettingsUpdate(value);
   const snapshot = settingsStore.update(update);
-  const activeProject = projectStore?.activeProject();
-  if (mainWindow && activeProject) {
-    startAppServer(mainWindow, activeProject.basePath);
+  if (mainWindow) {
+    const environment = runtimeEnvironment(settingsStore.runtimeSettings());
+    for (const appServer of appServers.values()) {
+      appServer.restart(environment);
+    }
   }
   return snapshot;
 }
@@ -272,7 +355,9 @@ async function handleProjectOpen(event: IpcMainInvokeEvent) {
 
   const snapshot = projectStore.register(result.filePaths[0]);
   const activeProject = projectStore.activeProject();
-  if (activeProject) startAppServer(mainWindow, activeProject.basePath);
+  if (activeProject) {
+    ensureAppServer(mainWindow, activeProject.id, activeProject.basePath);
+  }
   return snapshot;
 }
 
@@ -285,20 +370,26 @@ function handleProjectActivate(event: IpcMainInvokeEvent, value: unknown) {
 
   const snapshot = projectStore.activate(value);
   const activeProject = projectStore.activeProject();
-  if (activeProject) startAppServer(mainWindow, activeProject.basePath);
+  if (activeProject) {
+    ensureAppServer(mainWindow, activeProject.id, activeProject.basePath);
+  }
   return snapshot;
 }
 
 function handleConversationUpsert(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!projectStore) throw new Error("Projects are not available");
-  return projectStore.upsertConversation(parseConversationUpdate(value));
+  const update = parseConversationUpdate(value);
+  threadProjects.set(update.id, update.projectId);
+  return projectStore.upsertConversation(update);
 }
 
 function handleConversationDelete(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!projectStore) throw new Error("Projects are not available");
-  return projectStore.deleteConversation(parseConversationTarget(value));
+  const target = parseConversationTarget(value);
+  threadProjects.delete(target.id);
+  return projectStore.deleteConversation(target);
 }
 
 async function handleProjectMemoryGet(
@@ -651,7 +742,7 @@ app.whenReady().then(() => {
 });
 
 app.on("before-quit", () => {
-  appServer?.stop();
+  stopAppServers();
   computerService?.dispose();
 });
 app.on("window-all-closed", () => {

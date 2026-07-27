@@ -93,6 +93,57 @@ describe("ProjectGroup", () => {
     expect(html).toContain('aria-label="删除任务“整理发布说明”"');
   });
 
+  it("uses the thinking spinner for running projects and tasks", () => {
+    const html = renderToStaticMarkup(
+      <ProjectGroup
+        project={{
+          id: "project-1",
+          name: "ResourceFinder",
+          basePath: "/workspace/ResourceFinder",
+          lastOpenedAt: "2026-07-21T00:00:00.000Z",
+          conversations: [
+            {
+              id: "thread-1",
+              title: "整理发布说明",
+              createdAt: "2026-07-21T00:00:00.000Z",
+              updatedAt: "2026-07-21T00:00:00.000Z",
+            },
+          ],
+        }}
+        active
+        activeThreadId="thread-1"
+        runningThreadIds={["thread-1"]}
+        disabled={false}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("project-runtime-indicator spin");
+    expect(html).toContain("ResourceFinder 中有任务正在运行");
+  });
+
+  it("keeps a running task selectable but hides its delete action", () => {
+    const html = renderToStaticMarkup(
+      <ProjectConversationItem
+        conversation={{
+          id: "thread-1",
+          title: "整理发布说明",
+          createdAt: "2026-07-21T00:00:00.000Z",
+          updatedAt: "2026-07-21T00:00:00.000Z",
+        }}
+        active={false}
+        running
+        disabled={false}
+        onSelect={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("thread-runtime-indicator spin");
+    expect(html).not.toContain("删除任务");
+    expect(html).not.toContain('disabled=""');
+  });
+
   it("describes task deletion as irreversible in an alert dialog", () => {
     const html = renderToStaticMarkup(
       <DeleteConversationDialog

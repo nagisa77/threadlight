@@ -138,6 +138,7 @@ export function ThreadlightApp({
     send,
     interrupt,
     terminateProcess,
+    runningThreadIds,
   } = useThreadlightSession(client, { autoConnect: !projects });
   const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
   const [input, setInput] = useState("");
@@ -558,14 +559,12 @@ export function ThreadlightApp({
       textarea.current?.focus();
       return;
     }
-    if (!(await stopComputerShare())) return;
     await newThread();
   }
 
   async function openProjectFolder() {
     if (
       !projects ||
-      state.isRunning ||
       switchingProject ||
       voiceStatus !== "idle"
     ) {
@@ -578,7 +577,6 @@ export function ThreadlightApp({
       setProjectSnapshot(snapshot);
       setView("thread");
       if (snapshot.activeProjectId === projectSnapshot?.activeProjectId) return;
-      if (!(await stopComputerShare())) return;
       await connectProject(snapshot);
     } catch (error) {
       setProjectError(errorMessage(error));
@@ -590,7 +588,6 @@ export function ThreadlightApp({
   async function selectConversation(projectId: string, threadId?: string) {
     if (
       !projects ||
-      state.isRunning ||
       switchingProject ||
       voiceStatus !== "idle"
     ) {
@@ -599,10 +596,6 @@ export function ThreadlightApp({
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
-      const changesTask =
-        projectId !== projectSnapshot?.activeProjectId ||
-        (threadId !== undefined && threadId !== state.threadId);
-      if (changesTask && !(await stopComputerShare())) return;
       let snapshot = projectSnapshot;
       if (projectId !== projectSnapshot?.activeProjectId) {
         snapshot = await projects.activate(projectId);
@@ -621,6 +614,7 @@ export function ThreadlightApp({
   async function confirmDeleteConversation() {
     if (!projects || !pendingDelete || deletingConversation) return;
     const target = pendingDelete;
+    if (runningThreadIds.includes(target.conversation.id)) return;
     const deletingActiveConversation =
       target.projectId === projectSnapshot?.activeProjectId &&
       target.conversation.id === state.threadId;
@@ -701,7 +695,6 @@ export function ThreadlightApp({
           onClick={() => void createThread()}
           disabled={
             !currentProject ||
-            state.isRunning ||
             state.connection !== "ready" ||
             switchingProject ||
             voiceStatus !== "idle"
@@ -739,7 +732,6 @@ export function ThreadlightApp({
                     title="通过文件夹打开项目"
                     aria-label="通过文件夹打开项目"
                     disabled={
-                      state.isRunning ||
                       switchingProject ||
                       voiceStatus !== "idle"
                     }
@@ -756,8 +748,8 @@ export function ThreadlightApp({
                     project={project}
                     active={project.id === projectSnapshot.activeProjectId}
                     activeThreadId={state.threadId}
+                    runningThreadIds={runningThreadIds}
                     disabled={
-                      state.isRunning ||
                       switchingProject ||
                       voiceStatus !== "idle"
                     }
@@ -1211,6 +1203,7 @@ export function ProjectGroup({
   project,
   active,
   activeThreadId,
+  runningThreadIds = [],
   disabled,
   onSelect,
   onDelete,
@@ -1218,11 +1211,15 @@ export function ProjectGroup({
   project: ProjectSummary;
   active: boolean;
   activeThreadId?: string;
+  runningThreadIds?: readonly string[];
   disabled: boolean;
   onSelect(threadId?: string): void;
   onDelete?(conversation: ConversationSummary): void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const projectRunning = project.conversations.some((conversation) =>
+    runningThreadIds.includes(conversation.id),
+  );
 
   function toggleExpanded() {
     const nextExpanded = !expanded;
@@ -1243,6 +1240,13 @@ export function ProjectGroup({
       >
         {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
         <span>{project.name}</span>
+        {projectRunning && (
+          <LoaderCircle
+            className="project-runtime-indicator spin"
+            size={13}
+            aria-label={`${project.name} 中有任务正在运行`}
+          />
+        )}
         <ChevronRight className="project-chevron" size={14} />
       </button>
       {expanded && (
@@ -1252,6 +1256,7 @@ export function ProjectGroup({
               key={conversation.id}
               conversation={conversation}
               active={active && conversation.id === activeThreadId}
+              running={runningThreadIds.includes(conversation.id)}
               disabled={disabled}
               onSelect={() => onSelect(conversation.id)}
               onDelete={onDelete ? () => onDelete(conversation) : undefined}
@@ -1269,12 +1274,14 @@ export function ProjectGroup({
 export function ProjectConversationItem({
   conversation,
   active,
+  running = false,
   disabled,
   onSelect,
   onDelete,
 }: {
   conversation: ConversationSummary;
   active: boolean;
+  running?: boolean;
   disabled: boolean;
   onSelect(): void;
   onDelete?(): void;
@@ -1290,8 +1297,15 @@ export function ProjectConversationItem({
         onClick={onSelect}
       >
         <span className="thread-title">{conversation.title}</span>
+        {running && (
+          <LoaderCircle
+            className="thread-runtime-indicator spin"
+            size={13}
+            aria-label={`${conversation.title}正在运行`}
+          />
+        )}
       </button>
-      {onDelete && (
+      {onDelete && !running && (
         <button
           type="button"
           className="thread-delete-button pressable"

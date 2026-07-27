@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
 import {
   projectAgentProgress,
@@ -133,6 +133,23 @@ export function sessionReducer(
   }
 }
 
+export function reduceThreadSession(
+  sessions: Readonly<Record<string, SessionState>>,
+  threadId: string,
+  action: SessionAction,
+): Readonly<Record<string, SessionState>> {
+  return {
+    ...sessions,
+    [threadId]: sessionReducer(
+      sessions[threadId] ?? {
+        ...initialSessionState,
+        threadId,
+      },
+      action,
+    ),
+  };
+}
+
 function reduceAgentEvent(
   state: SessionState,
   event: AgentEventData,
@@ -236,11 +253,50 @@ export function useThreadlightSession(
   client: ThreadlightClient,
   options: { autoConnect?: boolean } = {},
 ) {
-  const [state, dispatch] = useReducer(sessionReducer, initialSessionState);
+  const [sessions, setSessions] = useState<
+    Readonly<Record<string, SessionState>>
+  >({});
+  const sessionsRef = useRef<Readonly<Record<string, SessionState>>>({});
+  const [activeThreadIdValue, setActiveThreadIdValue] = useState<
+    string | undefined
+  >();
   const activeThreadId = useRef<string | undefined>(undefined);
 
+  const updateSession = useCallback(
+    (threadId: string, action: SessionAction) => {
+      setSessions((current) => {
+        const next = reduceThreadSession(current, threadId, action);
+        sessionsRef.current = next;
+        return next;
+      });
+    },
+    [],
+  );
+
+  const activateThread = useCallback((threadId: string) => {
+    activeThreadId.current = threadId;
+    setActiveThreadIdValue(threadId);
+  }, []);
+
   const openThread = useCallback(async (threadId?: string) => {
-    dispatch({ type: "connection.connecting" });
+    if (threadId && sessionsRef.current[threadId]) {
+      try {
+        await client.initialize();
+        activateThread(threadId);
+        return threadId;
+      } catch (error) {
+        activateThread(threadId);
+        updateSession(threadId, {
+          type: "connection.failed",
+          error: errorMessage(error),
+        });
+        return;
+      }
+    }
+    if (threadId) {
+      activateThread(threadId);
+      updateSession(threadId, { type: "connection.connecting" });
+    }
     try {
       await client.initialize();
       let opened: {
@@ -259,46 +315,64 @@ export function useThreadlightSession(
       } else {
         opened = await client.startThread();
       }
-      activeThreadId.current = opened.threadId;
-      dispatch({
+      activateThread(opened.threadId);
+      updateSession(opened.threadId, {
         type: "connection.ready",
         threadId: opened.threadId,
         messages: opened.messages,
       });
       return opened.threadId;
     } catch (error) {
-      dispatch({ type: "connection.failed", error: errorMessage(error) });
+      const target = threadId ?? activeThreadId.current;
+      if (target) {
+        updateSession(target, {
+          type: "connection.failed",
+          error: errorMessage(error),
+        });
+      }
       return;
     }
-  }, [client]);
+  }, [activateThread, client, updateSession]);
 
   useEffect(() => {
     const subscriptions = [
       client.on("turn/started", ({ threadId }) => {
-        if (threadId === activeThreadId.current) {
-          dispatch({ type: "turn.started" });
-        }
+        updateSession(threadId, { type: "turn.started" });
       }),
       client.on("turn/completed", ({ threadId, output }) => {
-        if (threadId === activeThreadId.current) {
-          dispatch({ type: "turn.completed", id: crypto.randomUUID(), output });
-        }
+        updateSession(threadId, {
+          type: "turn.completed",
+          id: crypto.randomUUID(),
+          output,
+        });
       }),
       client.on("turn/failed", ({ threadId, error }) => {
-        if (threadId === activeThreadId.current) {
-          dispatch({ type: "turn.failed", id: crypto.randomUUID(), error });
-        }
+        updateSession(threadId, {
+          type: "turn.failed",
+          id: crypto.randomUUID(),
+          error,
+        });
       }),
       client.on("agent/event", ({ threadId, event }) => {
-        if (threadId === activeThreadId.current) {
-          dispatch({ type: "agent.event", event });
-        }
+        updateSession(threadId, { type: "agent.event", event });
       }),
     ];
 
     if (options.autoConnect !== false) void openThread();
     return () => subscriptions.forEach((unsubscribe) => unsubscribe());
-  }, [client, openThread, options.autoConnect]);
+  }, [client, openThread, options.autoConnect, updateSession]);
+
+  const state =
+    (activeThreadIdValue
+      ? sessions[activeThreadIdValue]
+      : undefined) ?? initialSessionState;
+  const runningThreadIds = useMemo(
+    () =>
+      Object.values(sessions)
+        .filter((session) => session.isRunning && session.threadId)
+        .map((session) => session.threadId as string),
+    [sessions],
+  );
 
   const runningProcessKey = runningProcessSessionIds(
     state.progress,
@@ -313,7 +387,10 @@ export function useThreadlightSession(
         void client
           .processStatus(sessionId)
           .then((process) => {
-            if (active) dispatch({ type: "process.updated", process });
+            const threadId = activeThreadId.current;
+            if (active && threadId) {
+              updateSession(threadId, { type: "process.updated", process });
+            }
           })
           .catch(() => {
             // A runtime restart invalidates in-memory process sessions. The
@@ -326,30 +403,41 @@ export function useThreadlightSession(
       active = false;
       clearInterval(timer);
     };
-  }, [client, runningProcessKey]);
+  }, [client, runningProcessKey, updateSession]);
 
   const newThread = useCallback(async () => {
-    if (state.isRunning) return;
     try {
       const { threadId } = await client.startThread();
-      activeThreadId.current = threadId;
-      dispatch({ type: "connection.ready", threadId });
+      activateThread(threadId);
+      updateSession(threadId, { type: "connection.ready", threadId });
       return threadId;
     } catch (error) {
-      dispatch({ type: "connection.failed", error: errorMessage(error) });
+      const threadId = activeThreadId.current;
+      if (threadId) {
+        updateSession(threadId, {
+          type: "connection.failed",
+          error: errorMessage(error),
+        });
+      }
     }
-  }, [client, state.isRunning]);
+  }, [activateThread, client, updateSession]);
 
   const deleteThread = useCallback(
     async (threadId: string) => {
-      if (state.isRunning) return false;
+      if (sessionsRef.current[threadId]?.isRunning) return false;
       const { deleted } = await client.deleteThread(threadId);
+      setSessions((current) => {
+        const { [threadId]: _deleted, ...next } = current;
+        sessionsRef.current = next;
+        return next;
+      });
       if (activeThreadId.current === threadId) {
         activeThreadId.current = undefined;
+        setActiveThreadIdValue(undefined);
       }
       return deleted;
     },
-    [client, state.isRunning],
+    [client],
   );
 
   const retry = useCallback(
@@ -365,7 +453,8 @@ export function useThreadlightSession(
       }
 
       const optimisticMessageId = crypto.randomUUID();
-      dispatch({
+      const threadId = state.threadId;
+      updateSession(threadId, {
         type: "message.sent",
         id: optimisticMessageId,
         text,
@@ -373,12 +462,12 @@ export function useThreadlightSession(
       });
       const started = await requestTurnStart(
         client,
-        state.threadId,
+        threadId,
         text,
         attachments,
       );
       if (!started.ok) {
-        dispatch({
+        updateSession(threadId, {
           type: "message.rejected",
           id: optimisticMessageId,
           error: started.error,
@@ -387,7 +476,7 @@ export function useThreadlightSession(
       }
       return true;
     },
-    [client, state.isRunning, state.threadId],
+    [client, state.isRunning, state.threadId, updateSession],
   );
 
   const interrupt = useCallback(async () => {
@@ -395,21 +484,29 @@ export function useThreadlightSession(
     try {
       await client.interruptTurn(state.threadId);
     } catch (error) {
-      dispatch({ type: "connection.failed", error: errorMessage(error) });
+      updateSession(state.threadId, {
+        type: "connection.failed",
+        error: errorMessage(error),
+      });
     }
-  }, [client, state.threadId]);
+  }, [client, state.threadId, updateSession]);
 
   const terminateProcess = useCallback(
     async (sessionId: string) => {
       const process = await client.killProcess(sessionId);
-      dispatch({ type: "process.updated", process });
+      const threadId = activeThreadId.current;
+      if (threadId) {
+        updateSession(threadId, { type: "process.updated", process });
+      }
       return process;
     },
-    [client],
+    [client, updateSession],
   );
 
   return {
     state,
+    sessions,
+    runningThreadIds,
     retry,
     openThread,
     newThread,

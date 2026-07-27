@@ -192,6 +192,16 @@ button:disabled {
   flex: 0 0 auto;
 }
 
+.project-runtime-indicator,
+.thread-runtime-indicator {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.thread-runtime-indicator {
+  margin-right: -20px;
+}
+
 .project-row[aria-expanded="true"] .project-chevron {
   transform: rotate(90deg);
 }
@@ -2275,8 +2285,23 @@ button:disabled {
     transform: none;
   }
 
+  .running-badge svg,
+  .thinking-row svg,
+  .spin {
+    animation: loading-pulse 1.2s ease-in-out infinite alternate;
+  }
 
   .delete-dialog {
     transform: none;
+  }
+}
+
+@keyframes loading-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 1;
   }
 }

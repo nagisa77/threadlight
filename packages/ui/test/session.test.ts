@@ -2,12 +2,60 @@ import { describe, expect, it } from "vitest";
 
 import {
   initialSessionState,
+  reduceThreadSession,
   requestTurnStart,
   sessionReducer,
   type SessionState,
 } from "../src/session.js";
 
 describe("sessionReducer", () => {
+  it("keeps background task runtime state isolated by thread", () => {
+    let sessions = reduceThreadSession({}, "thread-1", {
+      type: "connection.ready",
+      threadId: "thread-1",
+    });
+    sessions = reduceThreadSession(sessions, "thread-2", {
+      type: "connection.ready",
+      threadId: "thread-2",
+    });
+    sessions = reduceThreadSession(sessions, "thread-1", {
+      type: "message.sent",
+      id: "message-1",
+      text: "First task",
+    });
+    sessions = reduceThreadSession(sessions, "thread-2", {
+      type: "message.sent",
+      id: "message-2",
+      text: "Second task",
+    });
+    sessions = reduceThreadSession(sessions, "thread-1", {
+      type: "agent.event",
+      event: {
+        type: "model.output_text.delta",
+        runId: "run-1",
+        step: 1,
+        delta: "first progress",
+      },
+    });
+
+    expect(sessions["thread-1"]).toMatchObject({
+      isRunning: true,
+      streamingText: "first progress",
+    });
+    expect(sessions["thread-2"]).toMatchObject({
+      isRunning: true,
+      streamingText: "",
+    });
+
+    sessions = reduceThreadSession(sessions, "thread-1", {
+      type: "turn.completed",
+      id: "assistant-1",
+      output: "First done",
+    });
+    expect(sessions["thread-1"]?.isRunning).toBe(false);
+    expect(sessions["thread-2"]?.isRunning).toBe(true);
+  });
+
   it("rolls back the optimistic message when turn/start is rejected", async () => {
     let state = sessionReducer(
       {

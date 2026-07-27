@@ -10,6 +10,70 @@ import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 describe("thread runtimes", () => {
+  it("runs scripted turns concurrently while preserving each thread state", async () => {
+    const bothStarted = Promise.withResolvers<void>();
+    const releases = new Map<string, () => void>();
+    let activeGenerations = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        activeGenerations += 1;
+        if (activeGenerations === 2) bothStarted.resolve();
+        await new Promise<void>((resolve) => {
+          releases.set(request.input, resolve);
+        });
+        activeGenerations -= 1;
+        return { text: `completed: ${request.input}`, toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agentFactory: () =>
+        defineAgent({ name: "test", instructions: "Reply independently" }),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    await server.receive({ jsonrpc: "2.0", id: 3, method: "thread/start" });
+    const firstThread = result<{ threadId: string }>(messages, 2).threadId;
+    const secondThread = result<{ threadId: string }>(messages, 3).threadId;
+
+    await Promise.all([
+      server.receive({
+        jsonrpc: "2.0",
+        id: 4,
+        method: "turn/start",
+        params: { threadId: firstThread, input: "first task" },
+      }),
+      server.receive({
+        jsonrpc: "2.0",
+        id: 5,
+        method: "turn/start",
+        params: { threadId: secondThread, input: "second task" },
+      }),
+    ]);
+    await bothStarted.promise;
+
+    expect(activeGenerations).toBe(2);
+    expect(completedOutput(messages, firstThread)).toBeUndefined();
+    expect(completedOutput(messages, secondThread)).toBeUndefined();
+
+    const firstCompleted = notification(messages, firstThread);
+    const secondCompleted = notification(messages, secondThread);
+    releases.get("first task")?.();
+    releases.get("second task")?.();
+    await Promise.all([firstCompleted, secondCompleted]);
+
+    expect(completedOutput(messages, firstThread)).toBe(
+      "completed: first task",
+    );
+    expect(completedOutput(messages, secondThread)).toBe(
+      "completed: second task",
+    );
+    await server.dispose();
+  });
+
   it("isolates runtime tools per thread and disposes them automatically", async () => {
     const provider: ModelProvider = {
       async generate(request) {
