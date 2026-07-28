@@ -1,4 +1,10 @@
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -115,6 +121,94 @@ describe("ConversationChangeTracker", () => {
     await expect(tracker.readWorkspaceFile(workspace, "../secret")).rejects.toThrow(
       "escapes the project",
     );
+  });
+
+  it("resolves Finder targets only for files inside the workspace", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    const outside = join(root, "outside.txt");
+    await mkdir(join(workspace, "src"), { recursive: true });
+    await writeFile(join(workspace, "src", "index.ts"), "export {};\n");
+    await writeFile(outside, "secret\n");
+    await symlink(outside, join(workspace, "linked-secret.txt"));
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+
+    await expect(
+      tracker.workspaceFilePath(workspace, "src/index.ts"),
+    ).resolves.toBe(join(workspace, "src", "index.ts"));
+    await expect(
+      tracker.workspaceFilePath(workspace, "src"),
+    ).rejects.toThrow("not a file");
+    await expect(
+      tracker.workspaceFilePath(workspace, "linked-secret.txt"),
+    ).rejects.toThrow("escapes the project");
+  });
+
+  it("ignores virtual environments and generated Python caches", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    await mkdir(join(workspace, ".venv", "lib"), { recursive: true });
+    await mkdir(join(workspace, "src", "__pycache__"), { recursive: true });
+    await writeFile(join(workspace, "app.py"), "print('before')\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await writeFile(join(workspace, ".venv", "lib", "dependency.py"), "generated\n");
+    await writeFile(
+      join(workspace, "src", "__pycache__", "app.pyc"),
+      "generated\n",
+    );
+    await writeFile(join(workspace, "app.py"), "print('after')\n");
+
+    const snapshot = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    expect(snapshot.files.map((file) => file.path)).toEqual(["app.py"]);
+  });
+
+  it("honors project gitignore rules without requiring a Git repository", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    await mkdir(workspace);
+    await writeFile(join(workspace, ".gitignore"), "generated/\n*.tmp\n!important.tmp\n");
+    await writeFile(join(workspace, "README.md"), "before\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await mkdir(join(workspace, "generated"));
+    await writeFile(join(workspace, "generated", "asset.js"), "generated\n");
+    await writeFile(join(workspace, "ignored.tmp"), "generated\n");
+    await writeFile(join(workspace, "important.tmp"), "keep\n");
+
+    const snapshot = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    expect(snapshot.files.map((file) => file.path)).toEqual(["important.tmp"]);
+  });
+
+  it("does not report baseline files as deleted when they become ignored", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    await mkdir(join(workspace, "generated"), { recursive: true });
+    await writeFile(join(workspace, ".gitignore"), "");
+    await writeFile(join(workspace, "generated", "asset.js"), "generated\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await writeFile(join(workspace, ".gitignore"), "generated/\n");
+
+    const snapshot = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    expect(snapshot.files.map((file) => [file.path, file.status])).toEqual([
+      [".gitignore", "modified"],
+    ]);
   });
 });
 

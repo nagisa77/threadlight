@@ -29,7 +29,9 @@ import { resolve } from "node:path";
 import { AppServer } from "./app-server.js";
 import { FileConversationStore } from "./conversation-store.js";
 import { createDesktopComputerClientFromEnvironment } from "./desktop-computer-client.js";
+import { ModelStatePersistence } from "./model-state-persistence.js";
 import { jsonLineSender, serveJsonLines } from "./stdio.js";
+import { createSkillPluginThreadRuntime } from "./thread-extensions.js";
 import { createWorkspaceAgentFactory } from "./workspace-agent.js";
 
 const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
@@ -117,15 +119,28 @@ const agentFactory = createWorkspaceAgentFactory({
 const send = jsonLineSender(process.stdout);
 const server = new AppServer({
   loop,
+  attachmentProvider: provider,
+  modelStatePersistence: new ModelStatePersistence({
+    prepareState: (state, options) =>
+      provider.prepareStateForPersistence(state, options),
+  }),
   agentFactory,
   send,
-  threadRuntimeFactory: () => {
+  threadRuntimeFactory: async (restoredSnapshot) => {
     const runtime = new ConversationMcpRuntime({ workspaceRoot });
+    const extensions = await createSkillPluginThreadRuntime(
+      { workspaceRoot },
+      restoredSnapshot,
+    );
     return {
       tools: [
+        ...extensions.tools,
         createMcpConnectTool(runtime),
         createMcpCallTool(runtime),
       ],
+      promptBlocks: extensions.promptBlocks,
+      promptBlocksForTurn: extensions.promptBlocksForTurn,
+      snapshot: extensions.snapshot,
       dispose: () => runtime.dispose(),
     };
   },

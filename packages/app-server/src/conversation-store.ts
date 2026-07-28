@@ -9,6 +9,17 @@ import { basename, dirname, join } from "node:path";
 
 import type { ConversationMessageData } from "@threadlight/protocol";
 
+import {
+  validatePromptSnapshot,
+  type PromptSnapshot,
+} from "./prompt-composer.js";
+
+export interface StoredAgentSnapshot {
+  version: 1;
+  prompt: PromptSnapshot;
+  runtime?: unknown;
+}
+
 export interface StoredConversation {
   version: 1;
   threadId: string;
@@ -16,6 +27,7 @@ export interface StoredConversation {
   updatedAt: string;
   messages: readonly ConversationMessageData[];
   modelState?: unknown;
+  agentSnapshot?: StoredAgentSnapshot;
 }
 
 export interface ConversationStore {
@@ -131,8 +143,22 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     typeof conversation.createdAt === "string" &&
     typeof conversation.updatedAt === "string" &&
     Array.isArray(conversation.messages) &&
-    conversation.messages.every(isConversationMessage)
+    conversation.messages.every(isConversationMessage) &&
+    (conversation.agentSnapshot === undefined ||
+      isStoredAgentSnapshot(conversation.agentSnapshot))
   );
+}
+
+function isStoredAgentSnapshot(value: unknown): value is StoredAgentSnapshot {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const snapshot = value as Record<string, unknown>;
+  if (snapshot.version !== 1) return false;
+  try {
+    validatePromptSnapshot(snapshot.prompt);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isConversationMessage(value: unknown): boolean {

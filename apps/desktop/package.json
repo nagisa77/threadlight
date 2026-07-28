@@ -1,6 +1,7 @@
 {
   "name": "@threadlight/desktop",
   "version": "0.1.0",
+  "description": "Threadlight desktop client for observable local agent workflows",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -8,17 +9,20 @@
     "build:native": "node scripts/build-computer-input.cjs && node scripts/prepare-terminal.cjs",
     "dev": "npm run build:native && electron-vite dev",
     "build": "npm run typecheck && npm run build:native && electron-vite build",
+    "package": "npm run build && electron-builder --mac dir",
     "icon:render": "electron scripts/render-app-icon.cjs",
     "preview": "npm run build:native && electron-vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@threadlight/app-server": "0.1.0",
     "@threadlight/builtin-tools": "0.1.0",
     "@threadlight/client": "0.1.0",
     "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0",
     "@threadlight/ui": "0.1.0",
     "diff": "^9.0.0",
+    "ignore": "^7.0.6",
     "node-pty": "^1.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
@@ -27,7 +31,8 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^43.1.1",
+    "electron": "43.1.1",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "vite": "^7.3.6"
   }

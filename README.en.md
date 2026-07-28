@@ -180,6 +180,12 @@ Build and preview the production bundle:
 npm run desktop:preview
 ```
 
+Create a standalone `.app` for the current Mac architecture:
+
+```bash
+npm run desktop:package
+```
+
 | Provider | Required | Optional |
 | --- | --- | --- |
 | OpenAI | `OPENAI_API_KEY` | `THREADLIGHT_MODEL` |
@@ -258,6 +264,21 @@ The client only requires a transport that can send requests and subscribe to ser
 
 Each session gets an isolated temporary MCP runtime. An agent can connect to a user-provided or workspace-verifiable stdio / Streamable HTTP server, inspect its tool schemas, and then make calls. Connections are reused only within that session and released when the session or app-server exits.
 
+### Prompts, Skills, and Plugins
+
+Threadlight uses a versioned, SHA-256-hashed Prompt Composer to combine host rules, project context, runtime capabilities, Skills, and turn modes into verifiable instructions. The first user input persists the Prompt, Skill, and Plugin snapshots with the task. Resumed tasks keep those snapshots so changes to `AGENTS.md`, built-in prompts, or installed extensions do not contaminate existing model state.
+
+Skills use the Agent Skills-compatible `SKILL.md` format and progressive disclosure:
+
+- Project Skills: `<project>/.agents/skills/<skill-name>/SKILL.md`
+- User Skills: `~/.agents/skills/<skill-name>/SKILL.md`
+- Explicit activation: include `$skill-name` in the request
+- Implicit activation: the agent matches metadata, then loads the workflow with the read-only `skill_read` tool
+
+The built-in `$skill-creator` uses the atomic, validated `skill_create` tool to create project- or user-scoped instruction-only Skills. New Skills are discovered by the next task.
+
+Skills-only Plugins use `.codex-plugin/plugin.json` and currently accept only the `skills` capability. Plugins that declare MCP, App, or Hook capabilities are rejected. Place plugins in project or user `.agents/plugins` or `.threadlight/plugins` directories and invoke their Skills as `$plugin-name:skill-name`. Threadlight does not execute third-party plugin code at this stage.
+
 ### Computer Use
 
 The Electron desktop client's `computer_share` can:
@@ -283,6 +304,7 @@ Long-term memory lives in `.threadlight/MEMORY.md`. Agents read before writing t
 
 <project>/.threadlight/
 ├── MEMORY.md                     # Human-readable long-term project memory
+├── plugins/                      # Optional project Skills-only Plugins
 └── conversations/
     └── <threadId>.json           # Conversation and bounded, redacted opaque state
 ```
@@ -290,6 +312,7 @@ Long-term memory lives in `.threadlight/MEMORY.md`. Agents read before writing t
 - Secrets are injected only from the runtime environment or OS secure storage, never source, fixtures, project files, or logs.
 - app-server writes protocol output to stdout and diagnostics to stderr.
 - Persisted opaque model state is capped at 5 MiB; Computer Use screenshots become placeholders before disk writes.
+- Each Skill is limited to 64,000 characters; a task snapshots at most 128 Skills and 2,000,000 total Skill characters, while the initial Skill catalog uses at most 8,000 prompt characters.
 - Attachments use validated local path references rather than inline bytes in wire adapters.
 - `.threadlight/` should normally be ignored by version control.
 - Built-in tools are not an OS sandbox. Use a container, VM, or system sandbox when strong isolation is required.

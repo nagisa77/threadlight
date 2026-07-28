@@ -13,7 +13,15 @@ import {
 
 import { AppServer } from "../src/app-server.js";
 import { FileConversationStore } from "../src/conversation-store.js";
+import { ModelStatePersistence } from "../src/model-state-persistence.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
+
+interface StatefulModelProvider extends ModelProvider {
+  prepareStateForPersistence?(
+    state: unknown,
+    options: { maxBytes: number },
+  ): unknown;
+}
 
 const directories: string[] = [];
 
@@ -220,7 +228,7 @@ describe("persistent conversations", () => {
       join(root, ".threadlight", "conversations"),
     );
     const firstMessages: JsonRpcOutgoing[] = [];
-    const firstProvider: ModelProvider = {
+    const firstProvider: StatefulModelProvider = {
       prepareStateForPersistence(state) {
         expect(state).toEqual({ opaque: ["response-1"] });
         return { opaque: ["persisted-response-1"] };
@@ -372,12 +380,20 @@ describe("persistent conversations", () => {
 });
 
 function server(
-  provider: ModelProvider,
+  provider: StatefulModelProvider,
   store: FileConversationStore,
   send: (message: JsonRpcOutgoing) => void,
 ) {
   return new AppServer({
     loop: new AgentLoop(provider),
+    modelStatePersistence: new ModelStatePersistence({
+      ...(provider.prepareStateForPersistence
+        ? {
+            prepareState: (state, options) =>
+              provider.prepareStateForPersistence?.(state, options),
+          }
+        : {}),
+    }),
     agent: defineAgent({ name: "scripted", instructions: "Reply" }),
     conversationStore: store,
     send,

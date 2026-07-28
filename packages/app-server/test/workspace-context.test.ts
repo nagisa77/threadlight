@@ -224,7 +224,7 @@ class ScriptedMemoryProvider implements ModelProvider {
             arguments: {
               action: "read",
               content: null,
-              expected_revision: null,
+              read_token: null,
             },
           },
         ],
@@ -233,7 +233,7 @@ class ScriptedMemoryProvider implements ModelProvider {
     if (this.requests.length === 2) {
       const current = JSON.parse(request.toolResults?.[0]?.output ?? "{}") as {
         content: string;
-        revision: string;
+        read_token: string;
       };
       return {
         text: "",
@@ -244,7 +244,7 @@ class ScriptedMemoryProvider implements ModelProvider {
             arguments: {
               action: "write",
               content: `${current.content.trimEnd()}\n\n- The API uses cursor pagination.\n`,
-              expected_revision: current.revision,
+              read_token: current.read_token,
             },
           },
         ],

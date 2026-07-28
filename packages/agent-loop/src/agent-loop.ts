@@ -11,12 +11,7 @@ import type {
   ToolCall,
   ToolResult,
 } from "./types.js";
-import {
-  ATTACH_TO_MODEL_CONTEXT_TOOL,
-  attachmentPrompt,
-  createAttachmentContextTool,
-  type AttachmentDelivery,
-} from "./attachment-tool.js";
+import { toolErrorMetadata } from "./tool-error.js";
 
 const EMPTY_USAGE: TokenUsage = {
   inputTokens: 0,
@@ -24,53 +19,8 @@ const EMPTY_USAGE: TokenUsage = {
   totalTokens: 0,
 };
 
-export const DEFAULT_MAX_PERSISTED_MODEL_STATE_BYTES = 5 * 1024 * 1024;
-
-export interface AgentLoopOptions {
-  maxPersistedModelStateBytes?: number;
-}
-
 export class AgentLoop {
-  private readonly maxPersistedModelStateBytes: number;
-
-  constructor(
-    private readonly provider: ModelProvider,
-    options: AgentLoopOptions = {},
-  ) {
-    const maxBytes =
-      options.maxPersistedModelStateBytes ??
-      DEFAULT_MAX_PERSISTED_MODEL_STATE_BYTES;
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
-      throw new Error("maxPersistedModelStateBytes must be a positive integer");
-    }
-    this.maxPersistedModelStateBytes = maxBytes;
-  }
-
-  prepareModelStateForPersistence(state: unknown): unknown {
-    if (state === undefined) return;
-    const prepared =
-      this.provider.prepareStateForPersistence?.(state, {
-        maxBytes: this.maxPersistedModelStateBytes,
-      }) ?? state;
-    let serialized: string | undefined;
-    try {
-      serialized = JSON.stringify(prepared);
-    } catch (error) {
-      throw new Error(
-        `Model state is not JSON-serializable: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-    if (serialized === undefined) {
-      throw new Error("Model state is not JSON-serializable");
-    }
-    const bytes = Buffer.byteLength(serialized);
-    if (bytes > this.maxPersistedModelStateBytes) {
-      throw new Error(
-        `Model state is ${bytes} bytes and exceeds the ${this.maxPersistedModelStateBytes}-byte persistence limit`,
-      );
-    }
-    return prepared;
-  }
+  constructor(private readonly provider: ModelProvider) {}
 
   async run(
     agent: Agent,
@@ -98,27 +48,7 @@ export class AgentLoop {
     options: RunOptions,
     emit: (event: AgentEvent) => void,
   ): Promise<RunResult> {
-    const availableAttachments = options.attachments ?? [];
-    const attachmentDelivery: AttachmentDelivery = { pending: [] };
-    const attachmentTool = createAttachmentContextTool(
-      this.provider,
-      availableAttachments,
-      attachmentDelivery,
-    );
-    const tools = [
-      ...(agent.tools ?? []),
-      ...(attachmentTool ? [attachmentTool] : []),
-    ];
-    if (
-      attachmentTool &&
-      (agent.tools ?? []).some(
-        (tool) => tool.name === ATTACH_TO_MODEL_CONTEXT_TOOL,
-      )
-    ) {
-      throw new Error(
-        `${ATTACH_TO_MODEL_CONTEXT_TOOL} is reserved by the agent loop`,
-      );
-    }
+    const tools = agent.tools ?? [];
     const maxSteps = agent.maxSteps ?? 100;
     const usage = { ...EMPTY_USAGE };
     let state = options.modelState;
@@ -137,10 +67,7 @@ export class AgentLoop {
       const instructions = directive.instructions
         ? `${agent.instructions}\n\n${directive.instructions}`
         : agent.instructions;
-      const modelInput =
-        step === 1
-          ? attachmentPrompt(input, availableAttachments)
-          : continuationInput;
+      const modelInput = step === 1 ? input : continuationInput;
       continuationInput = undefined;
 
       const turn = await this.provider.generate(
@@ -148,10 +75,7 @@ export class AgentLoop {
           model: agent.model,
           instructions,
           input: modelInput,
-          attachments:
-            attachmentDelivery.pending.length > 0
-              ? attachmentDelivery.pending
-              : undefined,
+          attachments: directive.attachments,
           state,
           toolResults,
           tools: advertisedTools,
@@ -171,7 +95,6 @@ export class AgentLoop {
           },
         },
       );
-      attachmentDelivery.pending = [];
 
       emit({
         type: "model.completed",
@@ -258,6 +181,7 @@ export class AgentLoop {
         callId: call.id,
         name: call.name,
         output: decision.message ?? `Tool call rejected: ${call.name}`,
+        ...(tool?.kind ? { kind: tool.kind } : {}),
         isError: true,
       };
     }
@@ -283,13 +207,17 @@ export class AgentLoop {
         callId: call.id,
         name: call.name,
         output: serialize(output),
+        ...(tool.kind ? { kind: tool.kind } : {}),
       };
     } catch (error) {
+      const metadata = toolErrorMetadata(error);
       result = {
         callId: call.id,
         name: call.name,
         output: error instanceof Error ? error.message : String(error),
+        ...(tool.kind ? { kind: tool.kind } : {}),
         isError: true,
+        ...(metadata ? { error: metadata } : {}),
       };
     }
 

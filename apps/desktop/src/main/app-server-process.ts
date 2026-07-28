@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { resolve } from "node:path";
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import type { Duplex } from "node:stream";
 
@@ -11,6 +12,26 @@ import type {
 import { DESKTOP_COMPUTER_METHODS } from "@threadlight/protocol";
 
 const APP_SERVER_UNAVAILABLE = -32010;
+
+export interface AppServerEntryOptions {
+  appPath: string;
+  isPackaged: boolean;
+  override?: string;
+}
+
+export function resolveAppServerEntry({
+  appPath,
+  isPackaged,
+  override,
+}: AppServerEntryOptions): string {
+  if (override) return override;
+  return isPackaged
+    ? resolve(
+        appPath,
+        "node_modules/@threadlight/app-server/dist/bin.js",
+      )
+    : resolve(appPath, "../../packages/app-server/dist/bin.js");
+}
 
 export interface AppServerProcessOptions {
   entry: string;
@@ -152,6 +173,7 @@ export class AppServerProcess {
           error: {
             code: -32020,
             message: error instanceof Error ? error.message : String(error),
+            ...toolErrorData(error),
           },
         })}\n`,
       );
@@ -176,6 +198,13 @@ export class AppServerProcess {
       error: { code: APP_SERVER_UNAVAILABLE, message },
     });
   }
+}
+
+function toolErrorData(error: unknown): { data: unknown } | undefined {
+  if (!error || typeof error !== "object" || Array.isArray(error)) return;
+  const value = (error as { toolError?: unknown }).toolError;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  return { data: value };
 }
 
 function isDesktopComputerRequest(

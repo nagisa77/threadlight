@@ -13,20 +13,28 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 import { diffLines } from "diff";
+import ignore from "ignore";
 
 const SNAPSHOT_VERSION = 1;
 const MAX_REVIEW_FILE_BYTES = 2 * 1024 * 1024;
-const IGNORED_DIRECTORIES = new Set([
-  ".git",
-  ".threadlight",
-  ".next",
-  ".turbo",
-  "build",
-  "coverage",
-  "dist",
-  "node_modules",
-  "out",
-]);
+const DEFAULT_IGNORE_PATTERNS = [
+  ".git/",
+  ".threadlight/",
+  ".next/",
+  ".turbo/",
+  ".mypy_cache/",
+  ".pytest_cache/",
+  ".ruff_cache/",
+  ".tox/",
+  ".venv/",
+  "__pycache__/",
+  "build/",
+  "coverage/",
+  "dist/",
+  "node_modules/",
+  "out/",
+  "venv/",
+];
 
 interface SnapshotEntry {
   path: string;
@@ -163,8 +171,11 @@ export class ConversationChangeTracker {
     const snapshotPath = this.threadPath(projectId, threadId);
     const manifest = await readManifest(snapshotPath);
     const current = await scanWorkspace(workspacePath);
+    const matcher = await workspaceIgnoreMatcher(workspacePath);
     const baselineByPath = new Map(
-      manifest.entries.map((entry) => [entry.path, entry]),
+      manifest.entries
+        .filter((entry) => !matcher.ignores(entry.path))
+        .map((entry) => [entry.path, entry]),
     );
     const currentByPath = new Map(current.map((entry) => [entry.path, entry]));
     const paths = [...new Set([...baselineByPath.keys(), ...currentByPath.keys()])]
@@ -241,10 +252,10 @@ export class ConversationChangeTracker {
     workspacePath: string,
     relativePath: string,
   ): Promise<WorkspaceFile> {
-    const absolutePath = resolveWorkspacePath(workspacePath, relativePath);
-    await assertInsideWorkspace(workspacePath, absolutePath);
-    const metadata = await stat(absolutePath);
-    if (!metadata.isFile()) throw new Error("Workspace path is not a file");
+    const absolutePath = await this.workspaceFilePath(
+      workspacePath,
+      relativePath,
+    );
     const content = await readFile(absolutePath);
     const binary = isBinary(content);
     return {
@@ -256,6 +267,17 @@ export class ConversationChangeTracker {
         ? { content: content.toString("utf8") }
         : {}),
     };
+  }
+
+  async workspaceFilePath(
+    workspacePath: string,
+    relativePath: string,
+  ): Promise<string> {
+    const absolutePath = resolveWorkspacePath(workspacePath, relativePath);
+    await assertInsideWorkspace(workspacePath, absolutePath);
+    const metadata = await stat(absolutePath);
+    if (!metadata.isFile()) throw new Error("Workspace path is not a file");
+    return absolutePath;
   }
 
   private async capture(
@@ -316,6 +338,7 @@ export class ConversationChangeTracker {
 async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
   const root = await realpath(workspacePath);
   const entries: SnapshotEntry[] = [];
+  const matcher = await workspaceIgnoreMatcher(root);
 
   async function visit(directory: string, relativeDirectory: string) {
     const children = await readdir(directory, { withFileTypes: true });
@@ -324,12 +347,13 @@ async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
         join(relativeDirectory, child.name),
       );
       if (child.isDirectory()) {
-        if (!IGNORED_DIRECTORIES.has(child.name)) {
+        if (!matcher.ignores(`${childRelative}/`)) {
           await visit(join(directory, child.name), childRelative);
         }
         continue;
       }
       if (!child.isFile()) continue;
+      if (matcher.ignores(childRelative)) continue;
       const absolutePath = join(root, childRelative);
       const content = await readFile(absolutePath);
       const binary = isBinary(content);
@@ -345,6 +369,17 @@ async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
 
   await visit(root, "");
   return entries.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+async function workspaceIgnoreMatcher(workspacePath: string) {
+  const root = await realpath(workspacePath);
+  const matcher = ignore().add(DEFAULT_IGNORE_PATTERNS);
+  try {
+    matcher.add(await readFile(join(root, ".gitignore"), "utf8"));
+  } catch {
+    // A workspace does not need to be a Git repository.
+  }
+  return matcher;
 }
 
 function resolveWorkspacePath(workspacePath: string, relativePath: string) {

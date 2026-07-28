@@ -5,6 +5,7 @@ import {
   type AttachmentPreviewAdapter,
   type AttachmentStageAdapter,
   type ClipboardAdapter,
+  type ComputerPermissionAdapter,
   type ComputerShareAdapter,
   type ProjectMemoryAdapter,
   type ProjectOpenerAdapter,
@@ -72,6 +73,15 @@ const computerShare: ComputerShareAdapter = {
   subscribe: (listener) =>
     window.threadlightDesktop.onComputerShareChanged(listener),
 };
+const computerPermissions: ComputerPermissionAdapter = {
+  load: () => window.threadlightDesktop.getComputerPermissions(),
+  request: (capability) =>
+    window.threadlightDesktop.requestComputerPermission(capability),
+  relaunch: () =>
+    window.threadlightDesktop.relaunchForComputerPermissions(),
+  subscribe: (listener) =>
+    window.threadlightDesktop.onComputerPermissionChanged(listener),
+};
 const terminal: TerminalAdapter = {
   create: (request) => window.threadlightDesktop.createTerminal(request),
   write: (request) => window.threadlightDesktop.writeTerminal(request),
@@ -87,6 +97,8 @@ const workspace: WorkspaceAdapter = {
     window.threadlightDesktop.listWorkspace({ projectId, path }),
   read: (projectId, path) =>
     window.threadlightDesktop.getWorkspaceFile({ projectId, path }),
+  reveal: (projectId, path) =>
+    window.threadlightDesktop.revealWorkspaceFile({ projectId, path }),
 };
 const root = document.getElementById("root");
 
@@ -104,6 +116,7 @@ createRoot(root).render(
     attachmentStage={attachmentStage}
     attachmentPreview={attachmentPreview}
     computerShare={computerShare}
+    computerPermissions={computerPermissions}
     terminal={terminal}
     workspace={workspace}
   />,

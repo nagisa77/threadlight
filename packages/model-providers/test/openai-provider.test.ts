@@ -303,6 +303,68 @@ describe("OpenAIResponsesProvider", () => {
     ]);
   });
 
+  it("marks computer permission errors as requiring user action", async () => {
+    const response = {
+      output_text: "Follow the Threadlight permission prompt.",
+      output: [],
+    } as unknown as OpenAI.Responses.Response;
+    const responseStream = {
+      on() {
+        return responseStream;
+      },
+      async finalResponse() {
+        return response;
+      },
+    };
+    const stream = vi.fn(() => responseStream);
+    const client = { responses: { stream } } as unknown as OpenAI;
+
+    await new OpenAIResponsesProvider({ client }).generate({
+      instructions: "Finish without tools",
+      state: [
+        {
+          type: "computer_call",
+          call_id: "computer-call-1",
+          actions: [{ type: "click", x: 10, y: 20, button: "left" }],
+          status: "completed",
+        },
+      ],
+      toolResults: [
+        {
+          callId: "computer-call-1",
+          name: "computer",
+          output: "Accessibility permission is required",
+          kind: "computer",
+          isError: true,
+          error: {
+            code: "computer_permission_required",
+            retryable: false,
+            userAction: {
+              kind: "grant_permission",
+              data: { capability: "accessibility" },
+            },
+          },
+        },
+      ],
+      tools: [],
+    });
+
+    const params = stream.mock.calls[0]?.[0] as
+      | OpenAI.Responses.ResponseCreateParams
+      | undefined;
+    expect(params?.input).toContainEqual({
+      role: "developer",
+      content: expect.stringContaining(
+        "Do not retry computer tools, change input modes, run shell commands",
+      ),
+    });
+    expect(
+      (params?.input as Array<{ content?: string }>).some((item) =>
+        item.content?.includes("recoverable execution error"),
+      ),
+    ).toBe(false);
+  });
+
   it("disables strict mode for open MCP-style argument objects", async () => {
     const response = {
       output_text: "done",

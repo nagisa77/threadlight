@@ -40,9 +40,26 @@ import {
   type ConversationStore,
   type StoredConversation,
 } from "./conversation-store.js";
+import {
+  composePrompt,
+  promptBlocksFromSnapshot,
+  validatePromptSnapshot,
+  type PromptBlock,
+  type PromptSnapshot,
+} from "./prompt-composer.js";
+import {
+  createAttachmentRuntime,
+  type AttachmentProvider,
+} from "./attachment-runtime.js";
+import { ModelStatePersistence } from "./model-state-persistence.js";
+import {
+  composeRunControllers,
+  UserActionRunController,
+} from "./run-controllers.js";
 
 interface ThreadState {
   agent: Agent;
+  promptSnapshot: PromptSnapshot;
   conversation: StoredConversation;
   progress: readonly ConversationProgressData[];
   plan?: AgentPlanData;
@@ -74,6 +91,8 @@ export interface ProcessController {
 interface SharedAppServerOptions {
   loop: AgentLoop;
   send: SendMessage;
+  attachmentProvider?: AttachmentProvider;
+  modelStatePersistence?: ModelStatePersistence;
   conversationStore?: ConversationStore;
   processes?: ProcessController;
   threadRuntimeFactory?: ThreadRuntimeFactory;
@@ -92,10 +111,15 @@ export interface TurnCleanupContext {
 
 export interface ThreadRuntime {
   tools?: readonly Tool[];
+  promptBlocks?: readonly PromptBlock[];
+  promptBlocksForTurn?(
+    input: string,
+  ): readonly PromptBlock[] | Promise<readonly PromptBlock[]>;
+  snapshot?: unknown;
   dispose?(): void | Promise<void>;
 }
 
-export type ThreadRuntimeFactory = () =>
+export type ThreadRuntimeFactory = (restoredSnapshot?: unknown) =>
   | ThreadRuntime
   | Promise<ThreadRuntime>;
 
@@ -107,6 +131,8 @@ export type AppServerOptions = SharedAppServerOptions &
 
 export class AppServer {
   private readonly loop: AgentLoop;
+  private readonly attachmentProvider?: AttachmentProvider;
+  private readonly modelStatePersistence: ModelStatePersistence;
   private readonly agentFactory: AgentFactory;
   private readonly send: SendMessage;
   private readonly conversationStore: ConversationStore;
@@ -120,6 +146,9 @@ export class AppServer {
 
   constructor(options: AppServerOptions) {
     this.loop = options.loop;
+    this.attachmentProvider = options.attachmentProvider;
+    this.modelStatePersistence =
+      options.modelStatePersistence ?? new ModelStatePersistence();
     this.agentFactory = options.agentFactory ?? (() => options.agent);
     this.send = options.send;
     this.conversationStore =
@@ -474,30 +503,51 @@ export class AppServer {
     };
 
     try {
-      const planController =
-        mode === "plan" ? new PlanExecutionController() : undefined;
-      const planAgent =
-        mode === "plan"
-          ? {
-              ...thread.agent,
-              instructions: [
-                thread.agent.instructions,
-                USER_SELECTED_PLAN_INSTRUCTIONS,
-              ].join("\n\n"),
-              tools: [
-                ...(thread.agent.tools ?? []),
-                createRequestPlanInputTool(),
-              ],
-            }
-          : thread.agent;
-      const result = await this.loop.run(
-        planAgent,
+      const planController = new PlanExecutionController({
+        requirePlan: mode === "plan",
+      });
+      const attachmentRuntime = createAttachmentRuntime(
+        this.attachmentProvider,
         input,
+        attachments,
+      );
+      const runController = new UserActionRunController(
+        composeRunControllers([
+          planController,
+          attachmentRuntime.controller,
+        ]),
+      );
+      const turnPromptBlocks = [
+        ...promptBlocksFromSnapshot(thread.promptSnapshot),
+        ...((await thread.runtime?.promptBlocksForTurn?.(input)) ?? []),
+        ...(mode === "plan"
+          ? [
+              {
+                id: "turn.plan-mode",
+                version: 1,
+                authority: "turn" as const,
+                source: "app-server",
+                content: USER_SELECTED_PLAN_INSTRUCTIONS,
+              },
+            ]
+          : []),
+      ];
+      const turnPrompt = composePrompt(turnPromptBlocks);
+      const turnAgent = {
+        ...thread.agent,
+        instructions: turnPrompt.instructions,
+        tools: appendTurnTools(thread.agent.tools, [
+          ...(mode === "plan" ? [createRequestPlanInputTool()] : []),
+          ...(attachmentRuntime.tool ? [attachmentRuntime.tool] : []),
+        ]),
+      };
+      const result = await this.loop.run(
+        turnAgent,
+        attachmentRuntime.input,
         {
           toolScopeId: threadId,
           modelState: thread.conversation.modelState,
-          attachments,
-          ...(planController ? { controller: planController } : {}),
+          controller: runController,
           signal: controller.signal,
           onEvent: (event) => {
             runId = event.runId;
@@ -506,7 +556,7 @@ export class AppServer {
         },
       );
       const persistedModelState =
-        this.loop.prepareModelStateForPersistence(result.modelState);
+        this.modelStatePersistence.prepare(result.modelState);
       if (
         planController?.phase === "needs_input" &&
         planController.snapshot === undefined
@@ -625,11 +675,38 @@ export class AppServer {
     conversation: StoredConversation,
   ): Promise<ThreadState> {
     const baseAgent = await this.agentFactory();
-    const runtime = await this.threadRuntimeFactory?.();
+    const runtime = await this.threadRuntimeFactory?.(
+      conversation.agentSnapshot?.runtime,
+    );
     try {
+      const promptSnapshot = conversation.agentSnapshot
+        ? restoreStoredPrompt(conversation.agentSnapshot.prompt)
+        : composePrompt([
+            ...promptBlocksForAgent(baseAgent),
+            ...(runtime?.promptBlocks ?? []),
+          ]);
+      const agent = runtime
+        ? attachRuntimeTools(
+            { ...baseAgent, instructions: promptSnapshot.instructions },
+            runtime,
+          )
+        : { ...baseAgent, instructions: promptSnapshot.instructions };
+      const snapshottedConversation = conversation.agentSnapshot
+        ? conversation
+        : {
+            ...conversation,
+            agentSnapshot: {
+              version: 1 as const,
+              prompt: promptSnapshot,
+              ...(runtime?.snapshot === undefined
+                ? {}
+                : { runtime: runtime.snapshot }),
+            },
+          };
       return {
-        agent: runtime ? attachRuntimeTools(baseAgent, runtime) : baseAgent,
-        conversation,
+        agent,
+        promptSnapshot,
+        conversation: snapshottedConversation,
         progress: [],
         suggestions: new Map(),
         suggestionRequests: new Map(),
@@ -797,6 +874,21 @@ function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
   };
 }
 
+function appendTurnTools(
+  tools: readonly Tool[] | undefined,
+  additions: readonly Tool[],
+): readonly Tool[] {
+  const combined = [...(tools ?? []), ...additions];
+  const names = new Set<string>();
+  for (const tool of combined) {
+    if (names.has(tool.name)) {
+      throw new Error(`Duplicate agent tool: ${tool.name}`);
+    }
+    names.add(tool.name);
+  }
+  return combined;
+}
+
 function attachRuntimeTools(agent: Agent, runtime: ThreadRuntime): Agent {
   const tools = [...(agent.tools ?? []), ...(runtime.tools ?? [])];
   const names = new Set<string>();
@@ -807,4 +899,30 @@ function attachRuntimeTools(agent: Agent, runtime: ThreadRuntime): Agent {
     names.add(tool.name);
   }
   return { ...agent, tools };
+}
+
+function promptBlocksForAgent(agent: Agent): PromptBlock[] {
+  const candidate = (agent as Agent & { promptSnapshot?: unknown })
+    .promptSnapshot;
+  if (candidate !== undefined) {
+    validatePromptSnapshot(candidate);
+    if (candidate.instructions !== agent.instructions) {
+      throw new Error("Agent prompt snapshot does not match its instructions");
+    }
+    return promptBlocksFromSnapshot(candidate);
+  }
+  return [
+    {
+      id: "host.legacy-agent",
+      version: 1,
+      authority: "host",
+      source: agent.name,
+      content: agent.instructions,
+    },
+  ];
+}
+
+function restoreStoredPrompt(snapshot: PromptSnapshot): PromptSnapshot {
+  validatePromptSnapshot(snapshot);
+  return structuredClone(snapshot);
 }

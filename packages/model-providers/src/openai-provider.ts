@@ -179,7 +179,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
       const tool = request.tools.find(
         (candidate) => candidate.name === result.name,
       );
-      if (tool?.kind === "computer") {
+      if (result.kind === "computer" || tool?.kind === "computer") {
         if (result.isError) {
           input.push(
             computerCallErrorOutput(
@@ -187,14 +187,18 @@ export class OpenAIResponsesProvider implements ModelProvider {
               input,
             ),
           );
+          const userActionRequired = !!result.error?.userAction;
           input.push({
             role: "developer",
-            content:
-              "The computer tool returned a recoverable execution error: " +
-              `${truncateToolError(result.output)}. ` +
-              "Inspect the error and use the available tools to recover, " +
-              "including computer_share list/set when sharing is missing or stale. " +
-              "Do not end the turn solely because this tool call failed.",
+            content: userActionRequired
+              ? "The computer tool requires the user to complete an action in the host application: " +
+                `${truncateToolError(result.output)}. ` +
+                "Do not retry computer tools, change input modes, run shell commands, or attempt a workaround."
+              : "The computer tool returned a recoverable execution error: " +
+                `${truncateToolError(result.output)}. ` +
+                "Inspect the error and use the available tools to recover, " +
+                "including computer_share list/set when sharing is missing or stale. " +
+                "Do not end the turn solely because this tool call failed.",
           });
           continue;
         }

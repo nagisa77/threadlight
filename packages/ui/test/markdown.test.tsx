@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MarkdownContent,
+  localFileContextMenuPosition,
   parseLocalFileReference,
   workspaceFileReference,
 } from "../src/index.js";
@@ -69,6 +70,35 @@ const ready = true;
     expect(html).toContain("(line 717)");
     expect(html).toContain('class="lucide ');
     expect(html).not.toContain('target="_blank"');
+  });
+
+  it("enables the custom file actions menu when Finder reveal is available", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent
+        onOpenLocalFile={() => undefined}
+        onRevealLocalFile={() => undefined}
+      >
+        {`[report.mp4](/workspace/report.mp4)`}
+      </MarkdownContent>,
+    );
+
+    expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('aria-expanded="false"');
+  });
+
+  it("keeps the file actions menu inside the viewport", () => {
+    expect(localFileContextMenuPosition(790, 590, 800, 600)).toEqual({
+      left: 584,
+      top: 470,
+      originX: "right",
+      originY: "bottom",
+    });
+    expect(localFileContextMenuPosition(2, 3, 800, 600)).toEqual({
+      left: 8,
+      top: 8,
+      originX: "left",
+      originY: "top",
+    });
   });
 
   it("parses local line references and scopes them to the workspace", () => {

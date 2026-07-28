@@ -42,6 +42,7 @@ npx vitest run packages/agent-loop/test/agent-loop.test.ts
 | 命令 | 用途 |
 | --- | --- |
 | `npm run desktop:dev` | 构建 packages，并以开发模式启动 Electron |
+| `npm run desktop:package` | 生成当前 Mac 架构的独立 `.app` |
 | `npm run build:packages` | 使用 TypeScript project references 构建全部 packages |
 | `npm run build` | 构建 packages、原生输入桥和桌面端 production bundle |
 | `npm run typecheck` | 检查 packages 与桌面端类型 |
@@ -208,8 +209,8 @@ export class ExampleProvider implements ModelProvider {
 - 稳定映射 tool call ID；后续 tool result 必须仍能关联原调用。
 - 支持 `AbortSignal` 和增量文本事件。
 - 在多轮工具调用中保留厂商需要的全部 state。
-- 如 state 含大体积或敏感字段，实现 `prepareStateForPersistence`。
-- 如支持附件，实现 `validateAttachment` / `uploadAttachment`，不要在共享协议中内联文件字节。
+- 如 state 含大体积或敏感字段，在配置后的 provider 上实现 `prepareStateForPersistence`，并将它注入 app-server 的 `ModelStatePersistence`；loop 不参与落盘策略。
+- 如支持附件，在配置后的 provider 上实现 `validateAttachment` / `uploadAttachment`，由 app-server 的附件 runtime 调用；loop 只转发 controller 提供的 provider-ready attachment。
 - 在 `provider-factory.ts` 中加入配置入口，但不要把厂商分支加到 loop。
 
 测试应使用伪造的 SDK client 或脚本响应，断言实际 wire payload；不要调用真实 API。

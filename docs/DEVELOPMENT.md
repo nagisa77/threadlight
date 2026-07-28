@@ -42,6 +42,7 @@ npx vitest run packages/agent-loop/test/agent-loop.test.ts
 | Command | Purpose |
 | --- | --- |
 | `npm run desktop:dev` | Build packages and start Electron in development mode |
+| `npm run desktop:package` | Create a standalone `.app` for the current Mac architecture |
 | `npm run build:packages` | Build all packages with TypeScript project references |
 | `npm run build` | Build packages, the native bridge, and the desktop production bundle |
 | `npm run typecheck` | Type-check packages and the desktop app |
@@ -208,8 +209,8 @@ An adapter must:
 - Preserve stable tool-call IDs so later results link to the original calls.
 - Support `AbortSignal` and incremental text events.
 - Preserve all vendor-owned state required across tool turns.
-- Implement `prepareStateForPersistence` when state contains large or sensitive fields.
-- Implement `validateAttachment` / `uploadAttachment` when supporting files; never inline bytes in the shared protocol.
+- When state contains large or sensitive fields, implement `prepareStateForPersistence` on the configured provider and inject it into app-server's `ModelStatePersistence`; the loop does not own disk persistence policy.
+- When supporting files, implement `validateAttachment` / `uploadAttachment` on the configured provider for app-server's attachment runtime; the loop only forwards provider-ready attachments supplied by a controller.
 - Add configuration to `provider-factory.ts` without adding vendor branches to the loop.
 
 Tests should inject a fake SDK client or scripted responses and assert the actual wire payload. Never call a live API from the test suite.

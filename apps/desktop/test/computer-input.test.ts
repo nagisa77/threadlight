@@ -5,6 +5,7 @@ import {
   enableChildWindowCaptureWithAddon,
   nativeComputerInputCandidates,
   performComputerActionsWithAddon,
+  requestScreenCaptureAccessWithAddon,
 } from "../src/main/computer-input.js";
 
 describe("native macOS computer input bridge", () => {
@@ -20,6 +21,21 @@ describe("native macOS computer input bridge", () => {
     expect(enableChildWindowCapture).toHaveBeenCalledOnce();
     expect(
       enableChildWindowCaptureWithAddon({ perform: vi.fn() }),
+    ).toBe(false);
+  });
+
+  it("requests screen capture access through the native bridge", () => {
+    const requestScreenCaptureAccess = vi.fn(() => true);
+
+    expect(
+      requestScreenCaptureAccessWithAddon({
+        perform: vi.fn(),
+        requestScreenCaptureAccess,
+      }),
+    ).toBe(true);
+    expect(requestScreenCaptureAccess).toHaveBeenCalledOnce();
+    expect(
+      requestScreenCaptureAccessWithAddon({ perform: vi.fn() }),
     ).toBe(false);
   });
 

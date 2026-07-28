@@ -1,11 +1,7 @@
-export {
-  AgentLoop,
-  DEFAULT_MAX_PERSISTED_MODEL_STATE_BYTES,
-} from "./agent-loop.js";
-export { ATTACH_TO_MODEL_CONTEXT_TOOL } from "./attachment-tool.js";
+export { AgentLoop } from "./agent-loop.js";
+export { ToolExecutionError, toolErrorMetadata } from "./tool-error.js";
 export { defineAgent, defineTool } from "./types.js";
 
-export type { AgentLoopOptions } from "./agent-loop.js";
 export type {
   Agent,
   AgentEvent,
@@ -26,5 +22,7 @@ export type {
   Tool,
   ToolCall,
   ToolContext,
+  ToolErrorMetadata,
   ToolResult,
+  ToolUserAction,
 } from "./types.js";

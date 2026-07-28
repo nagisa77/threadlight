@@ -1,7 +1,9 @@
 export {
   clampWorkspacePanelWidth,
+  ComputerPermissionCard,
   ConversationChangesButton,
   currentPlanStep,
+  pendingComputerPermissionResume,
   planDocumentOpenRequest,
   ThreadlightApp,
   TurnStatusPill,
@@ -9,6 +11,7 @@ export {
 export { activeProject } from "./projects.js";
 export {
   MarkdownContent,
+  localFileContextMenuPosition,
   parseLocalFileReference,
   workspaceFileReference,
 } from "./markdown.js";
@@ -62,6 +65,9 @@ export type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
   ClipboardAdapter,
+  ComputerPermissionAdapter,
+  ComputerPermissionCapability,
+  ComputerPermissionSnapshot,
   ComputerShareAdapter,
   ComputerShareSnapshot,
   ComputerShareTarget,

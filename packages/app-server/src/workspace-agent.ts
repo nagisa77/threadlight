@@ -9,6 +9,11 @@ import {
   renderWorkspaceContext,
   type LoadWorkspaceContextOptions,
 } from "./workspace-context.js";
+import {
+  PromptComposer,
+  type PromptBlock,
+  type PromptSnapshot,
+} from "./prompt-composer.js";
 
 export interface WorkspaceAgentFactoryOptions {
   workspaceRoot: string;
@@ -18,32 +23,58 @@ export interface WorkspaceAgentFactoryOptions {
   tools?: readonly Tool[];
   maxSteps?: number;
   context?: LoadWorkspaceContextOptions;
+  promptBlocks?: readonly PromptBlock[];
 }
 
 export const LOCAL_RESOURCE_LINK_INSTRUCTIONS =
   "When mentioning a local file or directory that the user may want to open, format it as a Markdown link using its absolute path, for example [report.pdf](/absolute/path/report.pdf) or [app.ts:42](/absolute/path/app.ts:42). Do not leave useful local resource paths as plain text or inline code.";
 
+export interface WorkspaceAgent extends Agent {
+  promptSnapshot: PromptSnapshot;
+}
+
 export function createWorkspaceAgentFactory(
   options: WorkspaceAgentFactoryOptions,
-): () => Promise<Agent> {
+): () => Promise<WorkspaceAgent> {
   return async () => {
     const context = await loadWorkspaceContext(
       options.workspaceRoot,
       options.context,
     );
+    const promptSnapshot = new PromptComposer()
+      .add({
+        id: "host.base",
+        version: 1,
+        authority: "host",
+        source: "workspace-agent",
+        content: options.baseInstructions,
+      })
+      .add({
+        id: "host.local-resource-links",
+        version: 1,
+        authority: "host",
+        source: "workspace-agent",
+        content: LOCAL_RESOURCE_LINK_INSTRUCTIONS,
+      })
+      .add({
+        id: "project.workspace-context",
+        version: 1,
+        authority: "project",
+        source: context.root,
+        content: renderWorkspaceContext(context),
+      })
+      .addAll(options.promptBlocks ?? [])
+      .compose();
 
-    return defineAgent({
-      name: options.name ?? "threadlight",
-      instructions: [
-        options.baseInstructions.trim(),
-        LOCAL_RESOURCE_LINK_INSTRUCTIONS,
-        renderWorkspaceContext(context),
-      ]
-        .filter(Boolean)
-        .join("\n\n"),
-      model: options.model,
-      tools: options.tools,
-      maxSteps: options.maxSteps,
-    });
+    return {
+      ...defineAgent({
+        name: options.name ?? "threadlight",
+        instructions: promptSnapshot.instructions,
+        model: options.model,
+        tools: options.tools,
+        maxSteps: options.maxSteps,
+      }),
+      promptSnapshot,
+    };
   };
 }

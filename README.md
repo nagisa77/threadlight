@@ -180,6 +180,12 @@ npm run desktop:dev
 npm run desktop:preview
 ```
 
+生成当前 Mac 架构的独立 `.app`：
+
+```bash
+npm run desktop:package
+```
+
 | 服务 | 必需配置 | 可选配置 |
 | --- | --- | --- |
 | OpenAI | `OPENAI_API_KEY` | `THREADLIGHT_MODEL` |
@@ -258,6 +264,21 @@ await client.startTurn(threadId, "分析当前工作区");
 
 每个会话拥有独立的临时 MCP runtime。Agent 可以连接用户明确提供、或工作区内可验证的 stdio / Streamable HTTP MCP Server，先读取工具 schema，再执行调用。连接只在当前 app-server 进程的对应会话中复用，删除会话或服务退出时自动释放。
 
+### Prompt、Skills 与 Plugins
+
+Threadlight 使用带版本和 SHA-256 hash 的 Prompt Composer，将 Host 规则、项目上下文、运行时能力、Skill 与回合模式组合成可验证的 instructions。首次用户输入会把 Prompt、Skill 和 Plugin 快照一起写入任务；恢复任务时继续使用原快照，避免 `AGENTS.md`、内置 Prompt 或已安装扩展变化后污染既有模型状态。
+
+Skills 使用兼容 Agent Skills 的 `SKILL.md` 格式，并按渐进披露加载：
+
+- 项目 Skills：`<project>/.agents/skills/<skill-name>/SKILL.md`
+- 用户 Skills：`~/.agents/skills/<skill-name>/SKILL.md`
+- 显式调用：在请求中写 `$skill-name`
+- 隐式调用：Agent 根据描述匹配后使用只读 `skill_read` 加载完整工作流
+
+内置 `$skill-creator` 可以通过原子、受校验的 `skill_create` 工具创建项目或用户级 instruction-only Skill。新 Skill 从下一个任务开始被发现。
+
+Skills-only Plugin 使用 `.codex-plugin/plugin.json`，目前仅接受 `skills` 能力；声明 MCP、App 或 Hook 的插件会被拒绝。插件可以放在项目或用户的 `.agents/plugins`、`.threadlight/plugins` 目录中，其 Skills 以 `$plugin-name:skill-name` 调用。此阶段不会执行第三方插件代码。
+
 ### Computer Use
 
 Electron 桌面端的 `computer_share` 可以：
@@ -283,6 +304,7 @@ Electron 桌面端的 `computer_share` 可以：
 
 <project>/.threadlight/
 ├── MEMORY.md                     # 用户可读的长期项目记忆
+├── plugins/                      # 可选的项目级 Skills-only Plugins
 └── conversations/
     └── <threadId>.json           # 会话与受限、脱敏的 opaque model state
 ```
@@ -290,6 +312,7 @@ Electron 桌面端的 `computer_share` 可以：
 - 密钥只从运行时环境或系统安全存储注入，不进入源码、fixtures、项目文件或日志。
 - app-server 的协议输出与诊断日志分别写入 stdout 和 stderr。
 - 持久化的 opaque model state 上限为 5 MiB；Computer Use 截图写盘前会替换为占位图。
+- 每个 Skill 最大 64,000 字符；每个任务最多快照 128 个 Skills、合计 2,000,000 字符，初始 Skill 目录最多占 8,000 字符 Prompt。
 - 附件通过受校验的本地路径引用，wire adapter 不直接内联文件字节。
 - `.threadlight/` 默认应加入版本控制忽略规则。
 - 内置工具不是系统 sandbox；需要强隔离时，请在容器、虚拟机或操作系统 sandbox 中运行。

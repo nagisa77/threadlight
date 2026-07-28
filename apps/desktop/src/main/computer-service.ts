@@ -48,6 +48,7 @@ import {
   ComputerSessionLease,
   type ComputerSessionOwner,
 } from "./computer-session-lease.js";
+import type { ComputerPermissionService } from "./computer-permissions.js";
 
 interface WindowMetadata {
   windowId: number;
@@ -130,6 +131,7 @@ export class DesktopComputerService {
     private readonly onShareChanged: (
       snapshot: DesktopComputerShareSnapshot,
     ) => void = () => undefined,
+    private readonly permissions?: ComputerPermissionService,
   ) {}
 
   shareSnapshot(): DesktopComputerShareSnapshot {
@@ -289,7 +291,8 @@ export class DesktopComputerService {
     const acquired = this.sessionLease.acquire(owner);
     if (acquired) this.notifyShareChanged();
     try {
-      const catalog = await this.loadCatalog(true);
+      this.permissions?.requireScreenRecording(owner.threadId);
+      const catalog = await this.loadCatalog(true, owner.threadId);
       return catalog.targets;
     } catch (error) {
       if (acquired) {
@@ -327,11 +330,16 @@ export class DesktopComputerService {
     targetIds: readonly string[];
     pictureInPicture: boolean;
     inputMode: "virtual" | "system";
+    threadId: string;
   }) {
+    this.permissions?.requireScreenRecording(options.threadId);
+    if (options.inputMode === "virtual") {
+      this.permissions?.requireAccessibility(options.threadId);
+    }
     if (!this.childWindowCaptureConfigured) {
       this.childWindowCaptureConfigured = enableMacOSChildWindowCapture();
     }
-    const catalog = await this.loadCatalog(false);
+    const catalog = await this.loadCatalog(false, options.threadId);
     const records = options.targetIds.map((id) => {
       const record = catalog.records.get(id);
       if (!record) throw new Error(`Unknown computer share target: ${id}`);
@@ -408,7 +416,7 @@ export class DesktopComputerService {
     const acquired = this.sessionLease.acquire(owner);
     if (acquired) this.notifyShareChanged();
     try {
-      return await this.executeActions(actions);
+      return await this.executeActions(actions, owner.threadId);
     } catch (error) {
       if (acquired) {
         this.sessionLease.release(owner);
@@ -418,7 +426,19 @@ export class DesktopComputerService {
     }
   }
 
-  private async executeActions(actions: readonly ComputerUseAction[]) {
+  private async executeActions(
+    actions: readonly ComputerUseAction[],
+    ownerThreadId: string,
+  ) {
+    this.permissions?.requireScreenRecording(ownerThreadId);
+    if (
+      this.selection.inputMode === "virtual" &&
+      actions.some(
+        (action) => action.type !== "screenshot" && action.type !== "wait",
+      )
+    ) {
+      this.permissions?.requireAccessibility(ownerThreadId);
+    }
     if (this.selection.mode === "none") {
       throw new Error(
         "No content is shared. Call computer_share list and set before using computer.",
@@ -528,6 +548,9 @@ export class DesktopComputerService {
       height: COMPUTER_CANVAS_HEIGHT,
     });
     if (image.isEmpty()) {
+      this.permissions?.reportScreenCaptureFailure(
+        this.sessionLease.owner?.threadId,
+      );
       throw new Error(
         "The live computer share returned an empty frame. Check Screen Recording permission.",
       );
@@ -699,7 +722,10 @@ export class DesktopComputerService {
     return value.filter(isCaptureStatus);
   }
 
-  private async loadCatalog(force: boolean): Promise<CaptureCatalog> {
+  private async loadCatalog(
+    force: boolean,
+    ownerThreadId?: string,
+  ): Promise<CaptureCatalog> {
     if (
       this.catalog &&
       !force &&
@@ -707,14 +733,28 @@ export class DesktopComputerService {
     ) {
       return this.catalog;
     }
-    const [sources, windows] = await Promise.all([
-      desktopCapturer.getSources({
-        types: ["window", "screen"],
-        thumbnailSize: { width: 0, height: 0 },
-        fetchWindowIcons: false,
-      }),
-      listMacOSWindows(),
-    ]);
+    let sources: DesktopCapturerSource[];
+    let windows: readonly WindowMetadata[];
+    try {
+      [sources, windows] = await Promise.all([
+        desktopCapturer.getSources({
+          types: ["window", "screen"],
+          thumbnailSize: { width: 0, height: 0 },
+          fetchWindowIcons: false,
+        }),
+        listMacOSWindows(),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        /failed to get sources|screen recording|screen capture/i.test(
+          error.message,
+        )
+      ) {
+        this.permissions?.reportScreenCaptureFailure(ownerThreadId);
+      }
+      throw error;
+    }
     if (sources.length === 0) {
       throw new Error(
         "No shareable screen content is available. Allow Threadlight to record the screen in System Settings, then restart Threadlight.",

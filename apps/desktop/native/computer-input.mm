@@ -1158,6 +1158,15 @@ napi_value EnableChildWindows(napi_env env, napi_callback_info info) {
   return result;
 }
 
+napi_value RequestScreenCapture(napi_env env, napi_callback_info info) {
+  size_t argc = 0;
+  napi_get_cb_info(env, info, &argc, nullptr, nullptr, nullptr);
+  const bool granted = CGRequestScreenCaptureAccess();
+  napi_value result;
+  napi_get_boolean(env, granted, &result);
+  return result;
+}
+
 } // namespace
 
 NAPI_MODULE_INIT() {
@@ -1170,5 +1179,11 @@ NAPI_MODULE_INIT() {
                        EnableChildWindows, nullptr, &enableChildWindowCapture);
   napi_set_named_property(env, exports, "enableChildWindowCapture",
                           enableChildWindowCapture);
+  napi_value requestScreenCaptureAccess;
+  napi_create_function(env, "requestScreenCaptureAccess", NAPI_AUTO_LENGTH,
+                       RequestScreenCapture, nullptr,
+                       &requestScreenCaptureAccess);
+  napi_set_named_property(env, exports, "requestScreenCaptureAccess",
+                          requestScreenCaptureAccess);
   return exports;
 }

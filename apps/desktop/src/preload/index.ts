@@ -8,6 +8,10 @@ import {
   DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
   DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
   DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_CHANGED_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_GET_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_RELAUNCH_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL,
   DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
@@ -29,8 +33,10 @@ import {
   DESKTOP_TERMINAL_RESIZE_CHANNEL,
   DESKTOP_TERMINAL_WRITE_CHANNEL,
   DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
+  DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
   DESKTOP_WORKSPACE_LIST_CHANNEL,
   type DesktopApi,
+  type DesktopComputerPermissionSnapshot,
   type DesktopComputerShareSnapshot,
   type DesktopTerminalEvent,
 } from "../shared/desktop-api.js";
@@ -116,6 +122,30 @@ const api: DesktopApi = {
         handler,
       );
   },
+  getComputerPermissions() {
+    return ipcRenderer.invoke(DESKTOP_COMPUTER_PERMISSION_GET_CHANNEL);
+  },
+  requestComputerPermission(capability) {
+    return ipcRenderer.invoke(
+      DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL,
+      capability,
+    );
+  },
+  relaunchForComputerPermissions() {
+    return ipcRenderer.invoke(DESKTOP_COMPUTER_PERMISSION_RELAUNCH_CHANNEL);
+  },
+  onComputerPermissionChanged(listener) {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      snapshot: DesktopComputerPermissionSnapshot,
+    ) => listener(snapshot);
+    ipcRenderer.on(DESKTOP_COMPUTER_PERMISSION_CHANGED_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(
+        DESKTOP_COMPUTER_PERMISSION_CHANGED_CHANNEL,
+        handler,
+      );
+  },
   createTerminal(request) {
     return ipcRenderer.invoke(DESKTOP_TERMINAL_CREATE_CHANNEL, request);
   },
@@ -145,6 +175,9 @@ const api: DesktopApi = {
   },
   getWorkspaceFile(request) {
     return ipcRenderer.invoke(DESKTOP_WORKSPACE_FILE_GET_CHANNEL, request);
+  },
+  revealWorkspaceFile(request) {
+    return ipcRenderer.invoke(DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL, request);
   },
 };
 

@@ -13,6 +13,7 @@ import {
 import { createUpdatePlanTool } from "@threadlight/builtin-tools";
 
 import { AppServer } from "../src/app-server.js";
+import type { AttachmentProvider } from "../src/attachment-runtime.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 function richPlanStep(
@@ -406,14 +407,17 @@ describe("AppServer", () => {
 
   it("lets the scripted model enter Plan mode without a user toggle", async () => {
     let generation = 0;
+    const requests: ModelRequest[] = [];
     const messages: JsonRpcOutgoing[] = [];
     const completed = Promise.withResolvers<void>();
     const server = new AppServer({
       loop: new AgentLoop({
-        async generate() {
+        async generate(request) {
+          requests.push(request);
           generation += 1;
-          return generation === 1
-            ? {
+          if (generation === 1) {
+            expect(request.instructions).not.toContain("PLAN CONTROL");
+            return {
                 text: "This needs a plan.",
                 toolCalls: [
                   {
@@ -427,8 +431,91 @@ describe("AppServer", () => {
                     },
                   },
                 ],
-              }
-            : { text: "Done", toolCalls: [] };
+              };
+          }
+          if (generation === 2) {
+            expect(request.instructions).toContain(
+              "Current step 1/2: Investigate",
+            );
+            return {
+              text: "Everything is done.",
+              toolCalls: [
+                {
+                  id: "plan-2",
+                  name: "update_plan",
+                  arguments: {
+                    plan: [
+                      {
+                        ...richPlanStep("Investigate", "completed"),
+                        completionEvidence: ["Investigation was verified."],
+                      },
+                      {
+                        ...richPlanStep("Verify", "completed"),
+                        completionEvidence: [
+                          "Verification was claimed without activation.",
+                        ],
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          }
+          if (generation === 3) {
+            expect(request.toolResults?.[0]).toMatchObject({
+              name: "update_plan",
+              isError: true,
+              output: expect.stringContaining(
+                "pending step 2 cannot be skipped",
+              ),
+            });
+            return {
+              text: "I’ll advance one verified step.",
+              toolCalls: [
+                {
+                  id: "plan-3",
+                  name: "update_plan",
+                  arguments: {
+                    plan: [
+                      {
+                        ...richPlanStep("Investigate", "completed"),
+                        completionEvidence: ["Investigation was verified."],
+                      },
+                      richPlanStep("Verify", "in_progress"),
+                    ],
+                  },
+                },
+              ],
+            };
+          }
+          if (generation === 4) {
+            expect(request.instructions).toContain(
+              "Current step 2/2: Verify",
+            );
+            return {
+              text: "Verification complete.",
+              toolCalls: [
+                {
+                  id: "plan-4",
+                  name: "update_plan",
+                  arguments: {
+                    plan: [
+                      {
+                        ...richPlanStep("Investigate", "completed"),
+                        completionEvidence: ["Investigation was verified."],
+                      },
+                      {
+                        ...richPlanStep("Verify", "completed"),
+                        completionEvidence: ["Final behavior was verified."],
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          }
+          expect(request.instructions).toContain("PLAN CONTROL — COMPLETE");
+          return { text: "Done", toolCalls: [] };
         },
       }),
       agent: defineAgent({
@@ -470,10 +557,26 @@ describe("AppServer", () => {
       result: {
         messages: [
           { role: "user" },
-          { role: "assistant", plan: { source: "model" } },
+          {
+            role: "assistant",
+            plan: {
+              source: "model",
+              items: [
+                {
+                  ...richPlanStep("Investigate", "completed"),
+                  completionEvidence: ["Investigation was verified."],
+                },
+                {
+                  ...richPlanStep("Verify", "completed"),
+                  completionEvidence: ["Final behavior was verified."],
+                },
+              ],
+            },
+          },
         ],
       },
     });
+    expect(requests).toHaveLength(5);
   });
 
   it("generates three cached opening questions with a scripted model without changing the conversation", async () => {
@@ -711,7 +814,7 @@ describe("AppServer", () => {
     const completed = new Promise<JsonRpcOutgoing>((resolve) => {
       completeTurn = resolve;
     });
-    const provider: ModelProvider = {
+    const provider: ModelProvider & AttachmentProvider = {
       async uploadAttachment(attachment) {
         uploads += 1;
         return {
@@ -739,6 +842,7 @@ describe("AppServer", () => {
     const messages: JsonRpcOutgoing[] = [];
     const server = new AppServer({
       loop: new AgentLoop(provider),
+      attachmentProvider: provider,
       agent: defineAgent({ name: "test", instructions: "Reply" }),
       send(message) {
         messages.push(message);

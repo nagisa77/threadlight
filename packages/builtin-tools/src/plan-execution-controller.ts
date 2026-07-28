@@ -17,10 +17,19 @@ import {
 import { REQUEST_PLAN_INPUT_TOOL_NAME } from "./request-plan-input.js";
 
 export type PlanExecutionPhase =
+  | "inactive"
   | "research"
   | "execution"
   | "needs_input"
   | "complete";
+
+export interface PlanExecutionControllerOptions {
+  /**
+   * User-selected Plan mode requires research and a completed plan. Default
+   * turns stay inactive until the model voluntarily creates a plan.
+   */
+  requirePlan?: boolean;
+}
 
 /**
  * Turns a model-authored plan into runtime execution control.
@@ -34,6 +43,11 @@ export class PlanExecutionController implements RunController {
   private turnResponse: string | undefined;
   private readonly pendingUpdates = new Map<string, PlanSnapshot>();
   private readonly successfulTools: string[] = [];
+  private readonly requirePlan: boolean;
+
+  constructor(options: PlanExecutionControllerOptions = {}) {
+    this.requirePlan = options.requirePlan ?? true;
+  }
 
   get snapshot(): PlanSnapshot | undefined {
     return this.snapshotValue;
@@ -41,7 +55,9 @@ export class PlanExecutionController implements RunController {
 
   get phase(): PlanExecutionPhase {
     if (this.turnResponse !== undefined) return "needs_input";
-    if (!this.snapshotValue) return "research";
+    if (!this.snapshotValue) {
+      return this.requirePlan ? "research" : "inactive";
+    }
     return this.snapshotValue.plan.every(
       (item) => item.status === "completed",
     )
@@ -52,6 +68,8 @@ export class PlanExecutionController implements RunController {
   beforeModel(
     context: RunControllerContext,
   ): RunControllerModelDirective {
+    if (this.phase === "inactive") return {};
+
     if (this.phase === "needs_input") {
       return {
         tools: [],
@@ -202,6 +220,7 @@ export class PlanExecutionController implements RunController {
 
   validateCompletion(): string | undefined {
     if (this.phase === "needs_input") return;
+    if (this.phase === "inactive") return;
 
     if (!this.snapshotValue) {
       return [

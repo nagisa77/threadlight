@@ -36,6 +36,7 @@ import {
   PictureInPicture2,
   RotateCcw,
   Settings,
+  ShieldAlert,
   Sparkles,
   SquarePen,
   Square,
@@ -111,6 +112,7 @@ export interface ThreadlightAppProps {
   attachmentStage?: AttachmentStageAdapter;
   attachmentPreview?: AttachmentPreviewAdapter;
   computerShare?: ComputerShareAdapter;
+  computerPermissions?: ComputerPermissionAdapter;
   terminal?: TerminalAdapter;
   workspace?: WorkspaceAdapter;
   projectOpener?: ProjectOpenerAdapter;
@@ -134,6 +136,9 @@ export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
 const workspaceChangeRefreshTools = new Set<string>(
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
 );
+const COMPUTER_PERMISSION_RESUME_KEY =
+  "threadlight:computer-permission-resume";
+const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
 
 export interface AttachmentStageAdapter {
   stage(file: File): Promise<AttachmentData>;
@@ -141,6 +146,35 @@ export interface AttachmentStageAdapter {
 
 export interface AttachmentPreviewAdapter {
   imageUrl(attachment: AttachmentData): string | undefined;
+}
+
+export type ComputerPermissionCapability =
+  | "screen_recording"
+  | "accessibility";
+
+export interface ComputerPermissionSnapshot {
+  required: boolean;
+  blockingCapability?: ComputerPermissionCapability;
+  ownerThreadId?: string;
+  screenRecording:
+    | "not-determined"
+    | "granted"
+    | "denied"
+    | "restricted"
+    | "unknown";
+  accessibility: "granted" | "denied";
+  relaunchRequired: boolean;
+}
+
+export interface ComputerPermissionAdapter {
+  load(): Promise<ComputerPermissionSnapshot>;
+  request(
+    capability: ComputerPermissionCapability,
+  ): Promise<ComputerPermissionSnapshot>;
+  relaunch(): Promise<void>;
+  subscribe(
+    listener: (snapshot: ComputerPermissionSnapshot) => void,
+  ): () => void;
 }
 
 export interface ComputerShareTarget {
@@ -233,6 +267,7 @@ function ThreadlightAppContent({
   attachmentStage,
   attachmentPreview,
   computerShare,
+  computerPermissions,
   terminal,
   workspace,
   projectOpener,
@@ -281,6 +316,13 @@ function ThreadlightAppContent({
   const [computerShareSnapshot, setComputerShareSnapshot] =
     useState<ComputerShareSnapshot>();
   const [computerShareError, setComputerShareError] = useState<string>();
+  const [computerPermissionSnapshot, setComputerPermissionSnapshot] =
+    useState<ComputerPermissionSnapshot>();
+  const [computerPermissionBusy, setComputerPermissionBusy] = useState<
+    ComputerPermissionCapability | "refresh" | "relaunch"
+  >();
+  const [computerPermissionError, setComputerPermissionError] =
+    useState<string>();
   const [showingComputerShare, setShowingComputerShare] = useState(false);
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -547,6 +589,109 @@ function ThreadlightAppContent({
       unsubscribe();
     };
   }, [computerShare]);
+
+  useEffect(() => {
+    if (!computerPermissions) return;
+    let active = true;
+    const unsubscribe = computerPermissions.subscribe((snapshot) => {
+      if (!active) return;
+      setComputerPermissionSnapshot(snapshot);
+      setComputerPermissionError(undefined);
+    });
+    void computerPermissions
+      .load()
+      .then((snapshot) => {
+        if (!active) return;
+        setComputerPermissionSnapshot(snapshot);
+      })
+      .catch((error) => {
+        if (active) setComputerPermissionError(errorMessage(error));
+      });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [computerPermissions]);
+
+  const requestComputerPermission = useCallback(
+    async (capability: ComputerPermissionCapability) => {
+      if (!computerPermissions) return;
+      setComputerPermissionBusy(capability);
+      setComputerPermissionError(undefined);
+      try {
+        setComputerPermissionSnapshot(
+          await computerPermissions.request(capability),
+        );
+      } catch (error) {
+        setComputerPermissionError(errorMessage(error));
+      } finally {
+        setComputerPermissionBusy(undefined);
+      }
+    },
+    [computerPermissions],
+  );
+
+  const refreshComputerPermissions = useCallback(async () => {
+    if (!computerPermissions) return;
+    setComputerPermissionBusy("refresh");
+    setComputerPermissionError(undefined);
+    try {
+      setComputerPermissionSnapshot(await computerPermissions.load());
+    } catch (error) {
+      setComputerPermissionError(errorMessage(error));
+    } finally {
+      setComputerPermissionBusy(undefined);
+    }
+  }, [computerPermissions]);
+
+  const relaunchForComputerPermissions = useCallback(async () => {
+    if (!computerPermissions) return;
+    setComputerPermissionBusy("relaunch");
+    setComputerPermissionError(undefined);
+    try {
+      const resumeThreadId =
+        computerPermissionSnapshot?.ownerThreadId ?? state.threadId;
+      if (resumeThreadId) {
+        window.localStorage.setItem(
+          COMPUTER_PERMISSION_RESUME_KEY,
+          JSON.stringify({
+            threadId: resumeThreadId,
+            expiresAt: Date.now() + COMPUTER_PERMISSION_RESUME_TTL_MS,
+          }),
+        );
+      }
+      await computerPermissions.relaunch();
+    } catch (error) {
+      window.localStorage.removeItem(COMPUTER_PERMISSION_RESUME_KEY);
+      setComputerPermissionError(errorMessage(error));
+      setComputerPermissionBusy(undefined);
+    }
+  }, [
+    computerPermissionSnapshot?.ownerThreadId,
+    computerPermissions,
+    state.threadId,
+  ]);
+
+  useEffect(() => {
+    if (
+      state.connection !== "ready" ||
+      state.isRunning ||
+      !state.threadId
+    ) {
+      return;
+    }
+    const pending = pendingComputerPermissionResume(
+      window.localStorage.getItem(COMPUTER_PERMISSION_RESUME_KEY),
+      Date.now(),
+    );
+    if (!pending) {
+      window.localStorage.removeItem(COMPUTER_PERMISSION_RESUME_KEY);
+      return;
+    }
+    if (pending.threadId !== state.threadId) return;
+    window.localStorage.removeItem(COMPUTER_PERMISSION_RESUME_KEY);
+    void send(t("computerPermissionResumePrompt"));
+  }, [send, state.connection, state.isRunning, state.threadId, t]);
 
   const stopComputerShare = useCallback(async (): Promise<boolean> => {
     if (!computerShare || !computerShareSnapshot?.active) return true;
@@ -1058,6 +1203,13 @@ function ThreadlightAppContent({
     }));
   }
 
+  async function revealLocalFile(reference: LocalFileReference) {
+    if (!workspace?.reveal || !currentProject) return;
+    const file = workspaceFileReference(reference, currentProject.basePath);
+    if (!file) throw new Error(t("fileOutsideProject"));
+    await workspace.reveal(currentProject.id, file.path);
+  }
+
   function beginWorkspacePanelResize(
     event: ReactPointerEvent<HTMLDivElement>,
   ) {
@@ -1428,6 +1580,9 @@ function ThreadlightAppContent({
                                 progress={message.progress}
                                 onTerminateProcess={terminateProcess}
                                 onOpenLocalFile={openLocalFile}
+                                onRevealLocalFile={
+                                  workspace?.reveal ? revealLocalFile : undefined
+                                }
                               />
                             )}
                             {(!message.progress ||
@@ -1440,7 +1595,12 @@ function ThreadlightAppContent({
                                 />
                               )}
                             {message.role === "assistant" ? (
-                              <MarkdownContent onOpenLocalFile={openLocalFile}>
+                              <MarkdownContent
+                                onOpenLocalFile={openLocalFile}
+                                onRevealLocalFile={
+                                  workspace?.reveal ? revealLocalFile : undefined
+                                }
+                              >
                                 {message.text}
                               </MarkdownContent>
                             ) : (
@@ -1473,11 +1633,19 @@ function ThreadlightAppContent({
                             live
                             onTerminateProcess={terminateProcess}
                             onOpenLocalFile={openLocalFile}
+                            onRevealLocalFile={
+                              workspace?.reveal ? revealLocalFile : undefined
+                            }
                           />
                         )}
                         {state.streamingText.length > 0 && (
                           <div className="streaming-copy" aria-busy="true">
-                            <MarkdownContent onOpenLocalFile={openLocalFile}>
+                            <MarkdownContent
+                              onOpenLocalFile={openLocalFile}
+                              onRevealLocalFile={
+                                workspace?.reveal ? revealLocalFile : undefined
+                              }
+                            >
                               {state.streamingText}
                             </MarkdownContent>
                           </div>
@@ -1521,6 +1689,23 @@ function ThreadlightAppContent({
                     event.currentTarget.value = "";
                   }}
                 />
+                {computerPermissionSnapshot?.required &&
+                  (!computerPermissionSnapshot.ownerThreadId ||
+                    computerPermissionSnapshot.ownerThreadId ===
+                      state.threadId) && (
+                    <ComputerPermissionCard
+                      snapshot={computerPermissionSnapshot}
+                      busy={computerPermissionBusy}
+                      error={computerPermissionError}
+                      onRequest={(capability) =>
+                        void requestComputerPermission(capability)
+                      }
+                      onRefresh={() => void refreshComputerPermissions()}
+                      onRelaunch={() =>
+                        void relaunchForComputerPermissions()
+                      }
+                    />
+                  )}
                 {ownsActiveComputerShare(
                   computerShareSnapshot,
                   state.threadId,
@@ -2070,6 +2255,156 @@ export function clampWorkspacePanelWidth(
   );
 }
 
+export function ComputerPermissionCard({
+  snapshot,
+  busy,
+  error,
+  onRequest,
+  onRefresh,
+  onRelaunch,
+}: {
+  snapshot: ComputerPermissionSnapshot;
+  busy?: ComputerPermissionCapability | "refresh" | "relaunch";
+  error?: string;
+  onRequest(capability: ComputerPermissionCapability): void;
+  onRefresh(): void;
+  onRelaunch(): void;
+}) {
+  const { t } = useI18n();
+  const screenReady = snapshot.screenRecording === "granted";
+  const accessibilityReady = snapshot.accessibility === "granted";
+  const ready = screenReady && accessibilityReady;
+
+  return (
+    <section className="computer-permission-card" aria-live="polite">
+      <div className="computer-permission-heading">
+        <span className="computer-permission-icon" aria-hidden="true">
+          <ShieldAlert size={16} />
+        </span>
+        <span>
+          <strong>
+            {ready
+              ? t("computerPermissionReady")
+              : t("computerPermissionTitle")}
+          </strong>
+          <small>
+            {ready
+              ? t("computerPermissionRestartHint")
+              : t("computerPermissionDescription")}
+          </small>
+        </span>
+      </div>
+      <div className="computer-permission-list">
+        <ComputerPermissionRow
+          label={t("screenRecordingPermission")}
+          ready={screenReady}
+          busy={busy === "screen_recording"}
+          disabled={!!busy}
+          onRequest={() => onRequest("screen_recording")}
+        />
+        <ComputerPermissionRow
+          label={t("accessibilityPermission")}
+          ready={accessibilityReady}
+          busy={busy === "accessibility"}
+          disabled={!!busy}
+          onRequest={() => onRequest("accessibility")}
+        />
+      </div>
+      {error && <p className="computer-permission-error">{error}</p>}
+      <div className="computer-permission-actions">
+        {ready ? (
+          <button
+            type="button"
+            className="computer-permission-primary pressable"
+            disabled={!!busy}
+            onClick={onRelaunch}
+          >
+            {busy === "relaunch" && <LoaderCircle className="spin" size={13} />}
+            {t("restartThreadlight")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="computer-permission-refresh pressable"
+            disabled={!!busy}
+            onClick={onRefresh}
+          >
+            {busy === "refresh" ? (
+              <LoaderCircle className="spin" size={13} />
+            ) : (
+              <RotateCcw size={13} />
+            )}
+            {t("recheckPermissions")}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
+export function pendingComputerPermissionResume(
+  value: string | null,
+  now: number,
+): { threadId: string; expiresAt: number } | undefined {
+  if (!value) return;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+    const resume = parsed as Record<string, unknown>;
+    if (
+      typeof resume.threadId !== "string" ||
+      !resume.threadId ||
+      typeof resume.expiresAt !== "number" ||
+      !Number.isFinite(resume.expiresAt) ||
+      resume.expiresAt <= now
+    ) {
+      return;
+    }
+    return {
+      threadId: resume.threadId,
+      expiresAt: resume.expiresAt,
+    };
+  } catch {
+    return;
+  }
+}
+
+function ComputerPermissionRow({
+  label,
+  ready,
+  busy,
+  disabled,
+  onRequest,
+}: {
+  label: string;
+  ready: boolean;
+  busy: boolean;
+  disabled: boolean;
+  onRequest(): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="computer-permission-row">
+      <span className={ready ? "permission-dot granted" : "permission-dot"} />
+      <strong>{label}</strong>
+      <span className={ready ? "permission-state granted" : "permission-state"}>
+        {ready ? t("permissionGranted") : t("permissionRequired")}
+      </span>
+      {!ready && (
+        <button
+          type="button"
+          className="computer-permission-grant pressable"
+          disabled={disabled}
+          onClick={onRequest}
+        >
+          {busy && <LoaderCircle className="spin" size={12} />}
+          {t("grantPermission")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ComputerShareStatus({
   snapshot,
   busy,
@@ -2519,11 +2854,15 @@ export function ProgressList({
   live = false,
   onTerminateProcess,
   onOpenLocalFile,
+  onRevealLocalFile,
 }: {
   progress: readonly ConversationProgress[];
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
   onOpenLocalFile?(reference: LocalFileReference): void;
+  onRevealLocalFile?(
+    reference: LocalFileReference,
+  ): void | Promise<void>;
 }) {
   return (
     <div className="progress-list">
@@ -2531,7 +2870,10 @@ export function ProgressList({
         <div className="progress-step" key={index}>
           {step.text.trim() && (
             <div className="progress-copy">
-              <MarkdownContent onOpenLocalFile={onOpenLocalFile}>
+              <MarkdownContent
+                onOpenLocalFile={onOpenLocalFile}
+                onRevealLocalFile={onRevealLocalFile}
+              >
                 {step.text}
               </MarkdownContent>
             </div>

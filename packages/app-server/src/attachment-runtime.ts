@@ -1,23 +1,41 @@
-import type { ModelAttachment, ModelProvider, Tool } from "./types.js";
+import type {
+  ModelAttachment,
+  RunController,
+  Tool,
+} from "@threadlight/agent-loop";
 
 export const ATTACH_TO_MODEL_CONTEXT_TOOL = "attach_to_model_context";
 
-export interface AttachmentDelivery {
-  pending: ModelAttachment[];
+export interface AttachmentProvider {
+  validateAttachment?(
+    attachment: ModelAttachment,
+  ): void | Promise<void>;
+  uploadAttachment?(
+    attachment: ModelAttachment,
+    signal?: AbortSignal,
+  ): Promise<ModelAttachment>;
 }
 
-export function createAttachmentContextTool(
-  provider: ModelProvider,
+export interface AttachmentRuntime {
+  input: string;
+  tool?: Tool;
+  controller?: RunController;
+}
+
+export function createAttachmentRuntime(
+  provider: AttachmentProvider | undefined,
+  input: string,
   attachments: readonly ModelAttachment[],
-  delivery: AttachmentDelivery,
-): Tool | undefined {
-  if (attachments.length === 0) return;
+): AttachmentRuntime {
+  if (attachments.length === 0) return { input };
+
   const available = new Map(
     attachments.map((attachment) => [attachment.id, attachment]),
   );
   const uploaded = new Map<string, ModelAttachment>();
+  const pending: ModelAttachment[] = [];
 
-  return {
+  const tool: Tool = {
     name: ATTACH_TO_MODEL_CONTEXT_TOOL,
     mutability: "read",
     description:
@@ -47,16 +65,19 @@ export function createAttachmentContextTool(
           status: "already_attached",
         };
       }
-      if (!provider.uploadAttachment) {
+      if (!provider?.uploadAttachment) {
         throw new Error("The active model provider does not support attachments");
       }
       await provider.validateAttachment?.(attachment);
-      const prepared = await provider.uploadAttachment(attachment, context.signal);
+      const prepared = await provider.uploadAttachment(
+        attachment,
+        context.signal,
+      );
       if (prepared.providerReference === undefined) {
         throw new Error("The model provider did not return an attachment reference");
       }
       uploaded.set(attachmentId, prepared);
-      delivery.pending.push(prepared);
+      pending.push(prepared);
       return {
         attachmentId,
         name: prepared.name,
@@ -65,13 +86,25 @@ export function createAttachmentContextTool(
       };
     },
   };
+
+  const controller: RunController = {
+    beforeModel() {
+      if (pending.length === 0) return {};
+      return { attachments: pending.splice(0, pending.length) };
+    },
+  };
+
+  return {
+    input: attachmentPrompt(input, attachments),
+    tool,
+    controller,
+  };
 }
 
-export function attachmentPrompt(
+function attachmentPrompt(
   input: string,
   attachments: readonly ModelAttachment[],
 ): string {
-  if (attachments.length === 0) return input;
   const inventory = attachments
     .map(
       (attachment) =>

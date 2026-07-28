@@ -9,6 +9,10 @@ import type {
   ComputerUseAction,
   ComputerUseDriver,
 } from "@threadlight/builtin-tools";
+import {
+  ToolExecutionError,
+  type ToolErrorMetadata,
+} from "@threadlight/agent-loop";
 import type {
   DesktopComputerMethod,
   DesktopComputerResponse,
@@ -168,7 +172,12 @@ export class DesktopComputerClient
     this.pending.delete(response.id);
     pending.cleanup();
     if (response.error) {
-      pending.reject(new Error(response.error.message));
+      const metadata = parseToolErrorMetadata(response.error.data);
+      pending.reject(
+        metadata
+          ? new ToolExecutionError(response.error.message, metadata)
+          : new Error(response.error.message),
+      );
     } else {
       pending.resolve(response.result);
     }
@@ -181,6 +190,43 @@ export class DesktopComputerClient
     }
     this.pending.clear();
   }
+}
+
+function parseToolErrorMetadata(value: unknown): ToolErrorMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const metadata = value as Record<string, unknown>;
+  if (
+    typeof metadata.code !== "string" ||
+    typeof metadata.retryable !== "boolean"
+  ) {
+    return;
+  }
+  const userAction = metadata.userAction;
+  if (userAction === undefined) {
+    return {
+      code: metadata.code,
+      retryable: metadata.retryable,
+    };
+  }
+  if (
+    !userAction ||
+    typeof userAction !== "object" ||
+    Array.isArray(userAction) ||
+    typeof (userAction as Record<string, unknown>).kind !== "string"
+  ) {
+    return;
+  }
+  const parsedUserAction = userAction as Record<string, unknown>;
+  return {
+    code: metadata.code,
+    retryable: metadata.retryable,
+    userAction: {
+      kind: parsedUserAction.kind as string,
+      ...(parsedUserAction.data === undefined
+        ? {}
+        : { data: parsedUserAction.data }),
+    },
+  };
 }
 
 function computerOwner(context: ToolContext): {

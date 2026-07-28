@@ -86,7 +86,16 @@ export interface ToolResultData {
   callId: string;
   name: string;
   output: string;
+  kind?: "function" | "computer";
   isError?: boolean;
+  error?: {
+    code: string;
+    retryable: boolean;
+    userAction?: {
+      kind: string;
+      data?: unknown;
+    };
+  };
 }
 
 export interface TokenUsageData {

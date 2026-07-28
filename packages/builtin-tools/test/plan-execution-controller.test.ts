@@ -29,6 +29,46 @@ function item(
 }
 
 describe("PlanExecutionController", () => {
+  it("allows direct default-mode work until the model creates a plan", async () => {
+    const controller = new PlanExecutionController({ requirePlan: false });
+    const context = { runId: "run-1", step: 1, tools: [] };
+
+    expect(controller.phase).toBe("inactive");
+    expect(controller.beforeModel(context)).toEqual({});
+    expect(controller.validateCompletion()).toBeUndefined();
+
+    const initial = {
+      plan: [
+        item("Inspect architecture", "in_progress"),
+        item("Implement change", "pending"),
+      ],
+    };
+    expect(
+      await controller.beforeToolCall?.(
+        { id: "plan-1", name: "update_plan", arguments: initial },
+        createUpdatePlanTool(),
+        context,
+      ),
+    ).toEqual({ allowed: true });
+    await controller.afterToolCall?.(
+      { id: "plan-1", name: "update_plan", arguments: initial },
+      {
+        callId: "plan-1",
+        name: "update_plan",
+        output: "{}",
+      },
+      context,
+    );
+
+    expect(controller.phase).toBe("execution");
+    expect(controller.beforeModel(context).instructions).toContain(
+      "Current step 1/2: Inspect architecture",
+    );
+    expect(controller.validateCompletion()).toContain(
+      "step 1/2 is still in_progress",
+    );
+  });
+
   it("preserves the complete blocking question as canonical output", async () => {
     const requests: ModelRequest[] = [];
     const events: AgentEvent[] = [];

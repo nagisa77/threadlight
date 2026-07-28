@@ -29,6 +29,16 @@ function renderLanguage(language: Language): string {
   );
 }
 
+function FileMenuLabels() {
+  const { t } = useI18n();
+  return (
+    <div>
+      <span>{t("previewInThreadlight")}</span>
+      <span>{t("revealInFinder")}</span>
+    </div>
+  );
+}
+
 describe("i18n", () => {
   it("ships Chinese, English, and Japanese language choices", () => {
     expect(LANGUAGE_OPTIONS).toEqual([
@@ -68,4 +78,23 @@ describe("i18n", () => {
     expect(renderLanguage("ko")).toContain("<h1>설정</h1>");
     expect(renderLanguage("ko")).toContain("파일 변경됨");
   });
+
+  it.each([
+    ["zh-CN", "在 Threadlight 内预览", "在 Finder 中显示"],
+    ["zh-TW", "在 Threadlight 內預覽", "在 Finder 中顯示"],
+    ["en", "Preview in Threadlight", "Show in Finder"],
+    ["ja", "Threadlight でプレビュー", "Finder に表示"],
+    ["ko", "Threadlight에서 미리 보기", "Finder에서 보기"],
+  ] as const)(
+    "localizes file menu actions in %s",
+    (language, preview, reveal) => {
+      const html = renderToStaticMarkup(
+        <I18nProvider language={language}>
+          <FileMenuLabels />
+        </I18nProvider>,
+      );
+      expect(html).toContain(preview);
+      expect(html).toContain(reveal);
+    },
+  );
 });

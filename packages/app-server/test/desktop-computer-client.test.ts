@@ -47,7 +47,63 @@ class ScriptedComputerTransport extends Duplex {
   }
 }
 
+class PermissionErrorTransport extends Duplex {
+  override _read(): void {}
+
+  override _write(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    const request = JSON.parse(chunk.toString("utf8")) as ComputerRequest;
+    callback();
+    queueMicrotask(() => {
+      this.push(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32020,
+            message: "Screen Recording permission is required",
+            data: {
+              code: "computer_permission_required",
+              retryable: false,
+              userAction: {
+                kind: "grant_permission",
+                data: { capability: "screen_recording" },
+              },
+            },
+          },
+        })}\n`,
+      );
+    });
+  }
+}
+
 describe("DesktopComputerClient", () => {
+  it("preserves user-action metadata from desktop permission errors", async () => {
+    const client = new DesktopComputerClient(new PermissionErrorTransport());
+
+    await expect(
+      client.list({
+        runId: "run-1",
+        scopeId: "thread-1",
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toMatchObject({
+      name: "ToolExecutionError",
+      toolError: {
+        code: "computer_permission_required",
+        retryable: false,
+        userAction: {
+          kind: "grant_permission",
+          data: { capability: "screen_recording" },
+        },
+      },
+    });
+    client.dispose();
+  });
+
   it("clears only the run that still owns the shared computer session", async () => {
     const transport = new ScriptedComputerTransport();
     const client = new DesktopComputerClient(transport);

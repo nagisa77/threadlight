@@ -10,6 +10,7 @@ import {
   net,
   nativeImage,
   protocol,
+  systemPreferences,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   safeStorage,
@@ -25,7 +26,10 @@ import {
 } from "@threadlight/protocol";
 import { ProjectMemoryStore } from "@threadlight/project-memory";
 
-import { AppServerProcess } from "./app-server-process.js";
+import {
+  AppServerProcess,
+  resolveAppServerEntry,
+} from "./app-server-process.js";
 import {
   COMPUTER_CAPTURE_URL,
   computerCaptureHtml,
@@ -35,6 +39,10 @@ import {
   computerPreviewHtml,
 } from "./computer-preview.js";
 import { DesktopComputerService } from "./computer-service.js";
+import {
+  ComputerPermissionService,
+} from "./computer-permissions.js";
+import { requestMacOSScreenCaptureAccess } from "./computer-input.js";
 import {
   createAttachmentReference,
   resolveAttachmentUrlPath,
@@ -67,6 +75,10 @@ import {
   DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
   DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
   DESKTOP_COMPUTER_SHARE_STOP_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_CHANGED_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_GET_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_RELAUNCH_CHANNEL,
+  DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL,
   DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
@@ -88,11 +100,13 @@ import {
   DESKTOP_TERMINAL_RESIZE_CHANNEL,
   DESKTOP_TERMINAL_WRITE_CHANNEL,
   DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
+  DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
   DESKTOP_WORKSPACE_LIST_CHANNEL,
   type DesktopAttachmentReferenceRequest,
   type DesktopConversationTarget,
   type DesktopConversationUpdate,
   type DesktopConversationChangesRequest,
+  type DesktopComputerPermissionCapability,
   type DesktopProjectOpenWithRequest,
   type DesktopProjectOpener,
   type DesktopSettingsUpdate,
@@ -138,6 +152,7 @@ const pendingThreadStarts = new Map<
 let settingsStore: SettingsStore | null = null;
 let projectStore: ProjectStore | null = null;
 let computerService: DesktopComputerService | null = null;
+let computerPermissionService: ComputerPermissionService | null = null;
 let terminalService: TerminalSessionManager | null = null;
 let conversationChangeTracker: ConversationChangeTracker | null = null;
 let rendererMessageQueue = Promise.resolve();
@@ -208,6 +223,11 @@ function createWindow(): void {
   );
   window.webContents.on("will-navigate", (event) => event.preventDefault());
   window.once("ready-to-show", () => window.show());
+  window.on("focus", () => {
+    if (computerPermissionService?.snapshot().required) {
+      computerPermissionService.refresh();
+    }
+  });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
     stopAppServers();
@@ -237,9 +257,11 @@ function ensureAppServer(
     return existing;
   }
   const appServer = new AppServerProcess({
-    entry:
-      process.env.THREADLIGHT_APP_SERVER_PATH ??
-      resolve(app.getAppPath(), "../../packages/app-server/dist/bin.js"),
+    entry: resolveAppServerEntry({
+      appPath: app.getAppPath(),
+      isPackaged: app.isPackaged,
+      override: process.env.THREADLIGHT_APP_SERVER_PATH,
+    }),
     cwd,
     environment: runtimeEnvironment(
       settingsStore?.runtimeSettings() ?? {
@@ -614,6 +636,23 @@ async function handleWorkspaceFileGet(
   );
 }
 
+async function handleWorkspaceFileReveal(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): Promise<void> {
+  requireTrustedSender(event);
+  if (!conversationChangeTracker) {
+    throw new Error("Workspace browsing is not available");
+  }
+  const request = parseWorkspaceFileRequest(value);
+  const project = requireProject(request.projectId);
+  const absolutePath = await conversationChangeTracker.workspaceFilePath(
+    project.basePath,
+    request.path,
+  );
+  shell.showItemInFolder(absolutePath);
+}
+
 async function handleProjectMemoryGet(
   event: IpcMainInvokeEvent,
   value: unknown,
@@ -679,6 +718,42 @@ function handleComputerShareStop(event: IpcMainInvokeEvent) {
   requireTrustedSender(event);
   if (!computerService) throw new Error("Computer sharing is not available");
   return computerService.stopSharing();
+}
+
+function handleComputerPermissionGet(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!computerPermissionService) {
+    throw new Error("Computer permissions are not available");
+  }
+  return computerPermissionService.snapshot().required
+    ? computerPermissionService.refresh()
+    : computerPermissionService.snapshot();
+}
+
+function handleComputerPermissionRequest(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!computerPermissionService) {
+    throw new Error("Computer permissions are not available");
+  }
+  return computerPermissionService.request(parseComputerPermission(value));
+}
+
+function handleComputerPermissionRelaunch(event: IpcMainInvokeEvent): void {
+  requireTrustedSender(event);
+  app.relaunch();
+  setImmediate(() => app.exit(0));
+}
+
+function parseComputerPermission(
+  value: unknown,
+): DesktopComputerPermissionCapability {
+  if (value !== "screen_recording" && value !== "accessibility") {
+    throw new Error("Invalid computer permission");
+  }
+  return value;
 }
 
 function handleTerminalCreate(
@@ -1118,11 +1193,37 @@ app.whenReady().then(() => {
     },
   );
   projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
+  computerPermissionService = new ComputerPermissionService(
+    {
+      screenRecordingStatus: () =>
+        systemPreferences.getMediaAccessStatus("screen"),
+      accessibilityTrusted: (prompt) =>
+        systemPreferences.isTrustedAccessibilityClient(prompt),
+      requestScreenRecording: () => requestMacOSScreenCaptureAccess(),
+      openSettings: async (capability) => {
+        const pane =
+          capability === "screen_recording"
+            ? "Privacy_ScreenCapture"
+            : "Privacy_Accessibility";
+        await shell.openExternal(
+          `x-apple.systempreferences:com.apple.preference.security?${pane}`,
+        );
+      },
+    },
+    (snapshot) => {
+      const window = mainWindow;
+      if (!window || window.isDestroyed()) return;
+      window.webContents.send(
+        DESKTOP_COMPUTER_PERMISSION_CHANGED_CHANNEL,
+        snapshot,
+      );
+    },
+  );
   computerService = new DesktopComputerService((snapshot) => {
     const window = mainWindow;
     if (!window || window.isDestroyed()) return;
     window.webContents.send(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, snapshot);
-  });
+  }, computerPermissionService);
   terminalService = new TerminalSessionManager(
     (terminalEvent: TerminalSessionEvent) => {
       const window = mainWindow;
@@ -1200,6 +1301,18 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_GET_CHANNEL, handleComputerShareGet);
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL, handleComputerShareShow);
   ipcMain.handle(DESKTOP_COMPUTER_SHARE_STOP_CHANNEL, handleComputerShareStop);
+  ipcMain.handle(
+    DESKTOP_COMPUTER_PERMISSION_GET_CHANNEL,
+    handleComputerPermissionGet,
+  );
+  ipcMain.handle(
+    DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL,
+    handleComputerPermissionRequest,
+  );
+  ipcMain.handle(
+    DESKTOP_COMPUTER_PERMISSION_RELAUNCH_CHANNEL,
+    handleComputerPermissionRelaunch,
+  );
   ipcMain.handle(DESKTOP_TERMINAL_CREATE_CHANNEL, handleTerminalCreate);
   ipcMain.on(DESKTOP_TERMINAL_WRITE_CHANNEL, handleTerminalWrite);
   ipcMain.on(DESKTOP_TERMINAL_RESIZE_CHANNEL, handleTerminalResize);
@@ -1210,6 +1323,10 @@ app.whenReady().then(() => {
   );
   ipcMain.handle(DESKTOP_WORKSPACE_LIST_CHANNEL, handleWorkspaceList);
   ipcMain.handle(DESKTOP_WORKSPACE_FILE_GET_CHANNEL, handleWorkspaceFileGet);
+  ipcMain.handle(
+    DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
+    handleWorkspaceFileReveal,
+  );
   ipcMain.on(
     DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
     handleComputerPreviewClose,

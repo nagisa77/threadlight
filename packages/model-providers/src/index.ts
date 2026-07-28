@@ -9,6 +9,7 @@ export {
 export type { OpenAICompatibleChatProviderOptions } from "./openai-compatible-chat-provider.js";
 export type { OpenAIResponsesProviderOptions } from "./openai-provider.js";
 export type {
+  ConfiguredModelProvider,
   ModelProviderConfig,
   ModelProviderId,
 } from "./provider-factory.js";

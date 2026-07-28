@@ -8,9 +8,11 @@ import {
   conversationContextChanged,
   DeleteConversationDialog,
   clampWorkspacePanelWidth,
+  ComputerPermissionCard,
   ConversationChangesButton,
   currentPlanStep,
   hasUserInput,
+  pendingComputerPermissionResume,
   planDocumentOpenRequest,
   ProjectConversationItem,
   ProjectGroup,
@@ -19,8 +21,69 @@ import {
   TurnStatusPill,
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
 } from "../src/app.js";
+import { I18nProvider } from "../src/i18n.js";
 
 describe("ThreadlightApp", () => {
+  it("shows both required computer permissions with direct actions", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ComputerPermissionCard
+          snapshot={{
+            required: true,
+            blockingCapability: "screen_recording",
+            screenRecording: "denied",
+            accessibility: "denied",
+            relaunchRequired: false,
+          }}
+          onRequest={vi.fn()}
+          onRefresh={vi.fn()}
+          onRelaunch={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain("需要授权才能使用电脑");
+    expect(html).toContain("屏幕录制");
+    expect(html).toContain("辅助功能");
+    expect(html.match(/去授权/g)).toHaveLength(2);
+  });
+
+  it("offers one restart action after computer permissions are granted", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ComputerPermissionCard
+          snapshot={{
+            required: true,
+            screenRecording: "granted",
+            accessibility: "granted",
+            relaunchRequired: true,
+          }}
+          onRequest={vi.fn()}
+          onRefresh={vi.fn()}
+          onRelaunch={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain("权限已准备");
+    expect(html).toContain("重启并继续");
+    expect(html).not.toContain("去授权");
+  });
+
+  it("only resumes the matching computer task before the handoff expires", () => {
+    const stored = JSON.stringify({
+      threadId: "thread-1",
+      expiresAt: 2_000,
+    });
+
+    expect(pendingComputerPermissionResume(stored, 1_000)).toEqual({
+      threadId: "thread-1",
+      expiresAt: 2_000,
+    });
+    expect(pendingComputerPermissionResume(stored, 2_000)).toBeUndefined();
+    expect(pendingComputerPermissionResume("invalid", 1_000)).toBeUndefined();
+  });
+
   it("opens a generated plan document once, then refreshes without stealing focus", () => {
     const plan = {
       source: "user" as const,

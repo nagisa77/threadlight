@@ -39,6 +39,8 @@ import {
 
 refractor.register(tsx);
 
+const MAX_SIMULTANEOUS_REVIEW_FILES = 50;
+
 export interface ConversationFileChange {
   path: string;
   status: "added" | "modified" | "deleted";
@@ -81,6 +83,7 @@ export interface WorkspaceAdapter {
     path?: string,
   ): Promise<readonly WorkspaceEntry[]>;
   read(projectId: string, path: string): Promise<WorkspaceFile>;
+  reveal?(projectId: string, path: string): Promise<void>;
 }
 
 export interface WorkspaceFileOpenRequest {
@@ -430,8 +433,12 @@ export function ReviewView({
   onRefresh(): void;
 }) {
   const { t } = useI18n();
-  const [treeVisible, setTreeVisible] = useState(false);
-  const [selectedPath, setSelectedPath] = useState<string>();
+  const largeChangeSet =
+    (changes?.files.length ?? 0) > MAX_SIMULTANEOUS_REVIEW_FILES;
+  const [treeVisible, setTreeVisible] = useState(largeChangeSet);
+  const [selectedPath, setSelectedPath] = useState<string | undefined>(
+    changes?.files[0]?.path,
+  );
 
   useEffect(() => {
     if (!changes?.files.length) {
@@ -443,12 +450,23 @@ export function ReviewView({
     }
   }, [changes, selectedPath]);
 
+  useEffect(() => {
+    if (largeChangeSet) setTreeVisible(true);
+  }, [largeChangeSet]);
+
   function selectChangedFile(path: string) {
     setSelectedPath(path);
-    document.getElementById(reviewFileId(path))?.scrollIntoView({
-      block: "start",
-    });
+    if (!largeChangeSet) {
+      document.getElementById(reviewFileId(path))?.scrollIntoView({
+        block: "start",
+      });
+    }
   }
+
+  const reviewFiles =
+    largeChangeSet && selectedPath
+      ? changes?.files.filter((file) => file.path === selectedPath)
+      : changes?.files;
 
   return (
     <div className="review-view">
@@ -523,9 +541,16 @@ export function ReviewView({
               {t("noChanges")}
             </PanelState>
           ) : (
-            changes.files.map((file) => (
-              <ReviewFile key={file.path} file={file} layout={layout} />
-            ))
+            <>
+              {largeChangeSet && (
+                <p className="review-large-change-notice">
+                  {t("largeChangeSet", { count: changes.files.length })}
+                </p>
+              )}
+              {reviewFiles?.map((file) => (
+                <ReviewFile key={file.path} file={file} layout={layout} />
+              ))}
+            </>
           )}
         </div>
         {treeVisible && changes && changes.files.length > 0 && (

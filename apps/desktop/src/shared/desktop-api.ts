@@ -36,6 +36,14 @@ export const DESKTOP_COMPUTER_SHARE_STOP_CHANNEL =
   "threadlight:computer-share:stop";
 export const DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL =
   "threadlight:computer-share:changed";
+export const DESKTOP_COMPUTER_PERMISSION_GET_CHANNEL =
+  "threadlight:computer-permission:get";
+export const DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL =
+  "threadlight:computer-permission:request";
+export const DESKTOP_COMPUTER_PERMISSION_RELAUNCH_CHANNEL =
+  "threadlight:computer-permission:relaunch";
+export const DESKTOP_COMPUTER_PERMISSION_CHANGED_CHANNEL =
+  "threadlight:computer-permission:changed";
 export const DESKTOP_TERMINAL_CREATE_CHANNEL = "threadlight:terminal:create";
 export const DESKTOP_TERMINAL_WRITE_CHANNEL = "threadlight:terminal:write";
 export const DESKTOP_TERMINAL_RESIZE_CHANNEL = "threadlight:terminal:resize";
@@ -46,6 +54,8 @@ export const DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL =
 export const DESKTOP_WORKSPACE_LIST_CHANNEL = "threadlight:workspace:list";
 export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
   "threadlight:workspace-file:get";
+export const DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL =
+  "threadlight:workspace-file:reveal";
 
 export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
 export type DesktopLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
@@ -151,6 +161,26 @@ export interface DesktopComputerShareSnapshot {
   pictureInPicture: boolean;
   ownerThreadId?: string;
   targets: readonly DesktopComputerShareTarget[];
+}
+
+export type DesktopComputerPermissionCapability =
+  | "screen_recording"
+  | "accessibility";
+
+export type DesktopComputerPermissionStatus =
+  | "not-determined"
+  | "granted"
+  | "denied"
+  | "restricted"
+  | "unknown";
+
+export interface DesktopComputerPermissionSnapshot {
+  required: boolean;
+  blockingCapability?: DesktopComputerPermissionCapability;
+  ownerThreadId?: string;
+  screenRecording: DesktopComputerPermissionStatus;
+  accessibility: "granted" | "denied";
+  relaunchRequired: boolean;
 }
 
 export interface DesktopTerminalCreateRequest {
@@ -267,6 +297,14 @@ export interface DesktopApi {
   onComputerShareChanged(
     listener: (snapshot: DesktopComputerShareSnapshot) => void,
   ): () => void;
+  getComputerPermissions(): Promise<DesktopComputerPermissionSnapshot>;
+  requestComputerPermission(
+    capability: DesktopComputerPermissionCapability,
+  ): Promise<DesktopComputerPermissionSnapshot>;
+  relaunchForComputerPermissions(): Promise<void>;
+  onComputerPermissionChanged(
+    listener: (snapshot: DesktopComputerPermissionSnapshot) => void,
+  ): () => void;
   createTerminal(
     request: DesktopTerminalCreateRequest,
   ): Promise<DesktopTerminalSession>;
@@ -285,4 +323,5 @@ export interface DesktopApi {
   getWorkspaceFile(
     request: DesktopWorkspaceFileRequest,
   ): Promise<DesktopWorkspaceFile>;
+  revealWorkspaceFile(request: DesktopWorkspaceFileRequest): Promise<void>;
 }

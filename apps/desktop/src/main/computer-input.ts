@@ -21,6 +21,7 @@ export type RoutedComputerAction =
 export interface NativeComputerInputAddon {
   perform(request: string): void;
   enableChildWindowCapture?(): boolean;
+  requestScreenCaptureAccess?(): boolean;
 }
 
 let nativeAddon: NativeComputerInputAddon | undefined;
@@ -56,6 +57,17 @@ export function enableChildWindowCaptureWithAddon(
   addon: NativeComputerInputAddon,
 ): boolean {
   return addon.enableChildWindowCapture?.() ?? false;
+}
+
+export function requestMacOSScreenCaptureAccess(): boolean {
+  if (process.platform !== "darwin") return false;
+  return requestScreenCaptureAccessWithAddon(loadNativeAddon());
+}
+
+export function requestScreenCaptureAccessWithAddon(
+  addon: NativeComputerInputAddon,
+): boolean {
+  return addon.requestScreenCaptureAccess?.() ?? false;
 }
 
 export function nativeComputerInputCandidates(

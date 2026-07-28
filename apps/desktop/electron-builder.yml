@@ -1,0 +1,30 @@
+appId: io.github.nagisa77.threadlight
+productName: Threadlight
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - out/**/*
+  - resources/app-icon.png
+  - package.json
+
+electronLanguages:
+  - en
+  - zh_CN
+  - zh_TW
+  - ja
+  - ko
+
+asarUnpack:
+  - out/native/**/*
+  - node_modules/node-pty/**/*
+
+mac:
+  target: dir
+  icon: resources/app-icon.png
+  category: public.app-category.developer-tools
+  minimumSystemVersion: "13.0"
+  extendInfo:
+    NSMicrophoneUsageDescription: Threadlight uses the microphone when you record a voice prompt.

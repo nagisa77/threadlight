@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { JsonRpcOutgoing } from "@threadlight/protocol";
 
-import { AppServerProcess } from "../src/main/app-server-process.js";
+import {
+  AppServerProcess,
+  resolveAppServerEntry,
+} from "../src/main/app-server-process.js";
 
 const entry = fileURLToPath(
   new URL("./fixtures/scripted-server.mjs", import.meta.url),
@@ -13,6 +16,30 @@ const computerEntry = fileURLToPath(
 );
 
 describe("AppServerProcess", () => {
+  it("resolves source and packaged app-server entry paths", () => {
+    expect(
+      resolveAppServerEntry({
+        appPath: "/repo/apps/desktop",
+        isPackaged: false,
+      }),
+    ).toBe("/repo/packages/app-server/dist/bin.js");
+    expect(
+      resolveAppServerEntry({
+        appPath: "/Applications/Threadlight.app/Contents/Resources/app.asar",
+        isPackaged: true,
+      }),
+    ).toBe(
+      "/Applications/Threadlight.app/Contents/Resources/app.asar/node_modules/@threadlight/app-server/dist/bin.js",
+    );
+    expect(
+      resolveAppServerEntry({
+        appPath: "/repo/apps/desktop",
+        isPackaged: false,
+        override: "/tmp/custom-server.js",
+      }),
+    ).toBe("/tmp/custom-server.js");
+  });
+
   it("carries JSON-RPC messages over JSONL", async () => {
     let deliver: ((message: JsonRpcOutgoing) => void) | undefined;
     const response = new Promise<JsonRpcOutgoing>((resolve) => {

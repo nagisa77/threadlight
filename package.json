@@ -19,9 +19,10 @@
   ],
   "scripts": {
     "build": "npm run build:packages && npm run build --workspace @threadlight/desktop",
-    "build:packages": "tsc -b",
+    "build:packages": "tsc -b && node scripts/copy-runtime-assets.mjs",
     "clean": "tsc -b --clean",
     "desktop:dev": "npm run build:packages && npm run dev --workspace @threadlight/desktop",
+    "desktop:package": "npm run build:packages && npm run package --workspace @threadlight/desktop",
     "desktop:preview": "npm run build:packages && npm run preview --workspace @threadlight/desktop",
     "test": "npm run build && vitest run",
     "typecheck": "tsc -b --pretty false && npm run typecheck --workspace @threadlight/desktop",

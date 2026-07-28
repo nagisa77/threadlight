@@ -37,7 +37,20 @@ export interface ToolResult {
   callId: string;
   name: string;
   output: string;
+  kind?: "function" | "computer";
   isError?: boolean;
+  error?: ToolErrorMetadata;
+}
+
+export interface ToolUserAction {
+  kind: string;
+  data?: unknown;
+}
+
+export interface ToolErrorMetadata {
+  code: string;
+  retryable: boolean;
+  userAction?: ToolUserAction;
 }
 
 export interface TokenUsage {
@@ -89,17 +102,6 @@ export interface ModelGenerateOptions {
 }
 
 export interface ModelProvider {
-  validateAttachment?(
-    attachment: ModelAttachment,
-  ): void | Promise<void>;
-  uploadAttachment?(
-    attachment: ModelAttachment,
-    signal?: AbortSignal,
-  ): Promise<ModelAttachment>;
-  prepareStateForPersistence?(
-    state: unknown,
-    options: { maxBytes: number },
-  ): unknown;
   generate(
     request: ModelRequest,
     options?: ModelGenerateOptions,
@@ -135,7 +137,6 @@ export interface RunOptions {
   signal?: AbortSignal;
   toolScopeId?: string;
   modelState?: unknown;
-  attachments?: readonly ModelAttachment[];
   controller?: RunController;
   onEvent?: (event: AgentEvent) => void;
 }
@@ -151,6 +152,8 @@ export interface RunControllerModelDirective {
   instructions?: string;
   /** Tools advertised to the model for this turn. Defaults to every tool. */
   tools?: readonly Tool[];
+  /** Provider-ready attachments to include in this model turn. */
+  attachments?: readonly ModelAttachment[];
   /**
    * Whether streamed text is ready for the user or remains provisional while
    * runtime control validates the turn. Defaults to user-facing.

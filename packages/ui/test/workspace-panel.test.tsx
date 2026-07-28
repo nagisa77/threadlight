@@ -74,6 +74,32 @@ describe("ReviewView", () => {
     expect(html).toContain('aria-label="修改"');
     expect(html).toContain('aria-label="删除"');
   });
+
+  it("renders only one diff when a change set is large", () => {
+    const files = Array.from({ length: 51 }, (_, index) => ({
+      ...change(`generated/file-${index}.ts`, "added"),
+      newContent: `export const value = ${index};\n`,
+    }));
+    const html = renderToStaticMarkup(
+      <ReviewView
+        changes={{
+          threadId: "thread-1",
+          additions: 51,
+          deletions: 0,
+          revision: "revision-1",
+          files,
+        }}
+        loading={false}
+        layout="unified"
+        onLayoutChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("共 51 个变更文件");
+    expect(html.match(/class="review-file"/g)).toHaveLength(1);
+    expect(html).toContain('aria-label="变更文件树"');
+  });
 });
 
 describe("FileSource", () => {
