@@ -29,8 +29,10 @@ import {
 } from "../src/process-tools.js";
 import { createWebSearchTool } from "../src/web-search.js";
 import {
+  createAdvancePlanTool,
   createUpdatePlanTool,
   parsePlanSnapshot,
+  PlanToolRuntime,
 } from "../src/update-plan.js";
 
 function richStep(
@@ -243,6 +245,73 @@ describe("builtin tools", () => {
           "utf8",
         ),
       ).resolves.toContain("### 1. Handle the next request");
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("advances the active plan step without retransmitting the plan", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-plan-"));
+    const runtime = new PlanToolRuntime();
+    const context = {
+      runId: "run-advance",
+      scopeId: "thread-1",
+      signal: new AbortController().signal,
+    };
+    try {
+      await createUpdatePlanTool({
+        workspaceRoot,
+        runtime,
+      }).execute(
+        {
+          explanation: "Keep transitions atomic.",
+          plan: [
+            richStep("Inspect architecture", "in_progress"),
+            richStep("Implement change", "pending"),
+          ],
+        },
+        context,
+      );
+
+      const result = await createAdvancePlanTool({
+        workspaceRoot,
+        runtime,
+      }).execute(
+        {
+          completionEvidence: [
+            "The relevant controller and tool paths were inspected.",
+          ],
+        },
+        context,
+      );
+
+      expect(result).toMatchObject({
+        explanation: "Keep transitions atomic.",
+        plan: [
+          {
+            step: "Inspect architecture",
+            status: "completed",
+            completionEvidence: [
+              "The relevant controller and tool paths were inspected.",
+            ],
+          },
+          { step: "Implement change", status: "in_progress" },
+        ],
+        documentPath: ".threadlight/plans/run-advance.md",
+      });
+      await expect(
+        readFile(
+          join(
+            workspaceRoot,
+            ".threadlight",
+            "plans",
+            "run-advance.md",
+          ),
+          "utf8",
+        ),
+      ).resolves.toContain(
+        "- The relevant controller and tool paths were inspected.",
+      );
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true });
     }

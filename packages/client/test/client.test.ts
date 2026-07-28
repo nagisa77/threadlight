@@ -33,6 +33,57 @@ class ScriptedTransport implements ClientTransport {
 }
 
 describe("ThreadlightClient", () => {
+  it("lists task capabilities and sends selected references", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const listed = client.listCapabilities("thread-1");
+    expect(transport.sent[0]).toMatchObject({
+      method: "capability/list",
+      params: { threadId: "thread-1" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        capabilities: [
+          {
+            id: "skill:documents",
+            kind: "skill",
+            name: "documents",
+            description: "Create documents",
+          },
+        ],
+      },
+    });
+    await expect(listed).resolves.toMatchObject({
+      capabilities: [{ id: "skill:documents" }],
+    });
+
+    const started = client.startTurn(
+      "thread-1",
+      "Create a brief",
+      [],
+      "default",
+      ["skill:documents"],
+    );
+    expect(transport.sent[1]).toMatchObject({
+      method: "turn/start",
+      params: {
+        threadId: "thread-1",
+        input: "Create a brief",
+        capabilityRefs: ["skill:documents"],
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[1].id ?? null,
+      result: { turnId: "turn-1" },
+    });
+    await expect(started).resolves.toEqual({ turnId: "turn-1" });
+    client.dispose();
+  });
+
   it("sends an explicit user-selected Plan mode with the turn", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

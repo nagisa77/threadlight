@@ -9,9 +9,11 @@ import {
 } from "@threadlight/agent-loop";
 
 import {
+  createAdvancePlanTool,
   createRequestPlanInputTool,
   createUpdatePlanTool,
   PlanExecutionController,
+  PlanToolRuntime,
 } from "../src/index.js";
 
 function item(
@@ -67,6 +69,62 @@ describe("PlanExecutionController", () => {
     expect(controller.validateCompletion()).toContain(
       "step 1/2 is still in_progress",
     );
+  });
+
+  it("directs routine status transitions to advance_plan", async () => {
+    const runtime = new PlanToolRuntime();
+    const updateTool = createUpdatePlanTool({ runtime });
+    const advanceTool = createAdvancePlanTool({ runtime });
+    const tools = [updateTool, advanceTool];
+    const context = { runId: "run-1", step: 1, tools };
+    const controller = new PlanExecutionController();
+    const initial = {
+      plan: [item("Implement control", "in_progress")],
+    };
+
+    controller.beforeModel(context);
+    expect(
+      await controller.beforeToolCall?.(
+        { id: "plan-1", name: "update_plan", arguments: initial },
+        updateTool,
+        context,
+      ),
+    ).toEqual({ allowed: true });
+    await controller.afterToolCall?.(
+      { id: "plan-1", name: "update_plan", arguments: initial },
+      {
+        callId: "plan-1",
+        name: "update_plan",
+        output: "{}",
+      },
+      context,
+    );
+    controller.beforeModel({ ...context, step: 2 });
+
+    expect(
+      await controller.beforeToolCall?.(
+        {
+          id: "plan-2",
+          name: "update_plan",
+          arguments: {
+            plan: [
+              item(
+                "Implement control",
+                "completed",
+                ["The scripted verification passed."],
+              ),
+            ],
+          },
+        },
+        updateTool,
+        { ...context, step: 2 },
+      ),
+    ).toMatchObject({
+      allowed: false,
+      message: expect.stringContaining(
+        "ordinary status transitions must use advance_plan",
+      ),
+    });
   });
 
   it("preserves the complete blocking question as canonical output", async () => {
@@ -172,6 +230,7 @@ describe("PlanExecutionController", () => {
   it("researches read-only, injects the current step, and rejects premature completion", async () => {
     const requests: ModelRequest[] = [];
     const events: AgentEvent[] = [];
+    const planRuntime = new PlanToolRuntime();
     let writes = 0;
     const provider = {
       async generate(request: ModelRequest, options?: {
@@ -187,6 +246,7 @@ describe("PlanExecutionController", () => {
               "inspect",
               "computer",
               "update_plan",
+              "advance_plan",
             ]);
             expect(
               request.tools.find((tool) => tool.name === "computer")
@@ -267,14 +327,10 @@ describe("PlanExecutionController", () => {
               toolCalls: [
                 {
                   id: "plan-2",
-                  name: "update_plan",
+                  name: "advance_plan",
                   arguments: {
-                    plan: [
-                      item(
-                        "Implement control",
-                        "completed",
-                        ["The scripted write completed successfully."],
-                      ),
+                    completionEvidence: [
+                      "The scripted write completed successfully.",
                     ],
                   },
                 },
@@ -323,7 +379,8 @@ describe("PlanExecutionController", () => {
               return "written";
             },
           }),
-          createUpdatePlanTool(),
+          createUpdatePlanTool({ runtime: planRuntime }),
+          createAdvancePlanTool({ runtime: planRuntime }),
         ],
       }),
       "Implement the change",

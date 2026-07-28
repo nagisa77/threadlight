@@ -595,7 +595,7 @@ function ReviewFile({
             hideSummary
             disableWorker
             highlightLanguage={languageForPath(file.path)}
-            styles={diffStyles}
+            styles={reviewDiffStylesForLayout(layout)}
           />
         </div>
       )}
@@ -1444,6 +1444,20 @@ const diffStyles = {
     padding: "0 10px",
   },
 } as const;
+
+const unifiedDiffStyles = {
+  ...diffStyles,
+  lineNumber: {
+    ...diffStyles.lineNumber,
+    minWidth: "32px",
+  },
+} as const;
+
+export function reviewDiffStylesForLayout(
+  layout: "unified" | "split",
+) {
+  return layout === "unified" ? unifiedDiffStyles : diffStyles;
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

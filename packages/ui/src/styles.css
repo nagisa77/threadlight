@@ -1948,6 +1948,7 @@ button:disabled {
 }
 
 .composer {
+  position: relative;
   display: flex;
   width: min(100%, 714px);
   min-height: 48px;
@@ -1967,11 +1968,163 @@ button:disabled {
     box-shadow 160ms ease;
 }
 
+.capability-menu {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: calc(100% + 8px);
+  left: 0;
+  max-height: min(328px, 42vh);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow:
+    0 1px 2px rgb(30 29 26 / 7%),
+    0 18px 48px rgb(37 35 31 / 14%);
+}
+
+.capability-menu-heading {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.capability-menu-empty {
+  margin: 0;
+  padding: 14px 8px 16px;
+  color: var(--subtle);
+  font-size: 12px;
+  text-align: center;
+}
+
+.capability-option {
+  display: grid;
+  width: 100%;
+  min-height: 52px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.capability-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.capability-option-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.capability-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.capability-option-copy strong,
+.capability-option-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-option-copy strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.capability-option-copy small {
+  color: var(--subtle);
+  font-size: 11px;
+}
+
+.capability-option-kind {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--subtle);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.capability-chips {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.capability-chip {
+  display: inline-flex;
+  max-width: 220px;
+  height: 27px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.capability-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capability-chip-remove {
+  display: grid;
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  color: currentcolor;
+  background: transparent;
+  cursor: pointer;
+}
+
 .composer-row {
   display: flex;
   min-width: 0;
   align-items: flex-end;
   gap: 8px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .capability-option:hover {
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+  }
+
+  .capability-chip-remove:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
 }
 
 .computer-permission-card {

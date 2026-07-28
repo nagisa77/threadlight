@@ -1,6 +1,8 @@
 export type {
   AttachmentData,
   AgentPlanData,
+  CapabilityDescriptor,
+  CapabilityKind,
   ConversationActivityData,
   ConversationMessageData,
   ConversationProgressData,

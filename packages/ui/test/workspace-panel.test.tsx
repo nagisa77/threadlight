@@ -8,6 +8,7 @@ import {
   PlanDocument,
   ReviewChangesTree,
   ReviewView,
+  reviewDiffStylesForLayout,
   WorkspacePanel,
   type WorkspaceAdapter,
 } from "../src/workspace-panel.js";
@@ -49,6 +50,15 @@ describe("ReviewView", () => {
     expect(html).not.toContain('aria-label="新建文件标签"');
     expect(html).toContain("+2");
     expect(html).toContain("-1");
+  });
+
+  it("uses narrower line-number gutters only in the unified layout", () => {
+    expect(reviewDiffStylesForLayout("unified")).toMatchObject({
+      lineNumber: { minWidth: "32px" },
+    });
+    expect(reviewDiffStylesForLayout("split")).toMatchObject({
+      lineNumber: { minWidth: "44px" },
+    });
   });
 
   it("builds a changed-files-only tree with added, modified, and deleted states", () => {

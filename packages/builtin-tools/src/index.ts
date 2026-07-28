@@ -9,6 +9,7 @@ export {
   REQUEST_PLAN_INPUT_TOOL_NAME,
 } from "./request-plan-input.js";
 export {
+  createMcpCapabilityTools,
   createMcpCallTool,
   createMcpConnectTool,
 } from "./mcp-tools.js";
@@ -20,10 +21,18 @@ export {
   createProcessStatusTool,
   createProcessWaitTool,
 } from "./process-tools.js";
-export { createProjectMemoryTool } from "./project-memory.js";
 export {
+  createProjectMemoryTool,
+  PROJECT_MEMORY_TOOL_NAME,
+} from "./project-memory.js";
+export {
+  ADVANCE_PLAN_TOOL_NAME,
+  advancePlanSnapshot,
+  createAdvancePlanTool,
   createUpdatePlanTool,
+  parseCompletionEvidence,
   parsePlanSnapshot,
+  PlanToolRuntime,
   renderPlanDocument,
   UPDATE_PLAN_TOOL_NAME,
   USER_SELECTED_PLAN_INSTRUCTIONS,
@@ -68,6 +77,7 @@ export type {
 export type { ProcessToolOptions } from "./process-tools.js";
 export type { ProjectMemoryToolOptions } from "./project-memory.js";
 export type {
+  AdvancePlanToolOptions,
   PlanItem,
   PlanItemStatus,
   PlanSnapshot,

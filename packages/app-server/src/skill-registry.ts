@@ -223,6 +223,17 @@ export class SkillRegistry {
     return result;
   }
 
+  promptBlock(nameOrId: string): PromptBlock {
+    const skill = this.read(nameOrId);
+    return {
+      id: `skill.explicit.${skill.id.slice(0, 16)}`,
+      version: 1,
+      authority: "skill",
+      source: skill.path,
+      content: skill.instructions,
+    };
+  }
+
   catalogPrompt(): string {
     if (this.loadedSkills.length === 0) return "";
     const introduction = [
@@ -251,14 +262,7 @@ export class SkillRegistry {
     return names.flatMap((name) => {
       const loaded = this.byInvocationName.get(name);
       if (!loaded) return [];
-      const skill = this.read(name);
-      return {
-        id: `skill.explicit.${skill.id.slice(0, 16)}`,
-        version: 1,
-        authority: "skill",
-        source: skill.path,
-        content: skill.instructions,
-      };
+      return this.promptBlock(name);
     });
   }
 }

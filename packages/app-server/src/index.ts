@@ -20,6 +20,10 @@ export {
   validatePromptSnapshot,
 } from "./prompt-composer.js";
 export {
+  CapabilityRegistry,
+  skillCapabilitySources,
+} from "./capability-registry.js";
+export {
   createSkillReadTool,
   SkillRegistry,
   validateSkillName,
@@ -39,6 +43,10 @@ export {
   validateSkillPluginRuntimeSnapshot,
 } from "./thread-extensions.js";
 
+export type {
+  CapabilityResolution,
+  CapabilitySource,
+} from "./capability-registry.js";
 export type {
   AgentFactory,
   AppServerOptions,
@@ -86,6 +94,7 @@ export type {
   SkillCreatorRoots,
 } from "./skill-creator.js";
 export type {
+  FixedMcpServerCapability,
   SkillPluginRuntimeOptions,
   SkillPluginRuntimeSnapshot,
   SkillPluginThreadRuntime,

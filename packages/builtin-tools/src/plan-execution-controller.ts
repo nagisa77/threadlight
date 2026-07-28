@@ -9,11 +9,15 @@ import type {
 } from "@threadlight/agent-loop";
 
 import {
+  ADVANCE_PLAN_TOOL_NAME,
+  advancePlanSnapshot,
+  parseCompletionEvidence,
   parsePlanSnapshot,
   type PlanItem,
   type PlanSnapshot,
   UPDATE_PLAN_TOOL_NAME,
 } from "./update-plan.js";
+import { PROJECT_MEMORY_TOOL_NAME } from "./project-memory.js";
 import { REQUEST_PLAN_INPUT_TOOL_NAME } from "./request-plan-input.js";
 
 export type PlanExecutionPhase =
@@ -44,6 +48,7 @@ export class PlanExecutionController implements RunController {
   private readonly pendingUpdates = new Map<string, PlanSnapshot>();
   private readonly successfulTools: string[] = [];
   private readonly requirePlan: boolean;
+  private advanceAvailable = false;
 
   constructor(options: PlanExecutionControllerOptions = {}) {
     this.requirePlan = options.requirePlan ?? true;
@@ -68,6 +73,9 @@ export class PlanExecutionController implements RunController {
   beforeModel(
     context: RunControllerContext,
   ): RunControllerModelDirective {
+    this.advanceAvailable = context.tools.some(
+      (tool) => tool.name === ADVANCE_PLAN_TOOL_NAME,
+    );
     if (this.phase === "inactive") return {};
 
     if (this.phase === "needs_input") {
@@ -109,7 +117,7 @@ export class PlanExecutionController implements RunController {
           "PLAN CONTROL — COMPLETE",
           "Every controlled plan step is completed. Summarize the outcome and the recorded verification evidence.",
           "All turn tools remain advertised so provider-owned call state stays valid. Runtime control still rejects any tool call that is not allowed in this phase.",
-          "Do not perform additional write operations unless the plan is explicitly revised first.",
+          "Do not perform additional write operations unless the plan is explicitly revised first. A final project_memory read or write requested by runtime memory guidance is allowed without revising the plan.",
         ].join("\n"),
       };
     }
@@ -134,7 +142,9 @@ export class PlanExecutionController implements RunController {
         ),
         `Successful tools observed for this step: ${recentTools}`,
         "Work only on this current step. Do not skip pending steps or silently change their definitions.",
-        "Before advancing, verify the acceptance criteria, then call update_plan with completionEvidence for this step and make the immediately following step in_progress.",
+        this.advanceAvailable
+          ? "Before advancing, verify the acceptance criteria, then call advance_plan with completionEvidence. The runtime will complete this step and activate the next one atomically."
+          : "Before advancing, verify the acceptance criteria, then call update_plan with the unchanged full plan, completionEvidence on this step, and the next step in_progress.",
         "If new evidence invalidates the remaining plan, revise it with a non-empty revisionReason while preserving completed steps.",
       ].join("\n"),
     };
@@ -159,6 +169,16 @@ export class PlanExecutionController implements RunController {
       let next: PlanSnapshot;
       try {
         next = parsePlanSnapshot(call.arguments);
+        if (
+          this.snapshotValue &&
+          this.advanceAvailable &&
+          !next.revisionReason &&
+          completesCurrentStep(this.snapshotValue, next)
+        ) {
+          throw new Error(
+            "ordinary status transitions must use advance_plan with only completionEvidence; do not retransmit the plan",
+          );
+        }
         validatePlanTransition(this.snapshotValue, next);
       } catch (error) {
         return {
@@ -170,7 +190,36 @@ export class PlanExecutionController implements RunController {
       return { allowed: true };
     }
 
-    if (this.phase === "research" && tool?.mutability !== "read") {
+    if (call.name === ADVANCE_PLAN_TOOL_NAME) {
+      let next: PlanSnapshot;
+      try {
+        if (this.phase !== "execution" || !this.snapshotValue) {
+          throw new Error(
+            "advance_plan requires an active in_progress plan step",
+          );
+        }
+        next = advancePlanSnapshot(
+          this.snapshotValue,
+          parseCompletionEvidence(call.arguments),
+        );
+      } catch (error) {
+        return {
+          allowed: false,
+          message: `Plan advance rejected by runtime control: ${errorMessage(error)}`,
+        };
+      }
+      this.pendingUpdates.set(call.id, next);
+      return { allowed: true };
+    }
+
+    if (
+      this.phase === "research" &&
+      tool?.mutability !== "read" &&
+      !(
+        call.name === PROJECT_MEMORY_TOOL_NAME &&
+        projectMemoryAction(call.arguments) === "read"
+      )
+    ) {
       return {
         allowed: false,
         message:
@@ -178,7 +227,11 @@ export class PlanExecutionController implements RunController {
       };
     }
 
-    if (this.phase === "complete" && tool?.mutability !== "read") {
+    if (
+      this.phase === "complete" &&
+      tool?.mutability !== "read" &&
+      call.name !== PROJECT_MEMORY_TOOL_NAME
+    ) {
       return {
         allowed: false,
         message:
@@ -200,7 +253,10 @@ export class PlanExecutionController implements RunController {
       return;
     }
 
-    if (call.name === UPDATE_PLAN_TOOL_NAME) {
+    if (
+      call.name === UPDATE_PLAN_TOOL_NAME ||
+      call.name === ADVANCE_PLAN_TOOL_NAME
+    ) {
       const pending = this.pendingUpdates.get(call.id);
       this.pendingUpdates.delete(call.id);
       if (!result.isError && pending) {
@@ -238,7 +294,9 @@ export class PlanExecutionController implements RunController {
       const active = this.snapshotValue.plan[activeIndex] as PlanItem;
       return [
         `The runtime rejected this final answer because plan step ${activeIndex + 1}/${this.snapshotValue.plan.length} is still in_progress: ${active.step}.`,
-        "Continue that step, verify its acceptance criteria, and update the plan with completionEvidence before attempting to finish.",
+        this.advanceAvailable
+          ? "Continue that step, verify its acceptance criteria, and call advance_plan with completionEvidence before attempting to finish."
+          : "Continue that step, verify its acceptance criteria, and update the full plan with completionEvidence before attempting to finish.",
       ].join(" ");
     }
 
@@ -248,7 +306,9 @@ export class PlanExecutionController implements RunController {
     if (pending >= 0) {
       return [
         `The runtime rejected this final answer because plan step ${pending + 1}/${this.snapshotValue.plan.length} is still pending.`,
-        "Activate and execute it in order with update_plan.",
+        this.advanceAvailable
+          ? "The active step must be completed in order with advance_plan before this pending step can begin."
+          : "The active step must be completed in order with update_plan before this pending step can begin.",
       ].join(" ");
     }
   }
@@ -452,6 +512,27 @@ function activeStep(
   return snapshot?.plan.find((item) => item.status === "in_progress")?.step;
 }
 
+function completesCurrentStep(
+  previous: PlanSnapshot,
+  next: PlanSnapshot,
+): boolean {
+  const activeIndex = previous.plan.findIndex(
+    (item) => item.status === "in_progress",
+  );
+  return (
+    activeIndex >= 0 &&
+    next.plan[activeIndex]?.status === "completed"
+  );
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function projectMemoryAction(
+  value: unknown,
+): "read" | "write" | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const action = (value as { action?: unknown }).action;
+  return action === "read" || action === "write" ? action : undefined;
 }

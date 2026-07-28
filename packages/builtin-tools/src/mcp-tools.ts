@@ -1,6 +1,11 @@
+import { createHash } from "node:crypto";
+
 import { defineTool, type Tool } from "@threadlight/agent-loop";
 
-import { ConversationMcpRuntime } from "./mcp-runtime.js";
+import {
+  ConversationMcpRuntime,
+  type McpConnectResult,
+} from "./mcp-runtime.js";
 
 export function createMcpConnectTool(
   runtime: ConversationMcpRuntime,
@@ -79,4 +84,70 @@ export function createMcpCallTool(
       return runtime.call(arguments_, context.signal);
     },
   });
+}
+
+export function createMcpCapabilityTools(
+  runtime: ConversationMcpRuntime,
+  capabilityId: string,
+  connection: McpConnectResult,
+): Tool[] {
+  const names = new Set<string>();
+  return connection.tools.map((tool) => {
+    const name = uniqueToolName(capabilityId, tool.name, names);
+    names.add(name);
+    return defineTool({
+      name,
+      description:
+        tool.description ??
+        `Call ${tool.name} from the selected ${capabilityId} MCP capability.`,
+      parameters: tool.inputSchema,
+      execute(arguments_, context) {
+        if (!isObject(arguments_)) {
+          throw new Error(`${name} arguments must be an object`);
+        }
+        return runtime.call(
+          {
+            connection_id: connection.connectionId,
+            tool_name: tool.name,
+            arguments: arguments_,
+          },
+          context.signal,
+        );
+      },
+    });
+  });
+}
+
+function uniqueToolName(
+  capabilityId: string,
+  remoteName: string,
+  existing: ReadonlySet<string>,
+): string {
+  const prefix = normalizeToolName(capabilityId);
+  const suffix = normalizeToolName(remoteName);
+  const base = `mcp_${prefix}_${suffix}`;
+  let candidate =
+    base.length <= 64
+      ? base
+      : `${base.slice(0, 55)}_${shortHash(base)}`;
+  if (existing.has(candidate)) {
+    candidate = `${candidate.slice(0, 55)}_${shortHash(`${base}\0${remoteName}`)}`;
+  }
+  return candidate;
+}
+
+function normalizeToolName(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "tool";
+}
+
+function shortHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex").slice(0, 8);
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }

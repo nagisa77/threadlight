@@ -9,6 +9,7 @@ import {
   type AttachmentData,
   type AgentPlanData,
   type AgentEventData,
+  type CapabilityDescriptor,
   type ConversationActivityData,
   type ConversationMessageData,
   type ConversationProgressData,
@@ -24,6 +25,7 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   text: string;
   attachments?: readonly AttachmentData[];
+  capabilityRefs?: readonly string[];
   error?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
@@ -57,6 +59,7 @@ export type SessionAction =
       id: string;
       text: string;
       attachments?: readonly AttachmentData[];
+      capabilityRefs?: readonly string[];
       mode?: TurnMode;
     }
   | { type: "message.rejected"; id: string; error: string }
@@ -118,6 +121,9 @@ export function sessionReducer(
             ...(action.mode === "plan" ? { mode: action.mode } : {}),
             ...(action.attachments?.length
               ? { attachments: action.attachments }
+              : {}),
+            ...(action.capabilityRefs?.length
+              ? { capabilityRefs: action.capabilityRefs }
               : {}),
           },
         ],
@@ -272,15 +278,23 @@ export async function requestTurnStart(
       text: string,
       attachments: readonly AttachmentData[],
       mode: TurnMode,
+      capabilityRefs: readonly string[],
     ): Promise<unknown>;
   },
   threadId: string,
   text: string,
   attachments: readonly AttachmentData[],
   mode: TurnMode = "default",
+  capabilityRefs: readonly string[] = [],
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await client.startTurn(threadId, text, attachments, mode);
+    await client.startTurn(
+      threadId,
+      text,
+      attachments,
+      mode,
+      capabilityRefs,
+    );
     return { ok: true };
   } catch (error) {
     return { ok: false, error: errorMessage(error) };
@@ -488,6 +502,7 @@ export function useThreadlightSession(
       value: string,
       attachments: readonly AttachmentData[] = [],
       mode: TurnMode = "default",
+      capabilities: readonly CapabilityDescriptor[] = [],
     ) => {
       const text = value.trim();
       if ((!text && attachments.length === 0) || !state.threadId || state.isRunning) {
@@ -502,6 +517,9 @@ export function useThreadlightSession(
         text,
         mode,
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...(capabilities.length > 0
+          ? { capabilityRefs: capabilities.map(({ id }) => id) }
+          : {}),
       });
       const started = await requestTurnStart(
         client,
@@ -509,6 +527,7 @@ export function useThreadlightSession(
         text,
         attachments,
         mode,
+        capabilities.map(({ id }) => id),
       );
       if (!started.ok) {
         updateSession(threadId, {

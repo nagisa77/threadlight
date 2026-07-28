@@ -38,6 +38,17 @@ describe("conversation progress projection", () => {
 
     expect(projectAgentProgress([], started)).toEqual([]);
     expect(projectAgentProgress([], completed)).toEqual([]);
+    expect(
+      projectAgentProgress([], {
+        type: "tool.started",
+        runId: "run-1",
+        call: {
+          id: "advance-1",
+          name: "advance_plan",
+          arguments: { completionEvidence: ["Tests passed."] },
+        },
+      }),
+    ).toEqual([]);
   });
 
   it("projects plan tool calls separately from execution activity", () => {
@@ -106,6 +117,26 @@ describe("conversation progress projection", () => {
     ).toMatchObject({
       documentPath: ".threadlight/plans/run-1.md",
       documentVersion: "0123456789abcdef",
+    });
+
+    expect(
+      projectAgentPlan(undefined, {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "advance-1",
+          name: "advance_plan",
+          output: JSON.stringify({
+            explanation: "Break down the implementation",
+            plan,
+            documentPath: ".threadlight/plans/run-1.md",
+            documentVersion: "fedcba9876543210",
+          }),
+        },
+      }),
+    ).toMatchObject({
+      items: plan,
+      documentVersion: "fedcba9876543210",
     });
   });
 

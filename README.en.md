@@ -273,6 +273,7 @@ Skills use the Agent Skills-compatible `SKILL.md` format and progressive disclos
 - Project Skills: `<project>/.agents/skills/<skill-name>/SKILL.md`
 - User Skills: `~/.agents/skills/<skill-name>/SKILL.md`
 - Explicit activation: include `$skill-name` in the request
+- Desktop selection: type `@` in the composer to search Skills or fixed MCP capabilities; selections appear as chips and apply only to the current turn
 - Implicit activation: the agent matches metadata, then loads the workflow with the read-only `skill_read` tool
 
 The built-in `$skill-creator` uses the atomic, validated `skill_create` tool to create project- or user-scoped instruction-only Skills. New Skills are discovered by the next task.

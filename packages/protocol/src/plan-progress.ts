@@ -5,6 +5,7 @@ import type {
 } from "./index.js";
 
 export const UPDATE_PLAN_TOOL_NAME = "update_plan";
+export const ADVANCE_PLAN_TOOL_NAME = "advance_plan";
 
 export function projectAgentPlan(
   plan: AgentPlanData | undefined,
@@ -12,7 +13,8 @@ export function projectAgentPlan(
 ): AgentPlanData | undefined {
   if (
     event.type === "tool.completed" &&
-    event.result.name === UPDATE_PLAN_TOOL_NAME &&
+    (event.result.name === UPDATE_PLAN_TOOL_NAME ||
+      event.result.name === ADVANCE_PLAN_TOOL_NAME) &&
     !event.result.isError
   ) {
     const document = parsePlanDocumentResult(event.result.output);

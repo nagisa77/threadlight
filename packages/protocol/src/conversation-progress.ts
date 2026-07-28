@@ -67,7 +67,11 @@ export function projectAgentProgress(
 }
 
 function isPlanControlTool(name: string): boolean {
-  return name === "update_plan" || name === "request_plan_input";
+  return (
+    name === "update_plan" ||
+    name === "advance_plan" ||
+    name === "request_plan_input"
+  );
 }
 
 export function projectProgressProcess(

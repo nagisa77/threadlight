@@ -11,6 +11,7 @@ export {
   runningProcessSessionIds,
 } from "./conversation-progress.js";
 export {
+  ADVANCE_PLAN_TOOL_NAME,
   parsePlanUpdate,
   projectAgentPlan,
   UPDATE_PLAN_TOOL_NAME,
@@ -131,6 +132,16 @@ export interface ConversationProgressData {
   activities: readonly ConversationActivityData[];
 }
 
+export type CapabilityKind = "skill" | "mcp";
+
+export interface CapabilityDescriptor {
+  id: string;
+  kind: CapabilityKind;
+  name: string;
+  description: string;
+  source?: string;
+}
+
 export type TurnMode = "default" | "plan";
 export type PlanSource = "user" | "model";
 export type PlanItemStatusData = "pending" | "in_progress" | "completed";
@@ -169,6 +180,7 @@ export interface ConversationMessageData {
   role: "user" | "assistant";
   text: string;
   attachments?: readonly AttachmentData[];
+  capabilityRefs?: readonly string[];
   error?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
@@ -228,12 +240,17 @@ export interface ThreadlightMethodMap {
     params: { threadId: string; language: SuggestionLanguage };
     result: { suggestions: readonly [string, string, string] };
   };
+  "capability/list": {
+    params: { threadId: string };
+    result: { capabilities: readonly CapabilityDescriptor[] };
+  };
   "turn/start": {
     params: {
       threadId: string;
       input: string;
       mode?: TurnMode;
       attachments?: readonly AttachmentData[];
+      capabilityRefs?: readonly string[];
     };
     result: { turnId: string };
   };
@@ -265,6 +282,7 @@ export const THREADLIGHT_METHODS = [
   "thread/resume",
   "thread/delete",
   "thread/suggestions",
+  "capability/list",
   "turn/start",
   "turn/interrupt",
   "process/status",

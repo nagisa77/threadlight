@@ -23,6 +23,7 @@ import {
 import type {
   AttachmentData,
   AgentPlanData,
+  CapabilityDescriptor,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,
@@ -54,6 +55,8 @@ import {
 import { ModelStatePersistence } from "./model-state-persistence.js";
 import {
   composeRunControllers,
+  ProjectMemoryReminderController,
+  ResearchCoverageRunController,
   UserActionRunController,
 } from "./run-controllers.js";
 
@@ -112,9 +115,22 @@ export interface TurnCleanupContext {
 export interface ThreadRuntime {
   tools?: readonly Tool[];
   promptBlocks?: readonly PromptBlock[];
+  capabilities?: readonly CapabilityDescriptor[];
   promptBlocksForTurn?(
     input: string,
   ): readonly PromptBlock[] | Promise<readonly PromptBlock[]>;
+  resolveCapabilities?(
+    refs: readonly string[],
+    signal: AbortSignal,
+  ):
+    | {
+        promptBlocks: readonly PromptBlock[];
+        tools: readonly Tool[];
+      }
+    | Promise<{
+        promptBlocks: readonly PromptBlock[];
+        tools: readonly Tool[];
+      }>;
   snapshot?: unknown;
   dispose?(): void | Promise<void>;
 }
@@ -200,6 +216,8 @@ export class AppServer {
         return this.deleteThread(params);
       case "thread/suggestions":
         return this.suggestQuestions(params);
+      case "capability/list":
+        return this.listCapabilities(params);
       case "turn/start":
         return this.startTurn(params);
       case "turn/interrupt":
@@ -301,6 +319,20 @@ export class AppServer {
     }
   }
 
+  private listCapabilities(
+    params: unknown,
+  ): { capabilities: readonly CapabilityDescriptor[] } {
+    const { threadId } = objectParams(params);
+    requireString(threadId, "threadId");
+    const thread = this.threads.get(threadId);
+    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    return {
+      capabilities: (thread.runtime?.capabilities ?? []).map(
+        (capability) => ({ ...capability }),
+      ),
+    };
+  }
+
   private async generateSuggestedQuestions(
     agent: Agent,
     language: SuggestionLanguage,
@@ -353,12 +385,14 @@ export class AppServer {
       input,
       mode: modeValue,
       attachments: attachmentValue,
+      capabilityRefs: capabilityRefsValue,
     } = objectParams(params);
     requireString(threadId, "threadId");
     if (typeof input !== "string") {
       throw new RpcError(-32602, "input must be a string");
     }
     const attachments = parseAttachments(attachmentValue);
+    const capabilityRefs = parseCapabilityRefs(capabilityRefsValue);
     const mode = parseTurnMode(modeValue);
     for (const attachment of attachments) {
       this.requireLocalAttachment(attachment);
@@ -369,6 +403,18 @@ export class AppServer {
 
     const thread = this.threads.get(threadId);
     if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const availableCapabilityIds = new Set(
+      (thread.runtime?.capabilities ?? []).map(({ id }) => id),
+    );
+    const unknownCapability = capabilityRefs.find(
+      (ref) => !availableCapabilityIds.has(ref),
+    );
+    if (unknownCapability) {
+      throw new RpcError(
+        -32602,
+        `Unknown capability: ${unknownCapability}`,
+      );
+    }
     if (thread.activeTurn) {
       throw new RpcError(-32003, "Thread already has an active turn");
     }
@@ -387,6 +433,7 @@ export class AppServer {
         text: input,
         ...(mode === "plan" ? { mode } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
       },
     ]);
     try {
@@ -404,6 +451,7 @@ export class AppServer {
         input,
         mode,
         attachments,
+        capabilityRefs,
         thread,
         controller,
       );
@@ -490,6 +538,7 @@ export class AppServer {
     input: string,
     mode: TurnMode,
     attachments: readonly AttachmentData[],
+    capabilityRefs: readonly string[],
     thread: ThreadState,
     controller: AbortController,
   ): Promise<void> {
@@ -511,15 +560,24 @@ export class AppServer {
         input,
         attachments,
       );
+      const capabilityRuntime = thread.runtime?.resolveCapabilities
+        ? await thread.runtime.resolveCapabilities(
+            capabilityRefs,
+            controller.signal,
+          )
+        : { promptBlocks: [], tools: [] };
       const runController = new UserActionRunController(
         composeRunControllers([
           planController,
+          new ProjectMemoryReminderController(),
+          new ResearchCoverageRunController(input),
           attachmentRuntime.controller,
         ]),
       );
-      const turnPromptBlocks = [
+      const turnPromptBlocks = uniquePromptBlocks([
         ...promptBlocksFromSnapshot(thread.promptSnapshot),
         ...((await thread.runtime?.promptBlocksForTurn?.(input)) ?? []),
+        ...capabilityRuntime.promptBlocks,
         ...(mode === "plan"
           ? [
               {
@@ -531,7 +589,7 @@ export class AppServer {
               },
             ]
           : []),
-      ];
+      ]);
       const turnPrompt = composePrompt(turnPromptBlocks);
       const turnAgent = {
         ...thread.agent,
@@ -539,6 +597,7 @@ export class AppServer {
         tools: appendTurnTools(thread.agent.tools, [
           ...(mode === "plan" ? [createRequestPlanInputTool()] : []),
           ...(attachmentRuntime.tool ? [attachmentRuntime.tool] : []),
+          ...capabilityRuntime.tools,
         ]),
       };
       const result = await this.loop.run(
@@ -842,6 +901,26 @@ function parseAttachments(value: unknown): readonly AttachmentData[] {
   return value;
 }
 
+function parseCapabilityRefs(value: unknown): readonly string[] {
+  if (value === undefined) return [];
+  if (
+    !Array.isArray(value) ||
+    value.length > 16 ||
+    !value.every(
+      (ref) =>
+        typeof ref === "string" &&
+        ref.length > 0 &&
+        ref.length <= 256,
+    )
+  ) {
+    throw new RpcError(
+      -32602,
+      "capabilityRefs must contain at most 16 valid capability ids",
+    );
+  }
+  return [...new Set(value)];
+}
+
 function isAttachment(value: unknown): value is AttachmentData {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const attachment = value as Record<string, unknown>;
@@ -887,6 +966,28 @@ function appendTurnTools(
     names.add(tool.name);
   }
   return combined;
+}
+
+function uniquePromptBlocks(
+  blocks: readonly PromptBlock[],
+): readonly PromptBlock[] {
+  const unique = new Map<string, PromptBlock>();
+  for (const block of blocks) {
+    const existing = unique.get(block.id);
+    if (!existing) {
+      unique.set(block.id, block);
+      continue;
+    }
+    if (
+      existing.version !== block.version ||
+      existing.authority !== block.authority ||
+      existing.source !== block.source ||
+      existing.content !== block.content
+    ) {
+      throw new Error(`Conflicting prompt block: ${block.id}`);
+    }
+  }
+  return [...unique.values()];
 }
 
 function attachRuntimeTools(agent: Agent, runtime: ThreadRuntime): Agent {

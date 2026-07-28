@@ -187,6 +187,19 @@ describe("sessionReducer", () => {
     });
   });
 
+  it("keeps selected capability references on the optimistic message", () => {
+    const state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "Create a brief",
+      capabilityRefs: ["skill:documents"],
+    });
+
+    expect(state.messages[0]).toMatchObject({
+      capabilityRefs: ["skill:documents"],
+    });
+  });
+
   it("accumulates real model deltas and commits one completed message", () => {
     let state = sessionReducer(initialSessionState, {
       type: "message.sent",

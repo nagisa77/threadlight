@@ -104,6 +104,10 @@ export class ThreadlightClient {
     return this.request("thread/delete", { threadId });
   }
 
+  listCapabilities(threadId: string) {
+    return this.request("capability/list", { threadId });
+  }
+
   suggestQuestions(threadId: string, language: SuggestionLanguage) {
     return this.request("thread/suggestions", { threadId, language });
   }
@@ -113,12 +117,14 @@ export class ThreadlightClient {
     input: string,
     attachments: readonly AttachmentData[] = [],
     mode: TurnMode = "default",
+    capabilityRefs: readonly string[] = [],
   ) {
     return this.request("turn/start", {
       threadId,
       input,
       ...(mode === "plan" ? { mode } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
+      ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
     });
   }
 

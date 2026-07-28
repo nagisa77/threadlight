@@ -273,6 +273,7 @@ Skills 使用兼容 Agent Skills 的 `SKILL.md` 格式，并按渐进披露加�
 - 项目 Skills：`<project>/.agents/skills/<skill-name>/SKILL.md`
 - 用户 Skills：`~/.agents/skills/<skill-name>/SKILL.md`
 - 显式调用：在请求中写 `$skill-name`
+- 桌面端选择：在输入框中键入 `@`，搜索 Skill 或已固定配置的 MCP 能力；选择结果以 chip 显示，并仅对当前一轮生效
 - 隐式调用：Agent 根据描述匹配后使用只读 `skill_read` 加载完整工作流
 
 内置 `$skill-creator` 可以通过原子、受校验的 `skill_create` 工具创建项目或用户级 instruction-only Skill。新 Skill 从下一个任务开始被发现。

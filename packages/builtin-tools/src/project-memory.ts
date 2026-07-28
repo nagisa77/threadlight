@@ -7,6 +7,8 @@ import {
   type ProjectMemorySnapshot,
 } from "@threadlight/project-memory";
 
+export const PROJECT_MEMORY_TOOL_NAME = "project_memory";
+
 export interface ProjectMemoryToolOptions {
   store: ProjectMemoryStore;
   tokenFactory?: () => string;
@@ -28,7 +30,7 @@ export function createProjectMemoryTool(
   const tokenFactory = options.tokenFactory ?? createReadToken;
 
   return defineTool({
-    name: "project_memory",
+    name: PROJECT_MEMORY_TOOL_NAME,
     description:
       "Read or replace the project's durable Markdown memory at .threadlight/MEMORY.md. Before writing, read the latest file and pass the short read_token exactly as returned; the token is scoped to this task and consumed by one write. Keep memory concise, specific, and useful across future tasks; revise duplicates and stale entries. Never store secrets, transient task status, chat transcripts, or unverified assumptions.",
     parameters: {

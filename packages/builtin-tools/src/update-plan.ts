@@ -11,6 +11,7 @@ import { relative, resolve, sep } from "node:path";
 import { defineTool, type ToolContext } from "@threadlight/agent-loop";
 
 export const UPDATE_PLAN_TOOL_NAME = "update_plan";
+export const ADVANCE_PLAN_TOOL_NAME = "advance_plan";
 
 export type PlanItemStatus = "pending" | "in_progress" | "completed";
 
@@ -32,10 +33,34 @@ export interface PlanSnapshot {
 
 export interface UpdatePlanToolOptions {
   workspaceRoot?: string;
+  runtime?: PlanToolRuntime;
   onUpdate?(
     snapshot: PlanSnapshot,
     context: ToolContext,
   ): void | Promise<void>;
+}
+
+export interface AdvancePlanToolOptions extends UpdatePlanToolOptions {
+  runtime: PlanToolRuntime;
+}
+
+export class PlanToolRuntime {
+  private readonly snapshots = new Map<string, PlanSnapshot>();
+
+  get(context: Pick<ToolContext, "runId">): PlanSnapshot | undefined {
+    return this.snapshots.get(context.runId);
+  }
+
+  set(
+    snapshot: PlanSnapshot,
+    context: Pick<ToolContext, "runId">,
+  ): void {
+    if (snapshot.plan.every((item) => item.status === "completed")) {
+      this.snapshots.delete(context.runId);
+      return;
+    }
+    this.snapshots.set(context.runId, snapshot);
+  }
 }
 
 export const USER_SELECTED_PLAN_INSTRUCTIONS = [
@@ -46,7 +71,7 @@ export const USER_SELECTED_PLAN_INSTRUCTIONS = [
   "Only when essential user input is missing and no valid plan can proceed, call request_plan_input with the missing information and one complete, self-contained blocking question; the reply will start a new turn and a new plan.",
   "After gathering enough evidence, call update_plan with a comprehensive, actionable plan; do not modify workspace or external state before that plan exists.",
   "Give every step a short UI title, concrete implementation details, and observable acceptance criteria so another model could execute it without guessing.",
-  "The runtime controls execution order: keep exactly one step in_progress, work only on the injected current step, and provide completionEvidence when marking it completed.",
+  "The runtime controls execution order: keep exactly one step in_progress, work only on the injected current step, and call advance_plan with completionEvidence after verifying it when that tool is advertised. The runtime will complete that step and activate the next one without requiring you to repeat the plan.",
   "Never skip a pending step. If discoveries invalidate the plan, call update_plan with revisionReason and preserve every completed step.",
   "The runtime will reject premature completion while any step remains pending or in_progress.",
 ].join(" ");
@@ -58,7 +83,7 @@ export function createUpdatePlanTool(
     name: UPDATE_PLAN_TOOL_NAME,
     mutability: "write",
     description:
-      "Create or update the structured execution plan for the current turn. Research relevant context before the initial plan. During controlled execution, keep exactly one step in_progress, add completionEvidence before completing it, and include revisionReason when changing the plan structure.",
+      "Create the initial structured execution plan or revise its structure when discoveries invalidate it. Research relevant context before the initial plan. During controlled execution, use advance_plan for ordinary status transitions; use update_plan again only with revisionReason when changing steps, details, or acceptance criteria.",
     parameters: {
       type: "object",
       properties: {
@@ -146,10 +171,97 @@ export function createUpdatePlanTool(
         ...update,
         ...(document ?? {}),
       };
+      options.runtime?.set(snapshot, context);
       await options.onUpdate?.(snapshot, context);
       return snapshot;
     },
   });
+}
+
+export function createAdvancePlanTool(
+  options: AdvancePlanToolOptions,
+) {
+  return defineTool({
+    name: ADVANCE_PLAN_TOOL_NAME,
+    mutability: "write",
+    description:
+      "Complete the current in-progress plan step with concrete verification evidence and atomically activate the next pending step. Use this for ordinary progress; use update_plan only to create or structurally revise the plan.",
+    parameters: {
+      type: "object",
+      properties: {
+        completionEvidence: {
+          type: "array",
+          minItems: 1,
+          maxItems: 8,
+          description:
+            "Concrete verification evidence for the current step, such as tests, inspected output, or observed behavior.",
+          items: {
+            type: "string",
+            minLength: 1,
+            maxLength: 500,
+          },
+        },
+      },
+      required: ["completionEvidence"],
+      additionalProperties: false,
+    },
+    async execute(arguments_, context) {
+      const current = options.runtime.get(context);
+      if (!current) {
+        throw new Error(
+          "no active plan exists for this task; create one with update_plan first",
+        );
+      }
+      const snapshot = advancePlanSnapshot(
+        current,
+        parseCompletionEvidence(arguments_),
+      );
+      const document = options.workspaceRoot
+        ? await writePlanDocument(options.workspaceRoot, snapshot, context)
+        : undefined;
+      const stored: PlanSnapshot = {
+        ...snapshot,
+        ...(document ?? {}),
+      };
+      options.runtime.set(stored, context);
+      await options.onUpdate?.(stored, context);
+      return stored;
+    },
+  });
+}
+
+export function advancePlanSnapshot(
+  current: PlanSnapshot,
+  completionEvidence: readonly string[],
+): PlanSnapshot {
+  const activeIndex = current.plan.findIndex(
+    (item) => item.status === "in_progress",
+  );
+  if (activeIndex < 0) {
+    throw new Error("the plan has no in_progress step to advance");
+  }
+  const plan = current.plan.map((item, index): PlanItem => {
+    if (index === activeIndex) {
+      return {
+        ...item,
+        status: "completed",
+        completionEvidence,
+      };
+    }
+    if (
+      index === activeIndex + 1 &&
+      item.status === "pending"
+    ) {
+      return { ...item, status: "in_progress" };
+    }
+    return item;
+  });
+  return {
+    ...(current.explanation
+      ? { explanation: current.explanation }
+      : {}),
+    plan,
+  };
 }
 
 export function renderPlanDocument(snapshot: PlanSnapshot): string {
@@ -347,6 +459,37 @@ export function parsePlanSnapshot(value: unknown): PlanSnapshot {
     ...(revisionReason ? { revisionReason } : {}),
     plan,
   };
+}
+
+export function parseCompletionEvidence(
+  value: unknown,
+): readonly string[] {
+  if (!isObject(value) || !Array.isArray(value.completionEvidence)) {
+    throw new Error("completionEvidence must be an array");
+  }
+  if (
+    value.completionEvidence.length < 1 ||
+    value.completionEvidence.length > 8
+  ) {
+    throw new Error("completionEvidence must contain 1-8 items");
+  }
+  const seen = new Set<string>();
+  return value.completionEvidence.map((evidence, index) => {
+    const normalized =
+      typeof evidence === "string"
+        ? evidence.replace(/\s+/g, " ").trim()
+        : "";
+    if (!normalized || normalized.length > 500) {
+      throw new Error(
+        `completionEvidence[${index}] must be 1-500 characters`,
+      );
+    }
+    if (seen.has(normalized)) {
+      throw new Error("completionEvidence items must be unique");
+    }
+    seen.add(normalized);
+    return normalized;
+  });
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

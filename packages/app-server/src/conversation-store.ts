@@ -171,6 +171,11 @@ function isConversationMessage(value: unknown): boolean {
     (message.attachments === undefined ||
       (Array.isArray(message.attachments) &&
         message.attachments.every(isAttachment))) &&
+    (message.capabilityRefs === undefined ||
+      (Array.isArray(message.capabilityRefs) &&
+        message.capabilityRefs.every(
+          (ref) => typeof ref === "string" && ref.length > 0,
+        ))) &&
     (message.error === undefined || typeof message.error === "boolean") &&
     (message.mode === undefined ||
       message.mode === "default" ||

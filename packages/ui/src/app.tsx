@@ -12,6 +12,7 @@ import type { ThreadlightClient } from "@threadlight/client";
 import type {
   AgentPlanData,
   AttachmentData,
+  CapabilityDescriptor,
   TurnMode,
 } from "@threadlight/protocol";
 import {
@@ -45,6 +46,15 @@ import {
   X,
 } from "lucide-react";
 
+import {
+  CapabilityChips,
+  CapabilityMenu,
+  capabilityQueryAt,
+  filterCapabilities,
+  nextCapabilityIndex,
+  removeCapabilityQuery,
+  type CapabilityQuery,
+} from "./capabilities.js";
 import {
   useThreadlightSession,
   type ConversationProgress,
@@ -296,6 +306,16 @@ function ThreadlightAppContent({
   const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
   const [input, setInput] = useState("");
   const [composerMode, setComposerMode] = useState<TurnMode>("default");
+  const [capabilities, setCapabilities] = useState<
+    readonly CapabilityDescriptor[]
+  >([]);
+  const [selectedCapabilities, setSelectedCapabilities] = useState<
+    readonly CapabilityDescriptor[]
+  >([]);
+  const [capabilityQuery, setCapabilityQuery] =
+    useState<CapabilityQuery>();
+  const [activeCapabilityIndex, setActiveCapabilityIndex] = useState(0);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
   const [switchingProject, setSwitchingProject] = useState(false);
@@ -346,6 +366,7 @@ function ThreadlightAppContent({
   const conversationChangesRequest = useRef(0);
   const conversationChangesScope = useRef("");
   const activePlanDocument = useRef<string | undefined>(undefined);
+  const composerRoot = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -371,6 +392,69 @@ function ThreadlightAppContent({
   const suggestionKey = state.threadId
     ? `${state.threadId}\u0000${language}`
     : "";
+  const selectedCapabilityIds = new Set(
+    selectedCapabilities.map(({ id }) => id),
+  );
+  const filteredCapabilities = filterCapabilities(
+    capabilities,
+    capabilityQuery?.query ?? "",
+    selectedCapabilityIds,
+  );
+
+  useEffect(() => {
+    setSelectedCapabilities([]);
+    setCapabilityQuery(undefined);
+    setActiveCapabilityIndex(0);
+    if (state.connection !== "ready" || !state.threadId) {
+      setCapabilities([]);
+      setCapabilitiesLoading(false);
+      return;
+    }
+    let active = true;
+    setCapabilitiesLoading(true);
+    void client
+      .listCapabilities(state.threadId)
+      .then(({ capabilities: next }) => {
+        if (active) setCapabilities(next);
+      })
+      .catch(() => {
+        if (active) setCapabilities([]);
+      })
+      .finally(() => {
+        if (active) setCapabilitiesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client, state.connection, state.threadId]);
+
+  useEffect(() => {
+    if (!capabilityQuery) return;
+    const closeFromOutside = (event: globalThis.PointerEvent) => {
+      if (!composerRoot.current?.contains(event.target as Node)) {
+        setCapabilityQuery(undefined);
+      }
+    };
+    window.addEventListener("pointerdown", closeFromOutside);
+    return () =>
+      window.removeEventListener("pointerdown", closeFromOutside);
+  }, [capabilityQuery]);
+
+  useEffect(() => {
+    if (!capabilityQuery || filteredCapabilities.length === 0) return;
+    document
+      .getElementById(
+        `composer-capability-${Math.min(
+          activeCapabilityIndex,
+          filteredCapabilities.length - 1,
+        )}`,
+      )
+      ?.scrollIntoView({ block: "nearest" });
+  }, [
+    activeCapabilityIndex,
+    capabilityQuery,
+    filteredCapabilities.length,
+  ]);
 
   const workspaceChangeRefreshKey =
     conversationChangesRefreshKey(state.progress);
@@ -996,7 +1080,14 @@ function ThreadlightAppContent({
         setPreparingAttachments(false);
       }
     }
-    if (await send(value, stagedAttachments, composerMode)) {
+    if (
+      await send(
+        value,
+        stagedAttachments,
+        composerMode,
+        selectedCapabilities,
+      )
+    ) {
       for (const attachment of draftAttachments) {
         if (attachment.previewUrl?.startsWith("blob:")) {
           URL.revokeObjectURL(attachment.previewUrl);
@@ -1004,6 +1095,8 @@ function ThreadlightAppContent({
       }
       setInput("");
       setComposerMode("default");
+      setSelectedCapabilities([]);
+      setCapabilityQuery(undefined);
       setAttachmentError(undefined);
       pendingAttachmentsRef.current = [];
       setPendingAttachments([]);
@@ -1269,6 +1362,35 @@ function ThreadlightAppContent({
       cancelVoiceInput();
       return;
     }
+    if (capabilityQuery) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (filteredCapabilities.length > 0) {
+          const delta = event.key === "ArrowDown" ? 1 : -1;
+          setActiveCapabilityIndex((current) =>
+            nextCapabilityIndex(
+              current,
+              filteredCapabilities.length,
+              delta,
+            ),
+          );
+        }
+        return;
+      }
+      if (
+        (event.key === "Enter" || event.key === "Tab") &&
+        filteredCapabilities[activeCapabilityIndex]
+      ) {
+        event.preventDefault();
+        selectCapability(filteredCapabilities[activeCapabilityIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setCapabilityQuery(undefined);
+        return;
+      }
+    }
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -1278,6 +1400,28 @@ function ThreadlightAppContent({
       event.preventDefault();
       void submit();
     }
+  }
+
+  function updateCapabilityQuery(value: string, cursor: number | null) {
+    setCapabilityQuery(capabilityQueryAt(value, cursor));
+    setActiveCapabilityIndex(0);
+  }
+
+  function selectCapability(capability: CapabilityDescriptor) {
+    if (!capabilityQuery) return;
+    const next = removeCapabilityQuery(input, capabilityQuery);
+    setInput(next.value);
+    setSelectedCapabilities((current) =>
+      current.some(({ id }) => id === capability.id)
+        ? current
+        : [...current, capability],
+    );
+    setCapabilityQuery(undefined);
+    setActiveCapabilityIndex(0);
+    requestAnimationFrame(() => {
+      textarea.current?.focus();
+      textarea.current?.setSelectionRange(next.cursor, next.cursor);
+    });
   }
 
   const globalActions = currentProject ? (
@@ -1676,6 +1820,7 @@ function ThreadlightAppContent({
                 />
               )}
               <div
+                ref={composerRoot}
                 className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
               >
                 <input
@@ -1726,6 +1871,26 @@ function ThreadlightAppContent({
                     attachments={pendingAttachments}
                     onRemove={removeAttachment}
                     disabled={preparingAttachments}
+                  />
+                )}
+                <CapabilityChips
+                  capabilities={selectedCapabilities}
+                  disabled={state.isRunning}
+                  onRemove={(capability) =>
+                    setSelectedCapabilities((current) =>
+                      current.filter(({ id }) => id !== capability.id),
+                    )
+                  }
+                />
+                {capabilityQuery && (
+                  <CapabilityMenu
+                    capabilities={filteredCapabilities}
+                    activeIndex={Math.min(
+                      activeCapabilityIndex,
+                      Math.max(0, filteredCapabilities.length - 1),
+                    )}
+                    loading={capabilitiesLoading}
+                    onSelect={selectCapability}
                   />
                 )}
                 <div className="composer-row">
@@ -1781,7 +1946,12 @@ function ThreadlightAppContent({
                     }
                     disabled={state.connection !== "ready"}
                     onChange={(event) => {
-                      setInput(event.target.value);
+                      const value = event.target.value;
+                      setInput(value);
+                      updateCapabilityQuery(
+                        value,
+                        event.target.selectionStart,
+                      );
                       setVoiceError(undefined);
                     }}
                     onKeyDown={handleKeyDown}
@@ -1791,6 +1961,24 @@ function ThreadlightAppContent({
                     }}
                     aria-label={t("message")}
                     aria-describedby="composer-hint"
+                    role="combobox"
+                    aria-haspopup="listbox"
+                    aria-autocomplete="list"
+                    aria-expanded={Boolean(capabilityQuery)}
+                    aria-controls={
+                      capabilityQuery
+                        ? "composer-capability-menu"
+                        : undefined
+                    }
+                    aria-activedescendant={
+                      capabilityQuery &&
+                      filteredCapabilities.length > 0
+                        ? `composer-capability-${Math.min(
+                            activeCapabilityIndex,
+                            filteredCapabilities.length - 1,
+                          )}`
+                        : undefined
+                    }
                   />
                   {voiceInput && !state.isRunning && (
                   <button
