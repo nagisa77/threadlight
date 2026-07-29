@@ -9,6 +9,7 @@ import {
   ipcMain,
   net,
   nativeImage,
+  Notification,
   protocol,
   systemPreferences,
   type IpcMainEvent,
@@ -58,6 +59,11 @@ import {
   DesktopConnectionService,
 } from "./connection-store.js";
 import {
+  DEFAULT_CUSTOM_BASE_URL,
+  DEFAULT_DOUBAO_BASE_URL,
+  DEFAULT_GEMINI_BASE_URL,
+  DEFAULT_GROK_BASE_URL,
+  DEFAULT_KIMI_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_QWEN_BASE_URL,
   runtimeEnvironment,
@@ -73,6 +79,10 @@ import {
   type TerminalSessionEvent,
 } from "./terminal-session.js";
 import {
+  handleTaskCompletion,
+  type TaskCompletionNotification,
+} from "./task-completion.js";
+import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
   DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
@@ -86,6 +96,7 @@ import {
   DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
+  DESKTOP_CONVERSATION_READ_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
@@ -287,6 +298,11 @@ function ensureAppServer(
       settingsStore?.runtimeSettings() ?? {
         provider: "openai",
         qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+        kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
+        doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
+        geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
+        grokBaseUrl: DEFAULT_GROK_BASE_URL,
+        customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
         model: DEFAULT_MODEL,
       },
     ),
@@ -333,6 +349,13 @@ async function recordProjectMessage(
     const threadId = (message.params as { threadId?: unknown } | undefined)
       ?.threadId;
     if (typeof threadId === "string") threadProjects.set(threadId, projectId);
+    if (projectStore && settingsStore) {
+      handleTaskCompletion(projectId, message, {
+        language: settingsStore.snapshot().language,
+        markUnread: (target) => projectStore!.markConversationUnread(target),
+        notify: showTaskCompletionNotification,
+      });
+    }
     return;
   }
   const pendingProjectId = pendingThreadStarts.get(message.id);
@@ -600,6 +623,12 @@ function handleConversationUpsert(event: IpcMainInvokeEvent, value: unknown) {
   const update = parseConversationUpdate(value);
   threadProjects.set(update.id, update.projectId);
   return projectStore.upsertConversation(update);
+}
+
+function handleConversationRead(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  return projectStore.markConversationRead(parseConversationTarget(value));
 }
 
 function handleConversationDelete(event: IpcMainInvokeEvent, value: unknown) {
@@ -899,7 +928,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   }
   const update = value as Record<string, unknown>;
   if (!isModelProvider(update.provider)) {
-    throw new Error("provider must be openai, deepseek, or qwen");
+    throw new Error(
+      "provider must be openai, deepseek, qwen, kimi, doubao, gemini, grok, or custom",
+    );
   }
   if (update.language !== undefined && !isLanguage(update.language)) {
     throw new Error("language must be zh-CN, zh-TW, en, ja, or ko");
@@ -922,6 +953,21 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (!isOptionalSecret(update.qwenApiKey)) {
     throw new Error("qwenApiKey must be a string or null");
   }
+  if (!isOptionalSecret(update.kimiApiKey)) {
+    throw new Error("kimiApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.doubaoApiKey)) {
+    throw new Error("doubaoApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.geminiApiKey)) {
+    throw new Error("geminiApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.grokApiKey)) {
+    throw new Error("grokApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.customApiKey)) {
+    throw new Error("customApiKey must be a string or null");
+  }
   if (!isOptionalSecret(update.searchApiKey)) {
     throw new Error("searchApiKey must be a string or null");
   }
@@ -930,6 +976,30 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   }
   if (typeof update.qwenBaseUrl !== "string" || !update.qwenBaseUrl.trim()) {
     throw new Error("qwenBaseUrl must be a non-empty string");
+  }
+  if (typeof update.kimiBaseUrl !== "string" || !update.kimiBaseUrl.trim()) {
+    throw new Error("kimiBaseUrl must be a non-empty string");
+  }
+  if (
+    typeof update.doubaoBaseUrl !== "string" ||
+    !update.doubaoBaseUrl.trim()
+  ) {
+    throw new Error("doubaoBaseUrl must be a non-empty string");
+  }
+  if (
+    typeof update.geminiBaseUrl !== "string" ||
+    !update.geminiBaseUrl.trim()
+  ) {
+    throw new Error("geminiBaseUrl must be a non-empty string");
+  }
+  if (typeof update.grokBaseUrl !== "string" || !update.grokBaseUrl.trim()) {
+    throw new Error("grokBaseUrl must be a non-empty string");
+  }
+  if (
+    typeof update.customBaseUrl !== "string" ||
+    !update.customBaseUrl.trim()
+  ) {
+    throw new Error("customBaseUrl must be a non-empty string");
   }
   return {
     ...(update.language !== undefined ? { language: update.language } : {}),
@@ -940,6 +1010,11 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
     provider: update.provider,
     model: update.model.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
+    kimiBaseUrl: update.kimiBaseUrl.trim(),
+    doubaoBaseUrl: update.doubaoBaseUrl.trim(),
+    geminiBaseUrl: update.geminiBaseUrl.trim(),
+    grokBaseUrl: update.grokBaseUrl.trim(),
+    customBaseUrl: update.customBaseUrl.trim(),
     ...(update.openAIApiKey !== undefined
       ? { openAIApiKey: update.openAIApiKey }
       : {}),
@@ -948,6 +1023,21 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
       : {}),
     ...(update.qwenApiKey !== undefined
       ? { qwenApiKey: update.qwenApiKey }
+      : {}),
+    ...(update.kimiApiKey !== undefined
+      ? { kimiApiKey: update.kimiApiKey }
+      : {}),
+    ...(update.doubaoApiKey !== undefined
+      ? { doubaoApiKey: update.doubaoApiKey }
+      : {}),
+    ...(update.geminiApiKey !== undefined
+      ? { geminiApiKey: update.geminiApiKey }
+      : {}),
+    ...(update.grokApiKey !== undefined
+      ? { grokApiKey: update.grokApiKey }
+      : {}),
+    ...(update.customApiKey !== undefined
+      ? { customApiKey: update.customApiKey }
       : {}),
     ...(update.searchApiKey !== undefined
       ? { searchApiKey: update.searchApiKey }
@@ -990,7 +1080,16 @@ function isProjectOpenerPreference(
 function isModelProvider(
   value: unknown,
 ): value is DesktopSettingsUpdate["provider"] {
-  return value === "openai" || value === "deepseek" || value === "qwen";
+  return (
+    value === "openai" ||
+    value === "deepseek" ||
+    value === "qwen" ||
+    value === "kimi" ||
+    value === "doubao" ||
+    value === "gemini" ||
+    value === "grok" ||
+    value === "custom"
+  );
 }
 
 function isOptionalSecret(value: unknown): value is string | null | undefined {
@@ -1178,6 +1277,24 @@ function sendToRenderer(window: BrowserWindow, message: JsonRpcOutgoing): void {
   }
 }
 
+function showTaskCompletionNotification(
+  completion: TaskCompletionNotification,
+): void {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification({
+    title: completion.title,
+    body: completion.body,
+    icon: appIconPath,
+  });
+  notification.on("click", () => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) return;
+    window.show();
+    window.focus();
+  });
+  notification.show();
+}
+
 function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const request = value as Record<string, unknown>;
@@ -1334,6 +1451,7 @@ app.whenReady().then(() => {
     DESKTOP_CONVERSATION_UPSERT_CHANNEL,
     handleConversationUpsert,
   );
+  ipcMain.handle(DESKTOP_CONVERSATION_READ_CHANNEL, handleConversationRead);
   ipcMain.handle(
     DESKTOP_CONVERSATION_DELETE_CHANNEL,
     handleConversationDelete,

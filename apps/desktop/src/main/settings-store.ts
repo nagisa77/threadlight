@@ -25,8 +25,18 @@ interface StoredSettings {
   encryptedOpenAIApiKey?: string;
   encryptedDeepSeekApiKey?: string;
   encryptedQwenApiKey?: string;
+  encryptedKimiApiKey?: string;
+  encryptedDoubaoApiKey?: string;
+  encryptedGeminiApiKey?: string;
+  encryptedGrokApiKey?: string;
+  encryptedCustomApiKey?: string;
   encryptedSearchApiKey?: string;
   qwenBaseUrl?: string;
+  kimiBaseUrl?: string;
+  doubaoBaseUrl?: string;
+  geminiBaseUrl?: string;
+  grokBaseUrl?: string;
+  customBaseUrl?: string;
   model?: string;
 }
 
@@ -40,16 +50,38 @@ export interface RuntimeSettings {
   openAIApiKey?: string;
   deepSeekApiKey?: string;
   qwenApiKey?: string;
+  kimiApiKey?: string;
+  doubaoApiKey?: string;
+  geminiApiKey?: string;
+  grokApiKey?: string;
+  customApiKey?: string;
   searchApiKey?: string;
   qwenBaseUrl: string;
+  kimiBaseUrl: string;
+  doubaoBaseUrl: string;
+  geminiBaseUrl: string;
+  grokBaseUrl: string;
+  customBaseUrl: string;
   model: string;
 }
 
 export const DEFAULT_MODEL = "gpt-5.6-sol";
 export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro";
 export const DEFAULT_QWEN_MODEL = "qwen3.7-plus";
+export const DEFAULT_KIMI_MODEL = "kimi-k3";
+export const DEFAULT_DOUBAO_MODEL = "doubao-seed-2-0-pro-260215";
+export const DEFAULT_GEMINI_MODEL = "gemini-3.6-flash";
+export const DEFAULT_GROK_MODEL = "grok-4.5";
+export const DEFAULT_CUSTOM_MODEL = "llama3.2";
 export const DEFAULT_QWEN_BASE_URL =
   "https://dashscope.aliyuncs.com/compatible-mode/v1";
+export const DEFAULT_KIMI_BASE_URL = "https://api.moonshot.ai/v1";
+export const DEFAULT_DOUBAO_BASE_URL =
+  "https://ark.cn-beijing.volces.com/api/v3";
+export const DEFAULT_GEMINI_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai";
+export const DEFAULT_GROK_BASE_URL = "https://api.x.ai/v1";
+export const DEFAULT_CUSTOM_BASE_URL = "http://127.0.0.1:11434/v1";
 
 const EMPTY_SETTINGS: StoredSettings = {
   version: 1,
@@ -73,8 +105,18 @@ export class SettingsStore {
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
       qwenApiKeyConfigured: Boolean(settings.qwenApiKey),
+      kimiApiKeyConfigured: Boolean(settings.kimiApiKey),
+      doubaoApiKeyConfigured: Boolean(settings.doubaoApiKey),
+      geminiApiKeyConfigured: Boolean(settings.geminiApiKey),
+      grokApiKeyConfigured: Boolean(settings.grokApiKey),
+      customApiKeyConfigured: Boolean(settings.customApiKey),
       searchApiKeyConfigured: Boolean(settings.searchApiKey),
       qwenBaseUrl: settings.qwenBaseUrl,
+      kimiBaseUrl: settings.kimiBaseUrl,
+      doubaoBaseUrl: settings.doubaoBaseUrl,
+      geminiBaseUrl: settings.geminiBaseUrl,
+      grokBaseUrl: settings.grokBaseUrl,
+      customBaseUrl: settings.customBaseUrl,
       model: settings.model,
     };
   }
@@ -91,7 +133,21 @@ export class SettingsStore {
       preferredProjectOpener:
         update.preferredProjectOpener ?? current.preferredProjectOpener,
       provider: update.provider,
-      qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl),
+      qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl, "Qwen Base URL"),
+      kimiBaseUrl: normalizeHttpUrl(update.kimiBaseUrl, "Kimi Base URL"),
+      doubaoBaseUrl: normalizeHttpUrl(
+        update.doubaoBaseUrl,
+        "Doubao Base URL",
+      ),
+      geminiBaseUrl: normalizeHttpUrl(
+        update.geminiBaseUrl,
+        "Gemini Base URL",
+      ),
+      grokBaseUrl: normalizeHttpUrl(update.grokBaseUrl, "Grok Base URL"),
+      customBaseUrl: normalizeHttpUrl(
+        update.customBaseUrl,
+        "Custom Base URL",
+      ),
       model: requireNonEmpty(update.model, "Model"),
     };
 
@@ -111,6 +167,36 @@ export class SettingsStore {
       next,
       "encryptedQwenApiKey",
       update.qwenApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedKimiApiKey",
+      update.kimiApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedDoubaoApiKey",
+      update.doubaoApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedGeminiApiKey",
+      update.geminiApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedGrokApiKey",
+      update.grokApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedCustomApiKey",
+      update.customApiKey,
       this.codec,
     );
     updateSecret(
@@ -141,6 +227,21 @@ export class SettingsStore {
       qwenApiKey:
         decryptOptional(stored.encryptedQwenApiKey, this.codec) ??
         nonEmpty(environment.DASHSCOPE_API_KEY),
+      kimiApiKey:
+        decryptOptional(stored.encryptedKimiApiKey, this.codec) ??
+        nonEmpty(environment.MOONSHOT_API_KEY),
+      doubaoApiKey:
+        decryptOptional(stored.encryptedDoubaoApiKey, this.codec) ??
+        nonEmpty(environment.ARK_API_KEY),
+      geminiApiKey:
+        decryptOptional(stored.encryptedGeminiApiKey, this.codec) ??
+        nonEmpty(environment.GEMINI_API_KEY),
+      grokApiKey:
+        decryptOptional(stored.encryptedGrokApiKey, this.codec) ??
+        nonEmpty(environment.XAI_API_KEY),
+      customApiKey:
+        decryptOptional(stored.encryptedCustomApiKey, this.codec) ??
+        nonEmpty(environment.CUSTOM_API_KEY),
       searchApiKey:
         decryptOptional(stored.encryptedSearchApiKey, this.codec) ??
         nonEmpty(environment.BRAVE_SEARCH_API_KEY),
@@ -148,6 +249,26 @@ export class SettingsStore {
         nonEmpty(stored.qwenBaseUrl) ??
         nonEmpty(environment.DASHSCOPE_BASE_URL) ??
         DEFAULT_QWEN_BASE_URL,
+      kimiBaseUrl:
+        nonEmpty(stored.kimiBaseUrl) ??
+        nonEmpty(environment.MOONSHOT_BASE_URL) ??
+        DEFAULT_KIMI_BASE_URL,
+      doubaoBaseUrl:
+        nonEmpty(stored.doubaoBaseUrl) ??
+        nonEmpty(environment.ARK_BASE_URL) ??
+        DEFAULT_DOUBAO_BASE_URL,
+      geminiBaseUrl:
+        nonEmpty(stored.geminiBaseUrl) ??
+        nonEmpty(environment.GEMINI_BASE_URL) ??
+        DEFAULT_GEMINI_BASE_URL,
+      grokBaseUrl:
+        nonEmpty(stored.grokBaseUrl) ??
+        nonEmpty(environment.XAI_BASE_URL) ??
+        DEFAULT_GROK_BASE_URL,
+      customBaseUrl:
+        nonEmpty(stored.customBaseUrl) ??
+        nonEmpty(environment.CUSTOM_BASE_URL) ??
+        DEFAULT_CUSTOM_BASE_URL,
       model:
         nonEmpty(stored.model) ??
         nonEmpty(environment.THREADLIGHT_MODEL) ??
@@ -201,11 +322,41 @@ export function runtimeEnvironment(
     ...(settings.provider === "qwen" && settings.qwenApiKey
       ? { DASHSCOPE_API_KEY: settings.qwenApiKey }
       : {}),
+    ...(settings.provider === "kimi" && settings.kimiApiKey
+      ? { MOONSHOT_API_KEY: settings.kimiApiKey }
+      : {}),
+    ...(settings.provider === "doubao" && settings.doubaoApiKey
+      ? { ARK_API_KEY: settings.doubaoApiKey }
+      : {}),
+    ...(settings.provider === "gemini" && settings.geminiApiKey
+      ? { GEMINI_API_KEY: settings.geminiApiKey }
+      : {}),
+    ...(settings.provider === "grok" && settings.grokApiKey
+      ? { XAI_API_KEY: settings.grokApiKey }
+      : {}),
+    ...(settings.provider === "custom" && settings.customApiKey
+      ? { CUSTOM_API_KEY: settings.customApiKey }
+      : {}),
     ...(settings.searchApiKey
       ? { BRAVE_SEARCH_API_KEY: settings.searchApiKey }
       : {}),
     ...(settings.provider === "qwen"
       ? { DASHSCOPE_BASE_URL: settings.qwenBaseUrl }
+      : {}),
+    ...(settings.provider === "kimi"
+      ? { MOONSHOT_BASE_URL: settings.kimiBaseUrl }
+      : {}),
+    ...(settings.provider === "doubao"
+      ? { ARK_BASE_URL: settings.doubaoBaseUrl }
+      : {}),
+    ...(settings.provider === "gemini"
+      ? { GEMINI_BASE_URL: settings.geminiBaseUrl }
+      : {}),
+    ...(settings.provider === "grok"
+      ? { XAI_BASE_URL: settings.grokBaseUrl }
+      : {}),
+    ...(settings.provider === "custom"
+      ? { CUSTOM_BASE_URL: settings.customBaseUrl }
       : {}),
     THREADLIGHT_MODEL: settings.model,
   };
@@ -217,6 +368,11 @@ function updateSecret(
     | "encryptedOpenAIApiKey"
     | "encryptedDeepSeekApiKey"
     | "encryptedQwenApiKey"
+    | "encryptedKimiApiKey"
+    | "encryptedDoubaoApiKey"
+    | "encryptedGeminiApiKey"
+    | "encryptedGrokApiKey"
+    | "encryptedCustomApiKey"
     | "encryptedSearchApiKey",
   value: string | null | undefined,
   codec: SecretCodec,
@@ -253,8 +409,18 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.encryptedOpenAIApiKey) &&
     optionalString(settings.encryptedDeepSeekApiKey) &&
     optionalString(settings.encryptedQwenApiKey) &&
+    optionalString(settings.encryptedKimiApiKey) &&
+    optionalString(settings.encryptedDoubaoApiKey) &&
+    optionalString(settings.encryptedGeminiApiKey) &&
+    optionalString(settings.encryptedGrokApiKey) &&
+    optionalString(settings.encryptedCustomApiKey) &&
     optionalString(settings.encryptedSearchApiKey) &&
     optionalString(settings.qwenBaseUrl) &&
+    optionalString(settings.kimiBaseUrl) &&
+    optionalString(settings.doubaoBaseUrl) &&
+    optionalString(settings.geminiBaseUrl) &&
+    optionalString(settings.grokBaseUrl) &&
+    optionalString(settings.customBaseUrl) &&
     optionalString(settings.model) &&
     optionalLanguage(settings.language) &&
     optionalTheme(settings.theme) &&
@@ -319,7 +485,16 @@ function parseTheme(value: unknown): DesktopTheme {
 }
 
 function isProvider(value: unknown): value is DesktopModelProvider {
-  return value === "openai" || value === "deepseek" || value === "qwen";
+  return (
+    value === "openai" ||
+    value === "deepseek" ||
+    value === "qwen" ||
+    value === "kimi" ||
+    value === "doubao" ||
+    value === "gemini" ||
+    value === "grok" ||
+    value === "custom"
+  );
 }
 
 function parseProvider(value: string | undefined): DesktopModelProvider {
@@ -329,19 +504,24 @@ function parseProvider(value: string | undefined): DesktopModelProvider {
 function defaultModel(provider: DesktopModelProvider): string {
   if (provider === "deepseek") return DEFAULT_DEEPSEEK_MODEL;
   if (provider === "qwen") return DEFAULT_QWEN_MODEL;
+  if (provider === "kimi") return DEFAULT_KIMI_MODEL;
+  if (provider === "doubao") return DEFAULT_DOUBAO_MODEL;
+  if (provider === "gemini") return DEFAULT_GEMINI_MODEL;
+  if (provider === "grok") return DEFAULT_GROK_MODEL;
+  if (provider === "custom") return DEFAULT_CUSTOM_MODEL;
   return DEFAULT_MODEL;
 }
 
-function normalizeHttpUrl(value: string): string {
-  const normalized = requireNonEmpty(value, "Qwen Base URL").replace(/\/$/, "");
+function normalizeHttpUrl(value: string, label: string): string {
+  const normalized = requireNonEmpty(value, label).replace(/\/$/, "");
   let url: URL;
   try {
     url = new URL(normalized);
   } catch {
-    throw new Error("Qwen Base URL must be a valid URL");
+    throw new Error(`${label} must be a valid URL`);
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("Qwen Base URL must use HTTP or HTTPS");
+    throw new Error(`${label} must use HTTP or HTTPS`);
   }
   return normalized;
 }

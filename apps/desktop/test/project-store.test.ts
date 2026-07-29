@@ -121,4 +121,38 @@ describe("ProjectStore", () => {
       .projects[0].conversations).toEqual([]);
   });
 
+  it("persists completion unread state until the task is opened", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    mkdirSync(projectPath);
+    const mapPath = join(root, "project-map.json");
+    const store = new ProjectStore(mapPath, {
+      createId: () => "project-1",
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Background task",
+    });
+
+    expect(
+      store.markConversationUnread({
+        projectId: "project-1",
+        id: "thread-1",
+      }).projects[0]?.conversations[0]?.unread,
+    ).toBe(true);
+    expect(
+      new ProjectStore(mapPath).snapshot().projects[0]?.conversations[0]
+        ?.unread,
+    ).toBe(true);
+    expect(
+      store.markConversationRead({
+        projectId: "project-1",
+        id: "thread-1",
+      }).projects[0]?.conversations[0]?.unread,
+    ).toBe(false);
+  });
+
 });

@@ -394,7 +394,13 @@ function ThreadlightAppContent({
   const conversation = useRef<HTMLElement>(null);
   const workspaceRoot = useRef<HTMLElement>(null);
   const followOutput = useRef(true);
+  const projectSnapshotRef = useRef<ProjectsSnapshot | undefined>(undefined);
+  const activeThreadIdRef = useRef<string | undefined>(undefined);
+  const viewRef = useRef(view);
   const currentProject = activeProject(projectSnapshot);
+  projectSnapshotRef.current = projectSnapshot;
+  activeThreadIdRef.current = state.threadId;
+  viewRef.current = view;
   conversationChangesScope.current =
     currentProject && state.threadId
       ? `${currentProject.id}\u0000${state.threadId}`
@@ -437,6 +443,70 @@ function ThreadlightAppContent({
       active: composerMode === "plan",
     },
   ];
+
+  useEffect(() => {
+    if (!projects) return;
+    let active = true;
+    const unsubscribe = client.on("turn/completed", ({ threadId }) => {
+      void projects
+        .load()
+        .then(async (snapshot) => {
+          const project = snapshot.projects.find((candidate) =>
+            candidate.conversations.some(
+              (conversation) => conversation.id === threadId,
+            ),
+          );
+          if (
+            project &&
+            projects.markConversationRead &&
+            activeThreadIdRef.current === threadId &&
+            viewRef.current === "thread" &&
+            document.hasFocus()
+          ) {
+            return projects.markConversationRead({
+              projectId: project.id,
+              id: threadId,
+            });
+          }
+          return snapshot;
+        })
+        .then((snapshot) => {
+          if (active) setProjectSnapshot(snapshot);
+        })
+        .catch(() => {
+          // The persisted marker will be reflected by the next project refresh.
+        });
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [client, projects]);
+
+  useEffect(() => {
+    const markConversationRead = projects?.markConversationRead;
+    if (!markConversationRead) return;
+    const markVisibleConversationRead = () => {
+      if (viewRef.current !== "thread") return;
+      const threadId = activeThreadIdRef.current;
+      const snapshot = projectSnapshotRef.current;
+      const project = snapshot?.projects.find((candidate) =>
+        candidate.conversations.some(
+          (conversation) =>
+            conversation.id === threadId && conversation.unread,
+        ),
+      );
+      if (!project || !threadId) return;
+      void markConversationRead({ projectId: project.id, id: threadId })
+        .then(setProjectSnapshot)
+        .catch(() => {
+          // A later project refresh can retry clearing the persisted marker.
+        });
+    };
+    window.addEventListener("focus", markVisibleConversationRead);
+    return () =>
+      window.removeEventListener("focus", markVisibleConversationRead);
+  }, [projects]);
 
   useEffect(() => {
     setSelectedCapabilities([]);
@@ -863,7 +933,21 @@ function ThreadlightAppContent({
 
       const requestedThreadId =
         preferredThreadId ?? project.conversations[0]?.id;
-      await openThread(requestedThreadId);
+      const openedThreadId = await openThread(requestedThreadId);
+      if (
+        openedThreadId &&
+        projects.markConversationRead &&
+        project.conversations.some(
+          (conversation) => conversation.id === openedThreadId,
+        )
+      ) {
+        setProjectSnapshot(
+          await projects.markConversationRead({
+            projectId: project.id,
+            id: openedThreadId,
+          }),
+        );
+      }
     },
     [openThread, projects],
   );
@@ -2966,6 +3050,9 @@ export function ProjectGroup({
   const projectUsingComputer = project.conversations.some(
     (conversation) => conversation.id === computerThreadId,
   );
+  const projectUnread = project.conversations.some(
+    (conversation) => conversation.unread,
+  );
 
   function toggleExpanded() {
     const nextExpanded = !expanded;
@@ -2987,7 +3074,8 @@ export function ProjectGroup({
         {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
         <span className="project-name">{project.name}</span>
         {(showsProjectLevelActivity(expanded, projectRunning) ||
-          showsProjectLevelActivity(expanded, projectUsingComputer)) && (
+          showsProjectLevelActivity(expanded, projectUsingComputer) ||
+          showsProjectLevelActivity(expanded, projectUnread)) && (
           <span className="project-live-indicators">
             {showsProjectLevelActivity(expanded, projectRunning) && (
               <LoaderCircle
@@ -2999,6 +3087,12 @@ export function ProjectGroup({
             {showsProjectLevelActivity(expanded, projectUsingComputer) && (
               <ComputerUseIndicator
                 label={t("projectTaskUsingComputer", { project: project.name })}
+              />
+            )}
+            {showsProjectLevelActivity(expanded, projectUnread) && (
+              <span
+                className="project-unread-indicator"
+                aria-label={t("projectTaskUnread", { project: project.name })}
               />
             )}
           </span>
@@ -3057,7 +3151,7 @@ export function ProjectConversationItem({
         onClick={onSelect}
       >
         <span className="thread-title">{conversation.title}</span>
-        {(running || computerActive) && (
+        {(running || computerActive || conversation.unread) && (
           <span className="thread-live-indicators">
             {running && (
               <LoaderCircle
@@ -3069,6 +3163,12 @@ export function ProjectConversationItem({
             {computerActive && (
               <ComputerUseIndicator
                 label={t("taskUsingComputer", { title: conversation.title })}
+              />
+            )}
+            {conversation.unread && (
+              <span
+                className="thread-unread-indicator"
+                aria-label={t("taskUnread", { title: conversation.title })}
               />
             )}
           </span>

@@ -3,6 +3,7 @@ export interface ConversationSummary {
   title: string;
   createdAt: string;
   updatedAt: string;
+  unread?: boolean;
 }
 
 export interface ProjectSummary {
@@ -35,6 +36,9 @@ export interface ProjectsAdapter {
   activate(projectId: string): Promise<ProjectsSnapshot>;
   upsertConversation(
     update: ConversationSummaryUpdate,
+  ): Promise<ProjectsSnapshot>;
+  markConversationRead?(
+    target: ConversationSummaryTarget,
   ): Promise<ProjectsSnapshot>;
   deleteConversation(
     target: ConversationSummaryTarget,

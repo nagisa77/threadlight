@@ -128,10 +128,23 @@ export class ProjectStore {
         title,
         createdAt: timestamp,
         updatedAt: timestamp,
+        unread: false,
       });
     }
     this.write(stored);
     return this.snapshot();
+  }
+
+  markConversationUnread(
+    target: DesktopConversationTarget,
+  ): DesktopProjectsSnapshot {
+    return this.setConversationUnread(target, true);
+  }
+
+  markConversationRead(
+    target: DesktopConversationTarget,
+  ): DesktopProjectsSnapshot {
+    return this.setConversationUnread(target, false);
   }
 
   deleteConversation(
@@ -162,6 +175,27 @@ export class ProjectStore {
 
   project(projectId: string): DesktopProject | undefined {
     return this.snapshot().projects.find((project) => project.id === projectId);
+  }
+
+  private setConversationUnread(
+    target: DesktopConversationTarget,
+    unread: boolean,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const project = stored.projects.find(
+      (candidate) => candidate.id === target.projectId,
+    );
+    if (!project) throw new Error(`Unknown project: ${target.projectId}`);
+    if (!target.id.trim()) throw new Error("Conversation id cannot be empty");
+    const conversation = project.conversations.find(
+      (candidate) => candidate.id === target.id,
+    );
+    if (!conversation || conversation.unread === unread) {
+      return this.snapshot();
+    }
+    conversation.unread = unread;
+    this.write(stored);
+    return this.snapshot();
   }
 
   private read(): StoredProjectMap {
@@ -257,7 +291,9 @@ function isConversation(value: unknown): boolean {
     typeof conversation.id === "string" &&
     typeof conversation.title === "string" &&
     typeof conversation.createdAt === "string" &&
-    typeof conversation.updatedAt === "string"
+    typeof conversation.updatedAt === "string" &&
+    (conversation.unread === undefined ||
+      typeof conversation.unread === "boolean")
   );
 }
 

@@ -81,7 +81,7 @@ Threadlight 不只是一个聊天界面，也不把 Agent 简化成一次模型�
 
 桌面端支持：
 
-- OpenAI、DeepSeek、阿里云百炼 · 千问之间切换。
+- OpenAI、Kimi、豆包、Gemini、Grok、DeepSeek、阿里云百炼 · 千问，以及自定义 OpenAI 兼容服务之间切换。
 - 针对不同任务选择默认模型。
 - 简体中文、繁體中文、English、日本語与 한국어。
 - 跟随系统、浅色与深色主题。
@@ -113,7 +113,7 @@ flowchart TB
     Providers["@threadlight/model-providers"]
     Tools["@threadlight/builtin-tools"]
     Memory["@threadlight/project-memory"]
-    Models["OpenAI · DeepSeek · Qwen"]
+    Models["OpenAI · Kimi · Doubao · Gemini · Grok · DeepSeek · Qwen · Custom"]
     Runtime["Shell · Process · MCP · Search · Computer"]
 
     Desktop --> UI
@@ -190,6 +190,11 @@ npm run desktop:package
 | --- | --- | --- |
 | OpenAI | `OPENAI_API_KEY` | `THREADLIGHT_MODEL` |
 | DeepSeek | `THREADLIGHT_PROVIDER=deepseek`、`DEEPSEEK_API_KEY` | `THREADLIGHT_MODEL` |
+| Kimi | `THREADLIGHT_PROVIDER=kimi`、`MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL`、`THREADLIGHT_MODEL` |
+| 豆包 | `THREADLIGHT_PROVIDER=doubao`、`ARK_API_KEY` | `ARK_BASE_URL`、`THREADLIGHT_MODEL` |
+| Gemini | `THREADLIGHT_PROVIDER=gemini`、`GEMINI_API_KEY` | `GEMINI_BASE_URL`、`THREADLIGHT_MODEL` |
+| Grok | `THREADLIGHT_PROVIDER=grok`、`XAI_API_KEY` | `XAI_BASE_URL`、`THREADLIGHT_MODEL` |
+| 自定义兼容服务 | `THREADLIGHT_PROVIDER=custom`、`CUSTOM_BASE_URL`、`THREADLIGHT_MODEL` | `CUSTOM_API_KEY` |
 | 千问 | `THREADLIGHT_PROVIDER=qwen`、`DASHSCOPE_API_KEY` | `DASHSCOPE_BASE_URL`、`THREADLIGHT_MODEL` |
 
 ```bash
@@ -197,6 +202,35 @@ npm run desktop:package
 export THREADLIGHT_PROVIDER="deepseek"
 export DEEPSEEK_API_KEY="your-key"
 export THREADLIGHT_MODEL="deepseek-v4-pro"
+
+# 或 Kimi（默认使用 Kimi K3）
+export THREADLIGHT_PROVIDER="kimi"
+export MOONSHOT_API_KEY="your-key"
+export MOONSHOT_BASE_URL="https://api.moonshot.ai/v1"
+export THREADLIGHT_MODEL="kimi-k3"
+
+# 或豆包（火山方舟）
+export THREADLIGHT_PROVIDER="doubao"
+export ARK_API_KEY="your-key"
+export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+export THREADLIGHT_MODEL="doubao-seed-2-0-pro-260215"
+
+# 或 Gemini
+export THREADLIGHT_PROVIDER="gemini"
+export GEMINI_API_KEY="your-key"
+export GEMINI_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai"
+export THREADLIGHT_MODEL="gemini-3.6-flash"
+
+# 或 Grok
+export THREADLIGHT_PROVIDER="grok"
+export XAI_API_KEY="your-key"
+export XAI_BASE_URL="https://api.x.ai/v1"
+export THREADLIGHT_MODEL="grok-4.5"
+
+# 或自定义 OpenAI 兼容服务（API Key 可选）
+export THREADLIGHT_PROVIDER="custom"
+export CUSTOM_BASE_URL="http://127.0.0.1:11434/v1"
+export THREADLIGHT_MODEL="llama3.2"
 
 # 或阿里云百炼 · 千问
 export THREADLIGHT_PROVIDER="qwen"

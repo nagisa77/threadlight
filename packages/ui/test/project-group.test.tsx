@@ -383,6 +383,27 @@ describe("ProjectGroup", () => {
     expect(html).toContain('aria-label="删除任务“整理发布说明”"');
   });
 
+  it("shows an accessible unread dot for a completed background task", () => {
+    const html = renderToStaticMarkup(
+      <ProjectConversationItem
+        conversation={{
+          id: "thread-1",
+          title: "完成通知系统",
+          createdAt: "2026-07-29T00:00:00.000Z",
+          updatedAt: "2026-07-29T00:00:00.000Z",
+          unread: true,
+        }}
+        active={false}
+        disabled={false}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="thread-unread-indicator"');
+    expect(html).toContain('aria-label="完成通知系统有未读更新"');
+    expect(html).not.toContain("spin");
+  });
+
   it("uses the thinking spinner for running projects and tasks", () => {
     const html = renderToStaticMarkup(
       <ProjectGroup

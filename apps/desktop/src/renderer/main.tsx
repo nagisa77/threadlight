@@ -35,6 +35,8 @@ const projects: ProjectsAdapter = {
     window.threadlightDesktop.activateProject(projectId),
   upsertConversation: (update) =>
     window.threadlightDesktop.upsertConversation(update),
+  markConversationRead: (target) =>
+    window.threadlightDesktop.markConversationRead(target),
   deleteConversation: (target) =>
     window.threadlightDesktop.deleteConversation(target),
 };

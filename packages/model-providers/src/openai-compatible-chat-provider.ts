@@ -31,6 +31,7 @@ export interface OpenAICompatibleChatProviderOptions {
   baseURL: string;
   defaultModel: string;
   provider: string;
+  stateProvider?: string;
   client?: OpenAI;
 }
 
@@ -43,6 +44,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
   private readonly client: OpenAI;
   private readonly defaultModel: string;
   private readonly provider: string;
+  private readonly stateProvider: string;
 
   constructor(options: OpenAICompatibleChatProviderOptions) {
     this.client =
@@ -53,6 +55,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       });
     this.defaultModel = options.defaultModel;
     this.provider = options.provider;
+    this.stateProvider = options.stateProvider ?? options.provider;
   }
 
   async uploadAttachment(
@@ -67,7 +70,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     state: unknown,
     options: { maxBytes: number },
   ): unknown {
-    if (!isChatProviderState(state) || state.provider !== this.provider) {
+    if (!isChatProviderState(state) || state.provider !== this.stateProvider) {
       return state;
     }
     let messages = state.messages.map((message) => ({ ...message }));
@@ -211,7 +214,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       toolCalls,
       state: {
         protocol: "openai-compatible-chat",
-        provider: this.provider,
+        provider: this.stateProvider,
         messages: [...messages, assistantMessage],
       } satisfies ChatProviderState,
       usage,
@@ -219,7 +222,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
   }
 
   private messagesFrom(state: unknown, instructions: string): ChatMessage[] {
-    if (isChatProviderState(state) && state.provider === this.provider) {
+    if (isChatProviderState(state) && state.provider === this.stateProvider) {
       const messages = state.messages.map((message) => ({ ...message }));
       const system = messages.find((message) => message.role === "system");
       if (system) system.content = instructions;

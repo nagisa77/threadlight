@@ -3,6 +3,11 @@
 import { AgentLoop } from "@threadlight/agent-loop";
 import {
   createModelProvider,
+  CUSTOM_DEFAULT_BASE_URL,
+  DOUBAO_DEFAULT_BASE_URL,
+  GEMINI_DEFAULT_BASE_URL,
+  GROK_DEFAULT_BASE_URL,
+  KIMI_DEFAULT_BASE_URL,
   QWEN_DEFAULT_BASE_URL,
   type ModelProviderId,
 } from "@threadlight/model-providers";
@@ -67,22 +72,18 @@ const MENTIONABLE_TOOL_CAPABILITIES = {
 
 const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
 const providerApiKey = apiKeyFor(providerId, process.env);
-if (!providerApiKey) {
+if (!providerApiKey && providerId !== "custom") {
   process.stderr.write(`${apiKeyEnvironmentName(providerId)} is required\n`);
   process.exit(1);
 }
 
+const providerBaseUrl = baseUrlFor(providerId, process.env);
 const provider = createModelProvider({
   provider: providerId,
   apiKey: providerApiKey,
   defaultModel:
     process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId),
-  ...(providerId === "qwen"
-    ? {
-        baseURL:
-          process.env.DASHSCOPE_BASE_URL ?? QWEN_DEFAULT_BASE_URL,
-      }
-    : {}),
+  ...(providerBaseUrl ? { baseURL: providerBaseUrl } : {}),
 });
 
 const loop = new AgentLoop(provider);
@@ -227,7 +228,17 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 function parseProvider(value: string | undefined): ModelProviderId {
   if (!value || value === "openai") return "openai";
-  if (value === "deepseek" || value === "qwen") return value;
+  if (
+    value === "deepseek" ||
+    value === "qwen" ||
+    value === "kimi" ||
+    value === "doubao" ||
+    value === "gemini" ||
+    value === "grok" ||
+    value === "custom"
+  ) {
+    return value;
+  }
   throw new Error(`Unsupported model provider: ${value}`);
 }
 
@@ -237,17 +248,56 @@ function apiKeyFor(
 ): string | undefined {
   if (provider === "deepseek") return environment.DEEPSEEK_API_KEY;
   if (provider === "qwen") return environment.DASHSCOPE_API_KEY;
+  if (provider === "kimi") return environment.MOONSHOT_API_KEY;
+  if (provider === "doubao") return environment.ARK_API_KEY;
+  if (provider === "gemini") return environment.GEMINI_API_KEY;
+  if (provider === "grok") return environment.XAI_API_KEY;
+  if (provider === "custom") return environment.CUSTOM_API_KEY;
   return environment.OPENAI_API_KEY;
 }
 
 function apiKeyEnvironmentName(provider: ModelProviderId): string {
   if (provider === "deepseek") return "DEEPSEEK_API_KEY";
   if (provider === "qwen") return "DASHSCOPE_API_KEY";
+  if (provider === "kimi") return "MOONSHOT_API_KEY";
+  if (provider === "doubao") return "ARK_API_KEY";
+  if (provider === "gemini") return "GEMINI_API_KEY";
+  if (provider === "grok") return "XAI_API_KEY";
+  if (provider === "custom") return "CUSTOM_API_KEY";
   return "OPENAI_API_KEY";
 }
 
 function defaultModelFor(provider: ModelProviderId): string {
   if (provider === "deepseek") return "deepseek-v4-pro";
   if (provider === "qwen") return "qwen3.7-plus";
+  if (provider === "kimi") return "kimi-k3";
+  if (provider === "doubao") return "doubao-seed-2-0-pro-260215";
+  if (provider === "gemini") return "gemini-3.6-flash";
+  if (provider === "grok") return "grok-4.5";
+  if (provider === "custom") return "llama3.2";
   return "gpt-5.6-sol";
+}
+
+function baseUrlFor(
+  provider: ModelProviderId,
+  environment: NodeJS.ProcessEnv,
+): string | undefined {
+  if (provider === "qwen") {
+    return environment.DASHSCOPE_BASE_URL ?? QWEN_DEFAULT_BASE_URL;
+  }
+  if (provider === "kimi") {
+    return environment.MOONSHOT_BASE_URL ?? KIMI_DEFAULT_BASE_URL;
+  }
+  if (provider === "doubao") {
+    return environment.ARK_BASE_URL ?? DOUBAO_DEFAULT_BASE_URL;
+  }
+  if (provider === "gemini") {
+    return environment.GEMINI_BASE_URL ?? GEMINI_DEFAULT_BASE_URL;
+  }
+  if (provider === "grok") {
+    return environment.XAI_BASE_URL ?? GROK_DEFAULT_BASE_URL;
+  }
+  if (provider === "custom") {
+    return environment.CUSTOM_BASE_URL ?? CUSTOM_DEFAULT_BASE_URL;
+  }
 }

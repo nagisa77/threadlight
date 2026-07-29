@@ -199,6 +199,17 @@ button:disabled {
   color: var(--accent);
 }
 
+.project-unread-indicator,
+.thread-unread-indicator {
+  display: block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
 .project-live-indicators,
 .thread-live-indicators {
   display: inline-flex;

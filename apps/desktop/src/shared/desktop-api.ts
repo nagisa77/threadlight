@@ -18,6 +18,8 @@ export const DESKTOP_PROJECT_OPEN_WITH_CHANNEL =
   "threadlight:project-open-with";
 export const DESKTOP_CONVERSATION_UPSERT_CHANNEL =
   "threadlight:conversation:upsert";
+export const DESKTOP_CONVERSATION_READ_CHANNEL =
+  "threadlight:conversation:read";
 export const DESKTOP_CONVERSATION_DELETE_CHANNEL =
   "threadlight:conversation:delete";
 export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
@@ -57,7 +59,15 @@ export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
 export const DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL =
   "threadlight:workspace-file:reveal";
 
-export type DesktopModelProvider = "openai" | "deepseek" | "qwen";
+export type DesktopModelProvider =
+  | "openai"
+  | "deepseek"
+  | "qwen"
+  | "kimi"
+  | "doubao"
+  | "gemini"
+  | "grok"
+  | "custom";
 export type DesktopLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
 export type DesktopTheme = "system" | "light" | "dark";
 export type DesktopProjectOpener = string;
@@ -70,8 +80,18 @@ export interface DesktopSettingsSnapshot {
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
   qwenApiKeyConfigured: boolean;
+  kimiApiKeyConfigured: boolean;
+  doubaoApiKeyConfigured: boolean;
+  geminiApiKeyConfigured: boolean;
+  grokApiKeyConfigured: boolean;
+  customApiKeyConfigured: boolean;
   searchApiKeyConfigured: boolean;
   qwenBaseUrl: string;
+  kimiBaseUrl: string;
+  doubaoBaseUrl: string;
+  geminiBaseUrl: string;
+  grokBaseUrl: string;
+  customBaseUrl: string;
   model: string;
 }
 
@@ -83,8 +103,18 @@ export interface DesktopSettingsUpdate {
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;
   qwenApiKey?: string | null;
+  kimiApiKey?: string | null;
+  doubaoApiKey?: string | null;
+  geminiApiKey?: string | null;
+  grokApiKey?: string | null;
+  customApiKey?: string | null;
   searchApiKey?: string | null;
   qwenBaseUrl: string;
+  kimiBaseUrl: string;
+  doubaoBaseUrl: string;
+  geminiBaseUrl: string;
+  grokBaseUrl: string;
+  customBaseUrl: string;
   model: string;
 }
 
@@ -93,6 +123,7 @@ export interface DesktopConversationSummary {
   title: string;
   createdAt: string;
   updatedAt: string;
+  unread?: boolean;
 }
 
 export interface DesktopProject {
@@ -281,6 +312,9 @@ export interface DesktopApi {
   openProjectWith(request: DesktopProjectOpenWithRequest): Promise<void>;
   upsertConversation(
     update: DesktopConversationUpdate,
+  ): Promise<DesktopProjectsSnapshot>;
+  markConversationRead(
+    target: DesktopConversationTarget,
   ): Promise<DesktopProjectsSnapshot>;
   deleteConversation(
     target: DesktopConversationTarget,

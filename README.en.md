@@ -81,7 +81,7 @@ Long-term knowledge lives in a readable, versionable `.threadlight/MEMORY.md`. E
 
 The desktop client supports:
 
-- OpenAI, DeepSeek, and Alibaba Cloud Model Studio / Qwen.
+- OpenAI, Kimi, Doubao, Gemini, Grok, DeepSeek, Alibaba Cloud Model Studio / Qwen, and custom OpenAI-compatible services.
 - Default model selection for different workloads.
 - Simplified Chinese, Traditional Chinese, English, Japanese, and Korean.
 - System, light, and dark themes.
@@ -113,7 +113,7 @@ flowchart TB
     Providers["@threadlight/model-providers"]
     Tools["@threadlight/builtin-tools"]
     Memory["@threadlight/project-memory"]
-    Models["OpenAI · DeepSeek · Qwen"]
+    Models["OpenAI · Kimi · Doubao · Gemini · Grok · DeepSeek · Qwen · Custom"]
     Runtime["Shell · Process · MCP · Search · Computer"]
 
     Desktop --> UI
@@ -190,6 +190,11 @@ npm run desktop:package
 | --- | --- | --- |
 | OpenAI | `OPENAI_API_KEY` | `THREADLIGHT_MODEL` |
 | DeepSeek | `THREADLIGHT_PROVIDER=deepseek`, `DEEPSEEK_API_KEY` | `THREADLIGHT_MODEL` |
+| Kimi | `THREADLIGHT_PROVIDER=kimi`, `MOONSHOT_API_KEY` | `MOONSHOT_BASE_URL`, `THREADLIGHT_MODEL` |
+| Doubao | `THREADLIGHT_PROVIDER=doubao`, `ARK_API_KEY` | `ARK_BASE_URL`, `THREADLIGHT_MODEL` |
+| Gemini | `THREADLIGHT_PROVIDER=gemini`, `GEMINI_API_KEY` | `GEMINI_BASE_URL`, `THREADLIGHT_MODEL` |
+| Grok | `THREADLIGHT_PROVIDER=grok`, `XAI_API_KEY` | `XAI_BASE_URL`, `THREADLIGHT_MODEL` |
+| Custom compatible service | `THREADLIGHT_PROVIDER=custom`, `CUSTOM_BASE_URL`, `THREADLIGHT_MODEL` | `CUSTOM_API_KEY` |
 | Qwen | `THREADLIGHT_PROVIDER=qwen`, `DASHSCOPE_API_KEY` | `DASHSCOPE_BASE_URL`, `THREADLIGHT_MODEL` |
 
 ```bash
@@ -197,6 +202,35 @@ npm run desktop:package
 export THREADLIGHT_PROVIDER="deepseek"
 export DEEPSEEK_API_KEY="your-key"
 export THREADLIGHT_MODEL="deepseek-v4-pro"
+
+# Or Kimi (Kimi K3 by default)
+export THREADLIGHT_PROVIDER="kimi"
+export MOONSHOT_API_KEY="your-key"
+export MOONSHOT_BASE_URL="https://api.moonshot.ai/v1"
+export THREADLIGHT_MODEL="kimi-k3"
+
+# Or Doubao through Volcengine Ark
+export THREADLIGHT_PROVIDER="doubao"
+export ARK_API_KEY="your-key"
+export ARK_BASE_URL="https://ark.cn-beijing.volces.com/api/v3"
+export THREADLIGHT_MODEL="doubao-seed-2-0-pro-260215"
+
+# Or Gemini
+export THREADLIGHT_PROVIDER="gemini"
+export GEMINI_API_KEY="your-key"
+export GEMINI_BASE_URL="https://generativelanguage.googleapis.com/v1beta/openai"
+export THREADLIGHT_MODEL="gemini-3.6-flash"
+
+# Or Grok
+export THREADLIGHT_PROVIDER="grok"
+export XAI_API_KEY="your-key"
+export XAI_BASE_URL="https://api.x.ai/v1"
+export THREADLIGHT_MODEL="grok-4.5"
+
+# Or a custom OpenAI-compatible service (API key is optional)
+export THREADLIGHT_PROVIDER="custom"
+export CUSTOM_BASE_URL="http://127.0.0.1:11434/v1"
+export THREADLIGHT_MODEL="llama3.2"
 
 # Or Alibaba Cloud Model Studio / Qwen
 export THREADLIGHT_PROVIDER="qwen"

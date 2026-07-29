@@ -16,6 +16,7 @@ import {
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
+  DESKTOP_CONVERSATION_READ_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
@@ -78,6 +79,9 @@ const api: DesktopApi = {
   },
   upsertConversation(update) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_UPSERT_CHANNEL, update);
+  },
+  markConversationRead(target) {
+    return ipcRenderer.invoke(DESKTOP_CONVERSATION_READ_CHANNEL, target);
   },
   deleteConversation(target) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_DELETE_CHANNEL, target);
