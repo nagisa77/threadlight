@@ -11,12 +11,14 @@ import {
   ComputerPermissionCard,
   ConversationChangesButton,
   currentPlanStep,
+  filterProjectsForTaskList,
   hasUserInput,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
   ProjectConversationItem,
   ProjectGroup,
   showsProjectLevelActivity,
+  TaskSearchDialog,
   ThreadlightApp,
   TurnStatusPill,
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
@@ -148,6 +150,7 @@ describe("ThreadlightApp", () => {
       openFolder: vi.fn(async () => emptySnapshot),
       activate: vi.fn(async () => emptySnapshot),
       upsertConversation: vi.fn(async () => emptySnapshot),
+      updateConversation: vi.fn(async () => emptySnapshot),
       deleteConversation: vi.fn(async () => emptySnapshot),
     };
 
@@ -364,7 +367,7 @@ describe("ProjectGroup", () => {
     expect(html).not.toContain("project-row pressable active");
   });
 
-  it("offers an accessible delete action for each task", () => {
+  it("offers an accessible management action for each task", () => {
     const html = renderToStaticMarkup(
       <ProjectConversationItem
         conversation={{
@@ -380,7 +383,7 @@ describe("ProjectGroup", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="删除任务“整理发布说明”"');
+    expect(html).toContain('aria-label="管理任务“整理发布说明”"');
   });
 
   it("shows an accessible unread dot for a completed background task", () => {
@@ -462,7 +465,7 @@ describe("ProjectGroup", () => {
     );
 
     expect(html).toContain("thread-runtime-indicator spin");
-    expect(html).not.toContain("删除任务");
+    expect(html).not.toContain("管理任务");
     expect(html).not.toContain('disabled=""');
   });
 
@@ -490,7 +493,7 @@ describe("ProjectGroup", () => {
     expect(html.indexOf("thread-runtime-indicator")).toBeLessThan(
       html.indexOf("computer-use-indicator"),
     );
-    expect(html).not.toContain("删除任务");
+    expect(html).not.toContain("管理任务");
   });
 
   it("describes task deletion as irreversible in an alert dialog", () => {
@@ -510,5 +513,104 @@ describe("ProjectGroup", () => {
 
     expect(html).toContain('role="alertdialog"');
     expect(html).toContain("此操作无法撤销");
+  });
+
+  it("filters task search by lifecycle while keeping running state live", () => {
+    const projects = [
+      {
+        id: "project-1",
+        name: "Threadlight",
+        basePath: "/workspace/threadlight",
+        lastOpenedAt: "2026-07-29T00:00:00.000Z",
+        conversations: [
+          {
+            id: "running",
+            title: "运行任务",
+            status: "pending" as const,
+            createdAt: "2026-07-29T00:00:00.000Z",
+            updatedAt: "2026-07-29T00:00:00.000Z",
+          },
+          {
+            id: "completed",
+            title: "发布说明",
+            status: "completed" as const,
+            createdAt: "2026-07-29T00:00:00.000Z",
+            updatedAt: "2026-07-29T00:00:00.000Z",
+          },
+          {
+            id: "archived",
+            title: "旧任务",
+            status: "completed" as const,
+            archivedAt: "2026-07-29T01:00:00.000Z",
+            createdAt: "2026-07-29T00:00:00.000Z",
+            updatedAt: "2026-07-29T00:00:00.000Z",
+          },
+        ],
+      },
+    ];
+
+    expect(
+      filterProjectsForTaskList(projects, "", "running", ["running"])[0]
+        ?.conversations.map(({ id }) => id),
+    ).toEqual(["running"]);
+    expect(
+      filterProjectsForTaskList(projects, "发布", "completed", ["running"])[0]
+        ?.conversations.map(({ id }) => id),
+    ).toEqual(["completed"]);
+    expect(
+      filterProjectsForTaskList(projects, "", "archived", ["running"])[0]
+        ?.conversations.map(({ id }) => id),
+    ).toEqual(["archived"]);
+  });
+
+  it("renders task search as a modal with lifecycle filters", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <TaskSearchDialog
+          projects={[
+            {
+              id: "project-1",
+              name: "Threadlight",
+              basePath: "/workspace/threadlight",
+              lastOpenedAt: "2026-07-29T00:00:00.000Z",
+              conversations: [
+                {
+                  id: "running",
+                  title: "运行任务",
+                  status: "pending",
+                  createdAt: "2026-07-29T00:00:00.000Z",
+                  updatedAt: "2026-07-29T00:00:00.000Z",
+                },
+                {
+                  id: "completed",
+                  title: "发布说明",
+                  status: "completed",
+                  createdAt: "2026-07-29T00:00:00.000Z",
+                  updatedAt: "2026-07-29T00:00:00.000Z",
+                },
+              ],
+            },
+          ]}
+          query="发布"
+          filter="completed"
+          runningThreadIds={["running"]}
+          activeThreadId="completed"
+          onQueryChange={vi.fn()}
+          onFilterChange={vi.fn()}
+          onSelect={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('class="task-search-backdrop"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('aria-modal="true"');
+    expect(html).toContain('value="发布"');
+    expect(html).toContain('role="tablist"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain("发布说明");
+    expect(html).not.toContain("运行任务");
+    expect(html).toContain('aria-label="关闭任务搜索"');
   });
 });

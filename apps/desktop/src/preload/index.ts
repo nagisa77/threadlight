@@ -14,10 +14,13 @@ import {
   DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL,
   DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
+  DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_READ_CHANNEL,
+  DESKTOP_CONVERSATION_UPDATE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
+  DESKTOP_DIAGNOSTICS_GET_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
@@ -25,9 +28,13 @@ import {
   DESKTOP_PROJECT_OPENERS_GET_CHANNEL,
   DESKTOP_PROJECT_OPEN_WITH_CHANNEL,
   DESKTOP_PROJECTS_GET_CHANNEL,
+  DESKTOP_PROVIDER_TEST_CHANNEL,
   DESKTOP_REQUEST_CHANNEL,
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
+  DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL,
+  DESKTOP_SYSTEM_FILE_GET_CHANNEL,
+  DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL,
   DESKTOP_TERMINAL_CLOSE_CHANNEL,
   DESKTOP_TERMINAL_CREATE_CHANNEL,
   DESKTOP_TERMINAL_EVENT_CHANNEL,
@@ -62,6 +69,12 @@ const api: DesktopApi = {
   updateSettings(update) {
     return ipcRenderer.invoke(DESKTOP_SETTINGS_UPDATE_CHANNEL, update);
   },
+  getDiagnostics(projectId) {
+    return ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_GET_CHANNEL, projectId);
+  },
+  testProvider(request) {
+    return ipcRenderer.invoke(DESKTOP_PROVIDER_TEST_CHANNEL, request);
+  },
   getProjects() {
     return ipcRenderer.invoke(DESKTOP_PROJECTS_GET_CHANNEL);
   },
@@ -79,6 +92,9 @@ const api: DesktopApi = {
   },
   upsertConversation(update) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_UPSERT_CHANNEL, update);
+  },
+  updateConversation(update) {
+    return ipcRenderer.invoke(DESKTOP_CONVERSATION_UPDATE_CHANNEL, update);
   },
   markConversationRead(target) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_READ_CHANNEL, target);
@@ -174,6 +190,12 @@ const api: DesktopApi = {
   getConversationChanges(request) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL, request);
   },
+  restoreConversationChanges(request) {
+    return ipcRenderer.invoke(
+      DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL,
+      request,
+    );
+  },
   listWorkspace(request) {
     return ipcRenderer.invoke(DESKTOP_WORKSPACE_LIST_CHANNEL, request);
   },
@@ -182,6 +204,15 @@ const api: DesktopApi = {
   },
   revealWorkspaceFile(request) {
     return ipcRenderer.invoke(DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL, request);
+  },
+  chooseSystemFile() {
+    return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL);
+  },
+  getSystemFile(request) {
+    return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_GET_CHANNEL, request);
+  },
+  revealSystemFile(request) {
+    return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL, request);
   },
 };
 

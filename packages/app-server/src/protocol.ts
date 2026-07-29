@@ -14,9 +14,13 @@ export type {
   JsonRpcResponse,
   MessageCapabilityData,
   ProcessSnapshotData,
+  QueuedTurnData,
+  FollowUpDelivery,
   SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
+  TokenUsageData,
+  TurnDiagnosticsData,
   TurnMode,
 } from "@threadlight/protocol";
 

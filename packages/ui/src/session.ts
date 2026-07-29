@@ -13,8 +13,11 @@ import {
   type ConversationActivityData,
   type ConversationMessageData,
   type ConversationProgressData,
+  type FollowUpDelivery,
   type MessageCapabilityData,
   type ProcessSnapshotData,
+  type QueuedTurnData,
+  type TurnDiagnosticsData,
   type TurnMode,
 } from "@threadlight/protocol";
 
@@ -33,6 +36,7 @@ export interface ConversationMessage {
   plan?: AgentPlanData;
   progress?: readonly ConversationProgress[];
   activities?: readonly ToolActivity[];
+  diagnostics?: TurnDiagnosticsData;
 }
 
 export interface SessionState {
@@ -42,6 +46,7 @@ export interface SessionState {
   isRunning: boolean;
   isThinking: boolean;
   messages: readonly ConversationMessage[];
+  queuedTurns: readonly QueuedTurnData[];
   progress: readonly ConversationProgress[];
   plan?: AgentPlanData;
   streamingText: string;
@@ -54,6 +59,7 @@ export type SessionAction =
       type: "connection.ready";
       threadId: string;
       messages?: readonly ConversationMessageData[];
+      queuedTurns?: readonly QueuedTurnData[];
     }
   | { type: "connection.failed"; error: string }
   | {
@@ -72,16 +78,31 @@ export type SessionAction =
       id: string;
       output: string;
       capabilities?: readonly MessageCapabilityData[];
+      diagnostics?: TurnDiagnosticsData;
     }
-  | { type: "turn.failed"; id: string; error: string }
+  | {
+      type: "turn.failed";
+      id: string;
+      error: string;
+      diagnostics?: TurnDiagnosticsData;
+    }
   | { type: "agent.event"; event: AgentEventData }
-  | { type: "process.updated"; process: ProcessSnapshotData };
+  | { type: "process.updated"; process: ProcessSnapshotData }
+  | { type: "queue.updated"; queuedTurns: readonly QueuedTurnData[] }
+  | {
+      type: "follow-up.consumed";
+      itemId: string;
+      message: ConversationMessageData;
+      precedingAssistantMessage?: ConversationMessageData;
+    }
+  | { type: "submission.failed"; error: string };
 
 export const initialSessionState: SessionState = {
   connection: "connecting",
   isRunning: false,
   isThinking: false,
   messages: [],
+  queuedTurns: [],
   progress: [],
   streamingText: "",
 };
@@ -99,6 +120,7 @@ export function sessionReducer(
         connection: "ready",
         threadId: action.threadId,
         messages: action.messages ?? [],
+        queuedTurns: action.queuedTurns ?? [],
       };
     case "connection.failed":
       return {
@@ -166,13 +188,54 @@ export function sessionReducer(
         action.output,
         false,
         action.capabilities,
+        action.diagnostics,
       );
     case "turn.failed":
-      return completeTurn(state, action.id, action.error, true);
+      return completeTurn(
+        state,
+        action.id,
+        action.error,
+        true,
+        [],
+        action.diagnostics,
+      );
     case "agent.event":
       return reduceAgentEvent(state, action.event);
     case "process.updated":
       return updateSessionProcess(state, action.process);
+    case "queue.updated":
+      return {
+        ...state,
+        queuedTurns: action.queuedTurns,
+        submissionError: undefined,
+      };
+    case "follow-up.consumed": {
+      const preceding = action.precedingAssistantMessage;
+      const appended = [
+        ...(preceding &&
+        !state.messages.some(({ id }) => id === preceding.id)
+          ? [preceding]
+          : []),
+        ...(state.messages.some(({ id }) => id === action.message.id)
+          ? []
+          : [action.message]),
+      ];
+      return {
+        ...state,
+        queuedTurns: state.queuedTurns.filter(
+          ({ id }) => id !== action.itemId,
+        ),
+        ...(action.precedingAssistantMessage
+          ? { progress: [], streamingText: "" }
+          : {}),
+        messages:
+          appended.length === 0
+            ? state.messages
+            : [...state.messages, ...appended],
+      };
+    }
+    case "submission.failed":
+      return { ...state, submissionError: action.error };
   }
 }
 
@@ -252,6 +315,7 @@ function completeTurn(
   text: string,
   error = false,
   capabilities: readonly MessageCapabilityData[] = [],
+  diagnostics?: TurnDiagnosticsData,
 ): SessionState {
   return {
     ...state,
@@ -270,6 +334,7 @@ function completeTurn(
         ...(state.progress.length > 0 ? { progress: state.progress } : {}),
         ...(state.plan ? { plan: state.plan } : {}),
         ...(!error && capabilities.length > 0 ? { capabilities } : {}),
+        ...(diagnostics ? { diagnostics } : {}),
       },
     ],
   };
@@ -373,6 +438,7 @@ export function useThreadlightSession(
       let opened: {
         threadId: string;
         messages?: readonly ConversationMessageData[];
+        queuedTurns?: readonly QueuedTurnData[];
       };
       if (threadId) {
         try {
@@ -391,6 +457,7 @@ export function useThreadlightSession(
         type: "connection.ready",
         threadId: opened.threadId,
         messages: opened.messages,
+        queuedTurns: opened.queuedTurns,
       });
       return opened.threadId;
     } catch (error) {
@@ -410,24 +477,52 @@ export function useThreadlightSession(
       client.on("turn/started", ({ threadId, mode }) => {
         updateSession(threadId, { type: "turn.started", mode });
       }),
-      client.on("turn/completed", ({ threadId, output, capabilities }) => {
+      client.on("turn/completed", ({
+        threadId,
+        output,
+        capabilities,
+        diagnostics,
+      }) => {
         updateSession(threadId, {
           type: "turn.completed",
           id: crypto.randomUUID(),
           output,
           capabilities,
+          diagnostics,
         });
       }),
-      client.on("turn/failed", ({ threadId, error }) => {
+      client.on("turn/failed", ({ threadId, error, diagnostics }) => {
         updateSession(threadId, {
           type: "turn.failed",
           id: crypto.randomUUID(),
           error,
+          diagnostics,
         });
       }),
       client.on("agent/event", ({ threadId, event }) => {
         updateSession(threadId, { type: "agent.event", event });
       }),
+      client.on("turn/queue/updated", ({ threadId, queuedTurns }) => {
+        updateSession(threadId, { type: "queue.updated", queuedTurns });
+      }),
+      client.on(
+        "turn/follow-up/consumed",
+        ({
+          threadId,
+          itemId,
+          message,
+          precedingAssistantMessage,
+        }) => {
+          updateSession(threadId, {
+            type: "follow-up.consumed",
+            itemId,
+            message,
+            ...(precedingAssistantMessage
+              ? { precedingAssistantMessage }
+              : {}),
+          });
+        },
+      ),
     ];
 
     if (options.autoConnect !== false) void openThread();
@@ -585,6 +680,65 @@ export function useThreadlightSession(
     }
   }, [client, state.threadId, updateSession]);
 
+  const addFollowUp = useCallback(
+    async (value: string, delivery: FollowUpDelivery) => {
+      const input = value.trim();
+      if (!input || !state.threadId || !state.isRunning) return false;
+      try {
+        await client.addFollowUp(state.threadId, input, delivery);
+        return true;
+      } catch (error) {
+        updateSession(state.threadId, {
+          type: "submission.failed",
+          error: errorMessage(error),
+        });
+        return false;
+      }
+    },
+    [client, state.isRunning, state.threadId, updateSession],
+  );
+
+  const reorderQueuedTurn = useCallback(
+    async (itemId: string, beforeItemId?: string) => {
+      if (!state.threadId) return false;
+      try {
+        await client.reorderQueuedTurn(
+          state.threadId,
+          itemId,
+          beforeItemId,
+        );
+        return true;
+      } catch (error) {
+        updateSession(state.threadId, {
+          type: "submission.failed",
+          error: errorMessage(error),
+        });
+        return false;
+      }
+    },
+    [client, state.threadId, updateSession],
+  );
+
+  const cancelQueuedTurn = useCallback(
+    async (itemId: string) => {
+      if (!state.threadId) return false;
+      try {
+        const result = await client.cancelQueuedTurn(
+          state.threadId,
+          itemId,
+        );
+        return result.canceled;
+      } catch (error) {
+        updateSession(state.threadId, {
+          type: "submission.failed",
+          error: errorMessage(error),
+        });
+        return false;
+      }
+    },
+    [client, state.threadId, updateSession],
+  );
+
   const terminateProcess = useCallback(
     async (sessionId: string) => {
       const process = await client.killProcess(sessionId);
@@ -606,6 +760,9 @@ export function useThreadlightSession(
     newThread,
     deleteThread,
     send,
+    addFollowUp,
+    reorderQueuedTurn,
+    cancelQueuedTurn,
     interrupt,
     terminateProcess,
   };

@@ -33,6 +33,73 @@ class ScriptedTransport implements ClientTransport {
 }
 
 describe("ThreadlightClient", () => {
+  it("sends follow-up queue mutations", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const followUp = client.addFollowUp(
+      "thread-1",
+      "Check the smaller scope",
+      "queued",
+    );
+    expect(transport.sent[0]).toMatchObject({
+      method: "turn/follow-up",
+      params: {
+        threadId: "thread-1",
+        input: "Check the smaller scope",
+        delivery: "queued",
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        item: {
+          id: "item-1",
+          input: "Check the smaller scope",
+          delivery: "queued",
+          createdAt: "2026-07-29T10:00:00.000Z",
+        },
+      },
+    });
+    await expect(followUp).resolves.toMatchObject({
+      item: { id: "item-1" },
+    });
+
+    const reordered = client.reorderQueuedTurn(
+      "thread-1",
+      "item-1",
+      "item-2",
+    );
+    expect(transport.sent[1]).toMatchObject({
+      method: "turn/queue/reorder",
+      params: {
+        threadId: "thread-1",
+        itemId: "item-1",
+        beforeItemId: "item-2",
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[1].id ?? null,
+      result: { queuedTurns: [] },
+    });
+    await reordered;
+
+    const canceled = client.cancelQueuedTurn("thread-1", "item-1");
+    expect(transport.sent[2]).toMatchObject({
+      method: "turn/queue/cancel",
+      params: { threadId: "thread-1", itemId: "item-1" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[2].id ?? null,
+      result: { canceled: true, queuedTurns: [] },
+    });
+    await expect(canceled).resolves.toMatchObject({ canceled: true });
+    client.dispose();
+  });
+
   it("lists task capabilities and sends selected references", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

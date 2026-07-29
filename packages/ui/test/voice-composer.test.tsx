@@ -2,9 +2,28 @@ import { ThreadlightClient } from "@threadlight/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { MessageAttachments, ThreadlightApp } from "../src/app.js";
+import {
+  composerSubmitDelivery,
+  MessageAttachments,
+  ThreadlightApp,
+} from "../src/app.js";
 
 describe("voice composer", () => {
+  it("uses Enter for prompt injection and Cmd/Ctrl+Enter for the queue while running", () => {
+    expect(
+      composerSubmitDelivery({ metaKey: false, ctrlKey: false }, true),
+    ).toBe("inject");
+    expect(
+      composerSubmitDelivery({ metaKey: true, ctrlKey: false }, true),
+    ).toBe("queued");
+    expect(
+      composerSubmitDelivery({ metaKey: false, ctrlKey: true }, true),
+    ).toBe("queued");
+    expect(
+      composerSubmitDelivery({ metaKey: true, ctrlKey: false }, false),
+    ).toBe("inject");
+  });
+
   it("exposes voice input without changing the existing send action", () => {
     const client = new ThreadlightClient({
       send: vi.fn(),

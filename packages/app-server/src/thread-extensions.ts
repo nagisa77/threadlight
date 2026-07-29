@@ -49,6 +49,8 @@ export interface SkillPluginRuntimeSnapshot {
 
 export interface SkillPluginRuntimeOptions {
   workspaceRoot: string;
+  /** Durable project state root when the workspace is an isolated worktree. */
+  projectStateRoot?: string;
   userHome?: string;
   builtinSkillRoots?: readonly string[];
   repoSkillRoots?: readonly string[];
@@ -129,6 +131,9 @@ export async function createSkillPluginThreadRuntime(
   restoredSnapshot?: unknown,
 ): Promise<SkillPluginThreadRuntime> {
   const workspaceRoot = resolve(options.workspaceRoot);
+  const projectStateRoot = resolve(
+    options.projectStateRoot ?? workspaceRoot,
+  );
   const userHome = resolve(options.userHome ?? homedir());
   let registry: SkillRegistry;
   let plugins: PluginRegistry;
@@ -144,7 +149,7 @@ export async function createSkillPluginThreadRuntime(
         [
           defaultBuiltinPluginRoot(),
           join(workspaceRoot, ".agents", "plugins"),
-          join(workspaceRoot, ".threadlight", "plugins"),
+          join(projectStateRoot, ".threadlight", "plugins"),
           join(userHome, ".agents", "plugins"),
           join(userHome, ".threadlight", "plugins"),
         ],

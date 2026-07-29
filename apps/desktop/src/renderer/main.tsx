@@ -7,6 +7,7 @@ import {
   type ClipboardAdapter,
   type ComputerPermissionAdapter,
   type ComputerShareAdapter,
+  type DiagnosticsAdapter,
   type ProjectMemoryAdapter,
   type ProjectOpenerAdapter,
   type ProjectsAdapter,
@@ -27,6 +28,10 @@ const clipboard: ClipboardAdapter = {
 const settings: SettingsAdapter = {
   load: () => window.threadlightDesktop.getSettings(),
   save: (update) => window.threadlightDesktop.updateSettings(update),
+  testProvider: (request) => window.threadlightDesktop.testProvider(request),
+};
+const diagnostics: DiagnosticsAdapter = {
+  load: (projectId) => window.threadlightDesktop.getDiagnostics(projectId),
 };
 const projects: ProjectsAdapter = {
   load: () => window.threadlightDesktop.getProjects(),
@@ -35,6 +40,8 @@ const projects: ProjectsAdapter = {
     window.threadlightDesktop.activateProject(projectId),
   upsertConversation: (update) =>
     window.threadlightDesktop.upsertConversation(update),
+  updateConversation: (update) =>
+    window.threadlightDesktop.updateConversation(update),
   markConversationRead: (target) =>
     window.threadlightDesktop.markConversationRead(target),
   deleteConversation: (target) =>
@@ -42,8 +49,12 @@ const projects: ProjectsAdapter = {
 };
 const projectOpener: ProjectOpenerAdapter = {
   load: (projectId) => window.threadlightDesktop.getProjectOpeners(projectId),
-  open: (projectId, opener) =>
-    window.threadlightDesktop.openProjectWith({ projectId, opener }),
+  open: (projectId, opener, threadId) =>
+    window.threadlightDesktop.openProjectWith({
+      projectId,
+      opener,
+      ...(threadId ? { threadId } : {}),
+    }),
 };
 const memory: ProjectMemoryAdapter = {
   load: (projectId) => window.threadlightDesktop.getProjectMemory(projectId),
@@ -95,12 +106,36 @@ const terminal: TerminalAdapter = {
 const workspace: WorkspaceAdapter = {
   getChanges: (projectId, threadId) =>
     window.threadlightDesktop.getConversationChanges({ projectId, threadId }),
-  list: (projectId, path) =>
-    window.threadlightDesktop.listWorkspace({ projectId, path }),
-  read: (projectId, path) =>
-    window.threadlightDesktop.getWorkspaceFile({ projectId, path }),
-  reveal: (projectId, path) =>
-    window.threadlightDesktop.revealWorkspaceFile({ projectId, path }),
+  restoreChanges: (projectId, threadId, revision, paths) =>
+    window.threadlightDesktop.restoreConversationChanges({
+      projectId,
+      threadId,
+      revision,
+      ...(paths ? { paths } : {}),
+    }),
+  list: (projectId, path, threadId) =>
+    window.threadlightDesktop.listWorkspace({
+      projectId,
+      ...(threadId ? { threadId } : {}),
+      ...(path ? { path } : {}),
+    }),
+  read: (projectId, path, threadId) =>
+    window.threadlightDesktop.getWorkspaceFile({
+      projectId,
+      path,
+      ...(threadId ? { threadId } : {}),
+    }),
+  reveal: (projectId, path, threadId) =>
+    window.threadlightDesktop.revealWorkspaceFile({
+      projectId,
+      path,
+      ...(threadId ? { threadId } : {}),
+    }),
+  chooseSystemFile: () => window.threadlightDesktop.chooseSystemFile(),
+  readSystemFile: (path) =>
+    window.threadlightDesktop.getSystemFile({ path }),
+  revealSystemFile: (path) =>
+    window.threadlightDesktop.revealSystemFile({ path }),
 };
 const root = document.getElementById("root");
 
@@ -111,6 +146,7 @@ createRoot(root).render(
     client={client}
     clipboard={clipboard}
     settings={settings}
+    diagnostics={diagnostics}
     projects={projects}
     projectOpener={projectOpener}
     memory={memory}

@@ -7,6 +7,7 @@ import {
   COMPUTER_PREVIEW_MAX_SCALE,
   COMPUTER_PREVIEW_MIN_SCALE,
   COMPUTER_PREVIEW_WINDOW_APPEARANCE,
+  COMPUTER_PREVIEW_WORKSPACE_VISIBILITY,
   computerPreviewHtml,
   computerPreviewSize,
   nextComputerPreviewScale,
@@ -22,6 +23,20 @@ describe("computer share picture in picture", () => {
       roundedCorners: false,
       backgroundColor: "#00000000",
     });
+  });
+
+  it("keeps the macOS Dock identity while showing the preview on every workspace", () => {
+    expect(COMPUTER_PREVIEW_WORKSPACE_VISIBILITY).toEqual({
+      visibleOnFullScreen: true,
+      skipTransformProcessType: true,
+    });
+    const service = readFileSync(
+      new URL("../src/main/computer-service.ts", import.meta.url),
+      "utf8",
+    );
+    expect(service).toContain(
+      "COMPUTER_PREVIEW_WORKSPACE_VISIBILITY",
+    );
   });
 
   it("renders the live shared stream in a frameless stack", () => {

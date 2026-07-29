@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildChangeTree,
+  FileView,
   FileSource,
   isPlanDocumentPath,
   PlanDocument,
@@ -39,6 +40,7 @@ describe("ReviewView", () => {
         layout="unified"
         onLayoutChange={vi.fn()}
         onRefresh={vi.fn()}
+        onRestore={vi.fn()}
       />,
     );
 
@@ -47,6 +49,8 @@ describe("ReviewView", () => {
     expect(html).toContain('aria-label="单边 Diff"');
     expect(html).toContain('aria-label="双边 Diff"');
     expect(html).toContain('aria-label="显示变更文件树"');
+    expect(html).toContain("全部恢复");
+    expect(html).toContain('aria-label="恢复 src/index.ts"');
     expect(html).not.toContain('aria-label="新建文件标签"');
     expect(html).toContain("+2");
     expect(html).toContain("-1");
@@ -182,6 +186,9 @@ describe("WorkspacePanel", () => {
       getChanges: vi.fn(),
       list: vi.fn(async () => []),
       read: vi.fn(),
+      chooseSystemFile: vi.fn(),
+      readSystemFile: vi.fn(),
+      revealSystemFile: vi.fn(),
     };
     const terminal: TerminalAdapter = {
       create: vi.fn(),
@@ -210,6 +217,7 @@ describe("WorkspacePanel", () => {
 
     expect(html).toContain('aria-label="右侧面板"');
     expect(html).toContain("打开文件");
+    expect(html).toContain('aria-label="打开系统文件…"');
     expect(html).toContain('aria-label="新建面板标签"');
     expect(html).toContain('role="menuitem"');
     expect(html).toContain(">终端</span>");
@@ -225,6 +233,32 @@ describe("WorkspacePanel", () => {
     expect(html.indexOf('class="panel-add-menu"')).toBeLessThan(
       html.indexOf('class="workspace-panel-actions"'),
     );
+  });
+
+  it("offers Finder for an unpreviewable system file", () => {
+    const adapter: WorkspaceAdapter = {
+      getChanges: vi.fn(),
+      list: vi.fn(async () => []),
+      read: vi.fn(),
+      readSystemFile: vi.fn(),
+      revealSystemFile: vi.fn(),
+    };
+    const html = renderToStaticMarkup(
+      <FileView
+        adapter={adapter}
+        projectId="project-1"
+        projectName="threadlight"
+        path="/Users/tim/Downloads/archive.zip"
+        source="system"
+        onSelectFile={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("系统文件");
+    expect(html).toContain("/Users/tim/Downloads/archive.zip");
+    expect(html).toContain("二进制文件或体积过大");
+    expect(html).toContain("在 Finder 中显示");
+    expect(html).toContain('aria-label="在 Finder 中显示"');
   });
 });
 

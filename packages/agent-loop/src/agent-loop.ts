@@ -29,14 +29,27 @@ export class AgentLoop {
   ): Promise<RunResult> {
     const runId = randomUUID();
     const emit = (event: AgentEvent) => options.onEvent?.(event);
+    const startedAt = currentTime(options);
 
     emit({ type: "run.started", runId });
 
     try {
-      return await this.execute(agent, input, runId, options, emit);
+      return await this.execute(
+        agent,
+        input,
+        runId,
+        startedAt,
+        options,
+        emit,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      emit({ type: "run.failed", runId, error: message });
+      emit({
+        type: "run.failed",
+        runId,
+        error: message,
+        durationMs: elapsed(startedAt, options),
+      });
       throw error;
     }
   }
@@ -45,6 +58,7 @@ export class AgentLoop {
     agent: Agent,
     input: string,
     runId: string,
+    startedAt: number,
     options: RunOptions,
     emit: (event: AgentEvent) => void,
   ): Promise<RunResult> {
@@ -57,6 +71,9 @@ export class AgentLoop {
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
+      const boundaryInput = options.takeAdditionalInput
+        ? await options.takeAdditionalInput()
+        : undefined;
       const controllerContext = { runId, step, tools };
       const directive = options.controller?.beforeModel
         ? await options.controller.beforeModel(controllerContext)
@@ -67,9 +84,13 @@ export class AgentLoop {
       const instructions = directive.instructions
         ? `${agent.instructions}\n\n${directive.instructions}`
         : agent.instructions;
-      const modelInput = step === 1 ? input : continuationInput;
+      const modelInput =
+        step === 1
+          ? mergeAdditionalInput(input, boundaryInput)
+          : mergeAdditionalInput(continuationInput, boundaryInput);
       continuationInput = undefined;
 
+      const modelStartedAt = currentTime(options);
       const turn = await this.provider.generate(
         {
           model: agent.model,
@@ -103,11 +124,26 @@ export class AgentLoop {
         text: turn.text,
         toolCalls: turn.toolCalls,
         usage: turn.usage,
+        durationMs: elapsed(modelStartedAt, options),
         outputVisibility,
       });
 
       state = turn.state;
       addUsage(usage, turn.usage);
+
+      const additionalInput = options.takeAdditionalInput
+        ? await options.takeAdditionalInput()
+        : undefined;
+      if (additionalInput) {
+        continuationInput = mergeAdditionalInput(
+          continuationInput,
+          additionalInput,
+        );
+        toolResults = turn.toolCalls.map((call) =>
+          skippedToolResult(call, tools),
+        );
+        continue;
+      }
 
       if (turn.toolCalls.length === 0) {
         const completionError = options.controller?.validateCompletion
@@ -129,19 +165,21 @@ export class AgentLoop {
           : undefined;
         const output = controlledOutput ?? turn.text;
         emit({ type: "message.completed", runId, text: output });
-        emit({ type: "run.completed", runId, steps: step });
+        const durationMs = elapsed(startedAt, options);
+        emit({ type: "run.completed", runId, steps: step, durationMs });
 
         return {
           runId,
           output,
           steps: step,
+          durationMs,
           modelState: state,
           usage,
         };
       }
 
       toolResults = [];
-      for (const call of turn.toolCalls) {
+      for (const [index, call] of turn.toolCalls.entries()) {
         options.signal?.throwIfAborted();
         toolResults.push(
           await this.executeTool(
@@ -153,6 +191,21 @@ export class AgentLoop {
             emit,
           ),
         );
+        const additionalInput = options.takeAdditionalInput
+          ? await options.takeAdditionalInput()
+          : undefined;
+        if (additionalInput) {
+          continuationInput = mergeAdditionalInput(
+            continuationInput,
+            additionalInput,
+          );
+          toolResults.push(
+            ...turn.toolCalls
+              .slice(index + 1)
+              .map((pendingCall) => skippedToolResult(pendingCall, tools)),
+          );
+          break;
+        }
       }
     }
 
@@ -195,6 +248,7 @@ export class AgentLoop {
     }
 
     emit({ type: "tool.started", runId, call });
+    const toolStartedAt = currentTime(options);
 
     let result: ToolResult;
     try {
@@ -221,7 +275,12 @@ export class AgentLoop {
       };
     }
 
-    emit({ type: "tool.completed", runId, result });
+    emit({
+      type: "tool.completed",
+      runId,
+      result,
+      durationMs: elapsed(toolStartedAt, options),
+    });
     if (options.controller?.afterToolCall) {
       await options.controller.afterToolCall(
         call,
@@ -231,6 +290,40 @@ export class AgentLoop {
     }
     return result;
   }
+}
+
+function currentTime(options: RunOptions): number {
+  return options.now?.() ?? performance.now();
+}
+
+function elapsed(startedAt: number, options: RunOptions): number {
+  return Math.max(0, Math.round((currentTime(options) - startedAt) * 10) / 10);
+}
+
+function mergeAdditionalInput(
+  current: string | undefined,
+  additional: string | undefined,
+): string | undefined {
+  const next = additional?.trim();
+  if (!next) return current;
+  const block =
+    `[Additional user instruction received while the run was active]\n${next}`;
+  return current ? `${current}\n\n${block}` : block;
+}
+
+function skippedToolResult(
+  call: ToolCall,
+  tools: readonly Tool[],
+): ToolResult {
+  const kind = tools.find(({ name }) => name === call.name)?.kind;
+  return {
+    callId: call.id,
+    name: call.name,
+    output:
+      "Skipped because the user added a newer instruction. Re-evaluate the task before calling tools again.",
+    ...(kind ? { kind } : {}),
+    isError: true,
+  };
 }
 
 function serialize(value: unknown): string {

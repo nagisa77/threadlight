@@ -41,6 +41,7 @@ import {
   COMPUTER_PREVIEW_MIN_SCALE,
   COMPUTER_PREVIEW_URL,
   COMPUTER_PREVIEW_WINDOW_APPEARANCE,
+  COMPUTER_PREVIEW_WORKSPACE_VISIBILITY,
   nextComputerPreviewScale,
   scaledComputerPreviewSize,
 } from "./computer-preview.js";
@@ -955,7 +956,10 @@ export class DesktopComputerService {
     preview.setHasShadow(false);
     if (process.platform === "darwin") preview.setVibrancy(null);
     preview.setAlwaysOnTop(true, "floating");
-    preview.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    preview.setVisibleOnAllWorkspaces(
+      true,
+      COMPUTER_PREVIEW_WORKSPACE_VISIBILITY,
+    );
     preview.on("closed", () => {
       if (this.preview !== preview) return;
       this.preview = undefined;

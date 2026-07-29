@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  fileReaderReference,
   MarkdownContent,
   localFileContextMenuPosition,
   parseLocalFileReference,
@@ -129,5 +130,36 @@ const ready = true;
         "/Users/tim/Desktop/threadlight",
       ),
     ).toBeUndefined();
+  });
+
+  it("routes files outside the project to the system reader", () => {
+    expect(
+      fileReaderReference(
+        { path: "/Users/tim/Desktop/other/report.pdf", line: 4 },
+        "/Users/tim/Desktop/threadlight",
+      ),
+    ).toEqual({
+      source: "system",
+      path: "/Users/tim/Desktop/other/report.pdf",
+      line: 4,
+    });
+    expect(
+      fileReaderReference(
+        { path: "../shared/config.json" },
+        "/Users/tim/Desktop/threadlight",
+      ),
+    ).toEqual({
+      source: "system",
+      path: "/Users/tim/Desktop/shared/config.json",
+    });
+    expect(
+      fileReaderReference(
+        { path: "./packages/ui/src/index.ts" },
+        "/Users/tim/Desktop/threadlight",
+      ),
+    ).toEqual({
+      source: "workspace",
+      path: "packages/ui/src/index.ts",
+    });
   });
 });

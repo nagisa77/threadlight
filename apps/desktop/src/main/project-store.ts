@@ -12,14 +12,22 @@ import { basename, dirname, join } from "node:path";
 
 import type {
   DesktopConversationTarget,
+  DesktopConversationMetadataUpdate,
+  DesktopConversationStatus,
   DesktopConversationUpdate,
   DesktopConversationSummary,
   DesktopProject,
   DesktopProjectsSnapshot,
+  DesktopTaskWorkspace,
 } from "../shared/desktop-api.js";
 
+interface StoredConversation
+  extends Omit<DesktopConversationSummary, "status"> {
+  status?: DesktopConversationStatus;
+}
+
 interface StoredProject extends Omit<DesktopProject, "conversations"> {
-  conversations: DesktopConversationSummary[];
+  conversations: StoredConversation[];
 }
 
 interface StoredProjectMap {
@@ -55,9 +63,9 @@ export class ProjectStore {
         : {}),
       projects: stored.projects.map((project) => ({
         ...project,
-        conversations: [...project.conversations].sort((left, right) =>
-          right.updatedAt.localeCompare(left.updatedAt),
-        ),
+        conversations: project.conversations
+          .map(normalizeConversation)
+          .sort(compareConversations),
       })),
     };
   }
@@ -120,7 +128,9 @@ export class ProjectStore {
     );
 
     if (conversation) {
-      conversation.title = title;
+      if (!conversation.renamedAt && !conversation.titleGeneratedAt) {
+        conversation.title = title;
+      }
       conversation.updatedAt = timestamp;
     } else {
       project.conversations.push({
@@ -128,7 +138,59 @@ export class ProjectStore {
         title,
         createdAt: timestamp,
         updatedAt: timestamp,
+        status: "pending",
         unread: false,
+      });
+    }
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  setGeneratedConversationTitle(
+    target: DesktopConversationTarget,
+    value: string,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const conversation = findConversation(stored, target);
+    if (conversation.renamedAt || conversation.titleGeneratedAt) {
+      return this.snapshot();
+    }
+    const title = value.trim();
+    if (!title) throw new Error("Conversation title cannot be empty");
+    const timestamp = this.now().toISOString();
+    conversation.title = title;
+    conversation.titleGeneratedAt = timestamp;
+    conversation.updatedAt = timestamp;
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  setConversationWorkspace(
+    target: DesktopConversationTarget,
+    workspace: DesktopTaskWorkspace,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const project = stored.projects.find(
+      (candidate) => candidate.id === target.projectId,
+    );
+    if (!project) throw new Error(`Unknown project: ${target.projectId}`);
+    if (!target.id.trim()) throw new Error("Conversation id cannot be empty");
+    const timestamp = this.now().toISOString();
+    const conversation = project.conversations.find(
+      (candidate) => candidate.id === target.id,
+    );
+    if (conversation) {
+      conversation.workspace = workspace;
+      conversation.updatedAt = timestamp;
+    } else {
+      project.conversations.push({
+        id: target.id,
+        title: "新任务",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        status: "pending",
+        unread: false,
+        workspace,
       });
     }
     this.write(stored);
@@ -147,6 +209,53 @@ export class ProjectStore {
     return this.setConversationUnread(target, false);
   }
 
+  updateConversation(
+    update: DesktopConversationMetadataUpdate,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const conversation = findConversation(stored, update);
+    const timestamp = this.now().toISOString();
+
+    if (update.title !== undefined) {
+      const title = update.title.trim();
+      if (!title) throw new Error("Conversation title cannot be empty");
+      conversation.title = title;
+      conversation.renamedAt = timestamp;
+    }
+    if (update.archived !== undefined) {
+      if (update.archived) {
+        conversation.archivedAt ??= timestamp;
+        delete conversation.pinnedAt;
+      } else {
+        delete conversation.archivedAt;
+      }
+    }
+    if (update.pinned !== undefined) {
+      if (update.pinned && conversation.archivedAt) {
+        throw new Error("Archived conversations cannot be pinned");
+      }
+      if (update.pinned) {
+        conversation.pinnedAt ??= timestamp;
+      } else {
+        delete conversation.pinnedAt;
+      }
+    }
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  markConversationPending(
+    target: DesktopConversationTarget,
+  ): DesktopProjectsSnapshot {
+    return this.setConversationStatus(target, "pending");
+  }
+
+  markConversationCompleted(
+    target: DesktopConversationTarget,
+  ): DesktopProjectsSnapshot {
+    return this.setConversationStatus(target, "completed");
+  }
+
   deleteConversation(
     target: DesktopConversationTarget,
   ): DesktopProjectsSnapshot {
@@ -155,7 +264,10 @@ export class ProjectStore {
       (candidate) => candidate.id === target.projectId,
     );
     if (!project) throw new Error(`Unknown project: ${target.projectId}`);
-    if (!target.id.trim()) throw new Error("Conversation id cannot be empty");
+    const conversation = findConversation(stored, target);
+    if (!conversation.archivedAt) {
+      throw new Error("Archive the conversation before deleting it");
+    }
 
     rmSync(conversationPath(project.basePath, target.id), { force: true });
 
@@ -198,6 +310,18 @@ export class ProjectStore {
     return this.snapshot();
   }
 
+  private setConversationStatus(
+    target: DesktopConversationTarget,
+    status: DesktopConversationStatus,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const conversation = findConversation(stored, target);
+    if (conversation.status === status) return this.snapshot();
+    conversation.status = status;
+    this.write(stored);
+    return this.snapshot();
+  }
+
   private read(): StoredProjectMap {
     let source: string;
     try {
@@ -212,6 +336,11 @@ export class ProjectStore {
     const value = JSON.parse(source) as unknown;
     if (!isStoredProjectMap(value)) {
       throw new Error("Project map has an unsupported format");
+    }
+    for (const project of value.projects) {
+      for (const conversation of project.conversations) {
+        conversation.status ??= "completed";
+      }
     }
     return value;
   }
@@ -292,8 +421,85 @@ function isConversation(value: unknown): boolean {
     typeof conversation.title === "string" &&
     typeof conversation.createdAt === "string" &&
     typeof conversation.updatedAt === "string" &&
+    (conversation.status === undefined ||
+      conversation.status === "pending" ||
+      conversation.status === "completed") &&
     (conversation.unread === undefined ||
-      typeof conversation.unread === "boolean")
+      typeof conversation.unread === "boolean") &&
+    (conversation.renamedAt === undefined ||
+      typeof conversation.renamedAt === "string") &&
+    (conversation.titleGeneratedAt === undefined ||
+      typeof conversation.titleGeneratedAt === "string") &&
+    (conversation.pinnedAt === undefined ||
+      typeof conversation.pinnedAt === "string") &&
+    (conversation.archivedAt === undefined ||
+      typeof conversation.archivedAt === "string") &&
+    (conversation.workspace === undefined ||
+      isTaskWorkspace(conversation.workspace))
+  );
+}
+
+function findConversation(
+  stored: StoredProjectMap,
+  target: DesktopConversationTarget,
+): StoredConversation {
+  const project = stored.projects.find(
+    (candidate) => candidate.id === target.projectId,
+  );
+  if (!project) throw new Error(`Unknown project: ${target.projectId}`);
+  if (!target.id.trim()) throw new Error("Conversation id cannot be empty");
+  const conversation = project.conversations.find(
+    (candidate) => candidate.id === target.id,
+  );
+  if (!conversation) throw new Error(`Unknown conversation: ${target.id}`);
+  return conversation;
+}
+
+function normalizeConversation(
+  conversation: StoredConversation,
+): DesktopConversationSummary {
+  return {
+    ...conversation,
+    status: conversation.status ?? "completed",
+  };
+}
+
+function compareConversations(
+  left: DesktopConversationSummary,
+  right: DesktopConversationSummary,
+): number {
+  if (left.archivedAt || right.archivedAt) {
+    if (!left.archivedAt) return -1;
+    if (!right.archivedAt) return 1;
+    return right.archivedAt.localeCompare(left.archivedAt);
+  }
+  if (left.pinnedAt || right.pinnedAt) {
+    if (!left.pinnedAt) return 1;
+    if (!right.pinnedAt) return -1;
+    const pinnedOrder = right.pinnedAt.localeCompare(left.pinnedAt);
+    if (pinnedOrder !== 0) return pinnedOrder;
+  }
+  return right.updatedAt.localeCompare(left.updatedAt);
+}
+
+function isTaskWorkspace(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const workspace = value as Record<string, unknown>;
+  if (workspace.mode === "folder") {
+    return typeof workspace.path === "string" && workspace.path.length > 0;
+  }
+  return (
+    workspace.mode === "worktree" &&
+    typeof workspace.path === "string" &&
+    workspace.path.length > 0 &&
+    typeof workspace.root === "string" &&
+    workspace.root.length > 0 &&
+    typeof workspace.repositoryRoot === "string" &&
+    workspace.repositoryRoot.length > 0 &&
+    typeof workspace.branch === "string" &&
+    workspace.branch.startsWith("threadlight/") &&
+    typeof workspace.baseCommit === "string" &&
+    workspace.baseCommit.length > 0
   );
 }
 

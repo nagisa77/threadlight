@@ -1,4 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +55,7 @@ describe("AppServerProcess", () => {
   });
 
   it("carries JSON-RPC messages over JSONL", async () => {
+    const messages: JsonRpcOutgoing[] = [];
     let deliver: ((message: JsonRpcOutgoing) => void) | undefined;
     const response = new Promise<JsonRpcOutgoing>((resolve) => {
       deliver = resolve;
@@ -57,7 +63,10 @@ describe("AppServerProcess", () => {
     const server = new AppServerProcess({
       entry,
       cwd: process.cwd(),
-      send: (message) => deliver?.(message),
+      send: (message) => {
+        messages.push(message);
+        deliver?.(message);
+      },
     });
 
     server.start();
@@ -67,6 +76,29 @@ describe("AppServerProcess", () => {
       jsonrpc: "2.0",
       id: 1,
       result: { accepted: true },
+    });
+    await expect(server.initialize()).resolves.toBeUndefined();
+    expect(messages).toHaveLength(1);
+    server.stop();
+  });
+
+  it("initializes a fresh runtime without leaking its internal response", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServerProcess({
+      entry,
+      cwd: process.cwd(),
+      send: (message) => messages.push(message),
+    });
+
+    server.start();
+    await expect(server.initialize()).resolves.toBeUndefined();
+    await expect(server.initialize()).resolves.toBeUndefined();
+    expect(messages).toEqual([]);
+
+    server.send({ jsonrpc: "2.0", id: 4, method: "environment" });
+    await expect(waitForResponse(messages, 4)).resolves.toMatchObject({
+      id: 4,
+      result: {},
     });
     server.stop();
   });
@@ -169,7 +201,11 @@ describe("AppServerProcess", () => {
   });
 
   it("exposes connector management through the real desktop runtime", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "threadlight-desktop-runtime-"));
+    const projectRoot = mkdtempSync(
+      join(tmpdir(), "threadlight-desktop-runtime-"),
+    );
+    const cwd = join(projectRoot, "task-worktree");
+    mkdirSync(cwd);
     const messages: JsonRpcOutgoing[] = [];
     const server = new AppServerProcess({
       entry: realAppServerEntry,
@@ -177,6 +213,7 @@ describe("AppServerProcess", () => {
       environment: {
         OPENAI_API_KEY: "fixture-openai-key",
         THREADLIGHT_COMPUTER_USE: "0",
+        THREADLIGHT_PROJECT_ROOT: projectRoot,
       },
       send: (message) => messages.push(message),
       handleConnectionRequest: async (request) => {
@@ -194,8 +231,14 @@ describe("AppServerProcess", () => {
 
     try {
       server.start();
-      server.send({ jsonrpc: "2.0", id: 10, method: "initialize" });
-      await waitForResponse(messages, 10);
+      await server.initialize();
+      expect(messages).toEqual([]);
+      expect(
+        existsSync(join(projectRoot, ".threadlight", "MEMORY.md")),
+      ).toBe(true);
+      expect(
+        existsSync(join(cwd, ".threadlight", "MEMORY.md")),
+      ).toBe(false);
       server.send({ jsonrpc: "2.0", id: 11, method: "thread/start" });
       const started = await waitForResponse(messages, 11);
       const threadId = (started as { result: { threadId: string } }).result
@@ -216,7 +259,7 @@ describe("AppServerProcess", () => {
       });
     } finally {
       server.stop();
-      rmSync(cwd, { recursive: true, force: true });
+      rmSync(projectRoot, { recursive: true, force: true });
     }
   });
 });

@@ -8,6 +8,10 @@ export const DESKTOP_REQUEST_CHANNEL = "threadlight:request";
 export const DESKTOP_MESSAGE_CHANNEL = "threadlight:message";
 export const DESKTOP_SETTINGS_GET_CHANNEL = "threadlight:settings:get";
 export const DESKTOP_SETTINGS_UPDATE_CHANNEL = "threadlight:settings:update";
+export const DESKTOP_DIAGNOSTICS_GET_CHANNEL =
+  "threadlight:diagnostics:get";
+export const DESKTOP_PROVIDER_TEST_CHANNEL =
+  "threadlight:provider:test";
 export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
 export const DESKTOP_PROJECTS_GET_CHANNEL = "threadlight:projects:get";
 export const DESKTOP_PROJECT_OPEN_CHANNEL = "threadlight:project:open";
@@ -18,6 +22,8 @@ export const DESKTOP_PROJECT_OPEN_WITH_CHANNEL =
   "threadlight:project-open-with";
 export const DESKTOP_CONVERSATION_UPSERT_CHANNEL =
   "threadlight:conversation:upsert";
+export const DESKTOP_CONVERSATION_UPDATE_CHANNEL =
+  "threadlight:conversation:update";
 export const DESKTOP_CONVERSATION_READ_CHANNEL =
   "threadlight:conversation:read";
 export const DESKTOP_CONVERSATION_DELETE_CHANNEL =
@@ -53,11 +59,19 @@ export const DESKTOP_TERMINAL_CLOSE_CHANNEL = "threadlight:terminal:close";
 export const DESKTOP_TERMINAL_EVENT_CHANNEL = "threadlight:terminal:event";
 export const DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL =
   "threadlight:conversation-changes:get";
+export const DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL =
+  "threadlight:conversation-changes:restore";
 export const DESKTOP_WORKSPACE_LIST_CHANNEL = "threadlight:workspace:list";
 export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
   "threadlight:workspace-file:get";
 export const DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL =
   "threadlight:workspace-file:reveal";
+export const DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL =
+  "threadlight:system-file:choose";
+export const DESKTOP_SYSTEM_FILE_GET_CHANNEL =
+  "threadlight:system-file:get";
+export const DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL =
+  "threadlight:system-file:reveal";
 
 export type DesktopModelProvider =
   | "openai"
@@ -118,13 +132,116 @@ export interface DesktopSettingsUpdate {
   model: string;
 }
 
+export interface DesktopDiagnosticsTotals {
+  turns: number;
+  failedTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number;
+  modelSteps: number;
+  toolCalls: number;
+  toolDurationMs: number;
+}
+
+export interface DesktopModelStepDiagnostic {
+  step: number;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface DesktopToolCallDiagnostic {
+  callId: string;
+  name: string;
+  durationMs: number;
+  isError: boolean;
+}
+
+export interface DesktopTurnDiagnostic {
+  threadId: string;
+  title: string;
+  status: "completed" | "failed";
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  model?: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  modelSteps: readonly DesktopModelStepDiagnostic[];
+  toolCalls: readonly DesktopToolCallDiagnostic[];
+}
+
+export interface DesktopProjectDiagnosticsSnapshot {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  totals: DesktopDiagnosticsTotals;
+  turns: readonly DesktopTurnDiagnostic[];
+}
+
+export interface DesktopProviderTestRequest {
+  provider: DesktopModelProvider;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string | null;
+}
+
+export type DesktopProviderDiagnosticCode =
+  | "ok"
+  | "missing_key"
+  | "invalid_url"
+  | "unauthorized"
+  | "endpoint_not_found"
+  | "model_not_found"
+  | "rate_limited"
+  | "timeout"
+  | "network"
+  | "provider_error";
+
+export interface DesktopProviderDiagnostic {
+  status: "success" | "warning" | "error";
+  code: DesktopProviderDiagnosticCode;
+  provider: DesktopModelProvider;
+  model: string;
+  endpoint: string;
+  checkedAt: string;
+  latencyMs: number;
+  httpStatus?: number;
+  detail?: string;
+}
+
 export interface DesktopConversationSummary {
   id: string;
   title: string;
   createdAt: string;
   updatedAt: string;
+  status?: DesktopConversationStatus;
   unread?: boolean;
+  renamedAt?: string;
+  titleGeneratedAt?: string;
+  pinnedAt?: string;
+  archivedAt?: string;
+  workspace?: DesktopTaskWorkspace;
 }
+
+export type DesktopConversationStatus = "pending" | "completed";
+
+export type DesktopTaskWorkspace =
+  | {
+      mode: "folder";
+      path: string;
+    }
+  | {
+      mode: "worktree";
+      path: string;
+      root: string;
+      repositoryRoot: string;
+      branch: string;
+      baseCommit: string;
+    };
 
 export interface DesktopProject {
   id: string;
@@ -150,12 +267,21 @@ export interface DesktopProjectOpenerOption {
 export interface DesktopProjectOpenWithRequest {
   projectId: string;
   opener: DesktopProjectOpener;
+  threadId?: string;
 }
 
 export interface DesktopConversationUpdate {
   projectId: string;
   id: string;
   title: string;
+}
+
+export interface DesktopConversationMetadataUpdate {
+  projectId: string;
+  id: string;
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
 }
 
 export interface DesktopConversationTarget {
@@ -216,6 +342,7 @@ export interface DesktopComputerPermissionSnapshot {
 
 export interface DesktopTerminalCreateRequest {
   projectId: string;
+  threadId?: string;
   cols: number;
   rows: number;
 }
@@ -253,6 +380,12 @@ export interface DesktopConversationChangesRequest {
   threadId: string;
 }
 
+export interface DesktopConversationChangesRestoreRequest
+  extends DesktopConversationChangesRequest {
+  revision: string;
+  paths?: readonly string[];
+}
+
 export interface DesktopConversationFileChange {
   path: string;
   status: "added" | "modified" | "deleted";
@@ -273,6 +406,7 @@ export interface DesktopConversationChangesSnapshot {
 
 export interface DesktopWorkspaceListRequest {
   projectId: string;
+  threadId?: string;
   path?: string;
 }
 
@@ -284,6 +418,7 @@ export interface DesktopWorkspaceEntry {
 
 export interface DesktopWorkspaceFileRequest {
   projectId: string;
+  threadId?: string;
   path: string;
 }
 
@@ -295,6 +430,10 @@ export interface DesktopWorkspaceFile {
   size: number;
 }
 
+export interface DesktopSystemFileRequest {
+  path: string;
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -303,6 +442,10 @@ export interface DesktopApi {
   updateSettings(
     update: DesktopSettingsUpdate,
   ): Promise<DesktopSettingsSnapshot>;
+  getDiagnostics(projectId: string): Promise<DesktopProjectDiagnosticsSnapshot>;
+  testProvider(
+    request: DesktopProviderTestRequest,
+  ): Promise<DesktopProviderDiagnostic>;
   getProjects(): Promise<DesktopProjectsSnapshot>;
   openProject(): Promise<DesktopProjectsSnapshot>;
   activateProject(projectId: string): Promise<DesktopProjectsSnapshot>;
@@ -312,6 +455,9 @@ export interface DesktopApi {
   openProjectWith(request: DesktopProjectOpenWithRequest): Promise<void>;
   upsertConversation(
     update: DesktopConversationUpdate,
+  ): Promise<DesktopProjectsSnapshot>;
+  updateConversation(
+    update: DesktopConversationMetadataUpdate,
   ): Promise<DesktopProjectsSnapshot>;
   markConversationRead(
     target: DesktopConversationTarget,
@@ -351,6 +497,9 @@ export interface DesktopApi {
   getConversationChanges(
     request: DesktopConversationChangesRequest,
   ): Promise<DesktopConversationChangesSnapshot>;
+  restoreConversationChanges(
+    request: DesktopConversationChangesRestoreRequest,
+  ): Promise<DesktopConversationChangesSnapshot>;
   listWorkspace(
     request: DesktopWorkspaceListRequest,
   ): Promise<readonly DesktopWorkspaceEntry[]>;
@@ -358,4 +507,7 @@ export interface DesktopApi {
     request: DesktopWorkspaceFileRequest,
   ): Promise<DesktopWorkspaceFile>;
   revealWorkspaceFile(request: DesktopWorkspaceFileRequest): Promise<void>;
+  chooseSystemFile(): Promise<string | undefined>;
+  getSystemFile(request: DesktopSystemFileRequest): Promise<DesktopWorkspaceFile>;
+  revealSystemFile(request: DesktopSystemFileRequest): Promise<void>;
 }

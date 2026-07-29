@@ -8,11 +8,37 @@ import type { JsonRpcOutgoing } from "@threadlight/protocol";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  completedTaskTarget,
   handleTaskCompletion,
   type TaskCompletionNotification,
 } from "../src/main/task-completion.js";
 
 describe("task completion notifications", () => {
+  it("projects completed and failed turns to a persistent task target", () => {
+    expect(
+      completedTaskTarget("project-1", {
+        jsonrpc: "2.0",
+        method: "turn/failed",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          error: "fixture failure",
+        },
+      }),
+    ).toEqual({ projectId: "project-1", id: "thread-1" });
+    expect(
+      completedTaskTarget("project-1", {
+        jsonrpc: "2.0",
+        method: "turn/started",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          mode: "default",
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it("marks a task unread and emits a localized desktop notification for a scripted model completion", async () => {
     const provider: ModelProvider = {
       generate: async () => ({

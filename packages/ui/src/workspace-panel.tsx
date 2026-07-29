@@ -20,6 +20,7 @@ import {
   LoaderCircle,
   Plus,
   RefreshCw,
+  RotateCcw,
   Rows3,
   Terminal,
   X,
@@ -78,17 +79,32 @@ export interface WorkspaceAdapter {
     projectId: string,
     threadId: string,
   ): Promise<ConversationChangesSnapshot>;
+  restoreChanges?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    paths?: readonly string[],
+  ): Promise<ConversationChangesSnapshot>;
   list(
     projectId: string,
     path?: string,
+    threadId?: string,
   ): Promise<readonly WorkspaceEntry[]>;
-  read(projectId: string, path: string): Promise<WorkspaceFile>;
-  reveal?(projectId: string, path: string): Promise<void>;
+  read(
+    projectId: string,
+    path: string,
+    threadId?: string,
+  ): Promise<WorkspaceFile>;
+  reveal?(projectId: string, path: string, threadId?: string): Promise<void>;
+  chooseSystemFile?(): Promise<string | undefined>;
+  readSystemFile?(path: string): Promise<WorkspaceFile>;
+  revealSystemFile?(path: string): Promise<void>;
 }
 
 export interface WorkspaceFileOpenRequest {
   id: number;
   path: string;
+  source?: "workspace" | "system";
   activate?: boolean;
   line?: number;
   column?: number;
@@ -98,6 +114,7 @@ interface WorkspaceTab {
   id: string;
   kind: "review" | PanelViewKind;
   path?: string;
+  source?: "workspace" | "system";
   title: string;
   line?: number;
   column?: number;
@@ -108,6 +125,7 @@ export function WorkspacePanel({
   adapter,
   terminal,
   projectId,
+  threadId,
   projectName,
   changes,
   changesLoading,
@@ -119,11 +137,14 @@ export function WorkspacePanel({
   onResizeBy,
   onResetSize,
   onRefreshChanges,
+  onRestoreChanges,
+  restoreDisabled = false,
   toolbarActions,
 }: {
   adapter: WorkspaceAdapter;
   terminal?: TerminalAdapter;
   projectId: string;
+  threadId?: string;
   projectName: string;
   changes?: ConversationChangesSnapshot;
   changesLoading: boolean;
@@ -135,6 +156,11 @@ export function WorkspacePanel({
   onResizeBy(delta: number): void;
   onResetSize(): void;
   onRefreshChanges(): void;
+  onRestoreChanges?(
+    paths: readonly string[] | undefined,
+    revision: string,
+  ): Promise<void>;
+  restoreDisabled?: boolean;
   toolbarActions?: ReactNode;
 }) {
   const { t } = useI18n();
@@ -164,7 +190,10 @@ export function WorkspacePanel({
     setTabs((current) => {
       const existing = current.find(
         (tab) =>
-          tab.kind === "file" && tab.path === fileOpenRequest.path,
+          tab.kind === "file" &&
+          tab.path === fileOpenRequest.path &&
+          (tab.source ?? "workspace") ===
+            (fileOpenRequest.source ?? "workspace"),
       );
       if (existing) {
         if (fileOpenRequest.activate !== false) {
@@ -174,6 +203,7 @@ export function WorkspacePanel({
           tab.id === existing.id
             ? {
                 ...tab,
+                source: fileOpenRequest.source,
                 line: fileOpenRequest.line,
                 column: fileOpenRequest.column,
                 revealRequest: fileOpenRequest.id,
@@ -199,6 +229,7 @@ export function WorkspacePanel({
             ? {
                 ...tab,
                 path: fileOpenRequest.path,
+                source: fileOpenRequest.source,
                 title: fileName(fileOpenRequest.path),
                 line: fileOpenRequest.line,
                 column: fileOpenRequest.column,
@@ -211,6 +242,7 @@ export function WorkspacePanel({
       const next: WorkspaceTab = {
         ...createFileTab(t),
         path: fileOpenRequest.path,
+        source: fileOpenRequest.source,
         title: fileName(fileOpenRequest.path),
         line: fileOpenRequest.line,
         column: fileOpenRequest.column,
@@ -282,6 +314,7 @@ export function WorkspacePanel({
           ? {
               ...tab,
               path,
+              source: "workspace",
               title: fileName(path),
               line: undefined,
               column: undefined,
@@ -290,6 +323,40 @@ export function WorkspacePanel({
           : tab,
       ),
     );
+  }
+
+  async function openSystemFile() {
+    if (!adapter.chooseSystemFile) return;
+    const path = await adapter.chooseSystemFile();
+    if (!path) return;
+    setTabs((current) => {
+      const selected = current.find(
+        (tab) => tab.id === activeTabId && tab.kind === "file",
+      );
+      if (selected) {
+        return current.map((tab) =>
+          tab.id === selected.id
+            ? {
+                ...tab,
+                path,
+                source: "system",
+                title: fileName(path),
+                line: undefined,
+                column: undefined,
+                revealRequest: undefined,
+              }
+            : tab,
+        );
+      }
+      const next: WorkspaceTab = {
+        ...createFileTab(t),
+        path,
+        source: "system",
+        title: fileName(path),
+      };
+      setActiveTabId(next.id);
+      return [...current, next];
+    });
   }
 
   return (
@@ -385,6 +452,7 @@ export function WorkspacePanel({
                 key={tab.id}
                 adapter={terminal}
                 projectId={projectId}
+                threadId={threadId}
                 hidden={tab.id !== activeTab?.id}
                 label={tab.title}
               />
@@ -397,17 +465,22 @@ export function WorkspacePanel({
             layout={diffLayout}
             onLayoutChange={setDiffLayout}
             onRefresh={onRefreshChanges}
+            onRestore={onRestoreChanges}
+            restoreDisabled={restoreDisabled}
           />
         ) : activeTab?.kind === "file" ? (
           <FileView
             key={activeTab.id}
             adapter={adapter}
             projectId={projectId}
+            threadId={threadId}
             projectName={projectName}
             path={activeTab.path}
+            source={activeTab.source}
             line={activeTab.line}
             revealRequest={activeTab.revealRequest}
             onSelectFile={selectFile}
+            onOpenSystemFile={openSystemFile}
           />
         ) : activeTab?.kind === "terminal" ? null : (
           <WorkspacePanelEmpty onAdd={addFileTab} />
@@ -424,6 +497,8 @@ export function ReviewView({
   layout,
   onLayoutChange,
   onRefresh,
+  onRestore,
+  restoreDisabled = false,
 }: {
   changes?: ConversationChangesSnapshot;
   loading: boolean;
@@ -431,6 +506,11 @@ export function ReviewView({
   layout: "unified" | "split";
   onLayoutChange(layout: "unified" | "split"): void;
   onRefresh(): void;
+  onRestore?(
+    paths: readonly string[] | undefined,
+    revision: string,
+  ): Promise<void>;
+  restoreDisabled?: boolean;
 }) {
   const { t } = useI18n();
   const largeChangeSet =
@@ -439,6 +519,12 @@ export function ReviewView({
   const [selectedPath, setSelectedPath] = useState<string | undefined>(
     changes?.files[0]?.path,
   );
+  const [pendingRestore, setPendingRestore] = useState<{
+    paths?: readonly string[];
+    label: string;
+  }>();
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string>();
 
   useEffect(() => {
     if (!changes?.files.length) {
@@ -468,6 +554,20 @@ export function ReviewView({
       ? changes?.files.filter((file) => file.path === selectedPath)
       : changes?.files;
 
+  async function confirmRestore() {
+    if (!pendingRestore || !changes || !onRestore || restoring) return;
+    setRestoring(true);
+    setRestoreError(undefined);
+    try {
+      await onRestore(pendingRestore.paths, changes.revision);
+      setPendingRestore(undefined);
+    } catch (reason) {
+      setRestoreError(errorMessage(reason));
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   return (
     <div className="review-view">
       <div className="review-toolbar">
@@ -481,6 +581,29 @@ export function ReviewView({
           )}
         </div>
         <div className="review-actions">
+          {changes && changes.files.length > 0 && onRestore && (
+            <button
+              type="button"
+              className="review-restore-all pressable"
+              disabled={loading || restoring || restoreDisabled}
+              title={
+                restoreDisabled
+                  ? t("restoreUnavailableWhileRunning")
+                  : t("restoreAllChanges")
+              }
+              onClick={() => {
+                setRestoreError(undefined);
+                setPendingRestore({
+                  label: t("allChangedFiles", {
+                    count: changes.files.length,
+                  }),
+                });
+              }}
+            >
+              <RotateCcw size={14} />
+              {t("restoreAll")}
+            </button>
+          )}
           <button
             type="button"
             className="panel-icon-button pressable"
@@ -548,7 +671,21 @@ export function ReviewView({
                 </p>
               )}
               {reviewFiles?.map((file) => (
-                <ReviewFile key={file.path} file={file} layout={layout} />
+                <ReviewFile
+                  key={file.path}
+                  file={file}
+                  layout={layout}
+                  restoreDisabled={
+                    !onRestore || restoreDisabled || restoring
+                  }
+                  onRestore={() => {
+                    setRestoreError(undefined);
+                    setPendingRestore({
+                      paths: [file.path],
+                      label: file.path,
+                    });
+                  }}
+                />
               ))}
             </>
           )}
@@ -561,6 +698,25 @@ export function ReviewView({
           />
         )}
       </div>
+      {pendingRestore && (
+        <RestoreChangesDialog
+          label={pendingRestore.label}
+          all={pendingRestore.paths === undefined}
+          restoring={restoring}
+          error={restoreError}
+          onCancel={() => {
+            if (restoring) return;
+            setPendingRestore(undefined);
+            setRestoreError(undefined);
+          }}
+          onConfirm={() => void confirmRestore()}
+          onRefresh={() => {
+            setPendingRestore(undefined);
+            setRestoreError(undefined);
+            onRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -568,9 +724,13 @@ export function ReviewView({
 function ReviewFile({
   file,
   layout,
+  restoreDisabled,
+  onRestore,
 }: {
   file: ConversationFileChange;
   layout: "unified" | "split";
+  restoreDisabled: boolean;
+  onRestore(): void;
 }) {
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
@@ -580,6 +740,16 @@ function ReviewFile({
         <FileCode2 size={14} />
         <span title={file.path}>{file.path}</span>
         <ChangeCounts additions={file.additions} deletions={file.deletions} />
+        <button
+          type="button"
+          className="review-file-restore pressable"
+          disabled={restoreDisabled}
+          aria-label={t("restoreFile", { path: file.path })}
+          title={t("restoreFile", { path: file.path })}
+          onClick={onRestore}
+        >
+          <RotateCcw size={13} />
+        </button>
       </header>
       {file.binary || file.oldContent === undefined && file.newContent === undefined ? (
         <div className="review-binary">{t("binaryDiff")}</div>
@@ -603,42 +773,152 @@ function ReviewFile({
   );
 }
 
+function RestoreChangesDialog({
+  label,
+  all,
+  restoring,
+  error,
+  onCancel,
+  onConfirm,
+  onRefresh,
+}: {
+  label: string;
+  all: boolean;
+  restoring: boolean;
+  error?: string;
+  onCancel(): void;
+  onConfirm(): void;
+  onRefresh(): void;
+}) {
+  const { t } = useI18n();
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelButton.current?.focus();
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !restoring) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [onCancel, restoring]);
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !restoring) onCancel();
+      }}
+    >
+      <section
+        className="delete-dialog restore-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="restore-dialog-title"
+        aria-describedby="restore-dialog-description"
+      >
+        <span className="delete-dialog-icon restore-dialog-icon" aria-hidden="true">
+          <RotateCcw size={18} />
+        </span>
+        <div className="delete-dialog-copy">
+          <h2 id="restore-dialog-title">
+            {all ? t("restoreAllQuestion") : t("restoreFileQuestion")}
+          </h2>
+          <p id="restore-dialog-description">
+            {t("restoreChangesDescription", { target: label })}
+          </p>
+          {error && (
+            <div className="restore-dialog-error">
+              <p>{error}</p>
+              <button
+                type="button"
+                className="dialog-button secondary pressable"
+                disabled={restoring}
+                onClick={onRefresh}
+              >
+                <RefreshCw size={13} />
+                {t("refreshChanges")}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="delete-dialog-actions">
+          <button
+            ref={cancelButton}
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={restoring}
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="button"
+            className="dialog-button danger pressable"
+            disabled={restoring || Boolean(error)}
+            onClick={onConfirm}
+          >
+            {restoring && <LoaderCircle className="spin" size={14} />}
+            {restoring ? t("restoring") : t("restore")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function FileView({
   adapter,
   projectId,
+  threadId,
   projectName,
   path,
+  source = "workspace",
   line,
   revealRequest,
   hidden = false,
   onSelectFile,
+  onOpenSystemFile,
 }: {
   adapter: WorkspaceAdapter;
   projectId: string;
+  threadId?: string;
   projectName: string;
   path?: string;
+  source?: "workspace" | "system";
   line?: number;
   revealRequest?: number;
   hidden?: boolean;
   onSelectFile(path: string): void;
+  onOpenSystemFile?(): Promise<void>;
 }) {
   const { t } = useI18n();
   const [file, setFile] = useState<WorkspaceFile>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [treeVisible, setTreeVisible] = useState(true);
+  const [choosingSystemFile, setChoosingSystemFile] = useState(false);
+  const [revealing, setRevealing] = useState(false);
+  const [revealError, setRevealError] = useState<string>();
 
   useEffect(() => {
     if (!path) {
       setFile(undefined);
+      setLoading(false);
       setError(undefined);
+      setRevealError(undefined);
       return;
     }
     let active = true;
     setLoading(true);
     setError(undefined);
-    void adapter
-      .read(projectId, path)
+    setRevealError(undefined);
+    const read =
+      source === "system"
+        ? adapter.readSystemFile
+          ? adapter.readSystemFile(path)
+          : Promise.reject(new Error(t("systemFileAccessUnavailable")))
+        : adapter.read(projectId, path, threadId);
+    void read
       .then((next) => {
         if (active) setFile(next);
       })
@@ -651,26 +931,99 @@ export function FileView({
     return () => {
       active = false;
     };
-  }, [adapter, path, projectId, revealRequest]);
+  }, [adapter, path, projectId, revealRequest, source, t, threadId]);
 
   useEffect(() => {
-    if (isPlanDocumentPath(path)) setTreeVisible(false);
-  }, [path]);
+    if (source === "system" || isPlanDocumentPath(path)) {
+      setTreeVisible(false);
+    }
+  }, [path, source]);
+
+  async function chooseSystemFile() {
+    if (!onOpenSystemFile || choosingSystemFile) return;
+    setChoosingSystemFile(true);
+    setError(undefined);
+    try {
+      await onOpenSystemFile();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setChoosingSystemFile(false);
+    }
+  }
+
+  const canReveal = Boolean(
+    path &&
+      (source === "system" ? adapter.revealSystemFile : adapter.reveal),
+  );
+
+  async function revealFile() {
+    if (!path || !canReveal || revealing) return;
+    setRevealing(true);
+    setRevealError(undefined);
+    try {
+      if (source === "system") {
+        await adapter.revealSystemFile?.(path);
+      } else {
+        await adapter.reveal?.(projectId, path, threadId);
+      }
+    } catch (reason) {
+      setRevealError(
+        t("revealFileFailed", { message: errorMessage(reason) }),
+      );
+    } finally {
+      setRevealing(false);
+    }
+  }
 
   return (
     <div className="file-view" role="tabpanel" hidden={hidden}>
       <div className="file-view-toolbar">
-        <Breadcrumb projectName={projectName} path={path} />
-        <button
-          type="button"
-          className={`panel-icon-button pressable ${treeVisible ? "active" : ""}`}
-          aria-label={treeVisible ? t("hideFileTree") : t("showFileTree")}
-          aria-pressed={treeVisible}
-          title={treeVisible ? t("hideFileTree") : t("showFileTree")}
-          onClick={() => setTreeVisible((visible) => !visible)}
-        >
-          <FolderTree size={16} />
-        </button>
+        <Breadcrumb projectName={projectName} path={path} source={source} />
+        <div className="file-view-actions">
+          {source === "system" && path && adapter.revealSystemFile && (
+            <button
+              type="button"
+              className="panel-icon-button pressable"
+              aria-label={t("revealInFinder")}
+              title={t("revealInFinder")}
+              disabled={revealing}
+              onClick={() => void revealFile()}
+            >
+              {revealing ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <FolderOpen size={16} />
+              )}
+            </button>
+          )}
+          {adapter.chooseSystemFile && (
+            <button
+              type="button"
+              className="panel-icon-button pressable"
+              aria-label={t("openSystemFile")}
+              title={t("openSystemFile")}
+              disabled={choosingSystemFile}
+              onClick={() => void chooseSystemFile()}
+            >
+              {choosingSystemFile ? (
+                <LoaderCircle className="spin" size={16} />
+              ) : (
+                <FileCode2 size={16} />
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            className={`panel-icon-button pressable ${treeVisible ? "active" : ""}`}
+            aria-label={treeVisible ? t("hideFileTree") : t("showFileTree")}
+            aria-pressed={treeVisible}
+            title={treeVisible ? t("hideFileTree") : t("showFileTree")}
+            onClick={() => setTreeVisible((visible) => !visible)}
+          >
+            <FolderTree size={16} />
+          </button>
+        </div>
       </div>
       <div className={`file-view-body ${treeVisible ? "has-tree" : ""}`}>
         <div className="file-preview">
@@ -686,10 +1039,48 @@ export function FileView({
             <PanelState icon={<FolderOpen size={22} />}>
               <strong>{t("openFile")}</strong>
               <span>{t("selectFile")}</span>
+              {adapter.chooseSystemFile && (
+                <button
+                  type="button"
+                  className="panel-empty-action pressable"
+                  disabled={choosingSystemFile}
+                  onClick={() => void chooseSystemFile()}
+                >
+                  {choosingSystemFile ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <FileCode2 size={14} />
+                  )}
+                  {t("openSystemFile")}
+                </button>
+              )}
             </PanelState>
           ) : file?.binary || file?.content === undefined ? (
             <PanelState icon={<FileCode2 size={20} />}>
-              {t("binaryPreview")}
+              <strong>{t("binaryPreview")}</strong>
+              {file && (
+                <span>{t("fileSize", { size: formatFileSize(file.size) })}</span>
+              )}
+              {canReveal && (
+                <button
+                  type="button"
+                  className="panel-empty-action pressable"
+                  disabled={revealing}
+                  onClick={() => void revealFile()}
+                >
+                  {revealing ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <FolderOpen size={14} />
+                  )}
+                  {t("revealInFinder")}
+                </button>
+              )}
+              {revealError && (
+                <span className="workspace-panel-inline-error" role="status">
+                  {revealError}
+                </span>
+              )}
             </PanelState>
           ) : isPlanDocumentPath(file.path) ? (
             <PlanDocument content={file.content} />
@@ -701,11 +1092,17 @@ export function FileView({
               revealRequest={revealRequest}
             />
           )}
+          {revealError && file?.content !== undefined && (
+            <p className="workspace-panel-inline-error" role="status">
+              {revealError}
+            </p>
+          )}
         </div>
         {treeVisible && (
           <WorkspaceTree
             adapter={adapter}
             projectId={projectId}
+            threadId={threadId}
             selectedPath={path}
             onSelectFile={onSelectFile}
           />
@@ -1024,11 +1421,13 @@ function ChangeStatus({
 export function WorkspaceTree({
   adapter,
   projectId,
+  threadId,
   selectedPath,
   onSelectFile,
 }: {
   adapter: WorkspaceAdapter;
   projectId: string;
+  threadId?: string;
   selectedPath?: string;
   onSelectFile(path: string): void;
 }) {
@@ -1046,7 +1445,11 @@ export function WorkspaceTree({
       setLoading((current) => new Set(current).add(path));
       setError(undefined);
       try {
-        const next = await adapter.list(projectId, path || undefined);
+        const next = await adapter.list(
+          projectId,
+          path || undefined,
+          threadId,
+        );
         setEntries((current) => new Map(current).set(path, next));
       } catch (reason) {
         setError(errorMessage(reason));
@@ -1058,7 +1461,7 @@ export function WorkspaceTree({
         });
       }
     },
-    [adapter, projectId],
+    [adapter, projectId, threadId],
   );
 
   useEffect(() => {
@@ -1197,15 +1600,21 @@ function TreeLevel({
 function Breadcrumb({
   projectName,
   path,
+  source = "workspace",
 }: {
   projectName: string;
   path?: string;
+  source?: "workspace" | "system";
 }) {
   const { t } = useI18n();
-  const parts = path?.split("/") ?? [];
+  const parts = path?.replaceAll("\\", "/").split("/").filter(Boolean) ?? [];
   return (
-    <nav className="file-breadcrumb" aria-label={t("filePath")}>
-      <span>{projectName}</span>
+    <nav
+      className="file-breadcrumb"
+      aria-label={t("filePath")}
+      title={source === "system" ? path : undefined}
+    >
+      <span>{source === "system" ? t("systemFiles") : projectName}</span>
       {parts.map((part, index) => (
         <span key={`${part}-${index}`}>
           <ChevronRight size={14} />
@@ -1287,7 +1696,14 @@ function createTerminalTab(t: Translate): WorkspaceTab {
 }
 
 function fileName(path: string): string {
-  return path.split("/").at(-1) ?? path;
+  return path.replaceAll("\\", "/").split("/").at(-1) ?? path;
+}
+
+export function formatFileSize(size: number): string {
+  if (size < 1_000) return `${size} B`;
+  if (size < 1_000_000) return `${(size / 1_000).toFixed(1)} KB`;
+  if (size < 1_000_000_000) return `${(size / 1_000_000).toFixed(1)} MB`;
+  return `${(size / 1_000_000_000).toFixed(1)} GB`;
 }
 
 export function buildChangeTree(

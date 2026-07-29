@@ -1,5 +1,6 @@
 import type {
   AttachmentData,
+  FollowUpDelivery,
   JsonRpcId,
   JsonRpcNotification,
   JsonRpcOutgoing,
@@ -162,6 +163,34 @@ export class ThreadlightClient {
 
   interruptTurn(threadId: string) {
     return this.request("turn/interrupt", { threadId });
+  }
+
+  addFollowUp(
+    threadId: string,
+    input: string,
+    delivery: FollowUpDelivery,
+  ) {
+    return this.request("turn/follow-up", {
+      threadId,
+      input,
+      delivery,
+    });
+  }
+
+  reorderQueuedTurn(
+    threadId: string,
+    itemId: string,
+    beforeItemId?: string,
+  ) {
+    return this.request("turn/queue/reorder", {
+      threadId,
+      itemId,
+      ...(beforeItemId ? { beforeItemId } : {}),
+    });
+  }
+
+  cancelQueuedTurn(threadId: string, itemId: string) {
+    return this.request("turn/queue/cancel", { threadId, itemId });
   }
 
   processStatus(sessionId: string) {

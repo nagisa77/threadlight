@@ -7,6 +7,8 @@ import {
 import {
   Check,
   ChevronDown,
+  CircleAlert,
+  CircleCheck,
   Eye,
   EyeOff,
   KeyRound,
@@ -345,6 +347,40 @@ export interface SettingsUpdate {
 export interface SettingsAdapter {
   load(): Promise<SettingsSnapshot>;
   save(update: SettingsUpdate): Promise<SettingsSnapshot>;
+  testProvider?(
+    request: ProviderTestRequest,
+  ): Promise<ProviderDiagnostic>;
+}
+
+export interface ProviderTestRequest {
+  provider: ModelProviderId;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string | null;
+}
+
+export type ProviderDiagnosticCode =
+  | "ok"
+  | "missing_key"
+  | "invalid_url"
+  | "unauthorized"
+  | "endpoint_not_found"
+  | "model_not_found"
+  | "rate_limited"
+  | "timeout"
+  | "network"
+  | "provider_error";
+
+export interface ProviderDiagnostic {
+  status: "success" | "warning" | "error";
+  code: ProviderDiagnosticCode;
+  provider: ModelProviderId;
+  model: string;
+  endpoint: string;
+  checkedAt: string;
+  latencyMs: number;
+  httpStatus?: number;
+  detail?: string;
 }
 
 export interface SecretDraft {
@@ -403,6 +439,9 @@ export function SettingsPage({
   const [saved, setSaved] = useState(false);
   const [savedWithRestart, setSavedWithRestart] = useState(false);
   const [error, setError] = useState<string>();
+  const [testingProvider, setTestingProvider] = useState(false);
+  const [providerDiagnostic, setProviderDiagnostic] =
+    useState<ProviderDiagnostic>();
 
   useEffect(() => {
     let active = true;
@@ -487,6 +526,7 @@ export function SettingsPage({
     setSaved(false);
     setSavedWithRestart(false);
     setError(undefined);
+    setProviderDiagnostic(undefined);
   }
 
   function editProviderSecret(
@@ -545,6 +585,46 @@ export function SettingsPage({
       setError(errorMessage(reason));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testConnection() {
+    if (!adapter.testProvider || testingProvider || !settings) return;
+    setTestingProvider(true);
+    setProviderDiagnostic(undefined);
+    setError(undefined);
+    const draft = providerKeys[provider];
+    try {
+      setProviderDiagnostic(
+        await adapter.testProvider({
+          provider,
+          model: model.trim(),
+          ...(["qwen", "kimi", "doubao", "gemini", "grok", "custom"].includes(
+            provider,
+          )
+            ? {
+                baseUrl: providerBaseUrl(
+                  provider,
+                  qwenBaseUrl,
+                  kimiBaseUrl,
+                  doubaoBaseUrl,
+                  geminiBaseUrl,
+                  grokBaseUrl,
+                  customBaseUrl,
+                ),
+              }
+            : {}),
+          ...(draft.cleared
+            ? { apiKey: null }
+            : draft.value.trim()
+              ? { apiKey: draft.value.trim() }
+              : {}),
+        }),
+      );
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setTestingProvider(false);
     }
   }
 
@@ -834,6 +914,63 @@ export function SettingsPage({
                     }}
                   />
                 </div>
+                {adapter.testProvider && (
+                  <div className="provider-test">
+                    <div className="provider-test-heading">
+                      <div>
+                        <strong>{t("providerConnectionTest")}</strong>
+                        <p>{t("providerConnectionTestDescription")}</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="provider-test-button pressable"
+                        disabled={testingProvider || !model.trim()}
+                        onClick={() => void testConnection()}
+                      >
+                        {testingProvider ? (
+                          <LoaderCircle className="spin" size={14} />
+                        ) : (
+                          <Link2 size={14} />
+                        )}
+                        {testingProvider
+                          ? t("testingConnection")
+                          : t("testConnection")}
+                      </button>
+                    </div>
+                    {providerDiagnostic && (
+                      <div
+                        className={`provider-test-result ${providerDiagnostic.status}`}
+                        role="status"
+                      >
+                        <span className="provider-test-result-icon">
+                          {providerDiagnostic.status === "success" ? (
+                            <CircleCheck size={16} />
+                          ) : (
+                            <CircleAlert size={16} />
+                          )}
+                        </span>
+                        <div>
+                          <strong>
+                            {providerDiagnosticMessage(
+                              providerDiagnostic.code,
+                              t,
+                            )}
+                          </strong>
+                          <p>
+                            {providerDiagnostic.endpoint} ·{" "}
+                            {providerDiagnostic.latencyMs} ms
+                            {providerDiagnostic.httpStatus
+                              ? ` · HTTP ${providerDiagnostic.httpStatus}`
+                              : ""}
+                          </p>
+                          {providerDiagnostic.detail && (
+                            <small>{providerDiagnostic.detail}</small>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </section>
 
             </>
@@ -1282,6 +1419,52 @@ function providerKeyConfigured(
 
 function isKnownModel(provider: ModelProviderId, model: string): boolean {
   return providerDetails(provider).models.some((option) => option.value === model);
+}
+
+function providerBaseUrl(
+  provider: ModelProviderId,
+  qwenBaseUrl: string,
+  kimiBaseUrl: string,
+  doubaoBaseUrl: string,
+  geminiBaseUrl: string,
+  grokBaseUrl: string,
+  customBaseUrl: string,
+): string {
+  if (provider === "qwen") return qwenBaseUrl.trim();
+  if (provider === "kimi") return kimiBaseUrl.trim();
+  if (provider === "doubao") return doubaoBaseUrl.trim();
+  if (provider === "gemini") return geminiBaseUrl.trim();
+  if (provider === "grok") return grokBaseUrl.trim();
+  if (provider === "custom") return customBaseUrl.trim();
+  return "";
+}
+
+function providerDiagnosticMessage(
+  code: ProviderDiagnosticCode,
+  t: Translate,
+): string {
+  switch (code) {
+    case "ok":
+      return t("providerDiagnosticOk");
+    case "missing_key":
+      return t("providerDiagnosticMissingKey");
+    case "invalid_url":
+      return t("providerDiagnosticInvalidUrl");
+    case "unauthorized":
+      return t("providerDiagnosticUnauthorized");
+    case "endpoint_not_found":
+      return t("providerDiagnosticEndpointNotFound");
+    case "model_not_found":
+      return t("providerDiagnosticModelNotFound");
+    case "rate_limited":
+      return t("providerDiagnosticRateLimited");
+    case "timeout":
+      return t("providerDiagnosticTimeout");
+    case "network":
+      return t("providerDiagnosticNetwork");
+    case "provider_error":
+      return t("providerDiagnosticError");
+  }
 }
 
 function providerDescription(

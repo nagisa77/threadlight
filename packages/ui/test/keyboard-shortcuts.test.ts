@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isTogglePanelShortcut } from "../src/keyboard-shortcuts.js";
+import {
+  isTaskSearchShortcut,
+  isTogglePanelShortcut,
+} from "../src/keyboard-shortcuts.js";
 
 function shortcut(
   overrides: Partial<Parameters<typeof isTogglePanelShortcut>[0]> = {},
@@ -42,5 +45,20 @@ describe("panel keyboard shortcuts", () => {
     expect(
       isTogglePanelShortcut(shortcut({ metaKey: false, ctrlKey: false })),
     ).toBe(false);
+  });
+});
+
+describe("task search keyboard shortcut", () => {
+  it("uses command/control-K without extra modifiers", () => {
+    expect(isTaskSearchShortcut(shortcut({ key: "k" }))).toBe(true);
+    expect(
+      isTaskSearchShortcut(
+        shortcut({ key: "K", metaKey: false, ctrlKey: true }),
+      ),
+    ).toBe(true);
+    expect(
+      isTaskSearchShortcut(shortcut({ key: "k", shiftKey: true })),
+    ).toBe(false);
+    expect(isTaskSearchShortcut(shortcut({ key: "j" }))).toBe(false);
   });
 });

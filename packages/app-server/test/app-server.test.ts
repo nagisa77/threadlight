@@ -14,6 +14,7 @@ import { createUpdatePlanTool } from "@threadlight/builtin-tools";
 
 import { AppServer } from "../src/app-server.js";
 import type { AttachmentProvider } from "../src/attachment-runtime.js";
+import { MemoryConversationStore } from "../src/conversation-store.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
 function richPlanStep(
@@ -29,6 +30,101 @@ function richPlanStep(
 }
 
 describe("AppServer", () => {
+  it("generates and persists a model title only after the first successful turn", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const titleReceived = Promise.withResolvers<void>();
+    const secondTurnCompleted = Promise.withResolvers<void>();
+    const conversationStore = new MemoryConversationStore();
+    let titleRequests = 0;
+    let completedTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("Create one concise title")) {
+          titleRequests += 1;
+          expect(request.tools).toEqual([]);
+          expect(request.state).toBeUndefined();
+          expect(request.input).toContain(
+            "User: 新建任务时总显示运行时离线，请修复",
+          );
+          return { text: "标题：修复任务离线问题。", toolCalls: [] };
+        }
+        return { text: "已修复。", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "worker",
+        instructions: "Complete the requested work",
+        tools: [],
+      }),
+      conversationStore,
+      generateConversationTitles: true,
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "thread/title") {
+          titleReceived.resolve();
+        }
+        if ("method" in message && message.method === "turn/completed") {
+          completedTurns += 1;
+          if (completedTurns === 2) secondTurnCompleted.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "新建任务时总显示运行时离线，请修复",
+      },
+    });
+    await titleReceived.promise;
+
+    expect(
+      messages.filter(
+        (message) =>
+          "method" in message && message.method === "thread/title",
+      ),
+    ).toEqual([
+      {
+        jsonrpc: "2.0",
+        method: "thread/title",
+        params: { threadId, title: "修复任务离线问题" },
+      },
+    ]);
+    expect(await conversationStore.load(threadId)).toMatchObject({
+      title: "修复任务离线问题",
+      titleStatus: "completed",
+      titleGeneratedAt: expect.any(String),
+    });
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "turn/start",
+      params: { threadId, input: "再补一个测试" },
+    });
+    await secondTurnCompleted.promise;
+
+    expect(titleRequests).toBe(1);
+    expect(
+      messages.filter(
+        (message) =>
+          "method" in message && message.method === "thread/title",
+      ),
+    ).toHaveLength(1);
+    await server.dispose();
+  });
+
   it("starts user-selected Plan mode and persists scripted plan progress", async () => {
     const requests: ModelRequest[] = [];
     const messages: JsonRpcOutgoing[] = [];

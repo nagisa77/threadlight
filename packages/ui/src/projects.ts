@@ -3,8 +3,29 @@ export interface ConversationSummary {
   title: string;
   createdAt: string;
   updatedAt: string;
+  status?: ConversationStatus;
   unread?: boolean;
+  renamedAt?: string;
+  pinnedAt?: string;
+  archivedAt?: string;
+  workspace?: TaskWorkspace;
 }
+
+export type ConversationStatus = "pending" | "completed";
+
+export type TaskWorkspace =
+  | {
+      mode: "folder";
+      path: string;
+    }
+  | {
+      mode: "worktree";
+      path: string;
+      root: string;
+      repositoryRoot: string;
+      branch: string;
+      baseCommit: string;
+    };
 
 export interface ProjectSummary {
   id: string;
@@ -30,12 +51,21 @@ export interface ConversationSummaryTarget {
   id: string;
 }
 
+export interface ConversationMetadataUpdate extends ConversationSummaryTarget {
+  title?: string;
+  pinned?: boolean;
+  archived?: boolean;
+}
+
 export interface ProjectsAdapter {
   load(): Promise<ProjectsSnapshot>;
   openFolder(): Promise<ProjectsSnapshot>;
   activate(projectId: string): Promise<ProjectsSnapshot>;
   upsertConversation(
     update: ConversationSummaryUpdate,
+  ): Promise<ProjectsSnapshot>;
+  updateConversation(
+    update: ConversationMetadataUpdate,
   ): Promise<ProjectsSnapshot>;
   markConversationRead?(
     target: ConversationSummaryTarget,

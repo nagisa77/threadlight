@@ -16,6 +16,7 @@ import {
 } from "@threadlight/protocol";
 
 const APP_SERVER_UNAVAILABLE = -32010;
+const APP_SERVER_INITIALIZE_TIMEOUT_MS = 10_000;
 
 export interface AppServerEntryOptions {
   appPath: string;
@@ -58,6 +59,16 @@ export class AppServerProcess {
   private connectionLines?: ReadlineInterface;
   private connectionPipe?: Duplex;
   private readonly pending = new Set<JsonRpcId>();
+  private readonly externalInitializeRequests = new Set<JsonRpcId>();
+  private initialization?: {
+    id: string;
+    promise: Promise<void>;
+    resolve(): void;
+    reject(error: Error): void;
+    timer: ReturnType<typeof setTimeout>;
+  };
+  private initialized = false;
+  private internalRequestId = 0;
   private environment: NodeJS.ProcessEnv;
 
   constructor(private readonly options: AppServerProcessOptions) {
@@ -127,10 +138,54 @@ export class AppServerProcess {
       return;
     }
 
-    if (message.id !== undefined) this.pending.add(message.id);
+    if (message.id !== undefined) {
+      this.pending.add(message.id);
+      if (message.method === "initialize") {
+        this.externalInitializeRequests.add(message.id);
+      }
+    }
     child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
       if (error) this.fail(message.id, error.message);
     });
+  }
+
+  initialize(): Promise<void> {
+    if (this.initialized) return Promise.resolve();
+    if (this.initialization) return this.initialization.promise;
+    this.start();
+    const child = this.child;
+    if (!child || child.stdin.destroyed) {
+      return Promise.reject(new Error("App server is not running"));
+    }
+
+    const id = `threadlight:internal:initialize:${++this.internalRequestId}`;
+    let resolvePromise!: () => void;
+    let rejectPromise!: (error: Error) => void;
+    const promise = new Promise<void>((resolve, reject) => {
+      resolvePromise = resolve;
+      rejectPromise = reject;
+    });
+    const timer = setTimeout(() => {
+      this.rejectInitialization(
+        id,
+        new Error("App server initialization timed out"),
+      );
+    }, APP_SERVER_INITIALIZE_TIMEOUT_MS);
+    this.initialization = {
+      id,
+      promise,
+      resolve: resolvePromise,
+      reject: rejectPromise,
+      timer,
+    };
+    this.pending.add(id);
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: "2.0", id, method: "initialize" })}\n`,
+      (error) => {
+        if (error) this.rejectInitialization(id, error);
+      },
+    );
+    return promise;
   }
 
   restart(environment: NodeJS.ProcessEnv): void {
@@ -142,6 +197,7 @@ export class AppServerProcess {
   stop(): void {
     const child = this.child;
     this.child = undefined;
+    this.initialized = false;
     this.closeTransport();
     child?.stdin.end();
     child?.kill();
@@ -151,7 +207,28 @@ export class AppServerProcess {
   private receive(line: string): void {
     try {
       const message = JSON.parse(line) as JsonRpcOutgoing;
-      if ("id" in message) this.pending.delete(message.id);
+      if (
+        "id" in message &&
+        this.initialization?.id === message.id
+      ) {
+        const initialization = this.initialization;
+        this.initialization = undefined;
+        this.pending.delete(message.id);
+        clearTimeout(initialization.timer);
+        if ("error" in message && message.error) {
+          initialization.reject(new Error(message.error.message));
+        } else {
+          this.initialized = true;
+          initialization.resolve();
+        }
+        return;
+      }
+      if ("id" in message) {
+        this.pending.delete(message.id);
+        if (this.externalInitializeRequests.delete(message.id)) {
+          this.initialized = !("error" in message && message.error);
+        }
+      }
       this.options.send(message);
     } catch (error) {
       process.stderr.write(`Invalid app-server message: ${String(error)}\n`);
@@ -238,12 +315,31 @@ export class AppServerProcess {
 
   private fail(id: JsonRpcId | undefined, message: string): void {
     if (id === undefined || !this.pending.delete(id)) return;
+    this.externalInitializeRequests.delete(id);
     this.replyUnavailable(id, message);
   }
 
   private failAll(message: string): void {
+    const initialization = this.initialization;
+    if (initialization) {
+      this.initialization = undefined;
+      this.pending.delete(initialization.id);
+      clearTimeout(initialization.timer);
+      initialization.reject(new Error(message));
+    }
+    this.initialized = false;
     for (const id of this.pending) this.replyUnavailable(id, message);
     this.pending.clear();
+    this.externalInitializeRequests.clear();
+  }
+
+  private rejectInitialization(id: string, error: Error): void {
+    const initialization = this.initialization;
+    if (!initialization || initialization.id !== id) return;
+    this.initialization = undefined;
+    this.pending.delete(id);
+    clearTimeout(initialization.timer);
+    initialization.reject(error);
   }
 
   private replyUnavailable(id: JsonRpcId | undefined, message: string): void {

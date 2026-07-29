@@ -26,17 +26,23 @@ export interface ProjectOpenerOption {
 
 export interface ProjectOpenerAdapter {
   load(projectId?: string): Promise<readonly ProjectOpenerOption[]>;
-  open(projectId: string, opener: ProjectOpenerId): Promise<void>;
+  open(
+    projectId: string,
+    opener: ProjectOpenerId,
+    threadId?: string,
+  ): Promise<void>;
 }
 
 export function ProjectOpenControl({
   adapter,
   projectId,
+  threadId,
   preferred,
   openers,
 }: {
   adapter: ProjectOpenerAdapter;
   projectId: string;
+  threadId?: string;
   preferred: ProjectOpenerId;
   openers: readonly ProjectOpenerOption[];
 }) {
@@ -56,7 +62,7 @@ export function ProjectOpenControl({
   useEffect(() => {
     setMenuOpen(false);
     setError(undefined);
-  }, [projectId]);
+  }, [projectId, threadId]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -81,7 +87,7 @@ export function ProjectOpenControl({
     setOpening(opener.id);
     setError(undefined);
     try {
-      await adapter.open(projectId, opener.id);
+      await adapter.open(projectId, opener.id, threadId);
       setMenuOpen(false);
     } catch (reason) {
       setError(

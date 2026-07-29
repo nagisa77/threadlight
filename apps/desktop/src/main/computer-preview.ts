@@ -10,6 +10,13 @@ export const COMPUTER_PREVIEW_WINDOW_APPEARANCE = {
   backgroundColor: "#00000000",
 } as const;
 
+export const COMPUTER_PREVIEW_WORKSPACE_VISIBILITY = {
+  visibleOnFullScreen: true,
+  // Electron otherwise transforms the entire macOS process into a UI element,
+  // which temporarily removes Threadlight from the Dock.
+  skipTransformProcessType: true,
+} as const;
+
 const CARD_MAX_WIDTH = 368;
 const CARD_MAX_HEIGHT = 248;
 const STACK_MAX_X = 250;

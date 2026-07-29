@@ -14,3 +14,12 @@ export function isTogglePanelShortcut(
     event.shiftKey === Boolean(options.shiftKey)
   );
 }
+
+export function isTaskSearchShortcut(event: ShortcutEvent) {
+  return (
+    event.key.toLowerCase() === "k" &&
+    (event.metaKey || event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey
+  );
+}

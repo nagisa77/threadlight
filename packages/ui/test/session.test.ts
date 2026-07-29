@@ -9,6 +9,151 @@ import {
 } from "../src/session.js";
 
 describe("sessionReducer", () => {
+  it("syncs queued follow-ups and appends them only when the server consumes them", () => {
+    const queued = {
+      id: "follow-up-1",
+      input: "Use the smaller scope",
+      delivery: "queued" as const,
+      createdAt: "2026-07-29T10:00:00.000Z",
+    };
+    let state = sessionReducer(initialSessionState, {
+      type: "queue.updated",
+      queuedTurns: [queued],
+    });
+    expect(state.queuedTurns).toEqual([queued]);
+    expect(state.messages).toEqual([]);
+
+    state = sessionReducer(state, {
+      type: "follow-up.consumed",
+      itemId: queued.id,
+      message: {
+        id: "message-1",
+        role: "user",
+        text: queued.input,
+      },
+    });
+    expect(state.queuedTurns).toEqual([]);
+    expect(state.messages).toEqual([
+      {
+        id: "message-1",
+        role: "user",
+        text: queued.input,
+      },
+    ]);
+  });
+
+  it("commits visible model output before an injected follow-up starts", () => {
+    const state = sessionReducer(
+      {
+        ...initialSessionState,
+        isRunning: true,
+        streamingText: "上一段模型输出",
+        progress: [
+          {
+            text: "已检查项目",
+            activities: [],
+          },
+        ],
+      },
+      {
+        type: "follow-up.consumed",
+        itemId: "follow-up-1",
+        precedingAssistantMessage: {
+          id: "assistant-1",
+          role: "assistant",
+          text: "上一段模型输出",
+          progress: [
+            {
+              text: "已检查项目",
+              activities: [],
+            },
+          ],
+        },
+        message: {
+          id: "message-2",
+          role: "user",
+          text: "继续执行另一个命令",
+        },
+      },
+    );
+
+    expect(state.streamingText).toBe("");
+    expect(state.progress).toEqual([]);
+    expect(state.messages).toEqual([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text: "上一段模型输出",
+        progress: [
+          {
+            text: "已检查项目",
+            activities: [],
+          },
+        ],
+      },
+      {
+        id: "message-2",
+        role: "user",
+        text: "继续执行另一个命令",
+      },
+    ]);
+  });
+
+  it("keeps the completed response visible when an after-current command starts", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "message.sent",
+      id: "message-1",
+      text: "执行第一个命令",
+    });
+    state = sessionReducer(state, {
+      type: "turn.completed",
+      id: "assistant-1",
+      output: "第一轮已经完成",
+    });
+    state = sessionReducer(state, {
+      type: "follow-up.consumed",
+      itemId: "follow-up-1",
+      message: {
+        id: "message-2",
+        role: "user",
+        text: "执行排队命令",
+      },
+    });
+    state = sessionReducer(state, {
+      type: "turn.started",
+      mode: "default",
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.started",
+        runId: "run-2",
+        step: 1,
+      },
+    });
+
+    expect(state.messages).toEqual([
+      {
+        id: "message-1",
+        role: "user",
+        text: "执行第一个命令",
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text: "第一轮已经完成",
+        error: false,
+      },
+      {
+        id: "message-2",
+        role: "user",
+        text: "执行排队命令",
+      },
+    ]);
+    expect(state.isRunning).toBe(true);
+    expect(state.isThinking).toBe(true);
+  });
+
   it("shows user-selected Plan mode immediately and accepts model plan updates", () => {
     let state = sessionReducer(initialSessionState, {
       type: "message.sent",

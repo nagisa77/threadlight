@@ -1,6 +1,8 @@
 import {
+  access,
   mkdtemp,
   mkdir,
+  readFile,
   rm,
   symlink,
   writeFile,
@@ -209,6 +211,110 @@ describe("ConversationChangeTracker", () => {
     expect(snapshot.files.map((file) => [file.path, file.status])).toEqual([
       [".gitignore", "modified"],
     ]);
+  });
+
+  it("restores one file or every change to the task baseline", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    await mkdir(workspace);
+    await writeFile(join(workspace, "modified.txt"), "before\n");
+    await writeFile(join(workspace, "deleted.txt"), "keep\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await writeFile(join(workspace, "modified.txt"), "after\n");
+    await rm(join(workspace, "deleted.txt"));
+    await writeFile(join(workspace, "added.txt"), "remove\n");
+
+    const initial = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    const afterSingle = await tracker.restore(
+      "project-1",
+      "thread-1",
+      workspace,
+      initial.revision,
+      ["modified.txt"],
+    );
+
+    await expect(
+      readFile(join(workspace, "modified.txt"), "utf8"),
+    ).resolves.toBe("before\n");
+    expect(afterSingle.files.map(({ path }) => path)).toEqual([
+      "added.txt",
+      "deleted.txt",
+    ]);
+
+    const afterAll = await tracker.restore(
+      "project-1",
+      "thread-1",
+      workspace,
+      afterSingle.revision,
+    );
+    expect(afterAll.files).toEqual([]);
+    await expect(access(join(workspace, "added.txt"))).rejects.toThrow();
+    await expect(
+      readFile(join(workspace, "deleted.txt"), "utf8"),
+    ).resolves.toBe("keep\n");
+  });
+
+  it("rejects a restore when file content changed after the Diff loaded", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    await mkdir(workspace);
+    await writeFile(join(workspace, "value.txt"), "one\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await writeFile(join(workspace, "value.txt"), "two\n");
+    const reviewed = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    await writeFile(join(workspace, "value.txt"), "new\n");
+
+    await expect(
+      tracker.restore(
+        "project-1",
+        "thread-1",
+        workspace,
+        reviewed.revision,
+        ["value.txt"],
+      ),
+    ).rejects.toThrow("workspace changed");
+    await expect(
+      readFile(join(workspace, "value.txt"), "utf8"),
+    ).resolves.toBe("new\n");
+  });
+
+  it("rejects a restore when the target was replaced by a symbolic link", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    const outside = join(root, "outside.txt");
+    await mkdir(workspace);
+    await writeFile(join(workspace, "value.txt"), "before\n");
+    await writeFile(outside, "outside\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await rm(join(workspace, "value.txt"));
+    const reviewed = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    await symlink(outside, join(workspace, "value.txt"));
+
+    await expect(
+      tracker.restore(
+        "project-1",
+        "thread-1",
+        workspace,
+        reviewed.revision,
+        ["value.txt"],
+      ),
+    ).rejects.toThrow("workspace changed");
+    await expect(readFile(outside, "utf8")).resolves.toBe("outside\n");
   });
 });
 

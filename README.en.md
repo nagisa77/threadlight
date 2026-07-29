@@ -63,7 +63,7 @@ Real tasks span multiple model calls, streaming output, tool execution, backgrou
 
 ### Review the work where it happens
 
-Execution history and final responses stay in the main conversation. The right panel can open the workspace tree, source files, conversation changes, and diffs side by side. The bottom panel can host multiple terminal or file tabs. Context no longer has to bounce between a chat app, editor, and terminal.
+Execution history and final responses stay in the main conversation. The right panel can open the workspace tree, source files, conversation changes, and diffs side by side. The bottom panel can host multiple terminal or file tabs. New tasks in Git projects run in isolated worktrees by default, while non-Git projects write directly to the selected folder; the Diff panel can restore one file or all task changes after checking for newer workspace conflicts. The sidebar supports search, lifecycle filters, rename, pinning, and archiving, with permanent deletion available only for archived tasks. Context no longer has to bounce between a chat app, editor, and terminal.
 
 ### Keep project knowledge with the project
 

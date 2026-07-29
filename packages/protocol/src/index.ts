@@ -127,6 +127,30 @@ export interface TokenUsageData {
   totalTokens: number;
 }
 
+export interface ModelStepDiagnosticsData {
+  step: number;
+  durationMs: number;
+  usage: TokenUsageData;
+}
+
+export interface ToolCallDiagnosticsData {
+  callId: string;
+  name: string;
+  durationMs: number;
+  isError: boolean;
+}
+
+export interface TurnDiagnosticsData {
+  status: "completed" | "failed";
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  model?: string;
+  usage: TokenUsageData;
+  modelSteps: readonly ModelStepDiagnosticsData[];
+  toolCalls: readonly ToolCallDiagnosticsData[];
+}
+
 export interface ProcessSnapshotData {
   sessionId: string;
   command: string;
@@ -251,8 +275,18 @@ export interface ConversationMessageData {
   mode?: TurnMode;
   plan?: AgentPlanData;
   progress?: readonly ConversationProgressData[];
+  diagnostics?: TurnDiagnosticsData;
   /** @deprecated Kept for conversations written before ordered progress. */
   activities?: readonly ConversationActivityData[];
+}
+
+export type FollowUpDelivery = "inject" | "queued";
+
+export interface QueuedTurnData {
+  id: string;
+  input: string;
+  delivery: FollowUpDelivery;
+  createdAt: string;
 }
 
 export type SuggestionLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
@@ -274,13 +308,29 @@ export type AgentEventData =
       text: string;
       toolCalls: readonly ToolCallData[];
       usage?: Partial<TokenUsageData>;
+      durationMs?: number;
       outputVisibility?: "user" | "provisional";
     }
   | { type: "tool.started"; runId: string; call: ToolCallData }
-  | { type: "tool.completed"; runId: string; result: ToolResultData }
+  | {
+      type: "tool.completed";
+      runId: string;
+      result: ToolResultData;
+      durationMs?: number;
+    }
   | { type: "message.completed"; runId: string; text: string }
-  | { type: "run.completed"; runId: string; steps: number }
-  | { type: "run.failed"; runId: string; error: string };
+  | {
+      type: "run.completed";
+      runId: string;
+      steps: number;
+      durationMs?: number;
+    }
+  | {
+      type: "run.failed";
+      runId: string;
+      error: string;
+      durationMs?: number;
+    };
 
 export interface ThreadlightMethodMap {
   initialize: {
@@ -296,6 +346,7 @@ export interface ThreadlightMethodMap {
     result: {
       threadId: string;
       messages: readonly ConversationMessageData[];
+      queuedTurns: readonly QueuedTurnData[];
     };
   };
   "thread/delete": {
@@ -345,6 +396,29 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: { interrupted: boolean };
   };
+  "turn/follow-up": {
+    params: {
+      threadId: string;
+      input: string;
+      delivery: FollowUpDelivery;
+    };
+    result: { item: QueuedTurnData };
+  };
+  "turn/queue/reorder": {
+    params: {
+      threadId: string;
+      itemId: string;
+      beforeItemId?: string;
+    };
+    result: { queuedTurns: readonly QueuedTurnData[] };
+  };
+  "turn/queue/cancel": {
+    params: { threadId: string; itemId: string };
+    result: {
+      canceled: boolean;
+      queuedTurns: readonly QueuedTurnData[];
+    };
+  };
   "process/status": {
     params: { sessionId: string };
     result: ProcessSnapshotData;
@@ -376,6 +450,9 @@ export const THREADLIGHT_METHODS = [
   "connector/disconnect",
   "turn/start",
   "turn/interrupt",
+  "turn/follow-up",
+  "turn/queue/reorder",
+  "turn/queue/cancel",
   "process/status",
   "process/read",
   "process/wait",
@@ -389,23 +466,39 @@ export type MethodResult<Method extends ThreadlightMethod> =
   ThreadlightMethodMap[Method]["result"];
 
 export interface ThreadlightNotificationMap {
+  "thread/title": {
+    threadId: string;
+    title: string;
+  };
   "turn/started": { threadId: string; turnId: string; mode: TurnMode };
   "turn/completed": {
     threadId: string;
     turnId: string;
     output: string;
     usage: TokenUsageData;
+    diagnostics?: TurnDiagnosticsData;
     capabilities?: readonly MessageCapabilityData[];
   };
   "turn/failed": {
     threadId: string;
     turnId: string;
     error: string;
+    diagnostics?: TurnDiagnosticsData;
   };
   "agent/event": {
     threadId: string;
     turnId: string;
     event: AgentEventData;
+  };
+  "turn/queue/updated": {
+    threadId: string;
+    queuedTurns: readonly QueuedTurnData[];
+  };
+  "turn/follow-up/consumed": {
+    threadId: string;
+    itemId: string;
+    message: ConversationMessageData;
+    precedingAssistantMessage?: ConversationMessageData;
   };
 }
 

@@ -7,7 +7,10 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import type { ConversationMessageData } from "@threadlight/protocol";
+import type {
+  ConversationMessageData,
+  QueuedTurnData,
+} from "@threadlight/protocol";
 
 import {
   validatePromptSnapshot,
@@ -25,7 +28,11 @@ export interface StoredConversation {
   threadId: string;
   createdAt: string;
   updatedAt: string;
+  title?: string;
+  titleGeneratedAt?: string;
+  titleStatus?: "pending" | "completed";
   messages: readonly ConversationMessageData[];
+  queuedTurns?: readonly QueuedTurnData[];
   modelState?: unknown;
   agentSnapshot?: StoredAgentSnapshot;
 }
@@ -142,10 +149,33 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     typeof conversation.threadId === "string" &&
     typeof conversation.createdAt === "string" &&
     typeof conversation.updatedAt === "string" &&
+    (conversation.title === undefined ||
+      typeof conversation.title === "string") &&
+    (conversation.titleGeneratedAt === undefined ||
+      typeof conversation.titleGeneratedAt === "string") &&
+    (conversation.titleStatus === undefined ||
+      conversation.titleStatus === "pending" ||
+      conversation.titleStatus === "completed") &&
     Array.isArray(conversation.messages) &&
     conversation.messages.every(isConversationMessage) &&
+    (conversation.queuedTurns === undefined ||
+      (Array.isArray(conversation.queuedTurns) &&
+        conversation.queuedTurns.every(isQueuedTurn))) &&
     (conversation.agentSnapshot === undefined ||
       isStoredAgentSnapshot(conversation.agentSnapshot))
+  );
+}
+
+function isQueuedTurn(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const item = value as Record<string, unknown>;
+  return (
+    typeof item.id === "string" &&
+    item.id.length > 0 &&
+    typeof item.input === "string" &&
+    item.input.trim().length > 0 &&
+    (item.delivery === "inject" || item.delivery === "queued") &&
+    typeof item.createdAt === "string"
   );
 }
 
@@ -184,11 +214,68 @@ function isConversationMessage(value: unknown): boolean {
       message.mode === "default" ||
       message.mode === "plan") &&
     (message.plan === undefined || isAgentPlan(message.plan)) &&
+    (message.diagnostics === undefined ||
+      isTurnDiagnostics(message.diagnostics)) &&
     (message.progress === undefined ||
       (Array.isArray(message.progress) &&
         message.progress.every(isConversationProgress))) &&
     (message.activities === undefined || Array.isArray(message.activities))
   );
+}
+
+function isTurnDiagnostics(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const diagnostics = value as Record<string, unknown>;
+  return (
+    (diagnostics.status === "completed" ||
+      diagnostics.status === "failed") &&
+    typeof diagnostics.startedAt === "string" &&
+    typeof diagnostics.completedAt === "string" &&
+    isNonNegativeNumber(diagnostics.durationMs) &&
+    (diagnostics.model === undefined ||
+      typeof diagnostics.model === "string") &&
+    isTokenUsage(diagnostics.usage) &&
+    Array.isArray(diagnostics.modelSteps) &&
+    diagnostics.modelSteps.every((step) => {
+      if (!step || typeof step !== "object" || Array.isArray(step)) {
+        return false;
+      }
+      const candidate = step as Record<string, unknown>;
+      return (
+        Number.isInteger(candidate.step) &&
+        Number(candidate.step) > 0 &&
+        isNonNegativeNumber(candidate.durationMs) &&
+        isTokenUsage(candidate.usage)
+      );
+    }) &&
+    Array.isArray(diagnostics.toolCalls) &&
+    diagnostics.toolCalls.every((tool) => {
+      if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
+        return false;
+      }
+      const candidate = tool as Record<string, unknown>;
+      return (
+        typeof candidate.callId === "string" &&
+        typeof candidate.name === "string" &&
+        isNonNegativeNumber(candidate.durationMs) &&
+        typeof candidate.isError === "boolean"
+      );
+    })
+  );
+}
+
+function isTokenUsage(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const usage = value as Record<string, unknown>;
+  return (
+    isNonNegativeNumber(usage.inputTokens) &&
+    isNonNegativeNumber(usage.outputTokens) &&
+    isNonNegativeNumber(usage.totalTokens)
+  );
+}
+
+function isNonNegativeNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 function isMessageCapability(value: unknown): boolean {

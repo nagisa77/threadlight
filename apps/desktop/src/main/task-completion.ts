@@ -21,6 +21,26 @@ export interface TaskCompletionDependencies {
   notify(notification: TaskCompletionNotification): void;
 }
 
+export function completedTaskTarget(
+  projectId: string,
+  message: JsonRpcOutgoing,
+): DesktopConversationTarget | undefined {
+  if (
+    !("method" in message) ||
+    (message.method !== "turn/completed" &&
+      message.method !== "turn/failed") ||
+    !message.params ||
+    typeof message.params !== "object" ||
+    Array.isArray(message.params)
+  ) {
+    return;
+  }
+  const threadId = (message.params as Record<string, unknown>).threadId;
+  return typeof threadId === "string"
+    ? { projectId, id: threadId }
+    : undefined;
+}
+
 export function handleTaskCompletion(
   projectId: string,
   message: JsonRpcOutgoing,

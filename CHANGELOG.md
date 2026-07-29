@@ -4,6 +4,12 @@ All notable changes to Threadlight are documented here. The project follows [Sem
 
 ## Unreleased
 
+### Added
+
+- Git projects now start each task in an isolated `threadlight/*` worktree while preserving the project's current tracked and untracked working state; non-Git projects use direct folder mode.
+- The Diff panel can restore one changed file or all task changes to the task baseline, with revision and filesystem conflict checks before any restore.
+- The project sidebar now supports task search, lifecycle filters, rename, pinning, and archiving; permanent deletion is available only after a task has been archived.
+
 ## 0.1.0 - 2026-07-27
 
 First public Alpha release.

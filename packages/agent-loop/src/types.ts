@@ -133,19 +133,47 @@ export type AgentEvent =
       text: string;
       toolCalls: readonly ToolCall[];
       usage?: Partial<TokenUsage>;
+      durationMs?: number;
       outputVisibility?: ModelOutputVisibility;
     }
   | { type: "tool.started"; runId: string; call: ToolCall }
-  | { type: "tool.completed"; runId: string; result: ToolResult }
+  | {
+      type: "tool.completed";
+      runId: string;
+      result: ToolResult;
+      durationMs?: number;
+    }
   | { type: "message.completed"; runId: string; text: string }
-  | { type: "run.completed"; runId: string; steps: number }
-  | { type: "run.failed"; runId: string; error: string };
+  | {
+      type: "run.completed";
+      runId: string;
+      steps: number;
+      durationMs?: number;
+    }
+  | {
+      type: "run.failed";
+      runId: string;
+      error: string;
+      durationMs?: number;
+    };
 
 export interface RunOptions {
   signal?: AbortSignal;
   toolScopeId?: string;
   modelState?: unknown;
   controller?: RunController;
+  /**
+   * Consumes user input added while this run is active.
+   *
+   * The loop polls only at safe model/tool boundaries. Adapters keep their
+   * provider-specific message formats; the loop forwards plain text.
+   */
+  takeAdditionalInput?: () =>
+    | string
+    | undefined
+    | Promise<string | undefined>;
+  /** Monotonic clock used for duration measurements. */
+  now?: () => number;
   onEvent?: (event: AgentEvent) => void;
 }
 
@@ -218,6 +246,7 @@ export interface RunResult {
   runId: string;
   output: string;
   steps: number;
+  durationMs: number;
   modelState?: unknown;
   usage: TokenUsage;
 }

@@ -88,7 +88,7 @@ describe("ProjectStore", () => {
     expect(store.activate("project-1").activeProjectId).toBe("project-1");
   });
 
-  it("removes a task from its project map", () => {
+  it("requires archiving before permanently removing a task", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);
     const projectPath = join(root, "sample-project");
@@ -110,6 +110,17 @@ describe("ProjectStore", () => {
     );
     writeFileSync(conversationPath, "{}\n");
 
+    expect(() =>
+      store.deleteConversation({
+        projectId: "project-1",
+        id: "thread-1",
+      }),
+    ).toThrow("Archive");
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      archived: true,
+    });
     const snapshot = store.deleteConversation({
       projectId: "project-1",
       id: "thread-1",
@@ -153,6 +164,285 @@ describe("ProjectStore", () => {
         id: "thread-1",
       }).projects[0]?.conversations[0]?.unread,
     ).toBe(false);
+  });
+
+  it("applies a generated title once and never overwrites a manual rename", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    mkdirSync(projectPath);
+    const mapPath = join(root, "project-map.json");
+    let now = new Date("2026-07-29T08:00:00.000Z");
+    const store = new ProjectStore(mapPath, {
+      createId: () => "project-1",
+      now: () => now,
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "新任务",
+    });
+
+    now = new Date("2026-07-29T08:01:00.000Z");
+    let snapshot = store.setGeneratedConversationTitle(
+      { projectId: "project-1", id: "thread-1" },
+      "修复运行时离线",
+    );
+    expect(snapshot.projects[0]?.conversations[0]).toMatchObject({
+      title: "修复运行时离线",
+      titleGeneratedAt: "2026-07-29T08:01:00.000Z",
+    });
+
+    store.setGeneratedConversationTitle(
+      { projectId: "project-1", id: "thread-1" },
+      "不应覆盖的第二个标题",
+    );
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "也不应覆盖的首条消息",
+    });
+    now = new Date("2026-07-29T08:02:00.000Z");
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "我的手动标题",
+    });
+    snapshot = store.setGeneratedConversationTitle(
+      { projectId: "project-1", id: "thread-1" },
+      "更晚的模型标题",
+    );
+
+    expect(snapshot.projects[0]?.conversations[0]).toMatchObject({
+      title: "我的手动标题",
+      renamedAt: "2026-07-29T08:02:00.000Z",
+      titleGeneratedAt: "2026-07-29T08:01:00.000Z",
+    });
+
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-2",
+      title: "新任务",
+    });
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-2",
+      title: "先手动命名",
+    });
+    snapshot = store.setGeneratedConversationTitle(
+      { projectId: "project-1", id: "thread-2" },
+      "模型不应覆盖",
+    );
+    expect(snapshot.projects[0]?.conversations).toContainEqual(
+      expect.objectContaining({
+        id: "thread-2",
+        title: "先手动命名",
+        renamedAt: "2026-07-29T08:02:00.000Z",
+      }),
+    );
+  });
+
+  it("persists lifecycle, rename, pin, and archive metadata", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    mkdirSync(projectPath);
+    const mapPath = join(root, "project-map.json");
+    let now = new Date("2026-07-29T08:00:00.000Z");
+    const store = new ProjectStore(mapPath, {
+      createId: () => "project-1",
+      now: () => now,
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Draft task",
+    });
+
+    expect(store.snapshot().projects[0]?.conversations[0]?.status).toBe(
+      "pending",
+    );
+    store.markConversationCompleted({
+      projectId: "project-1",
+      id: "thread-1",
+    });
+    now = new Date("2026-07-29T08:01:00.000Z");
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Renamed task",
+      pinned: true,
+    });
+    expect(store.snapshot().projects[0]?.conversations[0]).toMatchObject({
+      title: "Renamed task",
+      status: "completed",
+      renamedAt: "2026-07-29T08:01:00.000Z",
+      pinnedAt: "2026-07-29T08:01:00.000Z",
+    });
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Generated replacement",
+    });
+    expect(store.snapshot().projects[0]?.conversations[0]?.title).toBe(
+      "Renamed task",
+    );
+
+    now = new Date("2026-07-29T08:02:00.000Z");
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      archived: true,
+    });
+    expect(new ProjectStore(mapPath).snapshot()
+      .projects[0]?.conversations[0]).toMatchObject({
+      title: "Renamed task",
+      status: "completed",
+      archivedAt: "2026-07-29T08:02:00.000Z",
+    });
+    expect(
+      new ProjectStore(mapPath).snapshot().projects[0]?.conversations[0]
+        ?.pinnedAt,
+    ).toBeUndefined();
+    expect(JSON.parse(readFileSync(mapPath, "utf8"))).toMatchObject({
+      projects: [
+        {
+          conversations: [
+            {
+              title: "Renamed task",
+              status: "completed",
+              renamedAt: "2026-07-29T08:01:00.000Z",
+              archivedAt: "2026-07-29T08:02:00.000Z",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("treats legacy task records without a status as completed", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    mkdirSync(projectPath);
+    const mapPath = join(root, "project-map.json");
+    writeFileSync(
+      mapPath,
+      `${JSON.stringify({
+        version: 1,
+        activeProjectId: "project-1",
+        projects: [
+          {
+            id: "project-1",
+            name: "sample-project",
+            basePath: realpathSync(projectPath),
+            lastOpenedAt: "2026-07-29T00:00:00.000Z",
+            conversations: [
+              {
+                id: "legacy-thread",
+                title: "Legacy",
+                createdAt: "2026-07-29T00:00:00.000Z",
+                updatedAt: "2026-07-29T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      })}\n`,
+    );
+    const store = new ProjectStore(mapPath, {
+      now: () => new Date("2026-07-29T01:00:00.000Z"),
+    });
+
+    expect(store.snapshot().projects[0]?.conversations[0]?.status).toBe(
+      "completed",
+    );
+    store.updateConversation({
+      projectId: "project-1",
+      id: "legacy-thread",
+      pinned: true,
+    });
+    expect(
+      JSON.parse(readFileSync(mapPath, "utf8")).projects[0].conversations[0]
+        .status,
+    ).toBe("completed");
+  });
+
+  it("sorts pinned tasks before recent unpinned tasks", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    mkdirSync(projectPath);
+    let now = new Date("2026-07-29T08:00:00.000Z");
+    const store = new ProjectStore(join(root, "project-map.json"), {
+      createId: () => "project-1",
+      now: () => now,
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-pinned",
+      title: "Pinned",
+    });
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-pinned",
+      pinned: true,
+    });
+    now = new Date("2026-07-29T09:00:00.000Z");
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-recent",
+      title: "Recent",
+    });
+
+    expect(
+      store.snapshot().projects[0]?.conversations.map(({ id }) => id),
+    ).toEqual(["thread-pinned", "thread-recent"]);
+  });
+
+  it("persists the isolated workspace before the task is named", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    const worktreePath = join(root, "task-worktree");
+    mkdirSync(projectPath);
+    mkdirSync(worktreePath);
+    const mapPath = join(root, "project-map.json");
+    const store = new ProjectStore(mapPath, {
+      createId: () => "project-1",
+    });
+    store.register(projectPath);
+
+    store.setConversationWorkspace(
+      { projectId: "project-1", id: "thread-1" },
+      {
+        mode: "worktree",
+        path: worktreePath,
+        root: worktreePath,
+        repositoryRoot: projectPath,
+        branch: "threadlight/sample-123",
+        baseCommit: "abc123",
+      },
+    );
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Isolated task",
+    });
+
+    expect(
+      new ProjectStore(mapPath).snapshot().projects[0]?.conversations[0],
+    ).toMatchObject({
+      id: "thread-1",
+      title: "Isolated task",
+      workspace: {
+        mode: "worktree",
+        path: worktreePath,
+        branch: "threadlight/sample-123",
+      },
+    });
   });
 
 });

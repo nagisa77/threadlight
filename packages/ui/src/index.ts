@@ -3,19 +3,23 @@ export {
   ComputerPermissionCard,
   ConversationChangesButton,
   currentPlanStep,
+  filterProjectsForTaskList,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
+  TaskSearchDialog,
   ThreadlightApp,
   TurnStatusPill,
 } from "./app.js";
 export { activeProject } from "./projects.js";
 export {
+  fileReaderReference,
   MarkdownContent,
   localFileContextMenuPosition,
   parseLocalFileReference,
   workspaceFileReference,
 } from "./markdown.js";
 export { MemoryDocument, ProjectMemoryPage } from "./memory.js";
+export { DiagnosticsPage, formatDuration } from "./diagnostics.js";
 export {
   initialSessionState,
   sessionReducer,
@@ -49,6 +53,7 @@ export {
 export {
   buildChangeTree,
   FileSource,
+  formatFileSize,
   ReviewChangesTree,
   ReviewView,
   WorkspacePanel,
@@ -60,7 +65,7 @@ export {
   voiceInputErrorMessage,
 } from "./voice-input.js";
 
-export type { ThreadlightAppProps } from "./app.js";
+export type { TaskListFilter, ThreadlightAppProps } from "./app.js";
 export type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
@@ -74,13 +79,17 @@ export type {
 } from "./app.js";
 export type {
   ConversationSummary,
+  ConversationMetadataUpdate,
+  ConversationStatus,
   ConversationSummaryTarget,
   ConversationSummaryUpdate,
   ProjectSummary,
   ProjectsAdapter,
   ProjectsSnapshot,
+  TaskWorkspace,
 } from "./projects.js";
 export type {
+  FileReaderReference,
   LocalFileReference,
   MarkdownContentProps,
   WorkspaceFileReference,
@@ -89,6 +98,10 @@ export type {
   ProjectMemoryAdapter,
   ProjectMemorySnapshot,
 } from "./memory.js";
+export type {
+  DiagnosticsAdapter,
+  ProjectDiagnosticsSnapshot,
+} from "./diagnostics.js";
 export type {
   ConversationMessage,
   ConversationProgress,
@@ -104,7 +117,10 @@ export type {
 } from "./theme.js";
 export type {
   ModelProviderId,
+  ProviderDiagnostic,
+  ProviderDiagnosticCode,
   ProviderSecretDrafts,
+  ProviderTestRequest,
   SettingsAdapter,
   SecretDraft,
   SettingsSnapshot,

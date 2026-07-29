@@ -34,6 +34,60 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("records provider-neutral model, tool, and run durations", async () => {
+    let tick = 0;
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        return request.toolResults?.length
+          ? { text: "done", toolCalls: [] }
+          : {
+              text: "checking",
+              toolCalls: [{ id: "call-1", name: "check", arguments: {} }],
+            };
+      },
+    };
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "timed",
+        instructions: "Measure this run",
+        tools: [
+          defineTool({
+            name: "check",
+            description: "Check",
+            parameters: { type: "object" },
+            async execute() {
+              return "ok";
+            },
+          }),
+        ],
+      }),
+      "Run",
+      {
+        now: () => (tick += 5),
+        onEvent: (event) => events.push(event),
+      },
+    );
+
+    expect(result.durationMs).toBeGreaterThan(0);
+    expect(
+      events.filter((event) => event.type === "model.completed"),
+    ).toEqual([
+      expect.objectContaining({ durationMs: 5 }),
+      expect.objectContaining({ durationMs: 5 }),
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.completed",
+        durationMs: 5,
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: "run.completed",
+      durationMs: result.durationMs,
+    });
+  });
+
   it("lets a provider-neutral controller narrow tools and continue after rejecting completion", async () => {
     const requests: ModelRequest[] = [];
     const provider: ModelProvider = {
@@ -401,6 +455,70 @@ describe("AgentLoop", () => {
         text: "The answer is 42",
         toolCalls: [],
       },
+    ]);
+  });
+
+  it("injects scripted user input at a safe boundary without losing model state or tool linkage", async () => {
+    const firstGeneration = Promise.withResolvers<void>();
+    const requests: ModelRequest[] = [];
+    let executions = 0;
+    let additionalInput: string | undefined;
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          await firstGeneration.promise;
+          return {
+            text: "I will make the stale edit.",
+            toolCalls: [
+              { id: "stale-call", name: "write", arguments: {} },
+            ],
+            state: { responseId: "opaque-1" },
+          };
+        }
+        return { text: "Used the newer instruction.", toolCalls: [] };
+      },
+    };
+    const resultPending = new AgentLoop(provider).run(
+      defineAgent({
+        name: "test",
+        instructions: "Follow the latest instruction",
+        tools: [
+          defineTool({
+            name: "write",
+            description: "Write",
+            parameters: { type: "object" },
+            async execute() {
+              executions += 1;
+            },
+          }),
+        ],
+      }),
+      "Make the old edit",
+      {
+        takeAdditionalInput() {
+          const value = additionalInput;
+          additionalInput = undefined;
+          return value;
+        },
+      },
+    );
+
+    additionalInput = "Do not edit; explain instead";
+    firstGeneration.resolve();
+    await expect(resultPending).resolves.toMatchObject({
+      output: "Used the newer instruction.",
+    });
+
+    expect(executions).toBe(0);
+    expect(requests[1]?.state).toEqual({ responseId: "opaque-1" });
+    expect(requests[1]?.input).toContain("Do not edit; explain instead");
+    expect(requests[1]?.toolResults).toEqual([
+      expect.objectContaining({
+        callId: "stale-call",
+        name: "write",
+        isError: true,
+      }),
     ]);
   });
 

@@ -17,9 +17,14 @@ import type {
   TurnMode,
 } from "@threadlight/protocol";
 import {
+  Activity,
   ArrowUp,
+  Archive,
+  ArchiveRestore,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleStop,
   Copy,
   Folder,
@@ -28,15 +33,19 @@ import {
   FileDiff,
   FileText,
   LoaderCircle,
+  MoreHorizontal,
   Mic,
   Monitor,
   NotebookText,
   Paperclip,
   PanelRight,
   PencilLine,
+  Pin,
+  PinOff,
   PictureInPicture2,
   Plus,
   RotateCcw,
+  Search,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -68,8 +77,8 @@ import {
   type ToolActivity,
 } from "./session.js";
 import {
+  fileReaderReference,
   MarkdownContent,
-  workspaceFileReference,
   type LocalFileReference,
 } from "./markdown.js";
 import {
@@ -77,8 +86,15 @@ import {
   type ProjectMemoryAdapter,
 } from "./memory.js";
 import { isNearBottom } from "./scroll.js";
-import { isTogglePanelShortcut } from "./keyboard-shortcuts.js";
+import {
+  isTaskSearchShortcut,
+  isTogglePanelShortcut,
+} from "./keyboard-shortcuts.js";
 import { SettingsPage, type SettingsAdapter } from "./settings.js";
+import {
+  DiagnosticsPage,
+  type DiagnosticsAdapter,
+} from "./diagnostics.js";
 import {
   I18nProvider,
   isLanguage,
@@ -123,6 +139,7 @@ export interface ThreadlightAppProps {
   client: ThreadlightClient;
   clipboard?: ClipboardAdapter;
   settings?: SettingsAdapter;
+  diagnostics?: DiagnosticsAdapter;
   projects?: ProjectsAdapter;
   memory?: ProjectMemoryAdapter;
   voiceInput?: VoiceInputAdapter;
@@ -278,6 +295,7 @@ function ThreadlightAppContent({
   client,
   clipboard,
   settings,
+  diagnostics,
   projects,
   memory,
   voiceInput,
@@ -306,11 +324,16 @@ function ThreadlightAppContent({
     newThread,
     deleteThread,
     send,
+    addFollowUp,
+    reorderQueuedTurn,
+    cancelQueuedTurn,
     interrupt,
     terminateProcess,
     runningThreadIds,
   } = useThreadlightSession(client, { autoConnect: !projects });
-  const [view, setView] = useState<"thread" | "memory" | "settings">("thread");
+  const [view, setView] = useState<
+    "thread" | "memory" | "diagnostics" | "settings"
+  >("thread");
   const [input, setInput] = useState("");
   const [composerMode, setComposerMode] = useState<TurnMode>("default");
   const [capabilities, setCapabilities] = useState<
@@ -335,6 +358,9 @@ function ThreadlightAppContent({
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
   const [switchingProject, setSwitchingProject] = useState(false);
+  const [taskQuery, setTaskQuery] = useState("");
+  const [taskFilter, setTaskFilter] = useState<TaskListFilter>("all");
+  const [taskSearchOpen, setTaskSearchOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<{
     projectId: string;
     conversation: ConversationSummary;
@@ -384,6 +410,7 @@ function ThreadlightAppContent({
   const activePlanDocument = useRef<string | undefined>(undefined);
   const composerRoot = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const taskSearchTrigger = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
   const mediaStream = useRef<MediaStream | undefined>(undefined);
@@ -398,6 +425,11 @@ function ThreadlightAppContent({
   const activeThreadIdRef = useRef<string | undefined>(undefined);
   const viewRef = useRef(view);
   const currentProject = activeProject(projectSnapshot);
+  const currentConversation = currentProject?.conversations.find(
+    (conversation) => conversation.id === state.threadId,
+  );
+  const currentWorkspacePath =
+    currentConversation?.workspace?.path ?? currentProject?.basePath;
   projectSnapshotRef.current = projectSnapshot;
   activeThreadIdRef.current = state.threadId;
   viewRef.current = view;
@@ -443,11 +475,17 @@ function ThreadlightAppContent({
       active: composerMode === "plan",
     },
   ];
+  const sidebarProjects = filterProjectsForTaskList(
+    projectSnapshot?.projects ?? [],
+    "",
+    "all",
+    runningThreadIds,
+  );
 
   useEffect(() => {
     if (!projects) return;
     let active = true;
-    const unsubscribe = client.on("turn/completed", ({ threadId }) => {
+    const refreshCompletedTask = (threadId: string) => {
       void projects
         .load()
         .then(async (snapshot) => {
@@ -476,10 +514,21 @@ function ThreadlightAppContent({
         .catch(() => {
           // The persisted marker will be reflected by the next project refresh.
         });
-    });
+    };
+    const unsubscribes = [
+      client.on("thread/title", ({ threadId }) => {
+        refreshCompletedTask(threadId);
+      }),
+      client.on("turn/completed", ({ threadId }) => {
+        refreshCompletedTask(threadId);
+      }),
+      client.on("turn/failed", ({ threadId }) => {
+        refreshCompletedTask(threadId);
+      }),
+    ];
     return () => {
       active = false;
-      unsubscribe();
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
   }, [client, projects]);
 
@@ -707,6 +756,51 @@ function ThreadlightAppContent({
     [currentProject, state.threadId, workspace],
   );
 
+  const restoreConversationChanges = useCallback(
+    async (
+      paths: readonly string[] | undefined,
+      revision: string,
+    ) => {
+      if (
+        !workspace?.restoreChanges ||
+        !currentProject ||
+        !state.threadId ||
+        state.isRunning
+      ) {
+        throw new Error(t("restoreUnavailableWhileRunning"));
+      }
+      setConversationChangesLoading(true);
+      setConversationChangesError(undefined);
+      try {
+        const snapshot = await workspace.restoreChanges(
+          currentProject.id,
+          state.threadId,
+          revision,
+          paths,
+        );
+        setConversationChanges(snapshot);
+      } catch (error) {
+        if (
+          errorMessage(error).includes(
+            "workspace changed after this Diff",
+          )
+        ) {
+          throw new Error(t("restoreConflict"));
+        }
+        throw error;
+      } finally {
+        setConversationChangesLoading(false);
+      }
+    },
+    [
+      currentProject,
+      state.isRunning,
+      state.threadId,
+      t,
+      workspace,
+    ],
+  );
+
   useEffect(() => {
     void refreshConversationChanges();
   }, [refreshConversationChanges, state.isRunning, state.messages.length]);
@@ -746,6 +840,18 @@ function ThreadlightAppContent({
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [currentProject, workspace]);
+
+  useEffect(() => {
+    if (!projects) return;
+    const handleShortcut = (event: globalThis.KeyboardEvent) => {
+      if (isTaskSearchShortcut(event)) {
+        event.preventDefault();
+        if (!switchingProject && voiceStatus === "idle") openTaskSearch();
+      }
+    };
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [projects, switchingProject, voiceStatus]);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
@@ -932,7 +1038,9 @@ function ThreadlightAppContent({
       if (!project) return;
 
       const requestedThreadId =
-        preferredThreadId ?? project.conversations[0]?.id;
+        preferredThreadId ??
+        project.conversations.find((conversation) => !conversation.archivedAt)
+          ?.id;
       const openedThreadId = await openThread(requestedThreadId);
       if (
         openedThreadId &&
@@ -1183,10 +1291,20 @@ function ThreadlightAppContent({
     addAttachments([...event.dataTransfer.files]);
   }
 
-  async function submit(value = input) {
+  async function submit(
+    value = input,
+    followUpDelivery: "inject" | "queued" = "inject",
+  ) {
     if (voiceStatus !== "idle" || preparingAttachments) return;
     followOutput.current = true;
-    const shouldNameConversation = !hasUserInput(state.messages);
+    if (state.isRunning) {
+      if (await addFollowUp(value, followUpDelivery)) {
+        setInput("");
+        setCapabilityQuery(undefined);
+        if (textarea.current) textarea.current.style.height = "auto";
+      }
+      return;
+    }
     const draftAttachments = [...pendingAttachmentsRef.current];
     let stagedAttachments: AttachmentData[] = [];
     if (draftAttachments.length > 0) {
@@ -1235,16 +1353,7 @@ function ThreadlightAppContent({
           const snapshot = await projects.upsertConversation({
             projectId: currentProject.id,
             id: state.threadId,
-            title: shouldNameConversation
-              ? conversationTitle(value || stagedAttachments[0]?.name || t("task"), t)
-              : (existingTitle ??
-                conversationTitle(
-                  state.messages[0]?.text ||
-                    value ||
-                    stagedAttachments[0]?.name ||
-                    t("task"),
-                  t,
-                )),
+            title: existingTitle ?? t("task"),
           });
           setProjectSnapshot(snapshot);
         } catch (error) {
@@ -1278,6 +1387,20 @@ function ThreadlightAppContent({
     await newThread();
   }
 
+  function openTaskSearch() {
+    if (!projects || switchingProject || voiceStatus !== "idle") return;
+    setTaskQuery("");
+    setTaskFilter("all");
+    setTaskSearchOpen(true);
+  }
+
+  function closeTaskSearch(restoreFocus = true) {
+    setTaskSearchOpen(false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => taskSearchTrigger.current?.focus());
+    }
+  }
+
   function closeConversationPanels() {
     setTerminalOpen(false);
     setWorkspacePanelOpen(false);
@@ -1307,6 +1430,39 @@ function ThreadlightAppContent({
     }
   }
 
+  async function updateConversationMetadata(
+    projectId: string,
+    conversation: ConversationSummary,
+    update: {
+      title?: string;
+      pinned?: boolean;
+      archived?: boolean;
+    },
+  ) {
+    if (!projects) return;
+    setProjectError(undefined);
+    try {
+      const snapshot = await projects.updateConversation({
+        projectId,
+        id: conversation.id,
+        ...update,
+      });
+      setProjectSnapshot(snapshot);
+      if (
+        update.archived === true &&
+        projectId === projectSnapshot?.activeProjectId &&
+        conversation.id === state.threadId
+      ) {
+        closeConversationPanels();
+        setView("thread");
+        await connectProject(snapshot);
+      }
+    } catch (error) {
+      setProjectError(errorMessage(error));
+      throw error;
+    }
+  }
+
   async function selectConversation(projectId: string, threadId?: string) {
     if (
       !projects ||
@@ -1326,7 +1482,10 @@ function ThreadlightAppContent({
       if (!snapshot) return;
       const nextProject = activeProject(snapshot);
       const nextThreadId =
-        threadId ?? nextProject?.conversations[0]?.id;
+        threadId ??
+        nextProject?.conversations.find(
+          (conversation) => !conversation.archivedAt,
+        )?.id;
       if (
         conversationContextChanged(
           currentProject?.id,
@@ -1412,9 +1571,10 @@ function ThreadlightAppContent({
   }
 
   function openLocalFile(reference: LocalFileReference) {
-    if (!workspace || !currentProject) return;
-    const file = workspaceFileReference(reference, currentProject.basePath);
+    if (!workspace || !currentProject || !currentWorkspacePath) return;
+    const file = fileReaderReference(reference, currentWorkspacePath);
     if (!file) return;
+    if (file.source === "system" && !workspace.readSystemFile) return;
     setWorkspacePanelOpen(true);
     setWorkspaceFileOpenRequest((current) => ({
       ...file,
@@ -1423,10 +1583,20 @@ function ThreadlightAppContent({
   }
 
   async function revealLocalFile(reference: LocalFileReference) {
-    if (!workspace?.reveal || !currentProject) return;
-    const file = workspaceFileReference(reference, currentProject.basePath);
+    if (!workspace || !currentProject || !currentWorkspacePath) return;
+    const file = fileReaderReference(reference, currentWorkspacePath);
     if (!file) throw new Error(t("fileOutsideProject"));
-    await workspace.reveal(currentProject.id, file.path);
+    if (file.source === "system") {
+      if (!workspace.revealSystemFile) {
+        throw new Error(t("systemFileAccessUnavailable"));
+      }
+      await workspace.revealSystemFile(file.path);
+      return;
+    }
+    if (!workspace.reveal) {
+      throw new Error(t("systemFileAccessUnavailable"));
+    }
+    await workspace.reveal(currentProject.id, file.path, state.threadId);
   }
 
   function beginWorkspacePanelResize(
@@ -1547,7 +1717,7 @@ function ThreadlightAppContent({
       voiceStatus === "idle"
     ) {
       event.preventDefault();
-      void submit();
+      void submit(input, composerSubmitDelivery(event, state.isRunning));
     }
   }
 
@@ -1763,6 +1933,7 @@ function ThreadlightAppContent({
         <ProjectOpenControl
           adapter={projectOpener}
           projectId={currentProject.id}
+          threadId={state.threadId}
           preferred={preferredProjectOpener}
           openers={projectOpeners}
         />
@@ -1823,6 +1994,17 @@ function ThreadlightAppContent({
               <div className="project-list-heading">
                 <p className="section-label">{t("projects")}</p>
                 <div className="project-heading-actions">
+                  <button
+                    ref={taskSearchTrigger}
+                    type="button"
+                    className="icon-button pressable"
+                    aria-label={t("searchTasks")}
+                    title={`${t("searchTasks")}（⌘K）`}
+                    disabled={switchingProject || voiceStatus !== "idle"}
+                    onClick={openTaskSearch}
+                  >
+                    <Search size={15} />
+                  </button>
                   {memory && currentProject && (
                     <button
                       type="button"
@@ -1843,6 +2025,24 @@ function ThreadlightAppContent({
                       <NotebookText size={15} />
                     </button>
                   )}
+                  {diagnostics && currentProject && (
+                    <button
+                      type="button"
+                      className={`icon-button pressable ${view === "diagnostics" ? "active" : ""}`}
+                      aria-current={
+                        view === "diagnostics" ? "page" : undefined
+                      }
+                      aria-label={t("usageDiagnostics")}
+                      title={t("usageDiagnostics")}
+                      disabled={switchingProject || voiceStatus !== "idle"}
+                      onClick={() => {
+                        cancelVoiceInput();
+                        setView("diagnostics");
+                      }}
+                    >
+                      <Activity size={15} />
+                    </button>
+                  )}
                   <button
                     className="icon-button pressable"
                     type="button"
@@ -1859,11 +2059,11 @@ function ThreadlightAppContent({
                 </div>
               </div>
               <div className="project-list-scroll">
-                {projectSnapshot?.projects.map((project) => (
+                {sidebarProjects.map((project) => (
                   <ProjectGroup
                     key={project.id}
                     project={project}
-                    active={project.id === projectSnapshot.activeProjectId}
+                    active={project.id === projectSnapshot?.activeProjectId}
                     activeThreadId={state.threadId}
                     runningThreadIds={runningThreadIds}
                     computerThreadId={computerShareSnapshot?.ownerThreadId}
@@ -1874,15 +2074,30 @@ function ThreadlightAppContent({
                     onSelect={(threadId) =>
                       void selectConversation(project.id, threadId)
                     }
+                    onRename={(conversation, title) =>
+                      updateConversationMetadata(project.id, conversation, {
+                        title,
+                      })
+                    }
+                    onTogglePinned={(conversation) =>
+                      updateConversationMetadata(project.id, conversation, {
+                        pinned: !conversation.pinnedAt,
+                      })
+                    }
+                    onArchive={(conversation, archived) =>
+                      updateConversationMetadata(project.id, conversation, {
+                        archived,
+                      })
+                    }
                     onDelete={(conversation) => {
                       setDeleteError(undefined);
                       setPendingDelete({ projectId: project.id, conversation });
                     }}
                   />
                 ))}
-                {projectSnapshot?.projects.length === 0 && (
+                {projectSnapshot?.projects.length === 0 ? (
                   <div className="thread-placeholder">{t("openFolderToStart")}</div>
-                )}
+                ) : null}
               </div>
             </>
           ) : (
@@ -1954,6 +2169,14 @@ function ThreadlightAppContent({
         {view === "memory" && memory && currentProject ? (
           <ProjectMemoryPage
             adapter={memory}
+            projectId={currentProject.id}
+            projectName={currentProject.name}
+          />
+        ) : view === "diagnostics" &&
+          diagnostics &&
+          currentProject ? (
+          <DiagnosticsPage
+            adapter={diagnostics}
             projectId={currentProject.id}
             projectName={currentProject.name}
           />
@@ -2064,7 +2287,9 @@ function ThreadlightAppContent({
                                 onTerminateProcess={terminateProcess}
                                 onOpenLocalFile={openLocalFile}
                                 onRevealLocalFile={
-                                  workspace?.reveal ? revealLocalFile : undefined
+                                  workspace?.reveal || workspace?.revealSystemFile
+                                    ? revealLocalFile
+                                    : undefined
                                 }
                               />
                             )}
@@ -2081,7 +2306,9 @@ function ThreadlightAppContent({
                               <MarkdownContent
                                 onOpenLocalFile={openLocalFile}
                                 onRevealLocalFile={
-                                  workspace?.reveal ? revealLocalFile : undefined
+                                  workspace?.reveal || workspace?.revealSystemFile
+                                    ? revealLocalFile
+                                    : undefined
                                 }
                               >
                                 {message.text}
@@ -2117,7 +2344,9 @@ function ThreadlightAppContent({
                             onTerminateProcess={terminateProcess}
                             onOpenLocalFile={openLocalFile}
                             onRevealLocalFile={
-                              workspace?.reveal ? revealLocalFile : undefined
+                              workspace?.reveal || workspace?.revealSystemFile
+                                ? revealLocalFile
+                                : undefined
                             }
                           />
                         )}
@@ -2126,7 +2355,9 @@ function ThreadlightAppContent({
                             <MarkdownContent
                               onOpenLocalFile={openLocalFile}
                               onRevealLocalFile={
-                                workspace?.reveal ? revealLocalFile : undefined
+                                workspace?.reveal || workspace?.revealSystemFile
+                                  ? revealLocalFile
+                                  : undefined
                               }
                             >
                               {state.streamingText}
@@ -2212,6 +2443,74 @@ function ThreadlightAppContent({
                     disabled={preparingAttachments}
                   />
                 )}
+                {state.queuedTurns.length > 0 && (
+                  <div
+                    className="composer-queue"
+                    aria-label={t("queuedMessages")}
+                  >
+                    {state.queuedTurns.map((item, index) => (
+                      <div className="composer-queue-item" key={item.id}>
+                        <span
+                          className={`composer-queue-badge ${item.delivery}`}
+                        >
+                          {t(
+                            item.delivery === "inject"
+                              ? "injectSoon"
+                              : "afterCurrent",
+                          )}
+                        </span>
+                        <span className="composer-queue-copy">
+                          {item.input}
+                        </span>
+                        <div className="composer-queue-actions">
+                          <button
+                            type="button"
+                            className="pressable"
+                            disabled={index === 0}
+                            onClick={() =>
+                              void reorderQueuedTurn(
+                                item.id,
+                                state.queuedTurns[index - 1]?.id,
+                              )
+                            }
+                            aria-label={t("moveQueuedMessageUp")}
+                            title={t("moveUp")}
+                          >
+                            <ChevronUp size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="pressable"
+                            disabled={
+                              index === state.queuedTurns.length - 1
+                            }
+                            onClick={() =>
+                              void reorderQueuedTurn(
+                                item.id,
+                                state.queuedTurns[index + 2]?.id,
+                              )
+                            }
+                            aria-label={t("moveQueuedMessageDown")}
+                            title={t("moveDown")}
+                          >
+                            <ChevronDown size={14} />
+                          </button>
+                          <button
+                            type="button"
+                            className="pressable cancel"
+                            onClick={() =>
+                              void cancelQueuedTurn(item.id)
+                            }
+                            aria-label={t("cancelQueuedMessage")}
+                            title={t("cancel")}
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <CapabilityChips
                   capabilities={selectedCapabilities}
                   disabled={state.isRunning}
@@ -2288,10 +2587,14 @@ function ThreadlightAppContent({
                     onChange={(event) => {
                       const value = event.target.value;
                       setInput(value);
-                      updateCapabilityQuery(
-                        value,
-                        event.target.selectionStart,
-                      );
+                      if (state.isRunning) {
+                        setCapabilityQuery(undefined);
+                      } else {
+                        updateCapabilityQuery(
+                          value,
+                          event.target.selectionStart,
+                        );
+                      }
                       setVoiceError(undefined);
                     }}
                     onKeyDown={handleKeyDown}
@@ -2323,68 +2626,87 @@ function ThreadlightAppContent({
                     }
                   />
                   {voiceInput && !state.isRunning && (
-                  <button
-                    type="button"
-                    className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
-                    onClick={() => {
-                      if (voiceStatus === "recording") stopVoiceInput();
-                      else void startVoiceInput();
-                    }}
-                    disabled={
-                      state.connection !== "ready" ||
-                      voiceStatus === "requesting" ||
-                      voiceStatus === "transcribing"
-                    }
-                    aria-label={
-                      voiceStatus === "recording"
-                        ? t("stopRecording")
-                        : voiceStatus === "requesting"
-                          ? t("requestingMicrophone")
-                        : voiceStatus === "transcribing"
-                          ? t("transcribingVoice")
+                    <button
+                      type="button"
+                      className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
+                      onClick={() => {
+                        if (voiceStatus === "recording") stopVoiceInput();
+                        else void startVoiceInput();
+                      }}
+                      disabled={
+                        state.connection !== "ready" ||
+                        voiceStatus === "requesting" ||
+                        voiceStatus === "transcribing"
+                      }
+                      aria-label={
+                        voiceStatus === "recording"
+                          ? t("stopRecording")
+                          : voiceStatus === "requesting"
+                            ? t("requestingMicrophone")
+                            : voiceStatus === "transcribing"
+                              ? t("transcribingVoice")
+                              : t("voiceInput")
+                      }
+                      aria-pressed={voiceStatus === "recording"}
+                      title={
+                        voiceStatus === "recording"
+                          ? t("stopRecording")
                           : t("voiceInput")
-                    }
-                    aria-pressed={voiceStatus === "recording"}
-                    title={
-                      voiceStatus === "recording"
-                        ? t("stopRecording")
-                        : t("voiceInput")
-                    }
-                  >
-                    {voiceStatus === "requesting" ||
-                    voiceStatus === "transcribing" ? (
-                      <LoaderCircle className="spin" size={17} />
-                    ) : voiceStatus === "recording" ? (
-                      <Square size={12} fill="currentColor" strokeWidth={0} />
-                    ) : (
-                      <Mic size={17} />
-                    )}
-                  </button>
+                      }
+                    >
+                      {voiceStatus === "requesting" ||
+                      voiceStatus === "transcribing" ? (
+                        <LoaderCircle className="spin" size={17} />
+                      ) : voiceStatus === "recording" ? (
+                        <Square
+                          size={12}
+                          fill="currentColor"
+                          strokeWidth={0}
+                        />
+                      ) : (
+                        <Mic size={17} />
+                      )}
+                    </button>
+                  )}
+                  {state.isRunning && (
+                    <button
+                      type="button"
+                      className="composer-action send pressable"
+                      onClick={() => void submit(input, "inject")}
+                      disabled={!input.trim()}
+                      aria-label={t("injectMessage")}
+                      title={t("injectMessage")}
+                    >
+                      <ArrowUp size={18} strokeWidth={2.4} />
+                    </button>
                   )}
                   {state.isRunning ? (
-                  <button
-                    className="composer-action stop pressable"
-                    onClick={stopRunningTurn}
-                    aria-label={t("stopRun")}
-                    title={t("stop")}
-                  >
-                    <CircleStop size={18} />
-                  </button>
-                ) : (
-                  <button
-                    className="composer-action send pressable"
-                    onClick={() => void submit()}
-                    disabled={
-                      (!input.trim() && pendingAttachments.length === 0) ||
-                      state.connection !== "ready" ||
-                      voiceStatus !== "idle" ||
-                      preparingAttachments
-                    }
-                    aria-label={t("sendMessage")}
-                    title={t("send")}
-                  >
-                    <ArrowUp size={18} strokeWidth={2.4} />
-                  </button>
+                    <button
+                      type="button"
+                      className="composer-action stop pressable"
+                      onClick={stopRunningTurn}
+                      aria-label={t("stopRun")}
+                      title={t("stop")}
+                    >
+                      <CircleStop size={18} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="composer-action send pressable"
+                      onClick={() => void submit()}
+                      disabled={
+                        (!input.trim() &&
+                          pendingAttachments.length === 0) ||
+                        state.connection !== "ready" ||
+                        voiceStatus !== "idle" ||
+                        preparingAttachments
+                      }
+                      aria-label={t("sendMessage")}
+                      title={t("send")}
+                    >
+                      <ArrowUp size={18} strokeWidth={2.4} />
+                    </button>
                   )}
                 </div>
               </div>
@@ -2400,6 +2722,7 @@ function ThreadlightAppContent({
                   state.submissionError,
                   pendingAttachments,
                   preparingAttachments,
+                  state.isRunning,
                   t,
                 )}
               </p>
@@ -2427,6 +2750,7 @@ function ThreadlightAppContent({
             adapter={workspace}
             terminal={terminal}
             projectId={currentProject.id}
+            threadId={state.threadId}
             projectName={currentProject.name}
             changes={conversationChanges}
             changesLoading={conversationChangesLoading}
@@ -2438,6 +2762,12 @@ function ThreadlightAppContent({
             onResizeBy={resizeWorkspacePanelBy}
             onResetSize={() => setWorkspacePanelWidth(undefined)}
             onRefreshChanges={() => void refreshConversationChanges()}
+            onRestoreChanges={
+              workspace.restoreChanges
+                ? restoreConversationChanges
+                : undefined
+            }
+            restoreDisabled={state.isRunning}
             toolbarActions={
               globalActionsInPanel ? globalActions : undefined
             }
@@ -2449,11 +2779,28 @@ function ThreadlightAppContent({
             adapter={terminal}
             workspace={workspace}
             projectId={currentProject.id}
+            threadId={state.threadId}
             projectName={currentProject.name}
             onClose={() => setTerminalOpen(false)}
           />
         )}
       </main>
+      {taskSearchOpen && (
+        <TaskSearchDialog
+          projects={projectSnapshot?.projects ?? []}
+          query={taskQuery}
+          filter={taskFilter}
+          runningThreadIds={runningThreadIds}
+          activeThreadId={state.threadId}
+          onQueryChange={setTaskQuery}
+          onFilterChange={setTaskFilter}
+          onClose={() => closeTaskSearch()}
+          onSelect={(projectId, threadId) => {
+            closeTaskSearch(false);
+            void selectConversation(projectId, threadId);
+          }}
+        />
+      )}
       {pendingDelete && (
         <DeleteConversationDialog
           conversation={pendingDelete.conversation}
@@ -3023,6 +3370,285 @@ export function ComputerShareStatus({
   );
 }
 
+export type TaskListFilter =
+  | "all"
+  | "running"
+  | "pending"
+  | "completed"
+  | "archived";
+
+export function filterProjectsForTaskList(
+  projects: readonly ProjectSummary[],
+  query: string,
+  filter: TaskListFilter,
+  runningThreadIds: readonly string[],
+): ProjectSummary[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  const running = new Set(runningThreadIds);
+  return projects.flatMap((project) => {
+    const projectMatches = project.name
+      .toLowerCase()
+      .includes(normalizedQuery);
+    const conversations = project.conversations.filter((conversation) => {
+      const archived = Boolean(conversation.archivedAt);
+      if (filter === "archived") {
+        if (!archived) return false;
+      } else {
+        if (archived) return false;
+        if (filter === "running" && !running.has(conversation.id)) return false;
+        if (
+          filter === "pending" &&
+          (running.has(conversation.id) ||
+            conversation.status !== "pending")
+        ) {
+          return false;
+        }
+        if (
+          filter === "completed" &&
+          (running.has(conversation.id) ||
+            (conversation.status ?? "completed") !== "completed")
+        ) {
+          return false;
+        }
+      }
+      return (
+        !normalizedQuery ||
+        projectMatches ||
+        conversation.title.toLowerCase().includes(normalizedQuery)
+      );
+    });
+    const filterActive = filter !== "all";
+    if (
+      conversations.length === 0 &&
+      (filterActive || (normalizedQuery && !projectMatches))
+    ) {
+      return [];
+    }
+    return [{ ...project, conversations }];
+  });
+}
+
+export function TaskSearchDialog({
+  projects,
+  query,
+  filter,
+  runningThreadIds,
+  activeThreadId,
+  onQueryChange,
+  onFilterChange,
+  onSelect,
+  onClose,
+}: {
+  projects: readonly ProjectSummary[];
+  query: string;
+  filter: TaskListFilter;
+  runningThreadIds: readonly string[];
+  activeThreadId?: string;
+  onQueryChange(query: string): void;
+  onFilterChange(filter: TaskListFilter): void;
+  onSelect(projectId: string, threadId: string): void;
+  onClose(): void;
+}) {
+  const { t } = useI18n();
+  const dialog = useRef<HTMLElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const filteredProjects = filterProjectsForTaskList(
+    projects,
+    query,
+    filter,
+    runningThreadIds,
+  );
+  const resultCount = filteredProjects.reduce(
+    (count, project) => count + project.conversations.length,
+    0,
+  );
+  const running = new Set(runningThreadIds);
+  const filters: readonly TaskListFilter[] = [
+    "all",
+    "running",
+    "pending",
+    "completed",
+    "archived",
+  ];
+
+  useEffect(() => {
+    input.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(
+        dialog.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  return (
+    <div
+      className="task-search-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        ref={dialog}
+        className="task-search-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-search-title"
+      >
+        <h2 id="task-search-title" className="sr-only">
+          {t("searchTasks")}
+        </h2>
+        <div className="task-search-dialog-input">
+          <Search size={17} aria-hidden="true" />
+          <input
+            ref={input}
+            type="search"
+            value={query}
+            placeholder={t("searchTasks")}
+            aria-label={t("searchTasks")}
+            onChange={(event) => onQueryChange(event.target.value)}
+          />
+          {query && (
+            <button
+              type="button"
+              className="task-search-dialog-clear pressable"
+              aria-label={t("clearSearch")}
+              title={t("clearSearch")}
+              onClick={() => {
+                onQueryChange("");
+                input.current?.focus();
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+          <button
+            type="button"
+            className="task-search-dialog-close pressable"
+            aria-label={t("closeTaskSearch")}
+            title={t("closeTaskSearch")}
+            onClick={onClose}
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <div
+          className="task-search-filters"
+          role="tablist"
+          aria-label={t("filterTasks")}
+        >
+          {filters.map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              role="tab"
+              aria-selected={candidate === filter}
+              className={`task-search-filter pressable ${candidate === filter ? "active" : ""}`}
+              onClick={() => onFilterChange(candidate)}
+            >
+              {taskFilterLabel(candidate, t)}
+            </button>
+          ))}
+        </div>
+        <div
+          className="task-search-results"
+          aria-label={t("taskSearchResults", { count: resultCount })}
+        >
+          {resultCount === 0 ? (
+            <div className="task-search-empty">
+              <Search size={20} aria-hidden="true" />
+              <span>{t("noMatchingTasks")}</span>
+            </div>
+          ) : (
+            filteredProjects.map((project) => (
+              <section className="task-search-project" key={project.id}>
+                <h3>
+                  <Folder size={14} aria-hidden="true" />
+                  <span>{project.name}</span>
+                  <small>{project.conversations.length}</small>
+                </h3>
+                {project.conversations.map((conversation) => {
+                  const isRunning = running.has(conversation.id);
+                  return (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      className={`task-search-result pressable ${conversation.id === activeThreadId ? "active" : ""}`}
+                      aria-current={
+                        conversation.id === activeThreadId ? "page" : undefined
+                      }
+                      onClick={() => onSelect(project.id, conversation.id)}
+                    >
+                      <span className="task-search-result-icon">
+                        {isRunning ? (
+                          <LoaderCircle className="spin" size={14} />
+                        ) : conversation.archivedAt ? (
+                          <Archive size={14} />
+                        ) : conversation.pinnedAt ? (
+                          <Pin size={14} />
+                        ) : (
+                          <FileText size={14} />
+                        )}
+                      </span>
+                      <span className="task-search-result-copy">
+                        <strong>{conversation.title}</strong>
+                        <small>
+                          {isRunning
+                            ? t("runningTasks")
+                            : conversation.archivedAt
+                              ? t("archivedTasks")
+                              : conversation.status === "pending"
+                                ? t("pendingTasks")
+                                : t("completedTasks")}
+                        </small>
+                      </span>
+                      <ChevronRight size={14} aria-hidden="true" />
+                    </button>
+                  );
+                })}
+              </section>
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function taskFilterLabel(filter: TaskListFilter, t: Translate): string {
+  if (filter === "running") return t("runningTasks");
+  if (filter === "pending") return t("pendingTasks");
+  if (filter === "completed") return t("completedTasks");
+  if (filter === "archived") return t("archivedTasks");
+  return t("allTasks");
+}
+
 export function ProjectGroup({
   project,
   active,
@@ -3030,7 +3656,11 @@ export function ProjectGroup({
   runningThreadIds = [],
   computerThreadId,
   disabled,
+  forceExpanded = false,
   onSelect,
+  onRename,
+  onTogglePinned,
+  onArchive,
   onDelete,
 }: {
   project: ProjectSummary;
@@ -3039,11 +3669,22 @@ export function ProjectGroup({
   runningThreadIds?: readonly string[];
   computerThreadId?: string;
   disabled: boolean;
+  forceExpanded?: boolean;
   onSelect(threadId?: string): void;
+  onRename?(
+    conversation: ConversationSummary,
+    title: string,
+  ): Promise<void>;
+  onTogglePinned?(conversation: ConversationSummary): Promise<void>;
+  onArchive?(
+    conversation: ConversationSummary,
+    archived: boolean,
+  ): Promise<void>;
   onDelete?(conversation: ConversationSummary): void;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const visibleExpanded = expanded || forceExpanded;
   const projectRunning = project.conversations.some((conversation) =>
     runningThreadIds.includes(conversation.id),
   );
@@ -3055,7 +3696,7 @@ export function ProjectGroup({
   );
 
   function toggleExpanded() {
-    const nextExpanded = !expanded;
+    const nextExpanded = !visibleExpanded;
     setExpanded(nextExpanded);
     if (nextExpanded && !active) onSelect(project.conversations[0]?.id);
   }
@@ -3066,30 +3707,30 @@ export function ProjectGroup({
         type="button"
         className="project-row pressable"
         aria-current={active ? "location" : undefined}
-        aria-expanded={expanded}
+        aria-expanded={visibleExpanded}
         disabled={disabled}
         title={project.basePath}
         onClick={toggleExpanded}
       >
-        {expanded ? <FolderOpen size={16} /> : <Folder size={16} />}
+        {visibleExpanded ? <FolderOpen size={16} /> : <Folder size={16} />}
         <span className="project-name">{project.name}</span>
-        {(showsProjectLevelActivity(expanded, projectRunning) ||
-          showsProjectLevelActivity(expanded, projectUsingComputer) ||
-          showsProjectLevelActivity(expanded, projectUnread)) && (
+        {(showsProjectLevelActivity(visibleExpanded, projectRunning) ||
+          showsProjectLevelActivity(visibleExpanded, projectUsingComputer) ||
+          showsProjectLevelActivity(visibleExpanded, projectUnread)) && (
           <span className="project-live-indicators">
-            {showsProjectLevelActivity(expanded, projectRunning) && (
+            {showsProjectLevelActivity(visibleExpanded, projectRunning) && (
               <LoaderCircle
                 className="project-runtime-indicator spin"
                 size={13}
                 aria-label={t("projectTaskRunning", { project: project.name })}
               />
             )}
-            {showsProjectLevelActivity(expanded, projectUsingComputer) && (
+            {showsProjectLevelActivity(visibleExpanded, projectUsingComputer) && (
               <ComputerUseIndicator
                 label={t("projectTaskUsingComputer", { project: project.name })}
               />
             )}
-            {showsProjectLevelActivity(expanded, projectUnread) && (
+            {showsProjectLevelActivity(visibleExpanded, projectUnread) && (
               <span
                 className="project-unread-indicator"
                 aria-label={t("projectTaskUnread", { project: project.name })}
@@ -3099,7 +3740,7 @@ export function ProjectGroup({
         )}
         <ChevronRight className="project-chevron" size={14} />
       </button>
-      {expanded && (
+      {visibleExpanded && (
         <div className="project-conversations">
           {project.conversations.map((conversation) => (
             <ProjectConversationItem
@@ -3110,6 +3751,21 @@ export function ProjectGroup({
               computerActive={conversation.id === computerThreadId}
               disabled={disabled}
               onSelect={() => onSelect(conversation.id)}
+              onRename={
+                onRename
+                  ? (title) => onRename(conversation, title)
+                  : undefined
+              }
+              onTogglePinned={
+                onTogglePinned
+                  ? () => onTogglePinned(conversation)
+                  : undefined
+              }
+              onArchive={
+                onArchive
+                  ? (archived) => onArchive(conversation, archived)
+                  : undefined
+              }
               onDelete={onDelete ? () => onDelete(conversation) : undefined}
             />
           ))}
@@ -3129,6 +3785,9 @@ export function ProjectConversationItem({
   computerActive = false,
   disabled,
   onSelect,
+  onRename,
+  onTogglePinned,
+  onArchive,
   onDelete,
 }: {
   conversation: ConversationSummary;
@@ -3137,54 +3796,265 @@ export function ProjectConversationItem({
   computerActive?: boolean;
   disabled: boolean;
   onSelect(): void;
+  onRename?(title: string): Promise<void>;
+  onTogglePinned?(): Promise<void>;
+  onArchive?(archived: boolean): Promise<void>;
   onDelete?(): void;
 }) {
   const { t } = useI18n();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(conversation.title);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string>();
+  const menuRoot = useRef<HTMLDivElement>(null);
+  const titleInput = useRef<HTMLInputElement>(null);
+  const manageable = Boolean(onRename || onTogglePinned || onArchive || onDelete);
+
+  useEffect(() => {
+    if (!editing) setDraftTitle(conversation.title);
+  }, [conversation.title, editing]);
+
+  useEffect(() => {
+    if (!editing) return;
+    titleInput.current?.focus();
+    titleInput.current?.select();
+  }, [editing]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function closeMenu(event: globalThis.PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !menuRoot.current?.contains(event.target)
+      ) {
+        setMenuOpen(false);
+      }
+    }
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [menuOpen]);
+
+  async function runAction(action: () => Promise<void>): Promise<boolean> {
+    if (busy) return false;
+    setBusy(true);
+    setActionError(undefined);
+    try {
+      await action();
+      setMenuOpen(false);
+      return true;
+    } catch (error) {
+      setActionError(errorMessage(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmRename() {
+    const title = draftTitle.trim();
+    if (!onRename || !title || busy) return;
+    if (title === conversation.title) {
+      setEditing(false);
+      return;
+    }
+    if (await runAction(() => onRename(title))) setEditing(false);
+  }
+
   return (
-    <div className={`thread-item ${active ? "active" : ""}`}>
-      <button
-        type="button"
-        className="thread-item-select pressable"
-        aria-current={active ? "page" : undefined}
-        disabled={disabled}
-        title={conversation.title}
-        onClick={onSelect}
-      >
-        <span className="thread-title">{conversation.title}</span>
-        {(running || computerActive || conversation.unread) && (
-          <span className="thread-live-indicators">
-            {running && (
-              <LoaderCircle
-                className="thread-runtime-indicator spin"
-                size={13}
-                aria-label={t("taskRunning", { title: conversation.title })}
-              />
-            )}
-            {computerActive && (
-              <ComputerUseIndicator
-                label={t("taskUsingComputer", { title: conversation.title })}
-              />
-            )}
-            {conversation.unread && (
-              <span
-                className="thread-unread-indicator"
-                aria-label={t("taskUnread", { title: conversation.title })}
-              />
-            )}
-          </span>
-        )}
-      </button>
-      {onDelete && !running && !computerActive && (
+    <div
+      className={`thread-item ${active ? "active" : ""} ${conversation.archivedAt ? "archived" : ""}`}
+      title={actionError}
+    >
+      {actionError && (
+        <span className="sr-only" role="alert">
+          {actionError}
+        </span>
+      )}
+      {editing ? (
+        <form
+          className="thread-rename-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void confirmRename();
+          }}
+        >
+          <input
+            ref={titleInput}
+            value={draftTitle}
+            maxLength={160}
+            aria-label={t("renameTask")}
+            disabled={busy}
+            onChange={(event) => setDraftTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setDraftTitle(conversation.title);
+                setEditing(false);
+              }
+            }}
+          />
+          <button
+            type="submit"
+            className="thread-inline-action pressable"
+            aria-label={t("saveRename")}
+            title={t("saveRename")}
+            disabled={busy || !draftTitle.trim()}
+          >
+            {busy ? <LoaderCircle className="spin" size={12} /> : <Check size={12} />}
+          </button>
+        </form>
+      ) : (
         <button
           type="button"
-          className="thread-delete-button pressable"
+          className="thread-item-select pressable"
+          aria-current={active ? "page" : undefined}
           disabled={disabled}
-          title={t("deleteNamedTask", { title: conversation.title })}
-          aria-label={t("deleteNamedTask", { title: conversation.title })}
-          onClick={onDelete}
+          title={conversation.title}
+          onClick={onSelect}
         >
-          <Trash2 size={13} />
+          {conversation.pinnedAt && (
+            <Pin
+              className="thread-pinned-indicator"
+              size={11}
+              aria-label={t("pinnedTask")}
+            />
+          )}
+          {conversation.archivedAt && (
+            <Archive
+              className="thread-archived-indicator"
+              size={11}
+              aria-label={t("archivedTask")}
+            />
+          )}
+          <span className="thread-title">{conversation.title}</span>
+          {(running || computerActive || conversation.unread) && (
+            <span className="thread-live-indicators">
+              {running && (
+                <LoaderCircle
+                  className="thread-runtime-indicator spin"
+                  size={13}
+                  aria-label={t("taskRunning", { title: conversation.title })}
+                />
+              )}
+              {computerActive && (
+                <ComputerUseIndicator
+                  label={t("taskUsingComputer", { title: conversation.title })}
+                />
+              )}
+              {conversation.unread && (
+                <span
+                  className="thread-unread-indicator"
+                  aria-label={t("taskUnread", { title: conversation.title })}
+                />
+              )}
+            </span>
+          )}
         </button>
+      )}
+      {manageable && !editing && !running && !computerActive && (
+        <div ref={menuRoot} className="thread-actions">
+          <button
+            type="button"
+            className="thread-action-button pressable"
+            disabled={disabled || busy}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={t("taskActions", { title: conversation.title })}
+            title={t("taskActions", { title: conversation.title })}
+            onClick={(event) => {
+              setActionError(undefined);
+              const open = !menuOpen;
+              if (open) {
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const menuHeight = conversation.archivedAt ? 132 : 103;
+                const top =
+                  window.innerHeight - bounds.bottom >= menuHeight + 8
+                    ? bounds.bottom + 4
+                    : Math.max(8, bounds.top - menuHeight - 4);
+                setMenuPosition({
+                  top,
+                  left: Math.max(8, bounds.right - 154),
+                });
+              }
+              setMenuOpen(open);
+            }}
+          >
+            {busy ? <LoaderCircle className="spin" size={13} /> : <MoreHorizontal size={14} />}
+          </button>
+          {menuOpen && (
+            <div
+              className="thread-action-menu"
+              role="menu"
+              style={menuPosition}
+            >
+              {onRename && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setEditing(true);
+                  }}
+                >
+                  <PencilLine size={13} />
+                  {t("renameTask")}
+                </button>
+              )}
+              {onTogglePinned && !conversation.archivedAt && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void runAction(onTogglePinned)}
+                >
+                  {conversation.pinnedAt ? <PinOff size={13} /> : <Pin size={13} />}
+                  {conversation.pinnedAt ? t("unpinTask") : t("pinTask")}
+                </button>
+              )}
+              {onArchive && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() =>
+                    void runAction(() =>
+                      onArchive(!conversation.archivedAt),
+                    )
+                  }
+                >
+                  {conversation.archivedAt ? (
+                    <ArchiveRestore size={13} />
+                  ) : (
+                    <Archive size={13} />
+                  )}
+                  {conversation.archivedAt
+                    ? t("restoreArchivedTask")
+                    : t("archiveTask")}
+                </button>
+              )}
+              {onDelete && conversation.archivedAt && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="danger"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDelete();
+                  }}
+                >
+                  <Trash2 size={13} />
+                  {t("deletePermanently")}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -3770,6 +4640,7 @@ function attachmentHint(
   submissionError: string | undefined,
   attachments: readonly PendingAttachment[],
   preparing: boolean,
+  isRunning: boolean,
   t: Translate,
 ): string {
   if (voiceError || status !== "idle") {
@@ -3781,7 +4652,17 @@ function attachmentHint(
   if (attachments.length > 0) {
     return t("attachmentsAdded", { count: attachments.length });
   }
+  if (isRunning) return t("runningComposerHint");
   return voiceInputHint(status, undefined, t);
+}
+
+export function composerSubmitDelivery(
+  event: Pick<KeyboardEvent<HTMLTextAreaElement>, "metaKey" | "ctrlKey">,
+  isRunning: boolean,
+): "inject" | "queued" {
+  return isRunning && (event.metaKey || event.ctrlKey)
+    ? "queued"
+    : "inject";
 }
 
 function hasFiles(dataTransfer: DataTransfer): boolean {
@@ -3792,11 +4673,6 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function conversationTitle(value: string, t: Translate): string {
-  const title = value.trim().replace(/\s+/g, " ");
-  return title.length > 56 ? `${title.slice(0, 56)}…` : title || t("task");
 }
 
 export function hasUserInput(

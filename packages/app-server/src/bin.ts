@@ -88,7 +88,10 @@ const provider = createModelProvider({
 
 const loop = new AgentLoop(provider);
 const workspaceRoot = process.cwd();
-const projectMemory = new ProjectMemoryStore(workspaceRoot);
+const projectStateRoot = resolve(
+  process.env.THREADLIGHT_PROJECT_ROOT ?? workspaceRoot,
+);
+const projectMemory = new ProjectMemoryStore(projectStateRoot);
 const processManager = new ProcessManager();
 const planRuntime = new PlanToolRuntime();
 const desktopComputer = createDesktopComputerClientFromEnvironment();
@@ -154,6 +157,9 @@ const agentFactory = createWorkspaceAgentFactory({
 const send = jsonLineSender(process.stdout);
 const server = new AppServer({
   loop,
+  generateConversationTitles: true,
+  modelName:
+    process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId),
   attachmentProvider: provider,
   modelStatePersistence: new ModelStatePersistence({
     prepareState: (state, options) =>
@@ -174,6 +180,7 @@ const server = new AppServer({
     const extensions = await createSkillPluginThreadRuntime(
       {
         workspaceRoot,
+        projectStateRoot,
         mcpRuntime: runtime,
         ...(desktopConnections
           ? { connections: desktopConnections }
@@ -201,7 +208,7 @@ const server = new AppServer({
     };
   },
   conversationStore: new FileConversationStore(
-    resolve(workspaceRoot, ".threadlight", "conversations"),
+    resolve(projectStateRoot, ".threadlight", "conversations"),
   ),
   processes: processManager,
   async turnCleanup({ runId }) {

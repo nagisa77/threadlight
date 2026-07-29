@@ -39,6 +39,10 @@ export interface WorkspaceFileReference {
   column?: number;
 }
 
+export interface FileReaderReference extends WorkspaceFileReference {
+  source: "workspace" | "system";
+}
+
 export function MarkdownContent({
   children,
   onOpenLocalFile,
@@ -416,6 +420,41 @@ export function workspaceFileReference(
   };
 }
 
+export function fileReaderReference(
+  reference: LocalFileReference,
+  workspaceRoot: string,
+): FileReaderReference | undefined {
+  const root = normalizeAbsolutePath(workspaceRoot);
+  if (!root) return undefined;
+  const input = normalizePath(reference.path);
+  const absolutePath = isAbsolutePath(input)
+    ? normalizeAbsolutePath(input)
+    : normalizeAbsolutePath(`${root}/${input}`);
+  if (!absolutePath) return undefined;
+
+  const windows = isWindowsPath(root);
+  const comparisonRoot = windows ? root.toLocaleLowerCase() : root;
+  const comparisonPath = windows
+    ? absolutePath.toLocaleLowerCase()
+    : absolutePath;
+  const rootPrefix =
+    comparisonRoot.endsWith("/") ? comparisonRoot : `${comparisonRoot}/`;
+  const insideWorkspace =
+    comparisonPath !== comparisonRoot &&
+    comparisonPath.startsWith(rootPrefix);
+
+  return {
+    source: insideWorkspace ? "workspace" : "system",
+    path: insideWorkspace
+      ? absolutePath.slice(
+          root.endsWith("/") ? root.length : root.length + 1,
+        )
+      : absolutePath,
+    ...(reference.line ? { line: reference.line } : {}),
+    ...(reference.column ? { column: reference.column } : {}),
+  };
+}
+
 function isWebUrl(value: string | undefined): boolean {
   if (!value) return false;
   try {
@@ -447,6 +486,25 @@ function isWindowsPath(path: string): boolean {
 
 function normalizePath(path: string): string {
   return path.replaceAll("\\", "/");
+}
+
+function normalizeAbsolutePath(path: string): string | undefined {
+  const normalized = normalizePath(path);
+  const windows = isWindowsPath(normalized);
+  if (!windows && !normalized.startsWith("/")) return undefined;
+  const prefix = windows ? `${normalized.slice(0, 2)}/` : "/";
+  const rest = windows ? normalized.slice(3) : normalized.slice(1);
+  const segments: string[] = [];
+  for (const segment of rest.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  const result = `${prefix}${segments.join("/")}`;
+  return result.length > prefix.length ? result.replace(/\/+$/, "") : result;
 }
 
 function localFileTitle(reference: LocalFileReference): string {

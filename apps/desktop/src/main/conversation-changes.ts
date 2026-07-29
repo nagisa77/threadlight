@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  chmod,
   cp,
+  lstat,
   mkdir,
   readFile,
   readdir,
@@ -15,8 +17,12 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { diffLines } from "diff";
 import ignore from "ignore";
 
+import {
+  isBinaryFileContent,
+  MAX_FILE_PREVIEW_BYTES,
+} from "./file-preview.js";
+
 const SNAPSHOT_VERSION = 1;
-const MAX_REVIEW_FILE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_IGNORE_PATTERNS = [
   ".git/",
   ".threadlight/",
@@ -40,6 +46,7 @@ interface SnapshotEntry {
   path: string;
   hash: string;
   size: number;
+  mode?: number;
   binary: boolean;
   reviewable: boolean;
 }
@@ -82,6 +89,15 @@ export interface WorkspaceFile {
   content?: string;
   binary: boolean;
   size: number;
+}
+
+export class ConversationRestoreConflictError extends Error {
+  constructor() {
+    super(
+      "The workspace changed after this Diff was loaded. Refresh the changes before restoring.",
+    );
+    this.name = "ConversationRestoreConflictError";
+  }
 }
 
 export class ConversationChangeTracker {
@@ -181,6 +197,7 @@ export class ConversationChangeTracker {
     const paths = [...new Set([...baselineByPath.keys(), ...currentByPath.keys()])]
       .sort((left, right) => left.localeCompare(right));
     const files: ConversationFileChange[] = [];
+    const revisionParts: string[] = [];
 
     for (const path of paths) {
       const before = baselineByPath.get(path);
@@ -209,6 +226,9 @@ export class ConversationChangeTracker {
         ...(oldContent !== undefined ? { oldContent } : {}),
         ...(newContent !== undefined ? { newContent } : {}),
       });
+      revisionParts.push(
+        `${!before ? "added" : !after ? "deleted" : "modified"}:${path}:${before?.hash ?? ""}:${after?.hash ?? ""}`,
+      );
     }
 
     const additions = files.reduce((sum, file) => sum + file.additions, 0);
@@ -218,14 +238,57 @@ export class ConversationChangeTracker {
       additions,
       deletions,
       revision: createHash("sha256")
-        .update(
-          files
-            .map((file) => `${file.status}:${file.path}:${file.additions}:${file.deletions}`)
-            .join("\n"),
-        )
+        .update(revisionParts.join("\n"))
         .digest("hex"),
       files,
     };
+  }
+
+  async restore(
+    projectId: string,
+    threadId: string,
+    workspacePath: string,
+    revision: string,
+    paths?: readonly string[],
+  ): Promise<ConversationChangesSnapshot> {
+    const current = await this.changes(projectId, threadId, workspacePath);
+    if (!revision || current.revision !== revision) {
+      throw new ConversationRestoreConflictError();
+    }
+    const selectedPaths =
+      paths === undefined
+        ? current.files.map(({ path }) => path)
+        : [...new Set(paths.map(normalizeRelativePath))];
+    const changedPaths = new Set(current.files.map(({ path }) => path));
+    if (
+      selectedPaths.length === 0 ||
+      selectedPaths.some((path) => !changedPaths.has(path))
+    ) {
+      throw new ConversationRestoreConflictError();
+    }
+
+    const snapshotPath = this.threadPath(projectId, threadId);
+    const manifest = await readManifest(snapshotPath);
+    const baselineByPath = new Map(
+      manifest.entries.map((entry) => [entry.path, entry]),
+    );
+    for (const path of selectedPaths) {
+      const target = resolveWorkspacePath(workspacePath, path);
+      await assertSafeRestoreTarget(workspacePath, target);
+      const baseline = baselineByPath.get(path);
+      if (!baseline) {
+        await rm(target, { recursive: true, force: true });
+        continue;
+      }
+      const source = join(snapshotPath, "files", path);
+      await mkdir(dirname(target), { recursive: true });
+      await rm(target, { recursive: true, force: true });
+      await cp(source, target, { force: true });
+      if (baseline.mode !== undefined) {
+        await chmod(target, baseline.mode & 0o777);
+      }
+    }
+    return this.changes(projectId, threadId, workspacePath);
   }
 
   async listWorkspace(
@@ -257,13 +320,13 @@ export class ConversationChangeTracker {
       relativePath,
     );
     const content = await readFile(absolutePath);
-    const binary = isBinary(content);
+    const binary = isBinaryFileContent(content);
     return {
       path: normalizeRelativePath(relativePath),
       name: basename(relativePath),
       binary,
       size: content.byteLength,
-      ...(!binary && content.byteLength <= MAX_REVIEW_FILE_BYTES
+      ...(!binary && content.byteLength <= MAX_FILE_PREVIEW_BYTES
         ? { content: content.toString("utf8") }
         : {}),
     };
@@ -292,7 +355,6 @@ export class ConversationChangeTracker {
     const entries = await scanWorkspace(workspacePath);
 
     for (const entry of entries) {
-      if (!entry.reviewable || entry.binary) continue;
       const source = resolveWorkspacePath(workspacePath, entry.path);
       const destination = join(temporary, "files", entry.path);
       await mkdir(dirname(destination), { recursive: true });
@@ -356,13 +418,15 @@ async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
       if (matcher.ignores(childRelative)) continue;
       const absolutePath = join(root, childRelative);
       const content = await readFile(absolutePath);
-      const binary = isBinary(content);
+      const metadata = await stat(absolutePath);
+      const binary = isBinaryFileContent(content);
       entries.push({
         path: childRelative,
         hash: createHash("sha256").update(content).digest("hex"),
         size: content.byteLength,
+        mode: metadata.mode,
         binary,
-        reviewable: !binary && content.byteLength <= MAX_REVIEW_FILE_BYTES,
+        reviewable: !binary && content.byteLength <= MAX_FILE_PREVIEW_BYTES,
       });
     }
   }
@@ -403,6 +467,34 @@ async function assertInsideWorkspace(
   }
 }
 
+async function assertSafeRestoreTarget(
+  workspacePath: string,
+  targetPath: string,
+): Promise<void> {
+  const root = resolve(workspacePath);
+  const relativePath = relative(root, targetPath);
+  const parts = relativePath.split(sep).filter(Boolean);
+  let current = root;
+
+  for (let index = 0; index < parts.length; index += 1) {
+    current = join(current, parts[index]!);
+    try {
+      const metadata = await lstat(current);
+      const isTarget = index === parts.length - 1;
+      if (
+        metadata.isSymbolicLink() ||
+        (!isTarget && !metadata.isDirectory()) ||
+        (isTarget && !metadata.isFile())
+      ) {
+        throw new ConversationRestoreConflictError();
+      }
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return;
+      throw error;
+    }
+  }
+}
+
 function normalizeRelativePath(value: string): string {
   const normalized = value.split(sep).join("/").replace(/^\.\/+/, "");
   if (
@@ -415,8 +507,8 @@ function normalizeRelativePath(value: string): string {
   return normalized;
 }
 
-function isBinary(content: Buffer): boolean {
-  return content.subarray(0, Math.min(content.length, 8_000)).includes(0);
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function lineChangeCounts(

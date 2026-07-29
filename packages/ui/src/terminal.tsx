@@ -39,6 +39,7 @@ export type TerminalEvent =
 export interface TerminalAdapter {
   create(request: {
     projectId: string;
+    threadId?: string;
     cols: number;
     rows: number;
   }): Promise<TerminalSessionInfo>;
@@ -68,12 +69,14 @@ export function TerminalPanel({
   adapter,
   workspace,
   projectId,
+  threadId,
   projectName = "",
   onClose,
 }: {
   adapter: TerminalAdapter;
   workspace?: WorkspaceAdapter;
   projectId: string;
+  threadId?: string;
   projectName?: string;
   onClose(): void;
 }) {
@@ -210,6 +213,7 @@ export function TerminalPanel({
               key={tab.id}
               adapter={adapter}
               projectId={projectId}
+              threadId={threadId}
               hidden={tab.id !== activeTab?.id}
               label={tab.title}
             />
@@ -218,6 +222,7 @@ export function TerminalPanel({
               key={tab.id}
               adapter={workspace}
               projectId={projectId}
+              threadId={threadId}
               projectName={projectName}
               path={tab.path}
               hidden={tab.id !== activeTab?.id}
@@ -233,11 +238,13 @@ export function TerminalPanel({
 export function TerminalView({
   adapter,
   projectId,
+  threadId,
   hidden = false,
   label,
 }: {
   adapter: TerminalAdapter;
   projectId: string;
+  threadId?: string;
   hidden?: boolean;
   label?: string;
 }) {
@@ -270,6 +277,7 @@ export function TerminalView({
     void adapter
       .create({
         projectId,
+        ...(threadId ? { threadId } : {}),
         cols: DEFAULT_COLUMNS,
         rows: DEFAULT_ROWS,
       })
@@ -292,7 +300,7 @@ export function TerminalView({
       if (sessionId.current === createdSessionId) sessionId.current = null;
       if (createdSessionId) void adapter.close(createdSessionId);
     };
-  }, [adapter, projectId]);
+  }, [adapter, projectId, threadId]);
 
   const registerOutputWriter = useCallback(
     (writer: ((data: string) => void) | undefined) => {
