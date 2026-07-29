@@ -71,7 +71,8 @@ export const USER_SELECTED_PLAN_INSTRUCTIONS = [
   "Only when essential user input is missing and no valid plan can proceed, call request_plan_input with the missing information and one complete, self-contained blocking question; the reply will start a new turn and a new plan.",
   "After gathering enough evidence, call update_plan with a comprehensive, actionable plan; do not modify workspace or external state before that plan exists.",
   "Give every step a short UI title, concrete implementation details, and observable acceptance criteria so another model could execute it without guessing.",
-  "The runtime controls execution order: keep exactly one step in_progress, work only on the injected current step, and call advance_plan with completionEvidence after verifying it when that tool is advertised. The runtime will complete that step and activate the next one without requiring you to repeat the plan.",
+  "Keep acceptance criteria atomic: every distinct promised check needs its own criterion.",
+  "The runtime controls execution order: keep exactly one step in_progress, work only on the injected current step, and call advance_plan with one completionEvidence item per acceptance criterion, in the same order, after verifying it. Account for every failed or warning tool call with issueResolutions. The runtime will complete that step and activate the next one without requiring you to repeat the plan.",
   "Never skip a pending step. If discoveries invalidate the plan, call update_plan with revisionReason and preserve every completed step.",
   "The runtime will reject premature completion while any step remains pending or in_progress.",
 ].join(" ");
@@ -99,6 +100,7 @@ export function createUpdatePlanTool(
             "Why the plan structure must change after execution started. Omit for the initial plan and ordinary status updates.",
           maxLength: 1000,
         },
+        issueResolutions: issueResolutionsSchema(),
         plan: {
           type: "array",
           minItems: 1,
@@ -201,6 +203,7 @@ export function createAdvancePlanTool(
             maxLength: 500,
           },
         },
+        issueResolutions: issueResolutionsSchema(),
       },
       required: ["completionEvidence"],
       additionalProperties: false,
@@ -239,6 +242,12 @@ export function advancePlanSnapshot(
   );
   if (activeIndex < 0) {
     throw new Error("the plan has no in_progress step to advance");
+  }
+  const active = current.plan[activeIndex] as PlanItem;
+  if (completionEvidence.length !== active.acceptanceCriteria.length) {
+    throw new Error(
+      `completionEvidence must contain exactly ${active.acceptanceCriteria.length} item(s), one for each acceptance criterion in order`,
+    );
   }
   const plan = current.plan.map((item, index): PlanItem => {
     if (index === activeIndex) {
@@ -494,6 +503,33 @@ export function parseCompletionEvidence(
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function issueResolutionsSchema(): Record<string, unknown> {
+  return {
+    type: "array",
+    minItems: 1,
+    maxItems: 20,
+    description:
+      "Required when the current step has failed or warning tool calls. Include every unresolved call id and explain the alternative verification, recovery, or disclosed limitation.",
+    items: {
+      type: "object",
+      properties: {
+        callId: {
+          type: "string",
+          minLength: 1,
+          maxLength: 256,
+        },
+        resolution: {
+          type: "string",
+          minLength: 1,
+          maxLength: 500,
+        },
+      },
+      required: ["callId", "resolution"],
+      additionalProperties: false,
+    },
+  };
 }
 
 async function writePlanDocument(

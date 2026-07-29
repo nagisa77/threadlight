@@ -34,6 +34,14 @@ export interface PluginOAuthConfig {
   scopes?: readonly string[];
 }
 
+export interface PluginErrorGuidance {
+  includes: string;
+  message: string;
+  code: string;
+  retryable: boolean;
+  helpUrl?: string;
+}
+
 export interface PluginMcpServer {
   id: string;
   version: string;
@@ -43,6 +51,7 @@ export interface PluginMcpServer {
   url?: string;
   urlEnv?: string;
   oauth?: PluginOAuthConfig;
+  errorGuidance?: readonly PluginErrorGuidance[];
   presentation?: PluginPresentation;
 }
 
@@ -463,6 +472,7 @@ function parseMcpServers(
       url ?? (urlEnv ? optionalString(environment[urlEnv]) : undefined);
     if (resolvedUrl) validateRemoteUrl(resolvedUrl, path, id);
     const oauth = parseOAuthConfig(entry.oauth, path, id, environment);
+    const errorGuidance = parseErrorGuidance(entry.errorGuidance, path, id);
     const presentation = parsePresentation(entry.presentation, path);
     return {
       id,
@@ -473,6 +483,7 @@ function parseMcpServers(
       ...(resolvedUrl ? { url: resolvedUrl } : {}),
       ...(urlEnv ? { urlEnv } : {}),
       ...(oauth ? { oauth } : {}),
+      ...(errorGuidance ? { errorGuidance } : {}),
       ...(presentation ? { presentation } : {}),
     };
   });
@@ -512,6 +523,64 @@ function parseOAuthConfig(
       : {}),
     ...(scopes ? { scopes } : {}),
   };
+}
+
+function parseErrorGuidance(
+  value: unknown,
+  path: string,
+  id: string,
+): readonly PluginErrorGuidance[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length === 0 || value.length > 20) {
+    throw new Error(
+      `${path} connector ${id} errorGuidance must be a non-empty array with at most 20 entries`,
+    );
+  }
+  return value.map((entry, index) => {
+    if (!isObject(entry)) {
+      throw new Error(
+        `${path} connector ${id} errorGuidance ${index + 1} must be an object`,
+      );
+    }
+    const includes = requireString(
+      entry.includes,
+      `errorGuidance ${index + 1} includes`,
+      path,
+    );
+    const message = requireString(
+      entry.message,
+      `errorGuidance ${index + 1} message`,
+      path,
+    );
+    const code = requireString(
+      entry.code,
+      `errorGuidance ${index + 1} code`,
+      path,
+    );
+    if (includes.length > 512 || message.length > 4_000) {
+      throw new Error(
+        `${path} connector ${id} errorGuidance ${index + 1} is too long`,
+      );
+    }
+    if (!/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(code) || code.length > 96) {
+      throw new Error(
+        `${path} connector ${id} errorGuidance ${index + 1} has an invalid code`,
+      );
+    }
+    const retryable = requireBoolean(
+      entry.retryable,
+      `${path} connector ${id} errorGuidance ${index + 1} retryable`,
+    );
+    const helpUrl = optionalString(entry.helpUrl);
+    if (helpUrl) validateHelpUrl(helpUrl, path, id, index);
+    return {
+      includes,
+      message,
+      code,
+      retryable,
+      ...(helpUrl ? { helpUrl } : {}),
+    };
+  });
 }
 
 function parsePresentation(
@@ -604,6 +673,27 @@ function validateRemoteUrl(url: string, path: string, id: string): void {
   }
   if (parsed.protocol !== "https:") {
     throw new Error(`${path} connector ${id} URL must use HTTPS`);
+  }
+}
+
+function validateHelpUrl(
+  url: string,
+  path: string,
+  id: string,
+  index: number,
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(
+      `${path} connector ${id} errorGuidance ${index + 1} has an invalid helpUrl`,
+    );
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(
+      `${path} connector ${id} errorGuidance ${index + 1} helpUrl must use HTTPS`,
+    );
   }
 }
 

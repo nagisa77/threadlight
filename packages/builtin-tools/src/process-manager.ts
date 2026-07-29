@@ -7,6 +7,7 @@ const DEFAULT_MAX_SESSIONS = 100;
 export type ManagedProcessStatus =
   | "running"
   | "completed"
+  | "completed_with_warnings"
   | "failed"
   | "terminated";
 
@@ -199,7 +200,9 @@ export class ProcessManager {
       ? "terminated"
       : spawnFailed || exitCode !== 0
         ? "failed"
-        : "completed";
+        : session.snapshot.stderr.trim()
+          ? "completed_with_warnings"
+          : "completed";
     session.snapshot.completedAt = this.now().toISOString();
     session.resolveCompleted();
   }

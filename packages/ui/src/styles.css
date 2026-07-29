@@ -17,6 +17,7 @@
   --accent: #d56a3a;
   --accent-soft: #f5e3d8;
   --success: #47765a;
+  --warning: #a66a20;
   --danger: #b84a42;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -1700,6 +1701,10 @@ button:disabled {
 
 .activity-item .failed {
   color: var(--danger);
+}
+
+.activity-item .warning {
+  color: var(--warning);
 }
 
 .activity-item .terminated {
@@ -4905,6 +4910,7 @@ html[data-theme="dark"] {
   --accent: #df7b4d;
   --accent-soft: #3b2a23;
   --success: #72ab84;
+  --warning: #d8a176;
   --danger: #e2746d;
 }
 

@@ -50,7 +50,11 @@ import {
   type PromptBlock,
   type PromptSnapshot,
 } from "./prompt-composer.js";
-import type { CapabilityActivation } from "./capability-registry.js";
+import type {
+  CapabilityActivation,
+  CapabilityResource,
+} from "./capability-registry.js";
+import { CapabilityResourceController } from "./capability-resource-controller.js";
 import {
   createAttachmentRuntime,
   type AttachmentProvider,
@@ -129,12 +133,14 @@ export interface ThreadRuntime {
     activation?: CapabilityActivation,
   ):
     | {
-        promptBlocks: readonly PromptBlock[];
-        tools: readonly Tool[];
-      }
+      promptBlocks: readonly PromptBlock[];
+      tools: readonly Tool[];
+      resources?: readonly CapabilityResource[];
+    }
     | Promise<{
         promptBlocks: readonly PromptBlock[];
         tools: readonly Tool[];
+        resources?: readonly CapabilityResource[];
       }>;
   connectorStatus?(
     capabilityId: string,
@@ -669,12 +675,18 @@ export class AppServer {
             controller.signal,
             "explicit",
           )
-        : { promptBlocks: [], tools: [] };
+        : { promptBlocks: [], tools: [], resources: [] };
+      const capabilityResources = new CapabilityResourceController(
+        capabilityRuntime.resources ?? [],
+      );
       const turnTools: Tool[] = [
         ...appendTurnTools(thread.agent.tools, [
           ...(mode === "plan" ? [createRequestPlanInputTool()] : []),
           ...(attachmentRuntime.tool ? [attachmentRuntime.tool] : []),
           ...capabilityRuntime.tools,
+          ...(capabilityResources.hasResources()
+            ? [capabilityResources.tool()]
+            : []),
         ]),
       ];
       const capabilityController =
@@ -687,6 +699,13 @@ export class AppServer {
                 thread.runtime,
               ),
               addTools: (tools) => appendToolsInPlace(turnTools, tools),
+              addResources: (resources) => {
+                if (capabilityResources.add(resources)) {
+                  appendToolsInPlace(turnTools, [
+                    capabilityResources.tool(),
+                  ]);
+                }
+              },
             })
           : undefined;
       appendToolsInPlace(

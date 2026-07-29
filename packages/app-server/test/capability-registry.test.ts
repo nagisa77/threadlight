@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -85,6 +86,122 @@ describe("capability registry", () => {
         }),
       ]),
     );
+  });
+
+  it("reads only bundled resources from skills active in the current turn", async () => {
+    const root = temporaryDirectory("threadlight-skill-resources-");
+    const workspace = join(root, "workspace");
+    const builtinSkills = join(root, "external-skills");
+    mkdirSync(workspace, { recursive: true });
+    writeSkill(
+      builtinSkills,
+      "pdf",
+      "Create and verify PDF artifacts.",
+      "Read references/tooling.md before choosing an implementation.",
+    );
+    const reference = join(
+      builtinSkills,
+      "pdf",
+      "references",
+      "tooling.md",
+    );
+    mkdirSync(join(builtinSkills, "pdf", "references"), {
+      recursive: true,
+    });
+    writeFileSync(reference, "PDF_TOOLING_GUIDANCE\n");
+    const declaredReference = realpathSync(reference);
+
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          expect(request.instructions).toContain(declaredReference);
+          expect(request.tools.map(({ name }) => name)).toContain(
+            "capability_resource_read",
+          );
+          return {
+            text: "I’ll read the required guidance.",
+            toolCalls: [
+              {
+                id: "resource-1",
+                name: "capability_resource_read",
+                arguments: { path: declaredReference },
+              },
+            ],
+          };
+        }
+        if (requests.length === 2) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "PDF_TOOLING_GUIDANCE",
+          );
+          return {
+            text: "I’ll verify the resource boundary.",
+            toolCalls: [
+              {
+                id: "resource-2",
+                name: "capability_resource_read",
+                arguments: { path: join(root, "private.txt") },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]).toMatchObject({
+          name: "capability_resource_read",
+          isError: true,
+          output: expect.stringContaining("not declared"),
+        });
+        return { text: "Done.", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "skill-resources", instructions: "Base." }),
+      threadRuntimeFactory: (snapshot) =>
+        createSkillPluginThreadRuntime(
+          {
+            workspaceRoot: workspace,
+            userHome: join(root, "home"),
+            builtinSkillRoots: [builtinSkills],
+            repoSkillRoots: [],
+            userSkillRoots: [],
+            pluginRoots: [],
+          },
+          snapshot,
+        ),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "capability/list",
+      params: { threadId },
+    });
+    const capabilities = result<{
+      capabilities: Array<{ id: string; name: string }>;
+    }>(messages, 3).capabilities;
+    const pdf = capabilities.find(({ name }) => name === "pdf");
+    expect(pdf).toBeDefined();
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "Create a PDF.",
+        capabilityRefs: [pdf!.id],
+      },
+    });
+    await waitFor(messages, "turn/completed");
+
+    expect(requests).toHaveLength(3);
+    await server.dispose();
   });
 
   it("lists only explicitly allowlisted app tools and resolves them as emphasis prompts", async () => {

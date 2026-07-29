@@ -22,6 +22,8 @@ const DEFAULT_MAX_SKILL_CHARS = 64_000;
 const DEFAULT_MAX_CATALOG_CHARS = 8_000;
 const DEFAULT_MAX_SKILLS = 128;
 const DEFAULT_MAX_SNAPSHOT_CHARS = 2_000_000;
+const DEFAULT_MAX_RESOURCE_CHARS = 64_000;
+const MAX_RESOURCE_BYTES = 1_000_000;
 const SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const RESOURCE_DIRECTORIES = [
   "agents",
@@ -231,6 +233,51 @@ export class SkillRegistry {
     if (!skill) throw new Error(`Unknown skill: ${nameOrId}`);
     const { source: _source, ...result } = skill;
     return result;
+  }
+
+  resources(nameOrId: string): readonly string[] {
+    const normalized = nameOrId.trim().replace(/^\$/, "");
+    const skill = this.resolve(normalized);
+    if (!skill) throw new Error(`Unknown skill: ${nameOrId}`);
+    return [...skill.resources];
+  }
+
+  async readResource(
+    nameOrId: string,
+    requestedPath: string,
+    signal?: AbortSignal,
+  ): Promise<{ path: string; content: string; truncated: boolean }> {
+    const normalized = nameOrId.trim().replace(/^\$/, "");
+    const skill = this.resolve(normalized);
+    if (!skill) throw new Error(`Unknown skill: ${nameOrId}`);
+    if (!skill.resources.includes(requestedPath)) {
+      throw new Error("resource is not declared by this skill");
+    }
+
+    signal?.throwIfAborted();
+    const canonical = await realpath(requestedPath);
+    const skillRoot = dirname(skill.path);
+    if (!isWithin(skillRoot, canonical) || canonical !== requestedPath) {
+      throw new Error("resource no longer resolves inside its skill directory");
+    }
+    const metadata = await stat(canonical);
+    if (!metadata.isFile()) throw new Error("skill resource is not a file");
+    if (metadata.size > MAX_RESOURCE_BYTES) {
+      throw new Error(
+        `skill resource exceeds the ${MAX_RESOURCE_BYTES}-byte read limit`,
+      );
+    }
+    const bytes = await readFile(canonical, { signal });
+    if (bytes.includes(0)) {
+      throw new Error("skill resource is not readable text");
+    }
+    const text = bytes.toString("utf8");
+    const content = text.slice(0, DEFAULT_MAX_RESOURCE_CHARS);
+    return {
+      path: canonical,
+      content,
+      truncated: content.length < text.length,
+    };
   }
 
   list(options: SkillListOptions = {}): SkillListResult {

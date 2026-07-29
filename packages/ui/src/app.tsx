@@ -43,6 +43,7 @@ import {
   SquarePen,
   Square,
   Terminal,
+  TriangleAlert,
   Trash2,
   X,
 } from "lucide-react";
@@ -3364,11 +3365,13 @@ export function ActivityList({
   onTerminateProcess?(sessionId: string): Promise<unknown>;
 }) {
   const { t } = useI18n();
-  const hasFailedActivity = activities.some(
+  const hasAttentionActivity = activities.some(
     (activity) =>
-      activity.status === "failed" || activity.status === "terminated",
+      activity.status === "failed" ||
+      activity.status === "terminated" ||
+      activity.status === "completed_with_warnings",
   );
-  const [expanded, setExpanded] = useState(live || hasFailedActivity);
+  const [expanded, setExpanded] = useState(live || hasAttentionActivity);
   const hasRunningActivity = activities.some(
     (activity) => activity.status === "running",
   );
@@ -3420,6 +3423,9 @@ export function ActivityList({
 function ActivityStatus({ status }: Pick<ToolActivity, "status">) {
   if (status === "running") return <LoaderCircle className="spin" size={14} />;
   if (status === "failed") return <X className="failed" size={14} />;
+  if (status === "completed_with_warnings") {
+    return <TriangleAlert className="warning" size={14} />;
+  }
   if (status === "terminated") {
     return <CircleStop className="terminated" size={14} />;
   }

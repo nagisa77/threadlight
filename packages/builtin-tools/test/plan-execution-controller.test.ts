@@ -452,6 +452,180 @@ describe("PlanExecutionController", () => {
     });
   });
 
+  it("requires warning and failed tool calls to be resolved before advancing", async () => {
+    const requests: ModelRequest[] = [];
+    const runtime = new PlanToolRuntime();
+    const provider = {
+      async generate(request: ModelRequest) {
+        requests.push(request);
+        switch (requests.length) {
+          case 1:
+            return {
+              text: "I’ll create the verification plan.",
+              toolCalls: [
+                {
+                  id: "plan-1",
+                  name: "update_plan",
+                  arguments: {
+                    plan: [item("Verify output", "in_progress")],
+                  },
+                },
+              ],
+            };
+          case 2:
+            return {
+              text: "I’ll run the verifier.",
+              toolCalls: [
+                {
+                  id: "verify-warning",
+                  name: "verify",
+                  arguments: {},
+                },
+              ],
+            };
+          case 3:
+            expect(request.instructions).toContain(
+              "Unresolved tool issues for this step: verify-warning (verify, warning)",
+            );
+            expect(request.instructions).toContain(
+              "Successful tools observed for this step: none yet",
+            );
+            return {
+              text: "I’ll try the secondary verifier.",
+              toolCalls: [
+                {
+                  id: "verify-failed",
+                  name: "verify_fallback",
+                  arguments: {},
+                },
+              ],
+            };
+          case 4:
+            expect(request.toolResults?.[0]).toMatchObject({
+              name: "verify_fallback",
+              isError: true,
+            });
+            expect(request.instructions).toContain(
+              "verify-warning (verify, warning), verify-failed (verify_fallback, failed)",
+            );
+            return {
+              text: "I’ll try to advance.",
+              toolCalls: [
+                {
+                  id: "plan-2",
+                  name: "advance_plan",
+                  arguments: {
+                    completionEvidence: [
+                      "Fallback output was inspected.",
+                      "An extra unscoped claim.",
+                    ],
+                  },
+                },
+              ],
+            };
+          case 5:
+            expect(request.toolResults?.[0]).toMatchObject({
+              name: "advance_plan",
+              isError: true,
+              output: expect.stringContaining(
+                "completionEvidence must contain exactly 1 item",
+              ),
+            });
+            return {
+              text: "I’ll provide criterion-scoped evidence.",
+              toolCalls: [
+                {
+                  id: "plan-3",
+                  name: "advance_plan",
+                  arguments: {
+                    completionEvidence: ["Fallback output was inspected."],
+                  },
+                },
+              ],
+            };
+          case 6:
+            expect(request.toolResults?.[0]).toMatchObject({
+              name: "advance_plan",
+              isError: true,
+              output: expect.stringContaining(
+                "issueResolutions is missing: verify-warning, verify-failed",
+              ),
+            });
+            return {
+              text: "I’ll account for the warning explicitly.",
+              toolCalls: [
+                {
+                  id: "plan-4",
+                  name: "advance_plan",
+                  arguments: {
+                    completionEvidence: ["Fallback output was inspected."],
+                    issueResolutions: [
+                      {
+                        callId: "verify-warning",
+                        resolution:
+                          "The optional verifier was unavailable; the fallback output was inspected directly.",
+                      },
+                      {
+                        callId: "verify-failed",
+                        resolution:
+                          "The secondary verifier failed; direct inspection supplied the criterion-scoped evidence.",
+                      },
+                    ],
+                  },
+                },
+              ],
+            };
+          default:
+            expect(request.instructions).toContain("PLAN CONTROL — COMPLETE");
+            expect(request.instructions).toContain(
+              "The optional verifier was unavailable",
+            );
+            expect(request.instructions).toContain(
+              "Never claim a failed or warning check succeeded",
+            );
+            return { text: "Verified with disclosed fallback.", toolCalls: [] };
+        }
+      },
+    };
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "warning-plan",
+        instructions: "Verify carefully",
+        tools: [
+          defineTool({
+            name: "verify",
+            mutability: "read",
+            description: "Run a verifier",
+            parameters: { type: "object" },
+            async execute() {
+              return {
+                status: "completed_with_warnings",
+                stderr: "optional verifier unavailable",
+              };
+            },
+          }),
+          defineTool({
+            name: "verify_fallback",
+            mutability: "read",
+            description: "Run a fallback verifier",
+            parameters: { type: "object" },
+            async execute() {
+              throw new Error("fallback verifier failed");
+            },
+          }),
+          createUpdatePlanTool({ runtime }),
+          createAdvancePlanTool({ runtime }),
+        ],
+      }),
+      "Verify the output",
+      { controller: new PlanExecutionController() },
+    );
+
+    expect(result.output).toBe("Verified with disclosed fallback.");
+    expect(requests).toHaveLength(7);
+  });
+
   it("rejects skipped steps and requires an explicit reason to replan", async () => {
     const controller = new PlanExecutionController();
     const initial = {

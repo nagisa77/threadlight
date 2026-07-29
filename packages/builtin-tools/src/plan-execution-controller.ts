@@ -35,6 +35,11 @@ export interface PlanExecutionControllerOptions {
   requirePlan?: boolean;
 }
 
+interface ToolIssueResolution {
+  callId: string;
+  resolution: string;
+}
+
 /**
  * Turns a model-authored plan into runtime execution control.
  *
@@ -47,6 +52,15 @@ export class PlanExecutionController implements RunController {
   private turnResponse: string | undefined;
   private readonly pendingUpdates = new Map<string, PlanSnapshot>();
   private readonly successfulTools: string[] = [];
+  private readonly unresolvedToolIssues = new Map<
+    string,
+    { name: string; outcome: "failed" | "warning" }
+  >();
+  private readonly pendingIssueResolutions = new Map<
+    string,
+    readonly ToolIssueResolution[]
+  >();
+  private readonly completedIssueResolutions: ToolIssueResolution[] = [];
   private readonly requirePlan: boolean;
   private advanceAvailable = false;
 
@@ -110,12 +124,23 @@ export class PlanExecutionController implements RunController {
 
     const snapshot = this.snapshotValue as PlanSnapshot;
     if (this.phase === "complete") {
+      const resolvedIssueSummary =
+        this.completedIssueResolutions.length > 0
+          ? this.completedIssueResolutions
+              .map(
+                ({ callId, resolution }) =>
+                  `${callId}: ${resolution}`,
+              )
+              .join("\n")
+          : "none";
       return {
         tools: context.tools,
         outputVisibility: "user",
         instructions: [
           "PLAN CONTROL — COMPLETE",
           "Every controlled plan step is completed. Summarize the outcome and the recorded verification evidence.",
+          `Tool issues resolved during execution:\n${resolvedIssueSummary}`,
+          "Preserve disclosed limitations in the final answer. Never claim a failed or warning check succeeded merely because an alternative path allowed the plan to continue.",
           "All turn tools remain advertised so provider-owned call state stays valid. Runtime control still rejects any tool call that is not allowed in this phase.",
           "Do not perform additional write operations unless the plan is explicitly revised first. A final project_memory read or write requested by runtime memory guidance is allowed without revising the plan.",
         ].join("\n"),
@@ -130,6 +155,15 @@ export class PlanExecutionController implements RunController {
       this.successfulTools.length > 0
         ? this.successfulTools.slice(-8).join(", ")
         : "none yet";
+    const unresolvedIssues =
+      this.unresolvedToolIssues.size > 0
+        ? [...this.unresolvedToolIssues]
+            .map(
+              ([callId, issue]) =>
+                `${callId} (${issue.name}, ${issue.outcome})`,
+            )
+            .join(", ")
+        : "none";
     return {
       outputVisibility: "provisional",
       instructions: [
@@ -141,10 +175,11 @@ export class PlanExecutionController implements RunController {
           (criterion, index) => `${index + 1}. ${criterion}`,
         ),
         `Successful tools observed for this step: ${recentTools}`,
+        `Unresolved tool issues for this step: ${unresolvedIssues}`,
         "Work only on this current step. Do not skip pending steps or silently change their definitions.",
         this.advanceAvailable
-          ? "Before advancing, verify the acceptance criteria, then call advance_plan with completionEvidence. The runtime will complete this step and activate the next one atomically."
-          : "Before advancing, verify the acceptance criteria, then call update_plan with the unchanged full plan, completionEvidence on this step, and the next step in_progress.",
+          ? "Before advancing, verify every acceptance criterion and provide exactly one completionEvidence item per criterion in the same order. If unresolved tool issues are listed, include every call id in issueResolutions with the recovery, alternative evidence, or limitation. Then call advance_plan."
+          : "Before advancing, verify every acceptance criterion and provide exactly one completionEvidence item per criterion in the same order. If unresolved tool issues are listed, include every call id in issueResolutions. Then call update_plan with the unchanged full plan and next step in_progress.",
         "If new evidence invalidates the remaining plan, revise it with a non-empty revisionReason while preserving completed steps.",
       ].join("\n"),
     };
@@ -180,6 +215,12 @@ export class PlanExecutionController implements RunController {
           );
         }
         validatePlanTransition(this.snapshotValue, next);
+        if (
+          this.snapshotValue &&
+          completesCurrentStep(this.snapshotValue, next)
+        ) {
+          this.validateIssueResolutions(call);
+        }
       } catch (error) {
         return {
           allowed: false,
@@ -202,6 +243,7 @@ export class PlanExecutionController implements RunController {
           this.snapshotValue,
           parseCompletionEvidence(call.arguments),
         );
+        this.validateIssueResolutions(call);
       } catch (error) {
         return {
           allowed: false,
@@ -259,19 +301,67 @@ export class PlanExecutionController implements RunController {
     ) {
       const pending = this.pendingUpdates.get(call.id);
       this.pendingUpdates.delete(call.id);
+      const resolvedIssues = this.pendingIssueResolutions.get(call.id);
+      this.pendingIssueResolutions.delete(call.id);
       if (!result.isError && pending) {
         const previousActive = activeStep(this.snapshotValue);
         this.snapshotValue = pending;
         if (activeStep(pending) !== previousActive) {
           this.successfulTools.length = 0;
+          for (const resolution of resolvedIssues ?? []) {
+            this.unresolvedToolIssues.delete(resolution.callId);
+            this.completedIssueResolutions.push(resolution);
+          }
         }
       }
       return;
     }
 
-    if (!result.isError && this.phase === "execution") {
-      this.successfulTools.push(call.name);
+    if (this.phase === "execution") {
+      const outcome = toolResultOutcome(result);
+      if (outcome === "success") {
+        this.successfulTools.push(call.name);
+      } else {
+        this.unresolvedToolIssues.set(call.id, {
+          name: call.name,
+          outcome,
+        });
+      }
     }
+  }
+
+  private validateIssueResolutions(call: ToolCall): void {
+    const resolutions = parseIssueResolutions(call.arguments);
+    const unresolved = [...this.unresolvedToolIssues.keys()];
+    if (unresolved.length === 0) {
+      if (resolutions.length > 0) {
+        throw new Error(
+          "issueResolutions must be omitted when there are no unresolved tool issues",
+        );
+      }
+      return;
+    }
+
+    const resolved = new Set(resolutions.map(({ callId }) => callId));
+    const missing = unresolved.filter((callId) => !resolved.has(callId));
+    const unknown = [...resolved].filter(
+      (callId) => !this.unresolvedToolIssues.has(callId),
+    );
+    if (missing.length > 0 || unknown.length > 0) {
+      throw new Error(
+        [
+          missing.length > 0
+            ? `issueResolutions is missing: ${missing.join(", ")}`
+            : "",
+          unknown.length > 0
+            ? `issueResolutions contains unknown call ids: ${unknown.join(", ")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("; "),
+      );
+    }
+    this.pendingIssueResolutions.set(call.id, resolutions);
   }
 
   validateCompletion(): string | undefined {
@@ -447,6 +537,13 @@ function validateLinearStatuses(plan: readonly PlanItem[]): void {
           `completed step "${item.step}" requires completionEvidence`,
         );
       }
+      if (
+        item.completionEvidence.length !== item.acceptanceCriteria.length
+      ) {
+        throw new Error(
+          `completed step "${item.step}" requires exactly one completionEvidence item per acceptance criterion`,
+        );
+      }
       continue;
     }
     if (item.status === "in_progress") {
@@ -535,4 +632,68 @@ function projectMemoryAction(
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   const action = (value as { action?: unknown }).action;
   return action === "read" || action === "write" ? action : undefined;
+}
+
+function parseIssueResolutions(
+  value: unknown,
+): readonly ToolIssueResolution[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const candidate = (value as { issueResolutions?: unknown }).issueResolutions;
+  if (candidate === undefined) return [];
+  if (
+    !Array.isArray(candidate) ||
+    candidate.length < 1 ||
+    candidate.length > 20
+  ) {
+    throw new Error("issueResolutions must contain 1-20 items");
+  }
+  const seen = new Set<string>();
+  return candidate.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`issueResolutions[${index}] must be an object`);
+    }
+    const callId = (item as { callId?: unknown }).callId;
+    const resolution = (item as { resolution?: unknown }).resolution;
+    if (
+      typeof callId !== "string" ||
+      !callId.trim() ||
+      callId.length > 256
+    ) {
+      throw new Error(
+        `issueResolutions[${index}].callId must be 1-256 characters`,
+      );
+    }
+    if (
+      typeof resolution !== "string" ||
+      !resolution.trim() ||
+      resolution.length > 500
+    ) {
+      throw new Error(
+        `issueResolutions[${index}].resolution must be 1-500 characters`,
+      );
+    }
+    const normalizedCallId = callId.trim();
+    if (seen.has(normalizedCallId)) {
+      throw new Error("issueResolutions call ids must be unique");
+    }
+    seen.add(normalizedCallId);
+    return {
+      callId: normalizedCallId,
+      resolution: resolution.replace(/\s+/g, " ").trim(),
+    };
+  });
+}
+
+function toolResultOutcome(
+  result: ToolResult,
+): "success" | "failed" | "warning" {
+  if (result.isError) return "failed";
+  try {
+    const parsed = JSON.parse(result.output) as { status?: unknown };
+    return parsed?.status === "completed_with_warnings"
+      ? "warning"
+      : "success";
+  } catch {
+    return "success";
+  }
 }

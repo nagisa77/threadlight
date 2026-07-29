@@ -12,6 +12,19 @@ const MAX_SELECTED_CAPABILITIES = 16;
 export interface CapabilityResolution {
   promptBlocks: readonly PromptBlock[];
   tools: readonly Tool[];
+  resources?: readonly CapabilityResource[];
+}
+
+export interface CapabilityResource {
+  path: string;
+  source: string;
+  read(signal: AbortSignal): Promise<CapabilityResourceContent>;
+}
+
+export interface CapabilityResourceContent {
+  path: string;
+  content: string;
+  truncated: boolean;
 }
 
 export type CapabilityActivation = "explicit" | "model";
@@ -77,6 +90,7 @@ export class CapabilityRegistry {
     return {
       promptBlocks: resolutions.flatMap(({ promptBlocks }) => promptBlocks),
       tools: resolutions.flatMap(({ tools }) => tools),
+      resources: resolutions.flatMap(({ resources }) => resources ?? []),
     };
   }
 }
@@ -122,6 +136,12 @@ export function skillCapabilitySources(
         return {
           promptBlocks: [registry.promptBlock(skill.id)],
           tools: [],
+          resources: registry.resources(skill.id).map((path) => ({
+            path,
+            source: skill.invocationName,
+            read: (signal: AbortSignal) =>
+              registry.readResource(skill.id, path, signal),
+          })),
         };
       },
     };

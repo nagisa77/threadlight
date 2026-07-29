@@ -14,6 +14,15 @@
           "https://www.googleapis.com/auth/gmail.compose"
         ]
       },
+      "errorGuidance": [
+        {
+          "includes": "The caller does not have permission",
+          "code": "gmail_mcp_project_permission_required",
+          "retryable": false,
+          "message": "Gmail is connected, but Google rejected this tool call at the project-permission layer. Do not retry Gmail tools yet. The Google Cloud project associated with this OAuth client most likely needs to be accepted into the Google Workspace Developer Preview Program. Confirm that the same project has both Gmail API and Gmail MCP API enabled, that its project number is registered for the preview, and that the authorized Google Workspace account is the registered test account. After Google confirms access, disconnect and reconnect Gmail in Threadlight.",
+          "helpUrl": "https://developers.google.com/workspace/preview"
+        }
+      ],
       "presentation": {
         "icon": "gmail",
         "visibility": "featured",

@@ -155,6 +155,7 @@ export function parseProcessSnapshot(
     typeof parsed.cwd !== "string" ||
     (status !== "running" &&
       status !== "completed" &&
+      status !== "completed_with_warnings" &&
       status !== "failed" &&
       status !== "terminated") ||
     (parsed.exitCode !== null && typeof parsed.exitCode !== "number") ||

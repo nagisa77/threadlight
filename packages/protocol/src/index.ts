@@ -131,7 +131,12 @@ export interface ProcessSnapshotData {
   sessionId: string;
   command: string;
   cwd: string;
-  status: "running" | "completed" | "failed" | "terminated";
+  status:
+    | "running"
+    | "completed"
+    | "completed_with_warnings"
+    | "failed"
+    | "terminated";
   exitCode: number | null;
   signal: string | null;
   stdout: string;
@@ -144,7 +149,12 @@ export interface ProcessSnapshotData {
 export interface ConversationActivityData {
   id: string;
   name: string;
-  status: "running" | "completed" | "failed" | "terminated";
+  status:
+    | "running"
+    | "completed"
+    | "completed_with_warnings"
+    | "failed"
+    | "terminated";
   detail?: string;
   process?: ProcessSnapshotData;
 }

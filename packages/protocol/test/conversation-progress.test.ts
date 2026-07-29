@@ -235,6 +235,39 @@ describe("conversation progress projection", () => {
       });
     expect(runningProcessSessionIds(progress, messages)).toEqual(["session-1"]);
   });
+
+  it("preserves completed-with-warnings as a distinct activity state", () => {
+    const running = runningProcess();
+    const progress: readonly ConversationProgressData[] = [
+      {
+        text: "",
+        activities: [
+          {
+            id: "call-1",
+            name: "exec_command",
+            status: "running",
+            process: running,
+          },
+        ],
+      },
+    ];
+    const warning: ProcessSnapshotData = {
+      ...running,
+      status: "completed_with_warnings",
+      exitCode: 0,
+      stderr: "optional command unavailable\n",
+      completedAt: "2026-07-27T12:00:01.000Z",
+    };
+
+    expect(projectProgressProcess(progress, warning)[0]?.activities[0])
+      .toMatchObject({
+        status: "completed_with_warnings",
+        process: {
+          status: "completed_with_warnings",
+          exitCode: 0,
+        },
+      });
+  });
 });
 
 function runningProcess(): ProcessSnapshotData {

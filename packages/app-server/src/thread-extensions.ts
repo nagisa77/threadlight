@@ -2,7 +2,10 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 
-import type { Tool } from "@threadlight/agent-loop";
+import {
+  ToolExecutionError,
+  type Tool,
+} from "@threadlight/agent-loop";
 import {
   createMcpCapabilityTools,
   type ConversationMcpRuntime,
@@ -24,6 +27,7 @@ import {
 import type { PromptBlock } from "./prompt-composer.js";
 import {
   PluginRegistry,
+  type PluginErrorGuidance,
   type PluginRegistrySnapshot,
   validatePluginRegistrySnapshot,
 } from "./plugin-registry.js";
@@ -351,11 +355,56 @@ function pluginMcpCapabilitySources(
                 .join("\n\n"),
             },
           ],
-          tools: createMcpCapabilityTools(runtime, server.id, connection),
+          tools: applyPluginErrorGuidance(
+            createMcpCapabilityTools(runtime, server.id, connection),
+            server.errorGuidance,
+          ),
+          resources: [],
         };
       },
     };
   });
+}
+
+function applyPluginErrorGuidance(
+  tools: readonly Tool[],
+  guidance: readonly PluginErrorGuidance[] | undefined,
+): Tool[] {
+  if (!guidance?.length) return [...tools];
+  return tools.map((tool) => ({
+    ...tool,
+    async execute(arguments_, context) {
+      try {
+        return await tool.execute(arguments_, context);
+      } catch (error) {
+        const original =
+          error instanceof Error ? error.message : String(error);
+        const match = guidance.find(({ includes }) =>
+          original.includes(includes),
+        );
+        if (!match) throw error;
+        const message = [
+          match.message,
+          match.helpUrl ? `Help: ${match.helpUrl}` : "",
+          `Remote error: ${original}`,
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        throw new ToolExecutionError(message, {
+          code: match.code,
+          retryable: match.retryable,
+          ...(match.helpUrl
+            ? {
+                userAction: {
+                  kind: "open_url",
+                  data: { url: match.helpUrl },
+                },
+              }
+            : {}),
+        });
+      }
+    },
+  }));
 }
 
 function linkPluginSkillConnectors(
@@ -389,6 +438,10 @@ function linkPluginSkillConnectors(
           tools: [
             ...skillResolution.tools,
             ...connectorResolution.tools,
+          ],
+          resources: [
+            ...(skillResolution.resources ?? []),
+            ...(connectorResolution.resources ?? []),
           ],
         };
       },
@@ -659,6 +712,7 @@ function mcpCapabilitySources(
             capability.id,
             connection,
           ),
+          resources: [],
         };
       },
     };
@@ -692,6 +746,7 @@ function mentionableToolCapabilitySources(
           },
         ],
         tools: [],
+        resources: [],
       };
     },
   }));

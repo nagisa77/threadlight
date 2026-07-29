@@ -8,6 +8,7 @@ import type { CapabilityDescriptor } from "@threadlight/protocol";
 
 import type {
   CapabilityActivation,
+  CapabilityResource,
   CapabilityResolution,
 } from "./capability-registry.js";
 import type { PromptBlock } from "./prompt-composer.js";
@@ -24,6 +25,7 @@ export interface TurnCapabilityControllerOptions {
     activation?: CapabilityActivation,
   ): CapabilityResolution | Promise<CapabilityResolution>;
   addTools(tools: readonly Tool[]): void;
+  addResources(resources: readonly CapabilityResource[]): void;
 }
 
 export class TurnCapabilityController implements RunController {
@@ -159,6 +161,7 @@ export class TurnCapabilityController implements RunController {
       }
     }
     this.options.addTools(resolution.tools);
+    this.options.addResources(resolution.resources ?? []);
     for (const block of resolution.promptBlocks) {
       this.promptBlocks.set(block.id, block);
     }

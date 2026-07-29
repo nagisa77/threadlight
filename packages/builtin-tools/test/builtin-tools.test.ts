@@ -517,6 +517,36 @@ describe("builtin tools", () => {
     });
   });
 
+  it("reports zero-exit commands with stderr as completed with warnings", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-warning-"));
+    const provider = new ScriptedToolProvider({
+      id: "call_exec_warning",
+      name: "exec_command",
+      arguments: {
+        command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+          "process.stderr.write('optional tool unavailable\\n')",
+        )}`,
+        cwd: null,
+        timeout_ms: null,
+      },
+    });
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "warning-test",
+        instructions: "Run the diagnostic",
+        tools: [createExecCommandTool({ workspaceRoot })],
+      }),
+      "Run a diagnostic",
+    );
+
+    expect(JSON.parse(result.output)).toMatchObject({
+      status: "completed_with_warnings",
+      exitCode: 0,
+      stderr: "optional tool unavailable\n",
+    });
+  });
+
   it("rejects a command working directory outside the configured workspace", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-cwd-"));
     const tool = createExecCommandTool({ workspaceRoot });

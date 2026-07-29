@@ -9,6 +9,12 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 import { vi } from "vitest";
+import {
+  AgentLoop,
+  defineAgent,
+  type AgentEvent,
+  type ModelRequest,
+} from "@threadlight/agent-loop";
 import { ConversationMcpRuntime } from "@threadlight/builtin-tools";
 
 import { PluginRegistry } from "../src/plugin-registry.js";
@@ -50,7 +56,146 @@ describe("plugins", () => {
           "https://www.googleapis.com/auth/gmail.compose",
         ],
       },
+      errorGuidance: [
+        expect.objectContaining({
+          includes: "The caller does not have permission",
+          code: "gmail_mcp_project_permission_required",
+          retryable: false,
+          helpUrl: "https://developers.google.com/workspace/preview",
+        }),
+      ],
     });
+  });
+
+  it("gives the model and user plugin-owned guidance for Gmail project permission failures", async () => {
+    const root = temporaryDirectory("threadlight-gmail-guidance-");
+    const mcpRuntime = new ConversationMcpRuntime({
+      workspaceRoot: root,
+      createConnectionId: () => "mcp-gmail-guidance",
+      connector: async () => ({
+        listTools: async () => ({
+          tools: [
+            {
+              name: "search_threads",
+              description: "Search Gmail threads",
+              inputSchema: {
+                type: "object",
+                properties: { query: { type: "string" } },
+                required: ["query"],
+              },
+            },
+          ],
+        }),
+        callTool: async () => ({
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "The caller does not have permission",
+            },
+          ],
+        }),
+        serverInfo: () => ({ name: "gmail", version: "1.0.0" }),
+        instructions: () => undefined,
+        close: async () => undefined,
+      }),
+    });
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [],
+      repoSkillRoots: [],
+      userSkillRoots: [],
+      pluginRoots: [defaultBuiltinPluginRoot()],
+      mcpRuntime,
+    });
+    const resolved = await runtime.resolveCapabilities(
+      ["mcp:gmail"],
+      new AbortController().signal,
+      "implicit",
+    );
+    const gmailTool = resolved.tools.find(({ name }) =>
+      name.startsWith("gmail__"),
+    );
+    expect(gmailTool).toBeDefined();
+
+    const requests: ModelRequest[] = [];
+    const events: AgentEvent[] = [];
+    const result = await new AgentLoop({
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I’ll search Gmail.",
+            toolCalls: [
+              {
+                id: "gmail-search-1",
+                name: gmailTool!.name,
+                arguments: { query: "newer_than:7d" },
+              },
+            ],
+          };
+        }
+        const failure = request.toolResults?.[0];
+        expect(failure).toMatchObject({
+          name: gmailTool!.name,
+          isError: true,
+          error: {
+            code: "gmail_mcp_project_permission_required",
+            retryable: false,
+            userAction: {
+              kind: "open_url",
+              data: {
+                url: "https://developers.google.com/workspace/preview",
+              },
+            },
+          },
+        });
+        expect(failure?.output).toContain(
+          "Do not retry Gmail tools yet",
+        );
+        expect(failure?.output).toContain(
+          "Google Workspace Developer Preview Program",
+        );
+        expect(failure?.output).toContain(
+          "Remote error: The caller does not have permission",
+        );
+        return {
+          text: "Gmail needs project-level preview access before I can retry.",
+          toolCalls: [],
+        };
+      },
+    }).run(
+      defineAgent({
+        name: "gmail-guidance",
+        instructions: "Use Gmail when asked.",
+        tools: resolved.tools,
+      }),
+      "Check my latest mail",
+      {
+        onEvent: (event) => events.push(event),
+      },
+    );
+
+    expect(result.output).toBe(
+      "Gmail needs project-level preview access before I can retry.",
+    );
+    expect(
+      events.find(
+        (event) =>
+          event.type === "tool.completed" &&
+          event.result.callId === "gmail-search-1",
+      ),
+    ).toMatchObject({
+      type: "tool.completed",
+      result: {
+        isError: true,
+        output: expect.stringContaining(
+          "After Google confirms access, disconnect and reconnect Gmail",
+        ),
+      },
+    });
+    await mcpRuntime.dispose();
   });
 
   it("moves Gmail from configuration through authorization without exposing credentials", async () => {

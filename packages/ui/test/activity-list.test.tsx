@@ -64,6 +64,38 @@ describe("ActivityList", () => {
     expect(html).toContain("focused={role=AXWindow}");
   });
 
+  it("starts warning execution records expanded with a distinct status icon", () => {
+    const html = renderToStaticMarkup(
+      <ActivityList
+        activities={[
+          {
+            id: "warning-call",
+            name: "exec_command",
+            status: "completed_with_warnings",
+            process: {
+              sessionId: "warning-session",
+              command: "check-tool",
+              cwd: "/workspace",
+              status: "completed_with_warnings",
+              exitCode: 0,
+              signal: null,
+              stdout: "",
+              stderr: "command not found\n",
+              truncated: false,
+              startedAt: "2026-07-29T08:00:00.000Z",
+              completedAt: "2026-07-29T08:00:01.000Z",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(html).toContain('<details class="activity-list" open="">');
+    expect(html).toContain("lucide-triangle-alert warning");
+    expect(html).not.toContain("lucide-check completed");
+    expect(html).toContain("stderr\ncommand not found");
+  });
+
   it("keeps a live execution record expanded until the final answer arrives", () => {
     const html = renderToStaticMarkup(
       <ActivityList
