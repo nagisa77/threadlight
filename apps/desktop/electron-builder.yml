@@ -28,3 +28,7 @@ mac:
   minimumSystemVersion: "13.0"
   extendInfo:
     NSMicrophoneUsageDescription: Threadlight uses the microphone when you record a voice prompt.
+  protocols:
+    - name: Threadlight OAuth Callback
+      schemes:
+        - threadlight

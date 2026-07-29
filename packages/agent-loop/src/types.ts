@@ -16,6 +16,14 @@ export interface Tool {
    * Restrictive controllers treat unannotated tools as write-capable.
    */
   mutability?: "read" | "write";
+  /**
+   * Additional provider-neutral impact metadata. Remote tool annotations are
+   * conservative: omitted hints never make a tool safer.
+   */
+  impact?: {
+    destructive?: boolean;
+    external?: boolean;
+  };
   execute(arguments_: unknown, context: ToolContext): Promise<unknown>;
 }
 

@@ -1,7 +1,6 @@
 import {
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -9,19 +8,274 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { vi } from "vitest";
+import { ConversationMcpRuntime } from "@threadlight/builtin-tools";
 
-import { SkillsOnlyPluginRegistry } from "../src/plugin-registry.js";
-import { createSkillPluginThreadRuntime } from "../src/thread-extensions.js";
+import { PluginRegistry } from "../src/plugin-registry.js";
+import {
+  createSkillPluginThreadRuntime,
+  defaultBuiltinPluginRoot,
+} from "../src/thread-extensions.js";
 
 const directories: string[] = [];
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   for (const directory of directories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
 });
 
-describe("skills-only plugins", () => {
+describe("plugins", () => {
+  it("ships Documents, PDF, and Gmail as distinct built-in plugins", async () => {
+    const registry = await PluginRegistry.discover({
+      roots: [defaultBuiltinPluginRoot()],
+      environment: {},
+    });
+    expect(registry.plugins.map(({ name }) => name)).toEqual([
+      "documents",
+      "gmail",
+      "pdf",
+    ]);
+    const gmail = registry.mcpServers().find(
+      ({ server }) => server.id === "gmail",
+    );
+    expect(gmail?.server).toMatchObject({
+      name: "Gmail",
+      url: "https://gmailmcp.googleapis.com/mcp/v1",
+      oauth: {
+        clientSecretRequired: true,
+        scopes: [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose",
+        ],
+      },
+    });
+  });
+
+  it("moves Gmail from configuration through authorization without exposing credentials", async () => {
+    const root = temporaryDirectory("threadlight-gmail-connection-");
+    let configured = false;
+    let authorized = false;
+    const configureConnector = vi.fn(async () => {
+      configured = true;
+    });
+    const connector = vi.fn(async (spec) => {
+      expect(spec).toMatchObject({
+        transport: "streamable_http",
+        url: "https://gmailmcp.googleapis.com/mcp/v1",
+        oauth: {
+          connectorId: "gmail",
+          clientSecretRequired: true,
+        },
+      });
+      return {
+        listTools: async () => ({ tools: [] }),
+        callTool: async () => ({}),
+        serverInfo: () => ({ name: "gmail", version: "1.0.0" }),
+        instructions: () => undefined,
+        close: async () => undefined,
+      };
+    });
+    let codeVerifier = "";
+    const redirectToAuthorization = vi.fn(async () => undefined);
+    const saveTokens = vi.fn(async () => {
+      authorized = true;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input
+              : input.url,
+        );
+        if (url.pathname.includes(".well-known/oauth-protected-resource")) {
+          return Response.json({
+            resource: "https://gmailmcp.googleapis.com/mcp/v1",
+            authorization_servers: ["https://accounts.google.com/"],
+            scopes_supported: [
+              "https://mail.google.com/",
+              "https://www.googleapis.com/auth/gmail.modify",
+              "https://www.googleapis.com/auth/gmail.readonly",
+              "https://www.googleapis.com/auth/gmail.compose",
+              "https://www.googleapis.com/auth/gmail.metadata",
+            ],
+          });
+        }
+        if (url.pathname === "/.well-known/oauth-authorization-server") {
+          return Response.json({
+            issuer: "https://accounts.google.com/",
+            authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+            token_endpoint: "https://oauth2.googleapis.com/token",
+            response_types_supported: ["code"],
+            code_challenge_methods_supported: ["S256"],
+            token_endpoint_auth_methods_supported: ["client_secret_post"],
+          });
+        }
+        if (url.href === "https://oauth2.googleapis.com/token") {
+          return Response.json({
+            access_token: "fixture-access-token",
+            refresh_token: "fixture-refresh-token",
+            token_type: "Bearer",
+          });
+        }
+        throw new Error(`Unexpected OAuth request: ${url}`);
+      }),
+    );
+    const mcpRuntime = new ConversationMcpRuntime({
+      connector,
+      oauthProviderFactory: () => ({
+        redirectUrl: "http://127.0.0.1:43119/oauth/callback/gmail",
+        clientMetadata: {
+          redirect_uris: [
+            "http://127.0.0.1:43119/oauth/callback/gmail",
+          ],
+          client_name: "Threadlight",
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          token_endpoint_auth_method: "client_secret_post",
+        },
+        state: async () => "fixture-state",
+        clientInformation: async () => ({
+          client_id: "fixture-client-id",
+          client_secret: "fixture-client-secret",
+        }),
+        tokens: async () => undefined,
+        saveTokens,
+        redirectToAuthorization,
+        saveCodeVerifier: async (value) => {
+          codeVerifier = value;
+        },
+        codeVerifier: async () => codeVerifier,
+        waitForAuthorizationCode: async () => "fixture-code",
+      }),
+    });
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [],
+      repoSkillRoots: [],
+      userSkillRoots: [],
+      pluginRoots: [defaultBuiltinPluginRoot()],
+      mcpRuntime,
+      connections: {
+        connectorStatus: async () => ({ configured, authorized }),
+        configureConnector,
+        disconnectConnector: async () => {
+          configured = false;
+          authorized = false;
+        },
+        connectorRedirectUrl: (id) =>
+          `http://127.0.0.1:43119/oauth/callback/${id}`,
+      },
+    });
+
+    await expect(runtime.connectorStatus("mcp:gmail")).resolves.toMatchObject({
+      status: "needs_configuration",
+      configured: false,
+    });
+    await expect(
+      runtime.configureConnector(
+        "mcp:gmail",
+        "fixture-client-id",
+        "fixture-client-secret",
+      ),
+    ).resolves.toMatchObject({
+      status: "needs_authorization",
+      configured: true,
+    });
+    expect(
+      runtime.capabilities.find(({ id }) => id === "mcp:gmail")?.status,
+    ).toBe("needs_authorization");
+    expect(configureConnector).toHaveBeenCalledWith(
+      "gmail",
+      "1.1.0",
+      "fixture-client-id",
+      "fixture-client-secret",
+    );
+    await expect(
+      runtime.authorizeConnector(
+        "mcp:gmail",
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      status: "ready",
+      authorized: true,
+    });
+    expect(
+      runtime.capabilities.find(({ id }) => id === "mcp:gmail")?.status,
+    ).toBe("ready");
+    expect(redirectToAuthorization).toHaveBeenCalledOnce();
+    expect(
+      redirectToAuthorization.mock.calls[0]?.[0].searchParams.get("state"),
+    ).toBe("fixture-state");
+    expect(
+      redirectToAuthorization.mock.calls[0]?.[0].searchParams.get("scope"),
+    ).toBe(
+      [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.compose",
+      ].join(" "),
+    );
+    expect(saveTokens).toHaveBeenCalledOnce();
+    const gmailSkill = runtime.capabilities.find(
+      ({ kind, connectorRef }) =>
+        kind === "skill" && connectorRef === "mcp:gmail",
+    );
+    expect(gmailSkill).toMatchObject({
+      name: "Gmail",
+      connectorRef: "mcp:gmail",
+    });
+    const gmailSkillResolution = await runtime.resolveCapabilities(
+      [gmailSkill!.id],
+      new AbortController().signal,
+    );
+    expect(
+      gmailSkillResolution.promptBlocks.map(({ id }) => id),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^skill\./),
+        "runtime.capability.mcp.gmail",
+      ]),
+    );
+    expect(connector).toHaveBeenCalledOnce();
+    await mcpRuntime.dispose();
+  });
+
+  it("ships full Documents and PDF skill references for progressive disclosure", async () => {
+    const root = temporaryDirectory("threadlight-builtin-skill-resources-");
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [],
+      repoSkillRoots: [],
+      userSkillRoots: [],
+      pluginRoots: [defaultBuiltinPluginRoot()],
+    });
+    const documents = runtime.snapshot.skills.skills.find(
+      ({ invocationName }) => invocationName === "documents:documents",
+    );
+    const pdf = runtime.snapshot.skills.skills.find(
+      ({ invocationName }) => invocationName === "pdf:pdf",
+    );
+
+    expect(documents?.resources).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/documents\/references\/tooling\.md$/),
+        expect.stringMatching(/documents\/references\/quality-checks\.md$/),
+      ]),
+    );
+    expect(pdf?.resources).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/pdf\/references\/tooling\.md$/),
+        expect.stringMatching(/pdf\/references\/quality-checks\.md$/),
+      ]),
+    );
+  });
+
   it("loads plugin skills with a plugin namespace", async () => {
     const root = temporaryDirectory("threadlight-plugin-");
     writePlugin(root, {
@@ -33,7 +287,7 @@ describe("skills-only plugins", () => {
       instructions: "Run release validation and summarize blockers.",
     });
 
-    const plugins = await SkillsOnlyPluginRegistry.discover({ roots: [root] });
+    const plugins = await PluginRegistry.discover({ roots: [root] });
     expect(plugins.plugins).toMatchObject([
       {
         name: "release-tools",
@@ -69,30 +323,79 @@ describe("skills-only plugins", () => {
     ).toContain("Run release validation");
   });
 
-  it("rejects plugins that declare executable or connected capabilities", async () => {
-    const root = temporaryDirectory("threadlight-plugin-invalid-");
+  it("loads Streamable HTTP MCP connectors without persisting endpoints or credentials in the snapshot", async () => {
+    const root = temporaryDirectory("threadlight-plugin-connected-");
     const pluginRoot = writePlugin(root, {
       name: "connected-plugin",
       version: "1.0.0",
-      description: "Not skills-only.",
+      description: "Connected tools.",
       skillName: "connected-workflow",
       skillDescription: "Use a connected workflow.",
       instructions: "Call a connector.",
     });
     const manifestPath = join(pluginRoot, ".codex-plugin", "plugin.json");
-    const manifest = JSON.parse(
-      readFileSync(manifestPath, "utf8"),
-    ) as Record<string, unknown>;
     writeFileSync(
       manifestPath,
-      `${JSON.stringify({ ...manifest, mcpServers: "./.mcp.json" }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          name: "connected-plugin",
+          version: "1.0.0",
+          description: "Connected tools.",
+          skills: "./skills/",
+          mcpServers: "./.mcp.json",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    writeFileSync(
+      join(pluginRoot, ".mcp.json"),
+      `${JSON.stringify(
+        {
+          servers: [
+            {
+              id: "gmail",
+              version: "2.1.0",
+              name: "Gmail",
+              description: "Search mail.",
+              transport: "streamable_http",
+              urlEnv: "TEST_GMAIL_MCP_URL",
+              oauth: {
+                clientIdEnv: "TEST_GMAIL_CLIENT_ID",
+                scopes: ["mail.read"],
+              },
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
     );
 
-    const registry = await SkillsOnlyPluginRegistry.discover({ roots: [root] });
-    expect(registry.plugins).toEqual([]);
-    expect(registry.warnings.join("\n")).toContain(
-      "currently accepts skills-only plugins",
-    );
+    const registry = await PluginRegistry.discover({
+      roots: [root],
+      environment: {
+        TEST_GMAIL_MCP_URL: "https://mail.example.test/mcp",
+        TEST_GMAIL_CLIENT_ID: "desktop-client",
+      },
+    });
+    expect(registry.mcpServers()).toMatchObject([
+      {
+        server: {
+          id: "gmail",
+          url: "https://mail.example.test/mcp",
+          oauth: {
+            clientId: "desktop-client",
+            scopes: ["mail.read"],
+          },
+        },
+      },
+    ]);
+    const serialized = JSON.stringify(registry.snapshot());
+    expect(serialized).toContain('"id":"gmail"');
+    expect(serialized).toContain('"version":"2.1.0"');
+    expect(serialized).not.toContain("mail.example.test");
+    expect(serialized).not.toContain("desktop-client");
   });
 });
 

@@ -1,0 +1,11 @@
+{
+  "name": "documents",
+  "version": "1.1.0",
+  "description": "Create and edit Word and Google Docs-ready document artifacts.",
+  "skills": "./skills/",
+  "presentation": {
+    "icon": "documents",
+    "visibility": "featured",
+    "keywords": ["doc", "docx", "word", "google docs", "文档"]
+  }
+}

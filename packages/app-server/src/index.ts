@@ -24,12 +24,14 @@ export {
   skillCapabilitySources,
 } from "./capability-registry.js";
 export {
+  createSkillListTool,
   createSkillReadTool,
   SkillRegistry,
   validateSkillName,
   validateSkillRegistrySnapshot,
 } from "./skill-registry.js";
 export {
+  PluginRegistry,
   SkillsOnlyPluginRegistry,
   validatePluginRegistrySnapshot,
 } from "./plugin-registry.js";
@@ -39,11 +41,13 @@ export {
 } from "./skill-creator.js";
 export {
   createSkillPluginThreadRuntime,
+  defaultBuiltinPluginRoot,
   defaultBuiltinSkillRoot,
   validateSkillPluginRuntimeSnapshot,
 } from "./thread-extensions.js";
 
 export type {
+  CapabilityActivation,
   CapabilityResolution,
   CapabilitySource,
 } from "./capability-registry.js";
@@ -77,6 +81,8 @@ export type {
 export type {
   DiscoverSkillsOptions,
   SkillDescriptor,
+  SkillListOptions,
+  SkillListResult,
   SkillReadResult,
   SkillRegistrySnapshot,
   SkillScope,
@@ -85,6 +91,10 @@ export type {
 } from "./skill-registry.js";
 export type {
   DiscoverPluginsOptions,
+  Plugin,
+  PluginMcpServer,
+  PluginOAuthConfig,
+  PluginPresentation,
   PluginRegistrySnapshot,
   SkillsOnlyPlugin,
 } from "./plugin-registry.js";
@@ -95,6 +105,7 @@ export type {
 } from "./skill-creator.js";
 export type {
   FixedMcpServerCapability,
+  MentionableToolCapability,
   SkillPluginRuntimeOptions,
   SkillPluginRuntimeSnapshot,
   SkillPluginThreadRuntime,

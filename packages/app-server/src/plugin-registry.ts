@@ -14,11 +14,73 @@ import {
   sep,
 } from "node:path";
 
+import type { CapabilityVisibility } from "@threadlight/protocol";
+
 import type { SkillSource } from "./skill-registry.js";
 
 const PLUGIN_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const CONNECTOR_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-export interface SkillsOnlyPlugin {
+export interface PluginPresentation {
+  icon?: string;
+  visibility?: CapabilityVisibility;
+  keywords?: readonly string[];
+}
+
+export interface PluginOAuthConfig {
+  clientId?: string;
+  clientIdEnv?: string;
+  clientSecretRequired?: boolean;
+  scopes?: readonly string[];
+}
+
+export interface PluginMcpServer {
+  id: string;
+  version: string;
+  name: string;
+  description: string;
+  transport: "streamable_http";
+  url?: string;
+  urlEnv?: string;
+  oauth?: PluginOAuthConfig;
+  presentation?: PluginPresentation;
+}
+
+export interface Plugin {
+  name: string;
+  version: string;
+  description: string;
+  path: string;
+  manifestPath: string;
+  skillsPath?: string;
+  mcpServers: readonly PluginMcpServer[];
+  presentation?: PluginPresentation;
+  hash: string;
+}
+
+export interface PluginConnectorSnapshot {
+  id: string;
+  version: string;
+}
+
+export interface PluginSnapshotV2 {
+  name: string;
+  version: string;
+  description: string;
+  path: string;
+  manifestPath: string;
+  skillsPath?: string;
+  connectors: readonly PluginConnectorSnapshot[];
+  hash: string;
+}
+
+export interface PluginRegistrySnapshotV2 {
+  version: 2;
+  plugins: readonly PluginSnapshotV2[];
+  warnings: readonly string[];
+}
+
+interface LegacySkillsOnlyPlugin {
   name: string;
   version: string;
   description: string;
@@ -28,28 +90,34 @@ export interface SkillsOnlyPlugin {
   hash: string;
 }
 
-export interface PluginRegistrySnapshot {
+interface PluginRegistrySnapshotV1 {
   version: 1;
-  plugins: readonly SkillsOnlyPlugin[];
+  plugins: readonly LegacySkillsOnlyPlugin[];
   warnings: readonly string[];
 }
 
+export type PluginRegistrySnapshot =
+  | PluginRegistrySnapshotV1
+  | PluginRegistrySnapshotV2;
+
 export interface DiscoverPluginsOptions {
   roots: readonly string[];
+  environment?: NodeJS.ProcessEnv;
 }
 
-export class SkillsOnlyPluginRegistry {
+export class PluginRegistry {
   private constructor(
-    readonly plugins: readonly SkillsOnlyPlugin[],
+    readonly plugins: readonly Plugin[],
     readonly warnings: readonly string[],
   ) {}
 
   static async discover(
     options: DiscoverPluginsOptions,
-  ): Promise<SkillsOnlyPluginRegistry> {
-    const plugins: SkillsOnlyPlugin[] = [];
+  ): Promise<PluginRegistry> {
+    const plugins: Plugin[] = [];
     const warnings: string[] = [];
     const names = new Set<string>();
+    const connectorIds = new Set<string>();
     const visited = new Set<string>();
 
     for (const configuredRoot of options.roots) {
@@ -73,7 +141,10 @@ export class SkillsOnlyPluginRegistry {
           pluginRoot = await realpath(candidate);
           if (!isWithin(root, pluginRoot) || visited.has(pluginRoot)) continue;
           visited.add(pluginRoot);
-          const plugin = await loadPlugin(pluginRoot);
+          const plugin = await loadPlugin(
+            pluginRoot,
+            options.environment ?? process.env,
+          );
           if (!plugin) continue;
           if (names.has(plugin.name)) {
             warnings.push(
@@ -81,7 +152,17 @@ export class SkillsOnlyPluginRegistry {
             );
             continue;
           }
+          const duplicateConnector = plugin.mcpServers.find(({ id }) =>
+            connectorIds.has(id),
+          );
+          if (duplicateConnector) {
+            warnings.push(
+              `${plugin.manifestPath} was skipped because connector ${duplicateConnector.id} is already registered`,
+            );
+            continue;
+          }
           names.add(plugin.name);
+          for (const server of plugin.mcpServers) connectorIds.add(server.id);
           plugins.push(plugin);
         } catch (error) {
           if (isNodeError(error) && error.code === "ENOENT") continue;
@@ -89,39 +170,106 @@ export class SkillsOnlyPluginRegistry {
         }
       }
     }
-    return new SkillsOnlyPluginRegistry(plugins, warnings);
+    return new PluginRegistry(plugins, warnings);
   }
 
-  static fromSnapshot(
+  static async fromSnapshot(
     value: PluginRegistrySnapshot,
-  ): SkillsOnlyPluginRegistry {
+    environment: NodeJS.ProcessEnv = process.env,
+  ): Promise<PluginRegistry> {
     validatePluginRegistrySnapshot(value);
-    return new SkillsOnlyPluginRegistry(
-      value.plugins.map((plugin) => ({ ...plugin })),
-      [...value.warnings],
-    );
+    const plugins: Plugin[] = [];
+    const warnings = [...value.warnings];
+    for (const snapshot of value.plugins) {
+      try {
+        const plugin = await loadPlugin(snapshot.path, environment);
+        if (!plugin) {
+          warnings.push(`${snapshot.path} is no longer an installed plugin`);
+          continue;
+        }
+        if (
+          plugin.name !== snapshot.name ||
+          plugin.version !== snapshot.version ||
+          (plugin.hash !== snapshot.hash &&
+            !(
+              value.version === 1 &&
+              (await legacyManifestHash(plugin.manifestPath)) ===
+                snapshot.hash
+            ))
+        ) {
+          warnings.push(
+            `${snapshot.name}@${snapshot.version} changed since this task was created and was not restored`,
+          );
+          continue;
+        }
+        plugins.push(plugin);
+      } catch (error) {
+        warnings.push(
+          `${snapshot.path} could not be restored: ${errorMessage(error)}`,
+        );
+      }
+    }
+    return new PluginRegistry(plugins, warnings);
   }
 
-  snapshot(): PluginRegistrySnapshot {
+  snapshot(): PluginRegistrySnapshotV2 {
     return {
-      version: 1,
-      plugins: this.plugins.map((plugin) => ({ ...plugin })),
+      version: 2,
+      plugins: this.plugins.map((plugin) => ({
+        name: plugin.name,
+        version: plugin.version,
+        description: plugin.description,
+        path: plugin.path,
+        manifestPath: plugin.manifestPath,
+        ...(plugin.skillsPath ? { skillsPath: plugin.skillsPath } : {}),
+        connectors: plugin.mcpServers.map(({ id, version }) => ({
+          id,
+          version,
+        })),
+        hash: plugin.hash,
+      })),
       warnings: [...this.warnings],
     };
   }
 
   skillSources(): SkillSource[] {
-    return this.plugins.map((plugin) => ({
-      scope: "plugin",
-      root: plugin.skillsPath,
-      namespace: plugin.name,
-      plugin: {
-        name: plugin.name,
-        version: plugin.version,
-      },
-    }));
+    return this.plugins.flatMap((plugin) =>
+      plugin.skillsPath
+        ? [
+            {
+              scope: "plugin" as const,
+              root: plugin.skillsPath,
+              namespace: plugin.name,
+              plugin: {
+                name: plugin.name,
+                version: plugin.version,
+              },
+            },
+          ]
+        : [],
+    );
+  }
+
+  mcpServers(): Array<{
+    plugin: Plugin;
+    server: PluginMcpServer;
+  }> {
+    return this.plugins.flatMap((plugin) =>
+      plugin.mcpServers.map((server) => ({ plugin, server })),
+    );
   }
 }
+
+async function legacyManifestHash(path: string): Promise<string> {
+  return createHash("sha256")
+    .update(await readFile(path, "utf8"))
+    .digest("hex");
+}
+
+/** @deprecated Use PluginRegistry. Kept for source compatibility. */
+export const SkillsOnlyPluginRegistry = PluginRegistry;
+/** @deprecated Use Plugin. */
+export type SkillsOnlyPlugin = Plugin;
 
 export function validatePluginRegistrySnapshot(
   value: unknown,
@@ -131,7 +279,7 @@ export function validatePluginRegistrySnapshot(
   }
   const snapshot = value as Record<string, unknown>;
   if (
-    snapshot.version !== 1 ||
+    (snapshot.version !== 1 && snapshot.version !== 2) ||
     !Array.isArray(snapshot.plugins) ||
     !Array.isArray(snapshot.warnings) ||
     !snapshot.warnings.every((warning) => typeof warning === "string")
@@ -149,17 +297,28 @@ export function validatePluginRegistrySnapshot(
       typeof plugin.description !== "string" ||
       typeof plugin.path !== "string" ||
       typeof plugin.manifestPath !== "string" ||
-      typeof plugin.skillsPath !== "string" ||
-      typeof plugin.hash !== "string"
+      typeof plugin.hash !== "string" ||
+      (plugin.skillsPath !== undefined &&
+        typeof plugin.skillsPath !== "string")
     ) {
       throw new Error("Plugin registry snapshot contains an invalid plugin");
+    }
+    if (
+      snapshot.version === 2 &&
+      (!Array.isArray(plugin.connectors) ||
+        !plugin.connectors.every(isConnectorSnapshot))
+    ) {
+      throw new Error(
+        "Plugin registry snapshot contains invalid connector state",
+      );
     }
   }
 }
 
 async function loadPlugin(
   pluginRoot: string,
-): Promise<SkillsOnlyPlugin | undefined> {
+  environment: NodeJS.ProcessEnv,
+): Promise<Plugin | undefined> {
   const configuredManifestPath = join(
     pluginRoot,
     ".codex-plugin",
@@ -180,52 +339,208 @@ async function loadPlugin(
     throw error;
   }
   const value = JSON.parse(source) as unknown;
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isObject(value)) {
     throw new Error(`${manifestPath} must contain a JSON object`);
   }
-  const manifest = value as Record<string, unknown>;
-  const name = requireString(manifest.name, "name", manifestPath);
-  const version = requireString(manifest.version, "version", manifestPath);
+  const name = requireString(value.name, "name", manifestPath);
+  const version = requireString(value.version, "version", manifestPath);
   const description = requireString(
-    manifest.description,
+    value.description,
     "description",
     manifestPath,
   );
-  const skills = requireString(manifest.skills, "skills", manifestPath);
   if (!PLUGIN_NAME_PATTERN.test(name) || name.length > 64) {
     throw new Error(`${manifestPath} has an invalid plugin name`);
   }
   if (basename(pluginRoot) !== name) {
     throw new Error(`${manifestPath} plugin name must match its folder`);
   }
-  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
-    throw new Error(`${manifestPath} has an invalid semantic version`);
+  validateVersion(version, manifestPath);
+
+  let skillsPath: string | undefined;
+  if (value.skills !== undefined) {
+    const skills = requireString(value.skills, "skills", manifestPath);
+    if (!skills.startsWith("./")) {
+      throw new Error(`${manifestPath} skills path must start with ./`);
+    }
+    skillsPath = await realpath(resolve(pluginRoot, skills));
+    if (
+      !isWithin(pluginRoot, skillsPath) ||
+      !(await stat(skillsPath)).isDirectory()
+    ) {
+      throw new Error(`${manifestPath} skills path leaves the plugin root`);
+    }
   }
-  for (const unsupported of ["mcpServers", "apps", "hooks"]) {
-    if (manifest[unsupported] !== undefined) {
+
+  let mcpServers: readonly PluginMcpServer[] = [];
+  let mcpSource = "";
+  if (value.mcpServers !== undefined) {
+    const configuredPath = requireString(
+      value.mcpServers,
+      "mcpServers",
+      manifestPath,
+    );
+    if (!configuredPath.startsWith("./")) {
+      throw new Error(`${manifestPath} mcpServers path must start with ./`);
+    }
+    const mcpPath = await realpath(resolve(pluginRoot, configuredPath));
+    if (!isWithin(pluginRoot, mcpPath)) {
+      throw new Error(`${manifestPath} mcpServers path leaves the plugin root`);
+    }
+    mcpSource = await readFile(mcpPath, "utf8");
+    mcpServers = parseMcpServers(
+      JSON.parse(mcpSource) as unknown,
+      mcpPath,
+      version,
+      environment,
+    );
+  }
+  if (!skillsPath && mcpServers.length === 0) {
+    throw new Error(
+      `${manifestPath} must declare skills or at least one MCP server`,
+    );
+  }
+  for (const unsupported of ["apps", "hooks"]) {
+    if (value[unsupported] !== undefined) {
       throw new Error(
-        `${manifestPath} declares unsupported ${unsupported}; Threadlight currently accepts skills-only plugins`,
+        `${manifestPath} declares unsupported ${unsupported}`,
       );
     }
   }
-  if (!skills.startsWith("./")) {
-    throw new Error(`${manifestPath} skills path must start with ./`);
-  }
-  const skillsPath = await realpath(resolve(pluginRoot, skills));
-  if (
-    !isWithin(pluginRoot, skillsPath) ||
-    !(await stat(skillsPath)).isDirectory()
-  ) {
-    throw new Error(`${manifestPath} skills path leaves the plugin root`);
-  }
+  const presentation = parsePresentation(value.presentation, manifestPath);
   return {
     name,
     version,
     description,
     path: pluginRoot,
     manifestPath,
-    skillsPath,
-    hash: createHash("sha256").update(source).digest("hex"),
+    ...(skillsPath ? { skillsPath } : {}),
+    mcpServers,
+    ...(presentation ? { presentation } : {}),
+    hash: createHash("sha256")
+      .update(source)
+      .update("\0")
+      .update(mcpSource)
+      .digest("hex"),
+  };
+}
+
+function parseMcpServers(
+  value: unknown,
+  path: string,
+  pluginVersion: string,
+  environment: NodeJS.ProcessEnv,
+): readonly PluginMcpServer[] {
+  if (!isObject(value) || !Array.isArray(value.servers)) {
+    throw new Error(`${path} must contain a servers array`);
+  }
+  const ids = new Set<string>();
+  return value.servers.map((entry, index) => {
+    if (!isObject(entry)) {
+      throw new Error(`${path} server ${index + 1} must be an object`);
+    }
+    const id = requireString(entry.id, "id", path);
+    if (
+      !CONNECTOR_ID_PATTERN.test(id) ||
+      id.length > 64 ||
+      ids.has(id)
+    ) {
+      throw new Error(`${path} has an invalid or duplicate connector id`);
+    }
+    ids.add(id);
+    const transport = requireString(entry.transport, "transport", path);
+    if (transport !== "streamable_http") {
+      throw new Error(
+        `${path} connector ${id} must use streamable_http transport`,
+      );
+    }
+    const url = optionalString(entry.url);
+    const urlEnv = optionalString(entry.urlEnv);
+    if (url && urlEnv) {
+      throw new Error(`${path} connector ${id} cannot set url and urlEnv`);
+    }
+    const resolvedUrl =
+      url ?? (urlEnv ? optionalString(environment[urlEnv]) : undefined);
+    if (resolvedUrl) validateRemoteUrl(resolvedUrl, path, id);
+    const oauth = parseOAuthConfig(entry.oauth, path, id, environment);
+    const presentation = parsePresentation(entry.presentation, path);
+    return {
+      id,
+      version: optionalString(entry.version) ?? pluginVersion,
+      name: requireString(entry.name, "name", path),
+      description: requireString(entry.description, "description", path),
+      transport: "streamable_http" as const,
+      ...(resolvedUrl ? { url: resolvedUrl } : {}),
+      ...(urlEnv ? { urlEnv } : {}),
+      ...(oauth ? { oauth } : {}),
+      ...(presentation ? { presentation } : {}),
+    };
+  });
+}
+
+function parseOAuthConfig(
+  value: unknown,
+  path: string,
+  id: string,
+  environment: NodeJS.ProcessEnv,
+): PluginOAuthConfig | undefined {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    throw new Error(`${path} connector ${id} oauth must be an object`);
+  }
+  const clientIdEnv = optionalString(value.clientIdEnv);
+  const configuredClientId = optionalString(value.clientId);
+  const clientId =
+    configuredClientId ??
+    (clientIdEnv ? optionalString(environment[clientIdEnv]) : undefined);
+  const scopes =
+    value.scopes === undefined
+      ? undefined
+      : requireStringArray(value.scopes, `${path} connector ${id} scopes`);
+  const clientSecretRequired =
+    value.clientSecretRequired === undefined
+      ? undefined
+      : requireBoolean(
+          value.clientSecretRequired,
+          `${path} connector ${id} clientSecretRequired`,
+        );
+  return {
+    ...(clientId ? { clientId } : {}),
+    ...(clientIdEnv ? { clientIdEnv } : {}),
+    ...(clientSecretRequired !== undefined
+      ? { clientSecretRequired }
+      : {}),
+    ...(scopes ? { scopes } : {}),
+  };
+}
+
+function parsePresentation(
+  value: unknown,
+  path: string,
+): PluginPresentation | undefined {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    throw new Error(`${path} presentation must be an object`);
+  }
+  const icon = optionalString(value.icon);
+  const visibilityValue = optionalString(value.visibility);
+  if (
+    visibilityValue &&
+    visibilityValue !== "featured" &&
+    visibilityValue !== "search" &&
+    visibilityValue !== "hidden"
+  ) {
+    throw new Error(`${path} has an invalid presentation visibility`);
+  }
+  const visibility = visibilityValue as CapabilityVisibility | undefined;
+  const keywords =
+    value.keywords === undefined
+      ? undefined
+      : requireStringArray(value.keywords, `${path} presentation keywords`);
+  return {
+    ...(icon ? { icon } : {}),
+    ...(visibility ? { visibility } : {}),
+    ...(keywords ? { keywords } : {}),
   };
 }
 
@@ -253,6 +568,53 @@ function requireString(
   return value.trim();
 }
 
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function requireStringArray(value: unknown, field: string): string[] {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === "string" && item.trim())
+  ) {
+    throw new Error(`${field} must be an array of non-empty strings`);
+  }
+  return [...new Set(value.map((item) => item.trim()))];
+}
+
+function requireBoolean(value: unknown, field: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${field} must be a boolean`);
+  }
+  return value;
+}
+
+function validateVersion(version: string, path: string): void {
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
+    throw new Error(`${path} has an invalid semantic version`);
+  }
+}
+
+function validateRemoteUrl(url: string, path: string, id: string): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`${path} connector ${id} has an invalid URL`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`${path} connector ${id} URL must use HTTPS`);
+  }
+}
+
+function isConnectorSnapshot(value: unknown): boolean {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.version === "string"
+  );
+}
+
 function isWithin(root: string, candidate: string): boolean {
   const path = relative(root, candidate);
   return (
@@ -261,8 +623,14 @@ function isWithin(root: string, candidate: string): boolean {
   );
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
+function isObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isNodeError(
+  error: unknown,
+): error is NodeJS.ErrnoException {
+  return error instanceof Error;
 }
 
 function errorMessage(error: unknown): string {

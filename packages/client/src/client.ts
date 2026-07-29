@@ -108,6 +108,38 @@ export class ThreadlightClient {
     return this.request("capability/list", { threadId });
   }
 
+  connectorStatus(threadId: string, capabilityId: string) {
+    return this.request("connector/status", { threadId, capabilityId });
+  }
+
+  configureConnector(
+    threadId: string,
+    capabilityId: string,
+    clientId: string,
+    clientSecret: string,
+  ) {
+    return this.request("connector/configure", {
+      threadId,
+      capabilityId,
+      clientId,
+      clientSecret,
+    });
+  }
+
+  authorizeConnector(threadId: string, capabilityId: string) {
+    return this.request("connector/authorize", {
+      threadId,
+      capabilityId,
+    });
+  }
+
+  disconnectConnector(threadId: string, capabilityId: string) {
+    return this.request("connector/disconnect", {
+      threadId,
+      capabilityId,
+    });
+  }
+
   suggestQuestions(threadId: string, language: SuggestionLanguage) {
     return this.request("thread/suggestions", { threadId, language });
   }

@@ -337,7 +337,8 @@ button:disabled {
   transition: opacity 180ms var(--ease-out);
 }
 
-.delete-dialog {
+.delete-dialog,
+.connector-dialog {
   display: grid;
   width: min(400px, 100%);
   grid-template-columns: auto minmax(0, 1fr);
@@ -356,15 +357,128 @@ button:disabled {
     transform 180ms var(--ease-out);
 }
 
+.connector-dialog {
+  display: block;
+  width: min(500px, 100%);
+}
+
 @starting-style {
   .dialog-backdrop,
-  .delete-dialog {
+  .delete-dialog,
+  .connector-dialog {
     opacity: 0;
   }
 
-  .delete-dialog {
+  .delete-dialog,
+  .connector-dialog {
     transform: scale(0.96);
   }
+}
+
+.connector-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.connector-dialog-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  color: #b7473b;
+  background: color-mix(in srgb, #d94b3d 12%, white);
+}
+
+.connector-dialog-heading h2 {
+  margin: 1px 0 5px;
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.connector-dialog-heading p,
+.connector-authorize-note p,
+.connector-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.connector-fields {
+  display: grid;
+  gap: 11px;
+  margin-top: 18px;
+}
+
+.connector-fields label {
+  display: grid;
+  gap: 6px;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.connector-fields input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  outline: none;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 11px;
+}
+
+.connector-fields input:focus {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.connector-fields .connector-redirect {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+.connector-help {
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.connector-authorize-note {
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+}
+
+.connector-dialog-error {
+  margin: 12px 0 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.connector-dialog-actions {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.dialog-button.quiet-danger {
+  border: 0;
+  color: var(--danger);
+  background: transparent;
 }
 
 .delete-dialog-icon {
@@ -982,6 +1096,68 @@ button:disabled {
 .message.assistant {
   flex-direction: column;
   gap: 0;
+}
+
+.message-capability-receipts {
+  display: flex;
+  max-width: min(640px, 86%);
+  flex-wrap: wrap;
+  gap: 6px;
+  line-height: 1;
+}
+
+.message-capability-receipts.user {
+  justify-content: flex-end;
+}
+
+.message-capability-receipts.assistant {
+  max-width: 100%;
+  margin-bottom: 8px;
+}
+
+.message-capability-receipt {
+  display: inline-flex;
+  min-width: 0;
+  height: 26px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+}
+
+.message-capability-icon {
+  display: grid;
+  color: var(--muted);
+  place-items: center;
+}
+
+.message-capability-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-capability-status {
+  color: var(--subtle);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.message-capability-status::before {
+  margin-right: 6px;
+  color: var(--line-strong);
+  content: "·";
+}
+
+.message-capability-check {
+  flex: 0 0 auto;
+  color: var(--success);
 }
 
 .message-attachments {
@@ -2004,6 +2180,22 @@ button:disabled {
   text-align: center;
 }
 
+.capability-group + .capability-group {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--line);
+}
+
+.capability-group-label {
+  margin: 0;
+  padding: 5px 8px 3px;
+  color: var(--subtle);
+  font-size: 9px;
+  font-weight: 680;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .capability-option {
   display: grid;
   width: 100%;
@@ -2025,6 +2217,10 @@ button:disabled {
   background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
+.capability-option[aria-pressed="true"] {
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+}
+
 .capability-option-icon {
   display: grid;
   width: 30px;
@@ -2034,6 +2230,31 @@ button:disabled {
   border-radius: 8px;
   color: var(--muted);
   background: var(--surface);
+}
+
+.capability-option-icon.icon-gmail {
+  color: #d94b3d;
+  background: color-mix(in srgb, #d94b3d 7%, var(--surface));
+}
+
+.capability-option-icon.icon-documents {
+  color: #3977d3;
+  background: color-mix(in srgb, #3977d3 7%, var(--surface));
+}
+
+.capability-option-icon.icon-pdf {
+  color: #db4d58;
+  background: color-mix(in srgb, #db4d58 7%, var(--surface));
+}
+
+.capability-option-icon.icon-computer {
+  color: #6b62cf;
+  background: color-mix(in srgb, #6b62cf 7%, var(--surface));
+}
+
+.capability-option-icon.icon-plan {
+  color: #3979a8;
+  background: color-mix(in srgb, #3979a8 7%, var(--surface));
 }
 
 .capability-option-copy {
@@ -2097,6 +2318,7 @@ button:disabled {
   white-space: nowrap;
 }
 
+.capability-chip-manage,
 .capability-chip-remove {
   display: grid;
   width: 19px;
@@ -2123,6 +2345,10 @@ button:disabled {
   }
 
   .capability-chip-remove:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .capability-chip-manage:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 }
@@ -2494,6 +2720,23 @@ button:disabled {
   background: transparent;
   font-size: 10px;
   font-weight: 620;
+}
+
+.composer-action.add {
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.composer-action.add.active {
+  border-color: var(--line);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
 .composer-action.plan-mode.active {
@@ -4521,6 +4764,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
   .composer-action.voice:hover:not(:disabled):not(.recording),
   .composer-action.attach:hover:not(:disabled),
+  .composer-action.add:hover:not(:disabled):not(.active),
   .composer-action.plan-mode:hover:not(:disabled):not(.active) {
     color: var(--ink);
     background: rgb(239 238 233 / 74%);
@@ -4616,6 +4860,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
   .dialog-backdrop,
   .delete-dialog,
+  .connector-dialog,
   .thread-delete-button {
     transition-duration: 0ms;
   }
@@ -4630,7 +4875,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
     animation: loading-pulse 1.2s ease-in-out infinite alternate;
   }
 
-  .delete-dialog {
+  .delete-dialog,
+  .connector-dialog {
     transform: none;
   }
 }
@@ -4766,6 +5012,7 @@ html[data-theme="dark"] .markdown-content h2 {
 
 html[data-theme="dark"] :is(
   .delete-dialog,
+  .connector-dialog,
   .composer,
   .memory-document,
   .settings-section,
@@ -5103,6 +5350,10 @@ html[data-theme="dark"] :is(
 
 html[data-theme="dark"] .delete-dialog-icon {
   background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+html[data-theme="dark"] .connector-dialog-icon {
+  background: color-mix(in srgb, #d94b3d 18%, transparent);
 }
 
 html[data-theme="dark"] .composer-share-icon > span {

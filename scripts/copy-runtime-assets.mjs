@@ -6,15 +6,16 @@ const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const source = resolve(
-  repositoryRoot,
-  "packages/app-server/src/builtin-skills",
-);
-const destination = resolve(
-  repositoryRoot,
-  "packages/app-server/dist/builtin-skills",
-);
-
-await mkdir(dirname(destination), { recursive: true });
-await rm(destination, { recursive: true, force: true });
-await cp(source, destination, { recursive: true });
+for (const directory of ["builtin-skills", "builtin-plugins"]) {
+  const source = resolve(
+    repositoryRoot,
+    `packages/app-server/src/${directory}`,
+  );
+  const destination = resolve(
+    repositoryRoot,
+    `packages/app-server/dist/${directory}`,
+  );
+  await mkdir(dirname(destination), { recursive: true });
+  await rm(destination, { recursive: true, force: true });
+  await cp(source, destination, { recursive: true });
+}

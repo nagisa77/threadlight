@@ -101,6 +101,18 @@ export function createMcpCapabilityTools(
         tool.description ??
         `Call ${tool.name} from the selected ${capabilityId} MCP capability.`,
       parameters: tool.inputSchema,
+      mutability:
+        tool.annotations?.readOnlyHint === true &&
+        tool.annotations?.destructiveHint !== true
+          ? "read"
+          : "write",
+      impact: {
+        destructive:
+          tool.annotations?.destructiveHint === true ||
+          (tool.annotations?.readOnlyHint !== true &&
+            tool.annotations?.destructiveHint !== false),
+        external: tool.annotations?.openWorldHint !== false,
+      },
       execute(arguments_, context) {
         if (!isObject(arguments_)) {
           throw new Error(`${name} arguments must be an object`);
@@ -125,7 +137,7 @@ function uniqueToolName(
 ): string {
   const prefix = normalizeToolName(capabilityId);
   const suffix = normalizeToolName(remoteName);
-  const base = `mcp_${prefix}_${suffix}`;
+  const base = `${prefix}__${suffix}`;
   let candidate =
     base.length <= 64
       ? base

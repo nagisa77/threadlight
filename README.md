@@ -262,7 +262,9 @@ await client.startTurn(threadId, "分析当前工作区");
 
 ### MCP
 
-每个会话拥有独立的临时 MCP runtime。Agent 可以连接用户明确提供、或工作区内可验证的 stdio / Streamable HTTP MCP Server，先读取工具 schema，再执行调用。连接只在当前 app-server 进程的对应会话中复用，删除会话或服务退出时自动释放。
+每个会话拥有独立的临时 MCP runtime。Agent 可以连接用户明确提供、工作区内可验证或 Plugin 注册的 stdio / Streamable HTTP MCP Server，先读取工具 schema，再执行调用。Plugin MCP 工具会包装为稳定的 `<connector>__<tool>` 名称，并把 MCP 的只读、破坏性与开放世界 annotation 映射到 Threadlight 的工具影响元数据。连接只在当前 app-server 进程的对应会话中复用，删除会话或服务退出时自动释放。
+
+远程 MCP 支持 OAuth 2.1 authorization code + S256 PKCE。Electron 主进程负责打开授权页，并使用 `safeStorage` 把 token、PKCE verifier、动态客户端信息和发现状态加密写入独立的 `~/.threadlight/connection-store.json`。renderer、Settings 和会话快照都不保存 access token；会话只记录 connector ID、版本与当轮 `capabilityRefs` 选择。
 
 ### Prompt、Skills 与 Plugins
 
@@ -273,12 +275,23 @@ Skills 使用兼容 Agent Skills 的 `SKILL.md` 格式，并按渐进披露加�
 - 项目 Skills：`<project>/.agents/skills/<skill-name>/SKILL.md`
 - 用户 Skills：`~/.agents/skills/<skill-name>/SKILL.md`
 - 显式调用：在请求中写 `$skill-name`
-- 桌面端选择：在输入框中键入 `@`，搜索 Skill 或已固定配置的 MCP 能力；选择结果以 chip 显示，并仅对当前一轮生效
+- 桌面端选择：在输入框中键入 `@`，按“工具 / 技能”分组搜索；仓库级 Skills 与精选能力会直接显示，用户全局和其他长尾 Skills 输入关键词后出现；选择结果以 chip 显示，并仅对当前一轮生效
+- Composer `+` 菜单：集中提供添加文件与 Plan 模式，使用和 `@` 菜单一致的键盘交互
+- 可强调工具使用显式应用侧 allowlist；当前包含 Plan 与可用时的 Computer Use，不会把 `exec_command` 等内部工具自动暴露到 `@`
 - 隐式调用：Agent 根据描述匹配后使用只读 `skill_read` 加载完整工作流
 
 内置 `$skill-creator` 可以通过原子、受校验的 `skill_create` 工具创建项目或用户级 instruction-only Skill。新 Skill 从下一个任务开始被发现。
 
-Skills-only Plugin 使用 `.codex-plugin/plugin.json`，目前仅接受 `skills` 能力；声明 MCP、App 或 Hook 的插件会被拒绝。插件可以放在项目或用户的 `.agents/plugins`、`.threadlight/plugins` 目录中，其 Skills 以 `$plugin-name:skill-name` 调用。此阶段不会执行第三方插件代码。
+Plugin 使用 `.codex-plugin/plugin.json`，可以声明 `skills` 和 `mcpServers`。`mcpServers` 指向插件内的 JSON 清单；远程地址可以直接写 HTTPS URL，也可以通过 `urlEnv` 在运行时注入。插件可以放在项目或用户的 `.agents/plugins`、`.threadlight/plugins` 目录中，其 Skills 以 `$plugin-name:skill-name` 调用。内置 Documents、PDF 与 Gmail 也使用同一目录结构。
+
+Gmail 使用 Google 官方 Remote MCP endpoint。首次从 `@` 选择 Gmail 时，Threadlight 会打开独立连接窗口：
+
+1. 在 Google Cloud 项目启用 Gmail API 与 Gmail MCP API。
+2. 配置 OAuth consent screen，并加入 `gmail.readonly`、`gmail.compose` scopes。
+3. 创建 Web application OAuth Client，把连接窗口显示的 localhost 地址加入 Authorized redirect URIs。
+4. 在连接窗口输入 Client ID 与 Client Secret，随后在浏览器完成授权。
+
+Client Secret、PKCE verifier 与 token 只会经 Electron `safeStorage` 加密写入 `connection-store.json`，不会进入 Settings、会话快照或日志。Google 的完整配置要求见 [Configure the Gmail MCP server](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server)。
 
 ### Computer Use
 
@@ -300,12 +313,13 @@ Electron 桌面端的 `computer_share` 可以：
 
 ```text
 ~/.threadlight/
-├── settings.json                 # 加密后的密钥与全局偏好
+├── settings.json                 # 模型密钥与全局偏好
+├── connection-store.json         # safeStorage 加密的 connector OAuth 状态
 └── project-map.json              # 项目、路径与会话摘要索引
 
 <project>/.threadlight/
 ├── MEMORY.md                     # 用户可读的长期项目记忆
-├── plugins/                      # 可选的项目级 Skills-only Plugins
+├── plugins/                      # 可选的项目级 Plugins
 └── conversations/
     └── <threadId>.json           # 会话与受限、脱敏的 opaque model state
 ```

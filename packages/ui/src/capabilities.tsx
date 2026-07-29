@@ -1,5 +1,31 @@
-import type { CapabilityDescriptor } from "@threadlight/protocol";
-import { AtSign, Plug, Sparkles, X } from "lucide-react";
+import type {
+  CapabilityDescriptor,
+  ConnectorStatusData,
+  MessageCapabilityData,
+} from "@threadlight/protocol";
+import {
+  AtSign,
+  Check,
+  FileText,
+  FileType2,
+  ListTodo,
+  LoaderCircle,
+  Mail,
+  Monitor,
+  Paperclip,
+  Plug,
+  Settings2,
+  Sparkles,
+  Wrench,
+  X,
+} from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import { useI18n } from "./i18n.js";
 
@@ -7,6 +33,14 @@ export interface CapabilityQuery {
   start: number;
   end: number;
   query: string;
+}
+
+export interface ComposerAddAction {
+  id: "attachment" | "plan";
+  name: string;
+  description: string;
+  icon: "attachment" | "plan";
+  active?: boolean;
 }
 
 export function capabilityQueryAt(
@@ -34,15 +68,45 @@ export function filterCapabilities(
   selectedIds: ReadonlySet<string>,
 ): CapabilityDescriptor[] {
   const normalized = query.trim().toLocaleLowerCase();
-  return capabilities.filter((capability) => {
-    if (selectedIds.has(capability.id)) return false;
-    if (!normalized) return true;
-    return [capability.name, capability.description, capability.source]
-      .filter(Boolean)
-      .some((value) =>
-        value!.toLocaleLowerCase().includes(normalized),
-      );
-  });
+  return capabilities
+    .filter((capability) => {
+      if (
+        selectedIds.has(capability.id) ||
+        (capability.connectorRef !== undefined &&
+          selectedIds.has(capability.connectorRef)) ||
+        capability.visibility === "hidden"
+      ) {
+        return false;
+      }
+      if (!normalized) {
+        return capability.visibility === "featured";
+      }
+      return [
+        capability.name,
+        capability.description,
+        capability.source,
+        ...(capability.keywords ?? []),
+      ]
+        .filter(Boolean)
+        .some((value) =>
+          value!.toLocaleLowerCase().includes(normalized),
+        );
+    })
+    .sort((left, right) => {
+      if (left.kind === right.kind) return 0;
+      return left.kind === "tool" ? -1 : 1;
+    });
+}
+
+export function connectorCapabilityForSelection(
+  capability: CapabilityDescriptor,
+  catalog: readonly CapabilityDescriptor[],
+): CapabilityDescriptor | undefined {
+  const connectorRef = capability.id.startsWith("mcp:")
+    ? capability.id
+    : capability.connectorRef;
+  if (!connectorRef) return;
+  return catalog.find(({ id }) => id === connectorRef);
 }
 
 export function nextCapabilityIndex(
@@ -72,10 +136,12 @@ export function removeCapabilityQuery(
 export function CapabilityChips({
   capabilities,
   disabled,
+  onManage,
   onRemove,
 }: {
   capabilities: readonly CapabilityDescriptor[];
   disabled: boolean;
+  onManage?(capability: CapabilityDescriptor): void;
   onRemove(capability: CapabilityDescriptor): void;
 }) {
   const { t } = useI18n();
@@ -87,8 +153,23 @@ export function CapabilityChips({
     >
       {capabilities.map((capability) => (
         <span className="capability-chip" key={capability.id}>
-          <CapabilityIcon kind={capability.kind} />
+          <CapabilityIcon icon={capability.icon} kind={capability.kind} />
           <span>{capability.name}</span>
+          {onManage &&
+            (capability.id.startsWith("mcp:") ||
+              capability.connectorRef !== undefined) && (
+              <button
+                type="button"
+                className="capability-chip-manage pressable"
+                disabled={disabled}
+                aria-label={t("manageConnector", {
+                  name: capability.name,
+                })}
+                onClick={() => onManage(capability)}
+              >
+                <Settings2 size={12} />
+              </button>
+            )}
           <button
             type="button"
             className="capability-chip-remove pressable"
@@ -100,6 +181,69 @@ export function CapabilityChips({
           >
             <X size={12} />
           </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function MessageCapabilityReceipts({
+  role,
+  capabilities,
+  capabilityRefs,
+  catalog,
+}: {
+  role: "user" | "assistant";
+  capabilities?: readonly MessageCapabilityData[];
+  capabilityRefs?: readonly string[];
+  catalog: readonly CapabilityDescriptor[];
+}) {
+  const { t } = useI18n();
+  const resolved =
+    capabilities && capabilities.length > 0
+      ? capabilities
+      : (capabilityRefs ?? [])
+          .map((ref) => catalog.find(({ id }) => id === ref))
+          .filter(
+            (capability): capability is CapabilityDescriptor =>
+              capability !== undefined,
+          );
+  if (resolved.length === 0) return null;
+
+  return (
+    <div
+      className={`message-capability-receipts ${role}`}
+      aria-label={
+        role === "user"
+          ? t("capabilitiesSelectedForTurn")
+          : t("capabilitiesApplied")
+      }
+    >
+      {resolved.map((capability) => (
+        <span className="message-capability-receipt" key={capability.id}>
+          <span className="message-capability-icon" aria-hidden="true">
+            <CapabilityIcon
+              icon={capability.icon}
+              kind={capability.kind}
+            />
+          </span>
+          <span className="message-capability-name">
+            {capability.name}
+          </span>
+          <span className="message-capability-status">
+            {role === "user"
+              ? t("selectedForTurn")
+              : capability.kind === "skill"
+                ? t("skillLoaded")
+                : t("toolEnabled")}
+          </span>
+          {role === "assistant" && (
+            <Check
+              className="message-capability-check"
+              size={12}
+              aria-hidden="true"
+            />
+          )}
         </span>
       ))}
     </div>
@@ -119,16 +263,11 @@ export function CapabilityMenu({
 }) {
   const { t } = useI18n();
   return (
-    <div
+    <MenuFrame
       id="composer-capability-menu"
-      className="capability-menu"
-      role="listbox"
-      aria-label={t("capabilities")}
+      icon={<AtSign size={14} />}
+      title={t("capabilities")}
     >
-      <div className="capability-menu-heading">
-        <AtSign size={14} />
-        <span>{t("capabilities")}</span>
-      </div>
       {loading ? (
         <p className="capability-menu-empty">
           {t("loadingCapabilities")}
@@ -138,46 +277,345 @@ export function CapabilityMenu({
           {t("noMatchingCapabilities")}
         </p>
       ) : (
-        capabilities.map((capability, index) => (
+        (["tool", "skill"] as const).map((kind) => {
+          const grouped = capabilities
+            .map((capability, index) => ({ capability, index }))
+            .filter(({ capability }) => capability.kind === kind);
+          if (grouped.length === 0) return null;
+          return (
+            <div className="capability-group" key={kind}>
+              <p className="capability-group-label">
+                {kind === "tool"
+                  ? t("capabilityGroupTools")
+                  : t("capabilityGroupSkills")}
+              </p>
+              {grouped.map(({ capability, index }) => (
+                <button
+                  type="button"
+                  id={`composer-capability-${index}`}
+                  className="capability-option"
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  key={capability.id}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    onSelect(capability);
+                  }}
+                >
+                  <span
+                    className={`capability-option-icon icon-${capability.icon ?? capability.kind}`}
+                    aria-hidden="true"
+                  >
+                    <CapabilityIcon
+                      icon={capability.icon}
+                      kind={capability.kind}
+                    />
+                  </span>
+                  <span className="capability-option-copy">
+                    <strong>{capability.name}</strong>
+                    <small>{capability.description}</small>
+                  </span>
+                  <span className="capability-option-kind">
+                    {capability.status === "needs_configuration"
+                      ? t("capabilityNeedsConfiguration")
+                      : capability.status === "needs_authorization"
+                        ? t("capabilityNeedsAuthorization")
+                      : kind === "skill"
+                        ? t("capabilityKindSkill")
+                        : t("capabilityKindTool")}
+                  </span>
+                </button>
+              ))}
+            </div>
+          );
+        })
+      )}
+    </MenuFrame>
+  );
+}
+
+export function ConnectorSetupDialog({
+  capability,
+  status,
+  busy,
+  error,
+  onCancel,
+  onConnect,
+  onDisconnect,
+}: {
+  capability: CapabilityDescriptor;
+  status: ConnectorStatusData;
+  busy: boolean;
+  error?: string;
+  onCancel(): void;
+  onConnect(clientId: string, clientSecret: string): void;
+  onDisconnect(): void;
+}) {
+  const { t } = useI18n();
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const firstField = useRef<HTMLInputElement>(null);
+  const continueButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (status.configured) continueButton.current?.focus();
+    else firstField.current?.focus();
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [busy, onCancel, status.configured]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    onConnect(clientId.trim(), clientSecret);
+  }
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        className="connector-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="connector-dialog-title"
+        aria-describedby="connector-dialog-description"
+      >
+        <div className="connector-dialog-heading">
+          <span className="connector-dialog-icon" aria-hidden="true">
+            <CapabilityIcon icon={capability.icon} kind="tool" />
+          </span>
+          <div>
+            <h2 id="connector-dialog-title">
+              {status.authorized
+                ? t("manageCapabilityConnection", {
+                    name: capability.name,
+                  })
+                : t("connectCapability", { name: capability.name })}
+            </h2>
+            <p id="connector-dialog-description">
+              {status.authorized
+                ? t("connectorConnectedDescription")
+                : status.configured
+                  ? t("connectorAuthorizationDescription")
+                  : t("connectorConfigurationDescription")}
+            </p>
+          </div>
+        </div>
+        <form onSubmit={submit}>
+          {!status.configured && (
+            <div className="connector-fields">
+              <label>
+                <span>{t("oauthClientId")}</span>
+                <input
+                  ref={firstField}
+                  value={clientId}
+                  onChange={(event) => setClientId(event.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  disabled={busy}
+                />
+              </label>
+              <label>
+                <span>{t("oauthClientSecret")}</span>
+                <input
+                  type="password"
+                  value={clientSecret}
+                  onChange={(event) =>
+                    setClientSecret(event.target.value)
+                  }
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                  disabled={busy}
+                />
+              </label>
+              <label>
+                <span>{t("oauthRedirectUri")}</span>
+                <input
+                  className="connector-redirect"
+                  value={status.redirectUrl}
+                  readOnly
+                  onFocus={(event) => event.currentTarget.select()}
+                />
+              </label>
+              <p className="connector-help">
+                {t("connectorConfigurationHelp")}
+              </p>
+            </div>
+          )}
+          {status.configured && (
+            <div className="connector-authorize-note">
+              <p>
+                {status.authorized
+                  ? t("connectorConnectedNotice")
+                  : t("connectorBrowserNotice")}
+              </p>
+            </div>
+          )}
+          {error && (
+            <p className="connector-dialog-error" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="connector-dialog-actions">
+            {status.configured && (
+              <button
+                type="button"
+                className="dialog-button quiet-danger pressable"
+                disabled={busy}
+                onClick={onDisconnect}
+              >
+                {t("disconnect")}
+              </button>
+            )}
+            <span />
+            <button
+              type="button"
+              className="dialog-button secondary pressable"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              {t("cancel")}
+            </button>
+            {status.authorized ? (
+              <button
+                ref={continueButton}
+                type="button"
+                className="dialog-button primary pressable"
+                disabled={busy}
+                onClick={onCancel}
+              >
+                {t("done")}
+              </button>
+            ) : (
+              <button
+                ref={continueButton}
+                type="submit"
+                className="dialog-button primary pressable"
+                disabled={
+                  busy ||
+                  (!status.configured &&
+                    (!clientId.trim() || !clientSecret))
+                }
+              >
+                {busy && <LoaderCircle className="spin" size={14} />}
+                {busy
+                  ? t("waitingForAuthorization")
+                  : status.configured
+                    ? t("continueToAuthorization")
+                    : t("configureAndConnect")}
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+export function ComposerAddMenu({
+  actions,
+  activeIndex,
+  onSelect,
+}: {
+  actions: readonly ComposerAddAction[];
+  activeIndex: number;
+  onSelect(action: ComposerAddAction): void;
+}) {
+  const { t } = useI18n();
+  return (
+    <MenuFrame
+      id="composer-add-menu"
+      icon={<Plug size={14} />}
+      title={t("add")}
+    >
+      <div className="capability-group">
+        {actions.map((action, index) => (
           <button
             type="button"
-            id={`composer-capability-${index}`}
+            id={`composer-add-${index}`}
             className="capability-option"
             role="option"
             aria-selected={index === activeIndex}
-            key={capability.id}
+            aria-pressed={action.active}
+            key={action.id}
             onPointerDown={(event) => {
               event.preventDefault();
-              onSelect(capability);
+              onSelect(action);
             }}
           >
-            <span className="capability-option-icon" aria-hidden="true">
-              <CapabilityIcon kind={capability.kind} />
+            <span
+              className={`capability-option-icon icon-${action.icon}`}
+              aria-hidden="true"
+            >
+              <CapabilityIcon icon={action.icon} kind="tool" />
             </span>
             <span className="capability-option-copy">
-              <strong>{capability.name}</strong>
-              <small>{capability.description}</small>
+              <strong>{action.name}</strong>
+              <small>{action.description}</small>
             </span>
-            <span className="capability-option-kind">
-              {capability.kind === "skill"
-                ? t("capabilityKindSkill")
-                : t("capabilityKindMcp")}
-            </span>
+            {action.active && (
+              <span className="capability-option-kind">
+                {t("enabled")}
+              </span>
+            )}
           </button>
-        ))
-      )}
+        ))}
+      </div>
+    </MenuFrame>
+  );
+}
+
+function MenuFrame({
+  id,
+  icon,
+  title,
+  children,
+}: {
+  id: string;
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      id={id}
+      className="capability-menu"
+      role="listbox"
+      aria-label={title}
+    >
+      <div className="capability-menu-heading">
+        {icon}
+        <span>{title}</span>
+      </div>
+      {children}
     </div>
   );
 }
 
 function CapabilityIcon({
+  icon,
   kind,
 }: {
+  icon?: string;
   kind: CapabilityDescriptor["kind"];
 }) {
-  return kind === "skill" ? (
-    <Sparkles size={14} />
-  ) : (
-    <Plug size={14} />
-  );
+  if (icon === "gmail") return <Mail size={14} />;
+  if (icon === "documents") return <FileText size={14} />;
+  if (icon === "pdf") return <FileType2 size={14} />;
+  if (icon === "computer") return <Monitor size={14} />;
+  if (icon === "plan") return <ListTodo size={14} />;
+  if (icon === "attachment") return <Paperclip size={14} />;
+  if (icon === "skill-creator") return <Sparkles size={14} />;
+  if (icon === "plugin") return <Plug size={14} />;
+  if (kind === "skill") return <Sparkles size={14} />;
+  return <Wrench size={14} />;
 }

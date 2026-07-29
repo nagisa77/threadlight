@@ -1,0 +1,12 @@
+{
+  "name": "gmail",
+  "version": "1.1.0",
+  "description": "Search, read, and draft Gmail messages through an authenticated MCP connector.",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "presentation": {
+    "icon": "gmail",
+    "visibility": "featured",
+    "keywords": ["mail", "email", "inbox", "邮件", "收件箱"]
+  }
+}

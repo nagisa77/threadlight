@@ -1,0 +1,24 @@
+{
+  "servers": [
+    {
+      "id": "gmail",
+      "version": "1.1.0",
+      "name": "Gmail",
+      "description": "Search, read, and draft Gmail messages.",
+      "transport": "streamable_http",
+      "url": "https://gmailmcp.googleapis.com/mcp/v1",
+      "oauth": {
+        "clientSecretRequired": true,
+        "scopes": [
+          "https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.compose"
+        ]
+      },
+      "presentation": {
+        "icon": "gmail",
+        "visibility": "featured",
+        "keywords": ["mail", "email", "inbox", "draft", "邮件", "收件箱"]
+      }
+    }
+  ]
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   capabilityQueryAt,
+  connectorCapabilityForSelection,
   filterCapabilities,
   nextCapabilityIndex,
   removeCapabilityQuery,
@@ -14,13 +15,32 @@ const capabilities = [
     name: "documents",
     description: "Create and edit document artifacts",
     source: "builtin",
+    visibility: "featured" as const,
   },
   {
     id: "mcp:gmail",
-    kind: "mcp" as const,
+    kind: "tool" as const,
     name: "Gmail",
     description: "Search and read email",
     source: "fixed",
+    visibility: "featured" as const,
+  },
+  {
+    id: "skill:internal",
+    kind: "skill" as const,
+    name: "internal-review",
+    description: "Review an implementation",
+    source: "user",
+    visibility: "search" as const,
+    keywords: ["audit"],
+  },
+  {
+    id: "skill:repo-review",
+    kind: "skill" as const,
+    name: "repo-review",
+    description: "Review this repository",
+    source: "repo",
+    visibility: "featured" as const,
   },
 ];
 
@@ -54,7 +74,35 @@ describe("composer capabilities", () => {
         "",
         new Set(["skill:documents"]),
       ),
-    ).toEqual([capabilities[1]]);
+    ).toEqual([capabilities[1], capabilities[3]]);
+    expect(
+      filterCapabilities(capabilities, "audit", new Set()),
+    ).toEqual([capabilities[2]]);
+  });
+
+  it("resolves a plugin skill to its required connector", () => {
+    const gmailConnector = capabilities[1]!;
+    const gmailSkill = {
+      id: "skill:gmail",
+      kind: "skill" as const,
+      name: "Gmail",
+      description: "Use the Gmail workflow",
+      connectorRef: "mcp:gmail",
+    };
+
+    expect(
+      connectorCapabilityForSelection(gmailSkill, [
+        ...capabilities,
+        gmailSkill,
+      ]),
+    ).toBe(gmailConnector);
+    expect(
+      filterCapabilities(
+        [gmailSkill, gmailConnector],
+        "gmail",
+        new Set(["mcp:gmail"]),
+      ),
+    ).toEqual([]);
   });
 
   it("wraps keyboard selection and removes the trigger token", () => {

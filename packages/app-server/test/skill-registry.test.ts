@@ -116,6 +116,79 @@ describe("Skill Registry", () => {
     ).rejects.toThrow("already exists");
   });
 
+  it("keeps catalog entries whole, prioritizes plugin skills, and pages omitted skills", async () => {
+    const root = temporaryDirectory("threadlight-skill-catalog-");
+    const userSkills = join(root, "user-skills");
+    const gmailSkills = join(root, "gmail-skills");
+    for (let index = 0; index < 6; index += 1) {
+      writeSkill(
+        userSkills,
+        `verbose-${index}`,
+        `User workflow ${index} ${"detail ".repeat(40)}`,
+        `USER_WORKFLOW_${index}`,
+      );
+    }
+    writeSkill(
+      gmailSkills,
+      "gmail",
+      "Search and read Gmail messages.",
+      "GMAIL_WORKFLOW",
+    );
+    const registry = await SkillRegistry.discover({
+      sources: [
+        { scope: "user", root: userSkills },
+        {
+          scope: "plugin",
+          root: gmailSkills,
+          namespace: "gmail",
+          plugin: { name: "gmail", version: "1.0.0" },
+        },
+      ],
+      maxCatalogChars: 700,
+    });
+
+    const catalog = registry.catalogPrompt();
+    expect(catalog).toContain(
+      "$gmail:gmail: Search and read Gmail messages.",
+    );
+    expect(catalog).not.toMatch(/detail deta$/);
+    expect(registry.read("gmail").instructions).toContain("GMAIL_WORKFLOW");
+    expect(registry.list({ query: "verbose", limit: 2 })).toMatchObject({
+      skills: [
+        { invocationName: "verbose-0" },
+        { invocationName: "verbose-1" },
+      ],
+      nextCursor: "2",
+    });
+    expect(
+      registry.list({ query: "verbose", limit: 2, cursor: "2" }).skills,
+    ).toMatchObject([
+      { invocationName: "verbose-2" },
+      { invocationName: "verbose-3" },
+    ]);
+  });
+
+  it("rejects ambiguous short skill names with actionable invocation names", async () => {
+    const root = temporaryDirectory("threadlight-skill-alias-");
+    const sharedSkills = join(root, "shared-skills");
+    writeSkill(
+      sharedSkills,
+      "gmail",
+      "Work with mail.",
+      "MAIL_WORKFLOW",
+    );
+    const registry = await SkillRegistry.discover({
+      sources: [
+        { scope: "plugin", root: sharedSkills, namespace: "gmail" },
+        { scope: "plugin", root: sharedSkills, namespace: "workspace-mail" },
+      ],
+    });
+
+    expect(() => registry.read("gmail")).toThrow(
+      "gmail:gmail, workspace-mail:gmail",
+    );
+  });
+
   it("injects explicit skills and loads implicitly matched skills through skill_read", async () => {
     const root = temporaryDirectory("threadlight-skill-runtime-");
     const repoSkills = join(root, ".agents", "skills");

@@ -4,12 +4,16 @@ import { createInterface, type Interface as ReadlineInterface } from "node:readl
 import type { Duplex } from "node:stream";
 
 import type {
+  DesktopConnectionRequest,
   DesktopComputerRequest,
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
 } from "@threadlight/protocol";
-import { DESKTOP_COMPUTER_METHODS } from "@threadlight/protocol";
+import {
+  DESKTOP_COMPUTER_METHODS,
+  DESKTOP_CONNECTION_METHODS,
+} from "@threadlight/protocol";
 
 const APP_SERVER_UNAVAILABLE = -32010;
 
@@ -41,6 +45,9 @@ export interface AppServerProcessOptions {
   handleComputerRequest?(
     request: DesktopComputerRequest,
   ): Promise<unknown>;
+  handleConnectionRequest?(
+    request: DesktopConnectionRequest,
+  ): Promise<unknown>;
 }
 
 export class AppServerProcess {
@@ -48,6 +55,8 @@ export class AppServerProcess {
   private lines?: ReadlineInterface;
   private computerLines?: ReadlineInterface;
   private computerPipe?: Duplex;
+  private connectionLines?: ReadlineInterface;
+  private connectionPipe?: Duplex;
   private readonly pending = new Set<JsonRpcId>();
   private environment: NodeJS.ProcessEnv;
 
@@ -65,8 +74,9 @@ export class AppServerProcess {
         ...this.environment,
         ELECTRON_RUN_AS_NODE: "1",
         THREADLIGHT_COMPUTER_RPC_FD: "3",
+        THREADLIGHT_CONNECTION_RPC_FD: "4",
       },
-      stdio: ["pipe", "pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
     });
     this.child = child;
     this.lines = createInterface({ input: child.stdout });
@@ -77,10 +87,20 @@ export class AppServerProcess {
     }
     this.computerPipe = computerPipe;
     this.computerLines = createInterface({ input: computerPipe });
+    const connectionPipe = child.stdio[4] as Duplex | undefined;
+    if (!connectionPipe) {
+      child.kill();
+      throw new Error("Failed to create desktop connection RPC pipe");
+    }
+    this.connectionPipe = connectionPipe;
+    this.connectionLines = createInterface({ input: connectionPipe });
 
     this.lines.on("line", (line) => this.receive(line));
     this.computerLines.on("line", (line) => {
       void this.receiveComputer(line);
+    });
+    this.connectionLines.on("line", (line) => {
+      void this.receiveConnection(line);
     });
     child.stderr.on("data", (data: Buffer) => {
       process.stderr.write(`[app-server] ${data.toString()}`);
@@ -145,6 +165,10 @@ export class AppServerProcess {
     this.computerLines = undefined;
     this.computerPipe?.destroy();
     this.computerPipe = undefined;
+    this.connectionLines?.close();
+    this.connectionLines = undefined;
+    this.connectionPipe?.destroy();
+    this.connectionPipe = undefined;
   }
 
   private async receiveComputer(line: string): Promise<void> {
@@ -174,6 +198,38 @@ export class AppServerProcess {
             code: -32020,
             message: error instanceof Error ? error.message : String(error),
             ...toolErrorData(error),
+          },
+        })}\n`,
+      );
+    }
+  }
+
+  private async receiveConnection(line: string): Promise<void> {
+    const pipe = this.connectionPipe;
+    if (!pipe || !line.trim()) return;
+
+    let request: DesktopConnectionRequest | undefined;
+    try {
+      const value = JSON.parse(line) as unknown;
+      if (!isDesktopConnectionRequest(value)) {
+        throw new Error("Invalid desktop connection request");
+      }
+      request = value;
+      if (!this.options.handleConnectionRequest) {
+        throw new Error("Desktop connection service is unavailable");
+      }
+      const result = await this.options.handleConnectionRequest(request);
+      if (pipe.destroyed) return;
+      pipe.write(`${JSON.stringify({ jsonrpc: "2.0", id: request.id, result })}\n`);
+    } catch (error) {
+      if (!request || pipe.destroyed) return;
+      pipe.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32021,
+            message: error instanceof Error ? error.message : String(error),
           },
         })}\n`,
       );
@@ -218,6 +274,21 @@ function isDesktopComputerRequest(
     typeof request.method === "string" &&
     DESKTOP_COMPUTER_METHODS.includes(
       request.method as (typeof DESKTOP_COMPUTER_METHODS)[number],
+    )
+  );
+}
+
+function isDesktopConnectionRequest(
+  value: unknown,
+): value is DesktopConnectionRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const request = value as Record<string, unknown>;
+  return (
+    request.jsonrpc === "2.0" &&
+    (typeof request.id === "string" || typeof request.id === "number") &&
+    typeof request.method === "string" &&
+    DESKTOP_CONNECTION_METHODS.includes(
+      request.method as (typeof DESKTOP_CONNECTION_METHODS)[number],
     )
   );
 }

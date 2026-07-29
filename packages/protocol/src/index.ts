@@ -77,6 +77,28 @@ export type DesktopComputerRequest = JsonRpcRequest<
 
 export type DesktopComputerResponse = JsonRpcResponse<unknown>;
 
+export const DESKTOP_CONNECTION_METHODS = [
+  "connection/get",
+  "connection/set",
+  "connection/status",
+  "connection/configure",
+  "connection/invalidate",
+  "connection/create-state",
+  "connection/open-authorization",
+  "connection/take-code",
+  "connection/wait-code",
+] as const;
+
+export type DesktopConnectionMethod =
+  (typeof DESKTOP_CONNECTION_METHODS)[number];
+
+export type DesktopConnectionRequest = JsonRpcRequest<
+  DesktopConnectionMethod,
+  unknown
+> & { id: JsonRpcId };
+
+export type DesktopConnectionResponse = JsonRpcResponse<unknown>;
+
 export interface ToolCallData {
   id: string;
   name: string;
@@ -132,7 +154,12 @@ export interface ConversationProgressData {
   activities: readonly ConversationActivityData[];
 }
 
-export type CapabilityKind = "skill" | "mcp";
+export type CapabilityKind = "skill" | "tool";
+export type CapabilityVisibility = "featured" | "search" | "hidden";
+export type CapabilityStatus =
+  | "ready"
+  | "needs_configuration"
+  | "needs_authorization";
 
 export interface CapabilityDescriptor {
   id: string;
@@ -140,6 +167,33 @@ export interface CapabilityDescriptor {
   name: string;
   description: string;
   source?: string;
+  /** Stable icon name rendered by the client; never an arbitrary URL. */
+  icon?: string;
+  /** Featured entries appear before the user types. Search entries require a query. */
+  visibility?: CapabilityVisibility;
+  /** Additional local search terms that are not shown to the model. */
+  keywords?: readonly string[];
+  status?: CapabilityStatus;
+  /** Connector that must be ready before this capability can be selected. */
+  connectorRef?: string;
+}
+
+export interface MessageCapabilityData {
+  id: string;
+  kind: CapabilityKind;
+  name: string;
+  source?: string;
+  icon?: string;
+}
+
+export interface ConnectorStatusData {
+  capabilityId: string;
+  connectorId: string;
+  name: string;
+  status: CapabilityStatus;
+  configured: boolean;
+  authorized: boolean;
+  redirectUrl: string;
 }
 
 export type TurnMode = "default" | "plan";
@@ -181,6 +235,8 @@ export interface ConversationMessageData {
   text: string;
   attachments?: readonly AttachmentData[];
   capabilityRefs?: readonly string[];
+  /** Display-safe snapshot of capabilities selected or applied for this message. */
+  capabilities?: readonly MessageCapabilityData[];
   error?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
@@ -244,6 +300,27 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: { capabilities: readonly CapabilityDescriptor[] };
   };
+  "connector/status": {
+    params: { threadId: string; capabilityId: string };
+    result: ConnectorStatusData;
+  };
+  "connector/configure": {
+    params: {
+      threadId: string;
+      capabilityId: string;
+      clientId: string;
+      clientSecret: string;
+    };
+    result: ConnectorStatusData;
+  };
+  "connector/authorize": {
+    params: { threadId: string; capabilityId: string };
+    result: ConnectorStatusData;
+  };
+  "connector/disconnect": {
+    params: { threadId: string; capabilityId: string };
+    result: ConnectorStatusData;
+  };
   "turn/start": {
     params: {
       threadId: string;
@@ -283,6 +360,10 @@ export const THREADLIGHT_METHODS = [
   "thread/delete",
   "thread/suggestions",
   "capability/list",
+  "connector/status",
+  "connector/configure",
+  "connector/authorize",
+  "connector/disconnect",
   "turn/start",
   "turn/interrupt",
   "process/status",
@@ -304,6 +385,7 @@ export interface ThreadlightNotificationMap {
     turnId: string;
     output: string;
     usage: TokenUsageData;
+    capabilities?: readonly MessageCapabilityData[];
   };
   "turn/failed": {
     threadId: string;

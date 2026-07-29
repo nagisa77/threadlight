@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -13,6 +16,12 @@ const entry = fileURLToPath(
 );
 const computerEntry = fileURLToPath(
   new URL("./fixtures/computer-rpc-server.mjs", import.meta.url),
+);
+const connectionEntry = fileURLToPath(
+  new URL("./fixtures/connection-rpc-server.mjs", import.meta.url),
+);
+const realAppServerEntry = fileURLToPath(
+  new URL("../../../packages/app-server/dist/bin.js", import.meta.url),
 );
 
 describe("AppServerProcess", () => {
@@ -134,4 +143,94 @@ describe("AppServerProcess", () => {
     });
     server.stop();
   });
+
+  it("keeps connector credentials on a separate private child-process pipe", async () => {
+    let deliver: ((message: JsonRpcOutgoing) => void) | undefined;
+    const response = new Promise<JsonRpcOutgoing>((resolve) => {
+      deliver = resolve;
+    });
+    const server = new AppServerProcess({
+      entry: connectionEntry,
+      cwd: process.cwd(),
+      send: (message) => deliver?.(message),
+      handleConnectionRequest: async (request) => ({
+        handled: request.method,
+      }),
+    });
+
+    server.start();
+
+    await expect(response).resolves.toEqual({
+      jsonrpc: "2.0",
+      id: 92,
+      result: { handled: "connection/get" },
+    });
+    server.stop();
+  });
+
+  it("exposes connector management through the real desktop runtime", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "threadlight-desktop-runtime-"));
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServerProcess({
+      entry: realAppServerEntry,
+      cwd,
+      environment: {
+        OPENAI_API_KEY: "fixture-openai-key",
+        THREADLIGHT_COMPUTER_USE: "0",
+      },
+      send: (message) => messages.push(message),
+      handleConnectionRequest: async (request) => {
+        if (request.method === "connection/status") {
+          return {
+            id: "gmail",
+            version: "1.1.0",
+            configured: false,
+            authorized: false,
+          };
+        }
+        throw new Error(`Unexpected connection request: ${request.method}`);
+      },
+    });
+
+    try {
+      server.start();
+      server.send({ jsonrpc: "2.0", id: 10, method: "initialize" });
+      await waitForResponse(messages, 10);
+      server.send({ jsonrpc: "2.0", id: 11, method: "thread/start" });
+      const started = await waitForResponse(messages, 11);
+      const threadId = (started as { result: { threadId: string } }).result
+        .threadId;
+      server.send({
+        jsonrpc: "2.0",
+        id: 12,
+        method: "connector/status",
+        params: { threadId, capabilityId: "mcp:gmail" },
+      });
+
+      await expect(waitForResponse(messages, 12)).resolves.toMatchObject({
+        result: {
+          capabilityId: "mcp:gmail",
+          status: "needs_configuration",
+          configured: false,
+        },
+      });
+    } finally {
+      server.stop();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });
+
+async function waitForResponse(
+  messages: readonly JsonRpcOutgoing[],
+  id: number,
+): Promise<JsonRpcOutgoing> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const message = messages.find(
+      (candidate) => "id" in candidate && candidate.id === id,
+    );
+    if (message) return message;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error(`Timed out waiting for response ${id}`);
+}

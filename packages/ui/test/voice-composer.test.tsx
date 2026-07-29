@@ -36,7 +36,7 @@ describe("voice composer", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="添加图片或文件"');
+    expect(html).toContain('aria-label="添加"');
     expect(html).toContain('type="file"');
     expect(html).toContain('multiple=""');
     client.dispose();

@@ -31,10 +31,39 @@ import { resolve } from "node:path";
 import { AppServer } from "./app-server.js";
 import { FileConversationStore } from "./conversation-store.js";
 import { createDesktopComputerClientFromEnvironment } from "./desktop-computer-client.js";
+import { createDesktopConnectionClientFromEnvironment } from "./desktop-connection-client.js";
 import { ModelStatePersistence } from "./model-state-persistence.js";
 import { jsonLineSender, serveJsonLines } from "./stdio.js";
-import { createSkillPluginThreadRuntime } from "./thread-extensions.js";
+import {
+  createSkillPluginThreadRuntime,
+  type MentionableToolCapability,
+} from "./thread-extensions.js";
 import { createWorkspaceAgentFactory } from "./workspace-agent.js";
+
+const MENTIONABLE_TOOL_CAPABILITIES = {
+  plan: {
+    id: "plan",
+    name: "Plan",
+    description:
+      "Research first and produce a controlled, executable plan for this turn.",
+    prompt:
+      "The user explicitly selected @Plan. Treat this turn as a planning request and follow the controlled Plan mode workflow.",
+    icon: "plan",
+    keywords: ["plan", "planning", "计划", "规划"],
+    visibility: "featured",
+  },
+  computer: {
+    id: "computer",
+    name: "Computer Use",
+    description:
+      "Emphasize visual interaction with desktop applications for this turn.",
+    prompt:
+      "The user explicitly selected @Computer Use. Prefer the computer tools for visual desktop interaction when they are relevant to the request.",
+    icon: "computer",
+    keywords: ["desktop", "screen", "mac", "电脑", "桌面"],
+    visibility: "featured",
+  },
+} satisfies Record<string, MentionableToolCapability>;
 
 const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
 const providerApiKey = apiKeyFor(providerId, process.env);
@@ -62,6 +91,7 @@ const projectMemory = new ProjectMemoryStore(workspaceRoot);
 const processManager = new ProcessManager();
 const planRuntime = new PlanToolRuntime();
 const desktopComputer = createDesktopComputerClientFromEnvironment();
+const desktopConnections = createDesktopConnectionClientFromEnvironment();
 await projectMemory.ensure();
 const tools = [
   createUpdatePlanTool({ workspaceRoot, runtime: planRuntime }),
@@ -131,22 +161,41 @@ const server = new AppServer({
   agentFactory,
   send,
   threadRuntimeFactory: async (restoredSnapshot) => {
-    const runtime = new ConversationMcpRuntime({ workspaceRoot });
+    const runtime = new ConversationMcpRuntime({
+      workspaceRoot,
+      ...(desktopConnections
+        ? {
+            oauthProviderFactory: (spec) =>
+              desktopConnections.oauthProvider(spec),
+          }
+        : {}),
+    });
     const extensions = await createSkillPluginThreadRuntime(
-      { workspaceRoot, mcpRuntime: runtime },
+      {
+        workspaceRoot,
+        mcpRuntime: runtime,
+        ...(desktopConnections
+          ? { connections: desktopConnections }
+          : {}),
+        mentionableTools: [
+          MENTIONABLE_TOOL_CAPABILITIES.plan,
+          ...(computerUseEnabled
+            ? [MENTIONABLE_TOOL_CAPABILITIES.computer]
+            : []),
+        ],
+      },
       restoredSnapshot,
     );
     return {
+      ...extensions,
       tools: [
         ...extensions.tools,
         createMcpConnectTool(runtime),
         createMcpCallTool(runtime),
       ],
-      promptBlocks: extensions.promptBlocks,
-      promptBlocksForTurn: extensions.promptBlocksForTurn,
-      capabilities: extensions.capabilities,
-      resolveCapabilities: extensions.resolveCapabilities,
-      snapshot: extensions.snapshot,
+      get capabilities() {
+        return extensions.capabilities;
+      },
       dispose: () => runtime.dispose(),
     };
   },
@@ -171,6 +220,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
       server.dispose(),
       processManager.dispose(),
       Promise.resolve(desktopComputer?.dispose()),
+      Promise.resolve(desktopConnections?.dispose()),
     ]).finally(() => process.exit(0));
   });
 }

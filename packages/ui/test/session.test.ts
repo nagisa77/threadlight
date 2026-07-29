@@ -187,16 +187,36 @@ describe("sessionReducer", () => {
     });
   });
 
-  it("keeps selected capability references on the optimistic message", () => {
-    const state = sessionReducer(initialSessionState, {
+  it("keeps selected capability receipts and applies them on completion", () => {
+    const documents = {
+      id: "skill:documents",
+      kind: "skill" as const,
+      name: "Documents",
+      source: "builtin",
+      icon: "documents",
+    };
+    let state = sessionReducer(initialSessionState, {
       type: "message.sent",
       id: "message-1",
       text: "Create a brief",
       capabilityRefs: ["skill:documents"],
+      capabilities: [documents],
     });
 
     expect(state.messages[0]).toMatchObject({
       capabilityRefs: ["skill:documents"],
+      capabilities: [documents],
+    });
+
+    state = sessionReducer(state, {
+      type: "turn.completed",
+      id: "message-2",
+      output: "Done",
+      capabilities: [documents],
+    });
+    expect(state.messages[1]).toMatchObject({
+      role: "assistant",
+      capabilities: [documents],
     });
   });
 

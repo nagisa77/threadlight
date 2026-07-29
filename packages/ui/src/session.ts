@@ -13,6 +13,7 @@ import {
   type ConversationActivityData,
   type ConversationMessageData,
   type ConversationProgressData,
+  type MessageCapabilityData,
   type ProcessSnapshotData,
   type TurnMode,
 } from "@threadlight/protocol";
@@ -26,6 +27,7 @@ export interface ConversationMessage {
   text: string;
   attachments?: readonly AttachmentData[];
   capabilityRefs?: readonly string[];
+  capabilities?: readonly MessageCapabilityData[];
   error?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
@@ -60,11 +62,17 @@ export type SessionAction =
       text: string;
       attachments?: readonly AttachmentData[];
       capabilityRefs?: readonly string[];
+      capabilities?: readonly MessageCapabilityData[];
       mode?: TurnMode;
     }
   | { type: "message.rejected"; id: string; error: string }
   | { type: "turn.started"; mode: TurnMode }
-  | { type: "turn.completed"; id: string; output: string }
+  | {
+      type: "turn.completed";
+      id: string;
+      output: string;
+      capabilities?: readonly MessageCapabilityData[];
+    }
   | { type: "turn.failed"; id: string; error: string }
   | { type: "agent.event"; event: AgentEventData }
   | { type: "process.updated"; process: ProcessSnapshotData };
@@ -125,6 +133,9 @@ export function sessionReducer(
             ...(action.capabilityRefs?.length
               ? { capabilityRefs: action.capabilityRefs }
               : {}),
+            ...(action.capabilities?.length
+              ? { capabilities: action.capabilities }
+              : {}),
           },
         ],
       };
@@ -149,7 +160,13 @@ export function sessionReducer(
           : {}),
       };
     case "turn.completed":
-      return completeTurn(state, action.id, action.output);
+      return completeTurn(
+        state,
+        action.id,
+        action.output,
+        false,
+        action.capabilities,
+      );
     case "turn.failed":
       return completeTurn(state, action.id, action.error, true);
     case "agent.event":
@@ -234,6 +251,7 @@ function completeTurn(
   id: string,
   text: string,
   error = false,
+  capabilities: readonly MessageCapabilityData[] = [],
 ): SessionState {
   return {
     ...state,
@@ -251,6 +269,7 @@ function completeTurn(
         error,
         ...(state.progress.length > 0 ? { progress: state.progress } : {}),
         ...(state.plan ? { plan: state.plan } : {}),
+        ...(!error && capabilities.length > 0 ? { capabilities } : {}),
       },
     ],
   };
@@ -391,11 +410,12 @@ export function useThreadlightSession(
       client.on("turn/started", ({ threadId, mode }) => {
         updateSession(threadId, { type: "turn.started", mode });
       }),
-      client.on("turn/completed", ({ threadId, output }) => {
+      client.on("turn/completed", ({ threadId, output, capabilities }) => {
         updateSession(threadId, {
           type: "turn.completed",
           id: crypto.randomUUID(),
           output,
+          capabilities,
         });
       }),
       client.on("turn/failed", ({ threadId, error }) => {
@@ -518,7 +538,18 @@ export function useThreadlightSession(
         mode,
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(capabilities.length > 0
-          ? { capabilityRefs: capabilities.map(({ id }) => id) }
+          ? {
+              capabilityRefs: capabilities.map(({ id }) => id),
+              capabilities: capabilities.map(
+                ({ id, kind, name, source, icon }) => ({
+                  id,
+                  kind,
+                  name,
+                  ...(source ? { source } : {}),
+                  ...(icon ? { icon } : {}),
+                }),
+              ),
+            }
           : {}),
       });
       const started = await requestTurnStart(

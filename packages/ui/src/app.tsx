@@ -13,6 +13,7 @@ import type {
   AgentPlanData,
   AttachmentData,
   CapabilityDescriptor,
+  ConnectorStatusData,
   TurnMode,
 } from "@threadlight/protocol";
 import {
@@ -27,7 +28,6 @@ import {
   FileDiff,
   FileText,
   LoaderCircle,
-  ListTodo,
   Mic,
   Monitor,
   NotebookText,
@@ -35,6 +35,7 @@ import {
   PanelRight,
   PencilLine,
   PictureInPicture2,
+  Plus,
   RotateCcw,
   Settings,
   ShieldAlert,
@@ -49,11 +50,16 @@ import {
 import {
   CapabilityChips,
   CapabilityMenu,
+  MessageCapabilityReceipts,
+  ComposerAddMenu,
+  ConnectorSetupDialog,
   capabilityQueryAt,
+  connectorCapabilityForSelection,
   filterCapabilities,
   nextCapabilityIndex,
   removeCapabilityQuery,
   type CapabilityQuery,
+  type ComposerAddAction,
 } from "./capabilities.js";
 import {
   useThreadlightSession,
@@ -315,7 +321,16 @@ function ThreadlightAppContent({
   const [capabilityQuery, setCapabilityQuery] =
     useState<CapabilityQuery>();
   const [activeCapabilityIndex, setActiveCapabilityIndex] = useState(0);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [activeAddIndex, setActiveAddIndex] = useState(0);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+  const [connectorSetup, setConnectorSetup] = useState<{
+    capability: CapabilityDescriptor;
+    selection: CapabilityDescriptor;
+    status: ConnectorStatusData;
+  }>();
+  const [connectorBusy, setConnectorBusy] = useState(false);
+  const [connectorError, setConnectorError] = useState<string>();
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
   const [switchingProject, setSwitchingProject] = useState(false);
@@ -393,18 +408,43 @@ function ThreadlightAppContent({
     ? `${state.threadId}\u0000${language}`
     : "";
   const selectedCapabilityIds = new Set(
-    selectedCapabilities.map(({ id }) => id),
+    selectedCapabilities.flatMap(({ id, connectorRef }) =>
+      connectorRef ? [id, connectorRef] : [id],
+    ),
   );
   const filteredCapabilities = filterCapabilities(
     capabilities,
     capabilityQuery?.query ?? "",
     selectedCapabilityIds,
   );
+  const addActions: ComposerAddAction[] = [
+    ...(attachmentStage
+      ? [
+          {
+            id: "attachment" as const,
+            name: t("addAttachment"),
+            description: t("addAttachmentDescription"),
+            icon: "attachment" as const,
+          },
+        ]
+      : []),
+    {
+      id: "plan",
+      name: t("planMode"),
+      description: t("planModeDescription"),
+      icon: "plan",
+      active: composerMode === "plan",
+    },
+  ];
 
   useEffect(() => {
     setSelectedCapabilities([]);
     setCapabilityQuery(undefined);
+    setAddMenuOpen(false);
     setActiveCapabilityIndex(0);
+    setConnectorSetup(undefined);
+    setConnectorBusy(false);
+    setConnectorError(undefined);
     if (state.connection !== "ready" || !state.threadId) {
       setCapabilities([]);
       setCapabilitiesLoading(false);
@@ -429,16 +469,17 @@ function ThreadlightAppContent({
   }, [client, state.connection, state.threadId]);
 
   useEffect(() => {
-    if (!capabilityQuery) return;
+    if (!capabilityQuery && !addMenuOpen) return;
     const closeFromOutside = (event: globalThis.PointerEvent) => {
       if (!composerRoot.current?.contains(event.target as Node)) {
         setCapabilityQuery(undefined);
+        setAddMenuOpen(false);
       }
     };
     window.addEventListener("pointerdown", closeFromOutside);
     return () =>
       window.removeEventListener("pointerdown", closeFromOutside);
-  }, [capabilityQuery]);
+  }, [addMenuOpen, capabilityQuery]);
 
   useEffect(() => {
     if (!capabilityQuery || filteredCapabilities.length === 0) return;
@@ -1362,6 +1403,29 @@ function ThreadlightAppContent({
       cancelVoiceInput();
       return;
     }
+    if (addMenuOpen) {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        setActiveAddIndex((current) =>
+          nextCapabilityIndex(current, addActions.length, delta),
+        );
+        return;
+      }
+      if (
+        (event.key === "Enter" || event.key === "Tab") &&
+        addActions[activeAddIndex]
+      ) {
+        event.preventDefault();
+        selectAddAction(addActions[activeAddIndex]);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setAddMenuOpen(false);
+        return;
+      }
+    }
     if (capabilityQuery) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -1403,25 +1467,209 @@ function ThreadlightAppContent({
   }
 
   function updateCapabilityQuery(value: string, cursor: number | null) {
-    setCapabilityQuery(capabilityQueryAt(value, cursor));
+    const nextQuery = capabilityQueryAt(value, cursor);
+    setCapabilityQuery(nextQuery);
+    if (nextQuery) setAddMenuOpen(false);
     setActiveCapabilityIndex(0);
+  }
+
+  function selectAddAction(action: ComposerAddAction) {
+    setAddMenuOpen(false);
+    setActiveAddIndex(0);
+    if (action.id === "attachment") {
+      fileInput.current?.click();
+    } else {
+      setComposerMode((mode) => {
+        const next = mode === "plan" ? "default" : "plan";
+        if (next === "default") {
+          setSelectedCapabilities((current) =>
+            current.filter(({ id }) => id !== "tool:plan"),
+          );
+        }
+        return next;
+      });
+    }
+    requestAnimationFrame(() => textarea.current?.focus());
   }
 
   function selectCapability(capability: CapabilityDescriptor) {
     if (!capabilityQuery) return;
     const next = removeCapabilityQuery(input, capabilityQuery);
     setInput(next.value);
+    setCapabilityQuery(undefined);
+    setActiveCapabilityIndex(0);
+    const connector = connectorCapabilityForSelection(
+      capability,
+      capabilities,
+    );
+    if (connector && connector.status !== "ready") {
+      void prepareConnector(capability, connector, next.cursor);
+      return;
+    }
+    commitCapabilitySelection(capability, next.cursor);
+  }
+
+  function commitCapabilitySelection(
+    capability: CapabilityDescriptor,
+    cursor?: number,
+  ) {
     setSelectedCapabilities((current) =>
       current.some(({ id }) => id === capability.id)
         ? current
         : [...current, capability],
     );
-    setCapabilityQuery(undefined);
-    setActiveCapabilityIndex(0);
+    if (capability.id === "tool:plan") setComposerMode("plan");
     requestAnimationFrame(() => {
       textarea.current?.focus();
-      textarea.current?.setSelectionRange(next.cursor, next.cursor);
+      if (cursor !== undefined) {
+        textarea.current?.setSelectionRange(cursor, cursor);
+      }
     });
+  }
+
+  async function prepareConnector(
+    selection: CapabilityDescriptor,
+    capability: CapabilityDescriptor,
+    cursor: number,
+    openWhenReady = false,
+  ) {
+    if (!state.threadId) return;
+    setConnectorError(undefined);
+    try {
+      const status = await client.connectorStatus(
+        state.threadId,
+        capability.id,
+      );
+      const updated = { ...capability, status: status.status };
+      updateCapabilityStatus(capability.id, status.status);
+      if (status.status === "ready" && !openWhenReady) {
+        commitCapabilitySelection(
+          { ...selection, status: "ready" },
+          cursor,
+        );
+        return;
+      }
+      setConnectorSetup({ capability: updated, selection, status });
+    } catch (error) {
+      setConnectorSetup({
+        capability,
+        selection,
+        status: {
+          capabilityId: capability.id,
+          connectorId: capability.id.replace(/^mcp:/, ""),
+          name: capability.name,
+          status:
+            capability.status === "needs_authorization"
+              ? "needs_authorization"
+              : "needs_configuration",
+          configured: capability.status === "needs_authorization",
+          authorized: false,
+          redirectUrl: "",
+        },
+      });
+      setConnectorError(errorMessage(error));
+    }
+  }
+
+  function manageConnector(selection: CapabilityDescriptor) {
+    const connector = connectorCapabilityForSelection(
+      selection,
+      capabilities,
+    );
+    if (!connector) return;
+    void prepareConnector(
+      selection,
+      connector,
+      textarea.current?.selectionStart ?? input.length,
+      true,
+    );
+  }
+
+  function updateCapabilityStatus(
+    capabilityId: string,
+    status: CapabilityDescriptor["status"],
+  ) {
+    setCapabilities((current) =>
+      current.map((capability) =>
+        capability.id === capabilityId
+          ? { ...capability, status }
+          : capability,
+      ),
+    );
+  }
+
+  async function connectConnector(
+    clientId: string,
+    clientSecret: string,
+  ) {
+    if (!state.threadId || !connectorSetup) return;
+    const { capability, selection } = connectorSetup;
+    setConnectorBusy(true);
+    setConnectorError(undefined);
+    try {
+      let status = connectorSetup.status;
+      if (!status.configured) {
+        status = await client.configureConnector(
+          state.threadId,
+          capability.id,
+          clientId,
+          clientSecret,
+        );
+        setConnectorSetup({
+          capability: { ...capability, status: status.status },
+          selection,
+          status,
+        });
+        updateCapabilityStatus(capability.id, status.status);
+      }
+      status = await client.authorizeConnector(
+        state.threadId,
+        capability.id,
+      );
+      const connected = { ...capability, status: status.status };
+      updateCapabilityStatus(capability.id, status.status);
+      if (status.status !== "ready") {
+        setConnectorSetup({ capability: connected, selection, status });
+        throw new Error(t("capabilityNeedsAuthorization"));
+      }
+      setConnectorSetup(undefined);
+      commitCapabilitySelection({
+        ...selection,
+        status: "ready",
+      });
+    } catch (error) {
+      setConnectorError(errorMessage(error));
+    } finally {
+      setConnectorBusy(false);
+    }
+  }
+
+  async function disconnectConnector() {
+    if (!state.threadId || !connectorSetup) return;
+    const { capability, selection } = connectorSetup;
+    setConnectorBusy(true);
+    setConnectorError(undefined);
+    try {
+      const status = await client.disconnectConnector(
+        state.threadId,
+        capability.id,
+      );
+      updateCapabilityStatus(capability.id, status.status);
+      setSelectedCapabilities((current) =>
+        current.filter(
+          ({ id }) => id !== capability.id && id !== selection.id,
+        ),
+      );
+      setConnectorSetup({
+        capability: { ...capability, status: status.status },
+        selection,
+        status,
+      });
+    } catch (error) {
+      setConnectorError(errorMessage(error));
+    } finally {
+      setConnectorBusy(false);
+    }
   }
 
   const globalActions = currentProject ? (
@@ -1717,6 +1965,12 @@ function ThreadlightAppContent({
                               attachmentPreview={attachmentPreview}
                             />
                           )}
+                        <MessageCapabilityReceipts
+                          role={message.role}
+                          capabilities={message.capabilities}
+                          capabilityRefs={message.capabilityRefs}
+                          catalog={capabilities}
+                        />
                         {(message.text || message.role === "assistant") && (
                           <div className="message-body">
                             {message.progress && message.progress.length > 0 && (
@@ -1876,10 +2130,14 @@ function ThreadlightAppContent({
                 <CapabilityChips
                   capabilities={selectedCapabilities}
                   disabled={state.isRunning}
+                  onManage={manageConnector}
                   onRemove={(capability) =>
-                    setSelectedCapabilities((current) =>
-                      current.filter(({ id }) => id !== capability.id),
-                    )
+                    setSelectedCapabilities((current) => {
+                      if (capability.id === "tool:plan") {
+                        setComposerMode("default");
+                      }
+                      return current.filter(({ id }) => id !== capability.id);
+                    })
                   }
                 />
                 {capabilityQuery && (
@@ -1893,47 +2151,44 @@ function ThreadlightAppContent({
                     onSelect={selectCapability}
                   />
                 )}
+                {addMenuOpen && (
+                  <ComposerAddMenu
+                    actions={addActions}
+                    activeIndex={Math.min(
+                      activeAddIndex,
+                      Math.max(0, addActions.length - 1),
+                    )}
+                    onSelect={selectAddAction}
+                  />
+                )}
                 <div className="composer-row">
-                  {attachmentStage && (
-                    <button
-                      type="button"
-                      className="composer-action attach pressable"
-                      onClick={() => fileInput.current?.click()}
-                      disabled={
-                        state.connection !== "ready" ||
-                        state.isRunning ||
-                        preparingAttachments ||
-                        pendingAttachments.length >= MAX_COMPOSER_ATTACHMENTS
-                      }
-                      aria-label={t("addAttachment")}
-                      title={t("addAttachment")}
-                    >
-                      <Paperclip size={17} />
-                    </button>
-                  )}
                   <button
                     type="button"
-                    className={`composer-action plan-mode pressable ${composerMode === "plan" ? "active" : ""}`}
-                    onClick={() =>
-                      setComposerMode((mode) =>
-                        mode === "plan" ? "default" : "plan",
-                      )
-                    }
+                    className={`composer-action add pressable ${addMenuOpen ? "active" : ""}`}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      setCapabilityQuery(undefined);
+                      setAddMenuOpen((open) => !open);
+                      setActiveAddIndex(0);
+                      requestAnimationFrame(() => textarea.current?.focus());
+                    }}
                     disabled={
                       state.connection !== "ready" ||
                       state.isRunning ||
-                      preparingAttachments
+                      preparingAttachments ||
+                      (attachmentStage !== undefined &&
+                        pendingAttachments.length >=
+                          MAX_COMPOSER_ATTACHMENTS &&
+                        addActions.length === 1)
                     }
-                    aria-label={t("planMode")}
-                    aria-pressed={composerMode === "plan"}
-                    title={
-                      composerMode === "plan"
-                        ? t("planModeOn")
-                        : t("planMode")
+                    aria-label={t("add")}
+                    aria-expanded={addMenuOpen}
+                    aria-controls={
+                      addMenuOpen ? "composer-add-menu" : undefined
                     }
+                    title={t("add")}
                   >
-                    <ListTodo size={16} />
-                    <span>{t("plan")}</span>
+                    <Plus size={18} />
                   </button>
                   <textarea
                     ref={textarea}
@@ -1964,10 +2219,12 @@ function ThreadlightAppContent({
                     role="combobox"
                     aria-haspopup="listbox"
                     aria-autocomplete="list"
-                    aria-expanded={Boolean(capabilityQuery)}
+                    aria-expanded={Boolean(capabilityQuery || addMenuOpen)}
                     aria-controls={
                       capabilityQuery
                         ? "composer-capability-menu"
+                        : addMenuOpen
+                          ? "composer-add-menu"
                         : undefined
                     }
                     aria-activedescendant={
@@ -2122,6 +2379,24 @@ function ThreadlightAppContent({
             setDeleteError(undefined);
           }}
           onConfirm={() => void confirmDeleteConversation()}
+        />
+      )}
+      {connectorSetup && (
+        <ConnectorSetupDialog
+          capability={connectorSetup.capability}
+          status={connectorSetup.status}
+          busy={connectorBusy}
+          error={connectorError}
+          onCancel={() => {
+            if (connectorBusy) return;
+            setConnectorSetup(undefined);
+            setConnectorError(undefined);
+            requestAnimationFrame(() => textarea.current?.focus());
+          }}
+          onConnect={(clientId, clientSecret) =>
+            void connectConnector(clientId, clientSecret)
+          }
+          onDisconnect={() => void disconnectConnector()}
         />
       )}
     </div>

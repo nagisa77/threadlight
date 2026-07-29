@@ -24,11 +24,13 @@ import type {
   AttachmentData,
   AgentPlanData,
   CapabilityDescriptor,
+  ConnectorStatusData,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
+  MessageCapabilityData,
   ProcessSnapshotData,
   SendMessage,
   SuggestionLanguage,
@@ -48,6 +50,7 @@ import {
   type PromptBlock,
   type PromptSnapshot,
 } from "./prompt-composer.js";
+import type { CapabilityActivation } from "./capability-registry.js";
 import {
   createAttachmentRuntime,
   type AttachmentProvider,
@@ -59,6 +62,7 @@ import {
   ResearchCoverageRunController,
   UserActionRunController,
 } from "./run-controllers.js";
+import { TurnCapabilityController } from "./turn-capability-controller.js";
 
 interface ThreadState {
   agent: Agent;
@@ -122,6 +126,7 @@ export interface ThreadRuntime {
   resolveCapabilities?(
     refs: readonly string[],
     signal: AbortSignal,
+    activation?: CapabilityActivation,
   ):
     | {
         promptBlocks: readonly PromptBlock[];
@@ -131,6 +136,21 @@ export interface ThreadRuntime {
         promptBlocks: readonly PromptBlock[];
         tools: readonly Tool[];
       }>;
+  connectorStatus?(
+    capabilityId: string,
+  ): ConnectorStatusData | Promise<ConnectorStatusData>;
+  configureConnector?(
+    capabilityId: string,
+    clientId: string,
+    clientSecret: string,
+  ): ConnectorStatusData | Promise<ConnectorStatusData>;
+  authorizeConnector?(
+    capabilityId: string,
+    signal: AbortSignal,
+  ): ConnectorStatusData | Promise<ConnectorStatusData>;
+  disconnectConnector?(
+    capabilityId: string,
+  ): ConnectorStatusData | Promise<ConnectorStatusData>;
   snapshot?: unknown;
   dispose?(): void | Promise<void>;
 }
@@ -218,6 +238,14 @@ export class AppServer {
         return this.suggestQuestions(params);
       case "capability/list":
         return this.listCapabilities(params);
+      case "connector/status":
+        return this.connectorStatus(params);
+      case "connector/configure":
+        return this.configureConnector(params);
+      case "connector/authorize":
+        return this.authorizeConnector(params);
+      case "connector/disconnect":
+        return this.disconnectConnector(params);
       case "turn/start":
         return this.startTurn(params);
       case "turn/interrupt":
@@ -333,6 +361,73 @@ export class AppServer {
     };
   }
 
+  private connectorStatus(params: unknown): Promise<ConnectorStatusData> {
+    const { runtime, capabilityId } = this.connectorRequest(params);
+    if (!runtime.connectorStatus) {
+      throw new RpcError(-32040, "Connector management is unavailable");
+    }
+    return Promise.resolve(runtime.connectorStatus(capabilityId));
+  }
+
+  private configureConnector(
+    params: unknown,
+  ): Promise<ConnectorStatusData> {
+    const values = objectParams(params);
+    const { runtime, capabilityId } = this.connectorRequest(params);
+    requireString(values.clientId, "clientId");
+    requireString(values.clientSecret, "clientSecret");
+    if (!runtime.configureConnector) {
+      throw new RpcError(-32040, "Connector management is unavailable");
+    }
+    return Promise.resolve(
+      runtime.configureConnector(
+        capabilityId,
+        values.clientId,
+        values.clientSecret,
+      ),
+    );
+  }
+
+  private authorizeConnector(
+    params: unknown,
+  ): Promise<ConnectorStatusData> {
+    const { runtime, capabilityId } = this.connectorRequest(params);
+    if (!runtime.authorizeConnector) {
+      throw new RpcError(-32040, "Connector management is unavailable");
+    }
+    return Promise.resolve(
+      runtime.authorizeConnector(
+        capabilityId,
+        AbortSignal.timeout(6 * 60 * 1_000),
+      ),
+    );
+  }
+
+  private disconnectConnector(
+    params: unknown,
+  ): Promise<ConnectorStatusData> {
+    const { runtime, capabilityId } = this.connectorRequest(params);
+    if (!runtime.disconnectConnector) {
+      throw new RpcError(-32040, "Connector management is unavailable");
+    }
+    return Promise.resolve(runtime.disconnectConnector(capabilityId));
+  }
+
+  private connectorRequest(params: unknown): {
+    runtime: ThreadRuntime;
+    capabilityId: string;
+  } {
+    const { threadId, capabilityId } = objectParams(params);
+    requireString(threadId, "threadId");
+    requireString(capabilityId, "capabilityId");
+    const thread = this.threads.get(threadId);
+    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    if (!thread.runtime) {
+      throw new RpcError(-32040, "Connector management is unavailable");
+    }
+    return { runtime: thread.runtime, capabilityId };
+  }
+
   private async generateSuggestedQuestions(
     agent: Agent,
     language: SuggestionLanguage,
@@ -403,8 +498,9 @@ export class AppServer {
 
     const thread = this.threads.get(threadId);
     if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const availableCapabilities = thread.runtime?.capabilities ?? [];
     const availableCapabilityIds = new Set(
-      (thread.runtime?.capabilities ?? []).map(({ id }) => id),
+      availableCapabilities.map(({ id }) => id),
     );
     const unknownCapability = capabilityRefs.find(
       (ref) => !availableCapabilityIds.has(ref),
@@ -418,6 +514,10 @@ export class AppServer {
     if (thread.activeTurn) {
       throw new RpcError(-32003, "Thread already has an active turn");
     }
+    const capabilities = snapshotCapabilities(
+      capabilityRefs,
+      availableCapabilities,
+    );
 
     const turnId = randomUUID();
     const controller = new AbortController();
@@ -434,6 +534,7 @@ export class AppServer {
         ...(mode === "plan" ? { mode } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
+        ...(capabilities.length > 0 ? { capabilities } : {}),
       },
     ]);
     try {
@@ -452,6 +553,7 @@ export class AppServer {
         mode,
         attachments,
         capabilityRefs,
+        capabilities,
         thread,
         controller,
       );
@@ -539,6 +641,7 @@ export class AppServer {
     mode: TurnMode,
     attachments: readonly AttachmentData[],
     capabilityRefs: readonly string[],
+    capabilities: readonly MessageCapabilityData[],
     thread: ThreadState,
     controller: AbortController,
   ): Promise<void> {
@@ -564,11 +667,36 @@ export class AppServer {
         ? await thread.runtime.resolveCapabilities(
             capabilityRefs,
             controller.signal,
+            "explicit",
           )
         : { promptBlocks: [], tools: [] };
+      const turnTools: Tool[] = [
+        ...appendTurnTools(thread.agent.tools, [
+          ...(mode === "plan" ? [createRequestPlanInputTool()] : []),
+          ...(attachmentRuntime.tool ? [attachmentRuntime.tool] : []),
+          ...capabilityRuntime.tools,
+        ]),
+      ];
+      const capabilityController =
+        thread.runtime?.resolveCapabilities &&
+        (thread.runtime.capabilities?.length ?? 0) > 0
+          ? new TurnCapabilityController({
+              capabilities: thread.runtime.capabilities ?? [],
+              initialRefs: capabilityRefs,
+              resolve: thread.runtime.resolveCapabilities.bind(
+                thread.runtime,
+              ),
+              addTools: (tools) => appendToolsInPlace(turnTools, tools),
+            })
+          : undefined;
+      appendToolsInPlace(
+        turnTools,
+        capabilityController?.tools() ?? [],
+      );
       const runController = new UserActionRunController(
         composeRunControllers([
           planController,
+          capabilityController,
           new ProjectMemoryReminderController(),
           new ResearchCoverageRunController(input),
           attachmentRuntime.controller,
@@ -594,11 +722,7 @@ export class AppServer {
       const turnAgent = {
         ...thread.agent,
         instructions: turnPrompt.instructions,
-        tools: appendTurnTools(thread.agent.tools, [
-          ...(mode === "plan" ? [createRequestPlanInputTool()] : []),
-          ...(attachmentRuntime.tool ? [attachmentRuntime.tool] : []),
-          ...capabilityRuntime.tools,
-        ]),
+        tools: turnTools,
       };
       const result = await this.loop.run(
         turnAgent,
@@ -616,6 +740,13 @@ export class AppServer {
       );
       const persistedModelState =
         this.modelStatePersistence.prepare(result.modelState);
+      const appliedCapabilities = mergeMessageCapabilities(
+        capabilities,
+        snapshotCapabilities(
+          capabilityController?.activatedRefs() ?? [],
+          thread.runtime?.capabilities ?? [],
+        ),
+      );
       if (
         planController?.phase === "needs_input" &&
         planController.snapshot === undefined
@@ -635,6 +766,9 @@ export class AppServer {
               ? { progress: thread.progress }
               : {}),
             ...(thread.plan ? { plan: thread.plan } : {}),
+            ...(appliedCapabilities.length > 0
+              ? { capabilities: appliedCapabilities }
+              : {}),
           },
         ],
         { modelState: persistedModelState },
@@ -647,6 +781,9 @@ export class AppServer {
         turnId,
         output: result.output,
         usage: result.usage,
+        ...(appliedCapabilities.length > 0
+          ? { capabilities: appliedCapabilities }
+          : {}),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -921,6 +1058,26 @@ function parseCapabilityRefs(value: unknown): readonly string[] {
   return [...new Set(value)];
 }
 
+function snapshotCapabilities(
+  refs: readonly string[],
+  available: readonly CapabilityDescriptor[],
+): readonly MessageCapabilityData[] {
+  const byId = new Map(available.map((capability) => [capability.id, capability]));
+  return refs.map((ref) => {
+    const capability = byId.get(ref);
+    if (!capability) {
+      throw new Error(`Capability disappeared after validation: ${ref}`);
+    }
+    return {
+      id: capability.id,
+      kind: capability.kind,
+      name: capability.name,
+      ...(capability.source ? { source: capability.source } : {}),
+      ...(capability.icon ? { icon: capability.icon } : {}),
+    };
+  });
+}
+
 function isAttachment(value: unknown): value is AttachmentData {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const attachment = value as Record<string, unknown>;
@@ -966,6 +1123,31 @@ function appendTurnTools(
     names.add(tool.name);
   }
   return combined;
+}
+
+function appendToolsInPlace(
+  target: Tool[],
+  additions: readonly Tool[],
+): void {
+  const names = new Set(target.map(({ name }) => name));
+  for (const tool of additions) {
+    if (names.has(tool.name)) {
+      throw new Error(`Duplicate agent tool: ${tool.name}`);
+    }
+    names.add(tool.name);
+  }
+  target.push(...additions);
+}
+
+function mergeMessageCapabilities(
+  left: readonly MessageCapabilityData[],
+  right: readonly MessageCapabilityData[],
+): readonly MessageCapabilityData[] {
+  const merged = new Map<string, MessageCapabilityData>();
+  for (const capability of [...left, ...right]) {
+    merged.set(capability.id, capability);
+  }
+  return [...merged.values()];
 }
 
 function uniquePromptBlocks(

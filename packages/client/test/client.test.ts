@@ -107,6 +107,67 @@ describe("ThreadlightClient", () => {
     client.dispose();
   });
 
+  it("sends connector configuration and authorization requests", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const configured = client.configureConnector(
+      "thread-1",
+      "mcp:gmail",
+      "client-id",
+      "client-secret",
+    );
+    const authorized = client.authorizeConnector("thread-1", "mcp:gmail");
+    const disconnected = client.disconnectConnector(
+      "thread-1",
+      "mcp:gmail",
+    );
+
+    expect(transport.sent).toMatchObject([
+      {
+        method: "connector/configure",
+        params: {
+          threadId: "thread-1",
+          capabilityId: "mcp:gmail",
+          clientId: "client-id",
+          clientSecret: "client-secret",
+        },
+      },
+      {
+        method: "connector/authorize",
+        params: {
+          threadId: "thread-1",
+          capabilityId: "mcp:gmail",
+        },
+      },
+      {
+        method: "connector/disconnect",
+        params: {
+          threadId: "thread-1",
+          capabilityId: "mcp:gmail",
+        },
+      },
+    ]);
+    for (const request of transport.sent) {
+      transport.emit({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: {
+          capabilityId: "mcp:gmail",
+          connectorId: "gmail",
+          name: "Gmail",
+          status: "ready",
+          configured: true,
+          authorized: true,
+          redirectUrl:
+            "http://127.0.0.1:43119/oauth/callback/gmail",
+        },
+      });
+    }
+    await Promise.all([configured, authorized, disconnected]);
+    client.dispose();
+  });
+
   it("correlates responses independently of their arrival order", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

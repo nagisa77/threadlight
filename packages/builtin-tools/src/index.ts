@@ -62,12 +62,25 @@ export type {
 } from "./exec-command.js";
 export type {
   ConversationMcpRuntimeOptions,
+  InteractiveOAuthClientProvider,
   McpConnection,
   McpConnectResult,
   McpConnector,
   McpDiscoveredTool,
+  McpOAuthProviderFactory,
+  McpOAuthSpec,
   McpServerSpec,
+  McpToolAnnotations,
+  McpToolSecurityScheme,
 } from "./mcp-runtime.js";
+export type {
+  OAuthClientInformationMixed,
+  OAuthClientMetadata,
+  OAuthTokens,
+} from "@modelcontextprotocol/sdk/shared/auth.js";
+export type {
+  OAuthDiscoveryState,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 export type {
   ManagedProcessSnapshot,
   ManagedProcessStatus,

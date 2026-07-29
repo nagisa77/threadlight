@@ -54,6 +54,10 @@ import {
 import { createExternalWindowHandler } from "./external-links.js";
 import { ConversationChangeTracker } from "./conversation-changes.js";
 import {
+  ConnectionStore,
+  DesktopConnectionService,
+} from "./connection-store.js";
+import {
   DEFAULT_MODEL,
   DEFAULT_QWEN_BASE_URL,
   runtimeEnvironment,
@@ -155,11 +159,27 @@ let computerService: DesktopComputerService | null = null;
 let computerPermissionService: ComputerPermissionService | null = null;
 let terminalService: TerminalSessionManager | null = null;
 let conversationChangeTracker: ConversationChangeTracker | null = null;
+let connectionStore: ConnectionStore | null = null;
+let connectionService: DesktopConnectionService | null = null;
+const pendingOAuthCallbacks: string[] = [];
 let rendererMessageQueue = Promise.resolve();
 const appIconPath = resolve(
   import.meta.dirname,
   "../../resources/app-icon.png",
 );
+
+if (process.defaultApp && process.argv[1]) {
+  app.setAsDefaultProtocolClient("threadlight", process.execPath, [
+    resolve(process.argv[1]),
+  ]);
+} else {
+  app.setAsDefaultProtocolClient("threadlight");
+}
+
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  acceptOAuthCallback(url);
+});
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -285,6 +305,12 @@ function ensureAppServer(
         throw new Error("Desktop computer service is not available");
       }
       return computerService.handle(request);
+    },
+    handleConnectionRequest: (request) => {
+      if (!connectionService) {
+        throw new Error("Desktop connection service is not available");
+      }
+      return connectionService.handle(request);
     },
   });
   appServers.set(projectId, appServer);
@@ -1192,6 +1218,27 @@ app.whenReady().then(() => {
         safeStorage.decryptString(Buffer.from(value, "base64")),
     },
   );
+  connectionStore = new ConnectionStore(
+    join(threadlightHome, "connection-store.json"),
+    {
+      encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
+      decrypt: (value) =>
+        safeStorage.decryptString(Buffer.from(value, "base64")),
+    },
+  );
+  connectionService = new DesktopConnectionService(
+    connectionStore,
+    (url) => shell.openExternal(url),
+    () => {
+      const window = mainWindow;
+      if (!window || window.isDestroyed()) return;
+      window.show();
+      window.focus();
+    },
+  );
+  for (const callback of pendingOAuthCallbacks.splice(0)) {
+    acceptOAuthCallback(callback);
+  }
   projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
   computerPermissionService = new ComputerPermissionService(
     {
@@ -1341,13 +1388,37 @@ app.whenReady().then(() => {
   );
   createWindow();
 
+  for (const argument of process.argv) {
+    if (argument.startsWith("threadlight://")) {
+      acceptOAuthCallback(argument);
+    }
+  }
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
+function acceptOAuthCallback(value: string): void {
+  if (!connectionStore) {
+    pendingOAuthCallbacks.push(value);
+    return;
+  }
+  try {
+    if (!connectionStore.acceptAuthorizationCallback(new URL(value))) return;
+    const window = mainWindow;
+    if (window && !window.isDestroyed()) {
+      window.show();
+      window.focus();
+    }
+  } catch {
+    // Invalid callbacks are ignored and never logged because they may contain codes.
+  }
+}
+
 app.on("before-quit", () => {
   stopAppServers();
+  void connectionService?.dispose();
   computerService?.dispose();
   terminalService?.dispose();
 });

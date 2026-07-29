@@ -61,6 +61,17 @@ export interface SkillReadResult extends SkillDescriptor {
   resources: readonly string[];
 }
 
+export interface SkillListOptions {
+  query?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface SkillListResult {
+  skills: readonly SkillDescriptor[];
+  nextCursor?: string;
+}
+
 export interface SkillSnapshotEntry extends SkillDescriptor {
   source: string;
   resources: readonly string[];
@@ -216,11 +227,34 @@ export class SkillRegistry {
 
   read(nameOrId: string): SkillReadResult {
     const normalized = nameOrId.trim().replace(/^\$/, "");
-    const skill =
-      this.byInvocationName.get(normalized) ?? this.byId.get(normalized);
+    const skill = this.resolve(normalized);
     if (!skill) throw new Error(`Unknown skill: ${nameOrId}`);
     const { source: _source, ...result } = skill;
     return result;
+  }
+
+  list(options: SkillListOptions = {}): SkillListResult {
+    const query = options.query?.trim().toLocaleLowerCase() ?? "";
+    const offset = parseListCursor(options.cursor);
+    const limit = listLimit(options.limit);
+    const matches = this.loadedSkills.filter((skill) =>
+      !query || skillSearchText(skill).includes(query)
+    );
+    if (offset > matches.length) {
+      throw new Error("skill_list cursor is out of range");
+    }
+    const page = matches.slice(offset, offset + limit);
+    const skills = page.map(
+      ({ source: _source, resources: _resources, instructions: _instructions, ...skill }) =>
+        skill,
+    );
+    const nextOffset = offset + page.length;
+    return {
+      skills,
+      ...(nextOffset < matches.length
+        ? { nextCursor: String(nextOffset) }
+        : {}),
+    };
   }
 
   promptBlock(nameOrId: string): PromptBlock {
@@ -240,31 +274,109 @@ export class SkillRegistry {
       "Available skills are listed below using progressive disclosure.",
       "When the user explicitly names a skill with $skill-name, follow the injected skill instructions.",
       "When an unnamed task clearly matches a skill description, call skill_read before acting. Do not infer a skill's workflow from its description alone.",
+      "Use skill_list to search or page through skills that are not present in this compact catalog.",
     ].join(" ");
-    const lines = this.loadedSkills.map(
+    const prioritized = this.loadedSkills
+      .map((skill, index) => ({ skill, index }))
+      .sort(
+        (left, right) =>
+          skillCatalogPriority(left.skill.scope) -
+            skillCatalogPriority(right.skill.scope) ||
+          left.index - right.index,
+      )
+      .map(({ skill }) => skill);
+    const lines = prioritized.map(
       (skill) =>
-        `- $${skill.invocationName} [${skill.id}]: ${skill.description}`,
+        `- $${skill.invocationName}: ${skill.description}`,
     );
-    const warnings =
+    const warningLines =
       this.warnings.length === 0
         ? []
         : [
             "Skill discovery warnings:",
             ...this.warnings.map((warning) => `- ${warning}`),
           ];
-    return [introduction, ...lines, ...warnings]
-      .join("\n")
-      .slice(0, this.maxCatalogChars);
+    const included = [introduction];
+    let omitted = 0;
+    for (const line of lines) {
+      if (joinedLength(included, line) <= this.maxCatalogChars) {
+        included.push(line);
+      } else {
+        omitted += 1;
+      }
+    }
+    if (omitted > 0) {
+      appendWholeLineWithinBudget(
+        included,
+        `${omitted} skill ${omitted === 1 ? "entry was" : "entries were"} omitted from this compact catalog. Use skill_list to find them.`,
+        this.maxCatalogChars,
+      );
+    }
+    for (const line of warningLines) {
+      appendWholeLineWithinBudget(included, line, this.maxCatalogChars);
+    }
+    return included.join("\n");
   }
 
   promptBlocksForExplicitMentions(input: string): PromptBlock[] {
     const names = explicitSkillMentions(input);
     return names.flatMap((name) => {
-      const loaded = this.byInvocationName.get(name);
+      const loaded = this.resolve(name);
       if (!loaded) return [];
       return this.promptBlock(name);
     });
   }
+
+  private resolve(normalized: string): LoadedSkill | undefined {
+    const exact =
+      this.byInvocationName.get(normalized) ?? this.byId.get(normalized);
+    if (exact) return exact;
+    const shortNameMatches = this.loadedSkills.filter(
+      (skill) => skill.name === normalized,
+    );
+    if (shortNameMatches.length === 1) return shortNameMatches[0];
+    if (shortNameMatches.length > 1) {
+      throw new Error(
+        `Ambiguous skill ${normalized}; use one of: ${shortNameMatches
+          .map(({ invocationName }) => invocationName)
+          .join(", ")}`,
+      );
+    }
+  }
+}
+
+export function createSkillListTool(registry: SkillRegistry): Tool {
+  return defineTool({
+    name: "skill_list",
+    description:
+      "Search and page through available skills by name, description, scope, or plugin. Use this when the compact skill catalog does not contain a relevant skill.",
+    mutability: "read",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Optional case-insensitive search text, such as gmail, pdf, or review.",
+        },
+        cursor: {
+          type: "string",
+          description:
+            "Opaque nextCursor returned by a previous skill_list call.",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 50,
+          description: "Maximum skills to return. Defaults to 20.",
+        },
+      },
+      additionalProperties: false,
+    },
+    execute(arguments_) {
+      return Promise.resolve(registry.list(parseSkillListArguments(arguments_)));
+    },
+  });
 }
 
 export function createSkillReadTool(registry: SkillRegistry): Tool {
@@ -599,6 +711,83 @@ function parseSkillReadArguments(value: unknown): string {
     throw new Error("skill must be a non-empty string");
   }
   return skill;
+}
+
+function parseSkillListArguments(value: unknown): SkillListOptions {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("skill_list arguments must be an object");
+  }
+  const arguments_ = value as Record<string, unknown>;
+  const query = arguments_.query;
+  const cursor = arguments_.cursor;
+  const limit = arguments_.limit;
+  if (query !== undefined && typeof query !== "string") {
+    throw new Error("query must be a string");
+  }
+  if (cursor !== undefined && typeof cursor !== "string") {
+    throw new Error("cursor must be a string");
+  }
+  if (limit !== undefined && !Number.isSafeInteger(limit)) {
+    throw new Error("limit must be an integer");
+  }
+  return {
+    ...(query !== undefined ? { query } : {}),
+    ...(cursor !== undefined ? { cursor } : {}),
+    ...(limit !== undefined ? { limit: Number(limit) } : {}),
+  };
+}
+
+function parseListCursor(cursor: string | undefined): number {
+  if (cursor === undefined) return 0;
+  if (!/^(?:0|[1-9][0-9]*)$/.test(cursor)) {
+    throw new Error("skill_list cursor is invalid");
+  }
+  const offset = Number(cursor);
+  if (!Number.isSafeInteger(offset)) {
+    throw new Error("skill_list cursor is invalid");
+  }
+  return offset;
+}
+
+function listLimit(limit: number | undefined): number {
+  const value = limit ?? 20;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 50) {
+    throw new Error("skill_list limit must be between 1 and 50");
+  }
+  return value;
+}
+
+function skillSearchText(skill: LoadedSkill): string {
+  return [
+    skill.name,
+    skill.invocationName,
+    skill.description,
+    skill.scope,
+    skill.plugin?.name ?? "",
+  ]
+    .join("\n")
+    .toLocaleLowerCase();
+}
+
+function skillCatalogPriority(scope: SkillScope): number {
+  if (scope === "builtin") return 0;
+  if (scope === "plugin") return 1;
+  if (scope === "repo") return 2;
+  return 3;
+}
+
+function joinedLength(lines: readonly string[], addition: string): number {
+  return lines.reduce((total, line) => total + line.length, 0) +
+    lines.length +
+    addition.length;
+}
+
+function appendWholeLineWithinBudget(
+  lines: string[],
+  line: string,
+  maxChars: number,
+): void {
+  if (joinedLength(lines, line) <= maxChars) lines.push(line);
 }
 
 function contentHash(value: string): string {

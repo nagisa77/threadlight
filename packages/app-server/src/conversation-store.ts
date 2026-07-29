@@ -176,6 +176,9 @@ function isConversationMessage(value: unknown): boolean {
         message.capabilityRefs.every(
           (ref) => typeof ref === "string" && ref.length > 0,
         ))) &&
+    (message.capabilities === undefined ||
+      (Array.isArray(message.capabilities) &&
+        message.capabilities.every(isMessageCapability))) &&
     (message.error === undefined || typeof message.error === "boolean") &&
     (message.mode === undefined ||
       message.mode === "default" ||
@@ -185,6 +188,21 @@ function isConversationMessage(value: unknown): boolean {
       (Array.isArray(message.progress) &&
         message.progress.every(isConversationProgress))) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isMessageCapability(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const capability = value as Record<string, unknown>;
+  return (
+    typeof capability.id === "string" &&
+    capability.id.length > 0 &&
+    (capability.kind === "skill" || capability.kind === "tool") &&
+    typeof capability.name === "string" &&
+    capability.name.length > 0 &&
+    (capability.source === undefined ||
+      typeof capability.source === "string") &&
+    (capability.icon === undefined || typeof capability.icon === "string")
   );
 }
 
