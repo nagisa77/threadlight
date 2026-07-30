@@ -8,6 +8,7 @@ import {
   type ClipboardAdapter,
   type ComputerPermissionAdapter,
   type ComputerShareAdapter,
+  type ConnectorAuthorizationAdapter,
   type DiagnosticsAdapter,
   type ExecutionPolicyAdapter,
   type ProjectMemoryAdapter,
@@ -27,6 +28,25 @@ import { attachmentPreviewUrl } from "./attachment-preview.js";
 const client = new ThreadlightClient(new ElectronTransport());
 const clipboard: ClipboardAdapter = {
   writeText: (text) => window.threadlightDesktop.writeClipboardText(text),
+};
+const connectorAuthorization: ConnectorAuthorizationAdapter = {
+  async authorize<Result>(action: () => Promise<Result>) {
+    let rejectOpen!: (error: unknown) => void;
+    const openFailure = new Promise<never>((_resolve, reject) => {
+      rejectOpen = reject;
+    });
+    const unsubscribe = client.on(
+      "connector/authorization-requested",
+      ({ url }) => {
+        void window.threadlightDesktop.openExternal(url).catch(rejectOpen);
+      },
+    );
+    try {
+      return await Promise.race([action(), openFailure]);
+    } finally {
+      unsubscribe();
+    }
+  },
 };
 const settings: SettingsAdapter = {
   load: () => window.threadlightDesktop.getSettings(),
@@ -133,7 +153,11 @@ const attachmentStage: AttachmentStageAdapter = {
 const attachmentPreview: AttachmentPreviewAdapter = {
   imageUrl: (attachment) =>
     attachment.kind === "image"
-      ? attachmentPreviewUrl(attachment.path)
+      ? attachmentPreviewUrl(
+          attachment.path,
+          attachment.id,
+          attachment.mimeType,
+        )
       : undefined,
 };
 const computerShare: ComputerShareAdapter = {
@@ -250,6 +274,7 @@ createRoot(root).render(
   <ThreadlightApp
     client={client}
     clipboard={clipboard}
+    connectorAuthorization={connectorAuthorization}
     settings={settings}
     diagnostics={diagnostics}
     projects={projects}

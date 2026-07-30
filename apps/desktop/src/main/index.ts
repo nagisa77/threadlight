@@ -55,6 +55,7 @@ import { requestMacOSScreenCaptureAccess } from "./computer-input.js";
 import {
   createAttachmentReference,
   resolveAttachmentUrlPath,
+  uploadAttachmentReference,
 } from "./attachment-upload.js";
 import {
   parseAudioTranscriptionRequest,
@@ -127,6 +128,7 @@ import {
   DESKTOP_COMPUTER_PERMISSION_RELAUNCH_CHANNEL,
   DESKTOP_COMPUTER_PERMISSION_REQUEST_CHANNEL,
   DESKTOP_CLIPBOARD_WRITE_CHANNEL,
+  DESKTOP_EXTERNAL_OPEN_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL,
   DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,
@@ -699,11 +701,15 @@ async function recordProjectMessage(
     ?.threadId;
   if (typeof threadId === "string") {
     threadProjects.set(threadId, projectId);
-    projectStore?.setConversationWorkspace(
-      { projectId, id: threadId },
-      workspace,
-    );
-    if (currentProject(projectId)?.runtime?.kind !== "remote") {
+    if (currentProject(projectId)?.runtime?.kind === "remote") {
+      if (remoteHost) {
+        syncRemoteProjects(await remoteHost.client.projects());
+      }
+    } else {
+      projectStore?.setConversationWorkspace(
+        { projectId, id: threadId },
+        workspace,
+      );
       await conversationChangeTracker?.commitPendingSnapshot(
         projectId,
         requestKey(message.id),
@@ -1181,7 +1187,12 @@ function handleDiagnosticsGet(
   value: unknown,
 ) {
   requireTrustedSender(event);
-  return projectDiagnostics(requireProject(value));
+  const project = requireProject(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.diagnostics(project.id);
+  }
+  return projectDiagnostics(project);
 }
 
 function handleProviderTest(
@@ -1190,13 +1201,13 @@ function handleProviderTest(
 ) {
   requireTrustedSender(event);
   if (!settingsStore) throw new Error("Settings are not available");
+  const request = parseProviderTestRequest(value);
   if (isRemoteHost()) {
-    throw new Error(
-      "Save the provider settings on the Host before testing with a task.",
-    );
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.testProvider(request);
   }
   return testProviderConnection(
-    parseProviderTestRequest(value),
+    request,
     settingsStore.runtimeSettings(),
   );
 }
@@ -1727,28 +1738,11 @@ async function handleConversationChangesGet(
   const project = requireProject(request.projectId);
   const workspace = workspaceForThread(project, request.threadId);
   if (project.runtime?.kind === "remote") {
-    const changes = await requireRemoteRuntime(project.id).getWorkspaceChanges();
-    const files = changes.files.map((file) => ({
-      path: file.path,
-      status:
-        file.status === "added" || file.status === "untracked"
-          ? "added" as const
-          : file.status === "deleted"
-            ? "deleted" as const
-            : "modified" as const,
-      additions: file.additions,
-      deletions: file.deletions,
-      binary: file.binary,
-      ...(file.oldText !== undefined ? { oldContent: file.oldText } : {}),
-      ...(file.newText !== undefined ? { newContent: file.newText } : {}),
-    }));
-    return {
-      threadId: request.threadId,
-      additions: files.reduce((total, file) => total + file.additions, 0),
-      deletions: files.reduce((total, file) => total + file.deletions, 0),
-      revision: changes.revision,
-      files,
-    };
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.conversationChanges(
+      project.id,
+      request.threadId,
+    );
   }
   return conversationChangeTracker.changes(
     project.id,
@@ -1768,8 +1762,14 @@ async function handleConversationChangesRestore(
   const request = parseConversationChangesRestoreRequest(value);
   const project = requireProject(request.projectId);
   if (project.runtime?.kind === "remote") {
-    throw new Error(
-      "Remote Runtime review is read-only. Restore files from the remote workspace.",
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.restoreConversationChanges(
+      project.id,
+      request.threadId,
+      {
+        revision: request.revision,
+        ...(request.paths ? { paths: request.paths } : {}),
+      },
     );
   }
   const workspace = workspaceForThread(project, request.threadId);
@@ -1788,6 +1788,14 @@ async function handleWorktreeDeliveryPreflight(
 ) {
   requireTrustedSender(event);
   const request = parseWorktreeDeliveryRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.preflightWorktreeDelivery(
+      request.projectId,
+      request.threadId,
+      request.revision,
+    );
+  }
   const delivery = requireWorktreeDelivery(request);
   return delivery.manager.preflight(delivery.request);
 }
@@ -1798,6 +1806,14 @@ async function handleWorktreeDeliveryApply(
 ) {
   requireTrustedSender(event);
   const request = parseWorktreeDeliveryRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.applyWorktreeDelivery(
+      request.projectId,
+      request.threadId,
+      request.revision,
+    );
+  }
   const delivery = requireWorktreeDelivery(request);
   return delivery.manager.apply(delivery.request);
 }
@@ -1808,6 +1824,15 @@ async function handleWorktreeDeliveryCommit(
 ) {
   requireTrustedSender(event);
   const request = parseWorktreeDeliveryCommitRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.commitWorktreeDelivery(
+      request.projectId,
+      request.threadId,
+      request.revision,
+      request.message,
+    );
+  }
   const delivery = requireWorktreeDelivery(request);
   return delivery.manager.commit(delivery.request, request.message);
 }
@@ -1818,6 +1843,14 @@ async function handleCodeHostDeliveryStatus(
 ) {
   requireTrustedSender(event);
   const request = parseWorktreeDeliveryRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.codeHostDeliveryStatus(
+      request.projectId,
+      request.threadId,
+      request.revision,
+    );
+  }
   const delivery = requireCodeHostDelivery(request);
   return delivery.manager.status(delivery.request);
 }
@@ -1828,6 +1861,15 @@ async function handleCodeHostDeliveryCommitPush(
 ) {
   requireTrustedSender(event);
   const request = parseCodeHostCommitPushRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.commitAndPushCodeHostDelivery(
+      request.projectId,
+      request.threadId,
+      request.revision,
+      request.message,
+    );
+  }
   const delivery = requireCodeHostDelivery(request);
   return delivery.manager.commitAndPush(delivery.request, request.message);
 }
@@ -1838,6 +1880,16 @@ async function handleCodeHostDeliveryCreatePr(
 ) {
   requireTrustedSender(event);
   const request = parseCodeHostCreatePullRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.createDraftPullRequest(
+      request.projectId,
+      request.threadId,
+      request.revision,
+      request.title,
+      request.body,
+    );
+  }
   const delivery = requireCodeHostDelivery(request);
   return delivery.manager.createDraftPullRequest(delivery.request, {
     title: request.title,
@@ -1894,6 +1946,13 @@ async function handleWorkspaceList(
   const request = parseWorkspaceListRequest(value);
   const project = requireProject(request.projectId);
   if (project.runtime?.kind === "remote") {
+    if (request.threadId && remoteHost) {
+      return remoteHost.client.conversationWorkspaceList(
+        project.id,
+        request.threadId,
+        request.path,
+      );
+    }
     const entries = await requireRemoteRuntime(project.id).listWorkspace(
       request.path,
     );
@@ -1923,6 +1982,13 @@ async function handleWorkspaceFileGet(
   const request = parseWorkspaceFileRequest(value);
   const project = requireProject(request.projectId);
   if (project.runtime?.kind === "remote") {
+    if (request.threadId && remoteHost) {
+      return remoteHost.client.conversationWorkspaceFile(
+        project.id,
+        request.threadId,
+        request.path,
+      );
+    }
     const file = await requireRemoteRuntime(project.id).getWorkspaceFile(
       request.path,
     );
@@ -2069,7 +2135,8 @@ async function handleSearch(event: IpcMainInvokeEvent, value: unknown) {
   const request = parseSearchRequest(value);
   const project = requireProject(request.projectId);
   if (project.runtime?.kind === "remote") {
-    throw new Error("Remote Runtime search is not available in this version.");
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.search(request);
   }
   if (
     request.threadId &&
@@ -2097,30 +2164,39 @@ async function handleAudioTranscription(
 ): Promise<string> {
   requireTrustedSender(event);
   if (!settingsStore) throw new Error("Settings are not available");
+  const request = parseAudioTranscriptionRequest(value);
   if (isRemoteHost()) {
-    throw new Error(
-      "Voice input is unavailable because recordings cannot be sent to the remote Host yet.",
-    );
+    const connection = remoteHost;
+    if (!connection) throw new Error("Remote Host is not connected.");
+    return connection.transcribeAudio(request);
   }
   const apiKey = settingsStore.runtimeSettings().openAIApiKey;
   if (!apiKey) {
     throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
   }
-  return transcribeAudio(parseAudioTranscriptionRequest(value), { apiKey });
+  return transcribeAudio(request, { apiKey });
 }
 
-function handleAttachmentReference(
+async function handleAttachmentReference(
   event: IpcMainInvokeEvent,
   value: unknown,
-): AttachmentData {
+): Promise<AttachmentData> {
   requireTrustedSender(event);
-  if (!projectStore || !currentActiveProject()) {
+  const activeProject = projectStore ? currentActiveProject() : undefined;
+  if (!activeProject) {
     throw new Error("请先打开项目，再添加附件。");
   }
+  const request = parseAttachmentReferenceRequest(value);
   if (isRemoteHost()) {
-    throw new Error("Local attachments are hidden while a remote Host is active.");
+    const connection = remoteHost;
+    if (!connection) throw new Error("Remote Host is not connected.");
+    return uploadAttachmentReference(
+      request,
+      activeProject.id,
+      (upload) => connection.uploadAttachment(upload),
+    );
   }
-  return createAttachmentReference(parseAttachmentReferenceRequest(value));
+  return createAttachmentReference(request);
 }
 
 function handleComputerShareGet(event: IpcMainInvokeEvent) {
@@ -3492,7 +3568,7 @@ app.whenReady().then(() => {
     }
     return new Response("Not found", { status: 404 });
   });
-  protocol.handle("threadlight-attachment", (request) => {
+  protocol.handle("threadlight-attachment", async (request) => {
     try {
       const url = new URL(request.url);
       const parts = url.pathname
@@ -3502,6 +3578,27 @@ app.whenReady().then(() => {
       const encodedPath = parts.length === 1 ? parts[0] : parts[1];
       if (url.hostname !== "local" || !encodedPath || parts.length > 2) {
         return new Response("Not found", { status: 404 });
+      }
+      if (isRemoteHost()) {
+        const attachmentId = parts.length === 2 ? parts[0] : undefined;
+        const project = projectStore ? currentActiveProject() : undefined;
+        const connection = remoteHost;
+        if (!attachmentId || !project || !connection) {
+          return new Response("Not found", { status: 404 });
+        }
+        const mimeType = url.searchParams.get("mimeType");
+        return new Response(
+          await connection.downloadAttachment(project.id, attachmentId),
+          {
+            headers: {
+              "Content-Type":
+                mimeType && !/[\r\n]/.test(mimeType)
+                  ? mimeType
+                  : "application/octet-stream",
+              "Cache-Control": "private, max-age=3600",
+            },
+          },
+        );
       }
       return net.fetch(
         pathToFileURL(resolveAttachmentUrlPath(encodedPath)).href,
@@ -3523,6 +3620,20 @@ app.whenReady().then(() => {
         throw new TypeError("Clipboard text must be a string");
       }
       clipboard.writeText(value);
+    },
+  );
+  ipcMain.handle(
+    DESKTOP_EXTERNAL_OPEN_CHANNEL,
+    async (event, value: unknown) => {
+      requireTrustedSender(event);
+      if (typeof value !== "string") {
+        throw new TypeError("External URL must be a string");
+      }
+      const url = new URL(value);
+      if (url.protocol !== "https:") {
+        throw new Error("OAuth authorization URL must use HTTPS.");
+      }
+      await shell.openExternal(url.toString());
     },
   );
   ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);

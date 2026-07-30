@@ -18,6 +18,7 @@ export const DESKTOP_DIAGNOSTICS_GET_CHANNEL =
 export const DESKTOP_PROVIDER_TEST_CHANNEL =
   "threadlight:provider:test";
 export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
+export const DESKTOP_EXTERNAL_OPEN_CHANNEL = "threadlight:external:open";
 export const DESKTOP_PROJECTS_GET_CHANNEL = "threadlight:projects:get";
 export const DESKTOP_PROJECT_OPEN_CHANNEL = "threadlight:project:open";
 export const DESKTOP_PROJECT_ACTIVATE_CHANNEL = "threadlight:project:activate";
@@ -756,6 +757,7 @@ export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
   writeClipboardText(text: string): Promise<void>;
+  openExternal(url: string): Promise<void>;
   getSettings(): Promise<DesktopSettingsSnapshot>;
   updateSettings(
     update: DesktopSettingsUpdate,

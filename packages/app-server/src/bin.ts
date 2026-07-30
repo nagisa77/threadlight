@@ -166,6 +166,7 @@ const server = new AppServer({
   generateConversationTitles: true,
   modelName,
   attachmentProvider: provider,
+  attachmentRoot: process.env.THREADLIGHT_ATTACHMENT_ROOT,
   modelStatePersistence: new ModelStatePersistence({
     prepareState: (state, options) =>
       provider.prepareStateForPersistence(state, options),

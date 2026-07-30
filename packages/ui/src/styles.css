@@ -2504,11 +2504,12 @@ button:disabled {
   gap: 7px;
 }
 
-.message-image-grid:has(> img:only-child) {
+.message-image-grid:has(> :only-child) {
   grid-template-columns: minmax(0, 220px);
 }
 
-.message-image-grid img {
+.message-image-grid img,
+.message-image-placeholder {
   display: block;
   width: 100%;
   max-height: 220px;
@@ -2518,7 +2519,20 @@ button:disabled {
   background: var(--panel);
 }
 
-.message-image-grid img:only-child {
+.message-image-placeholder {
+  display: grid;
+  min-height: 96px;
+  padding: 16px;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.message-image-grid > :only-child {
   width: 100%;
   max-width: 220px;
 }

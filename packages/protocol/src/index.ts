@@ -133,6 +133,111 @@ export interface HostSettingsUpdate {
   model: string;
 }
 
+export interface HostProviderTestRequest {
+  provider: HostModelProvider;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string | null;
+}
+
+export type HostProviderDiagnosticCode =
+  | "ok"
+  | "missing_key"
+  | "invalid_url"
+  | "unauthorized"
+  | "endpoint_not_found"
+  | "model_not_found"
+  | "rate_limited"
+  | "timeout"
+  | "network"
+  | "provider_error";
+
+export interface HostProviderDiagnostic {
+  status: "success" | "warning" | "error";
+  code: HostProviderDiagnosticCode;
+  provider: HostModelProvider;
+  model: string;
+  endpoint: string;
+  checkedAt: string;
+  latencyMs: number;
+  httpStatus?: number;
+  detail?: string;
+}
+
+export interface HostDiagnosticsTotals {
+  turns: number;
+  failedTurns: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  durationMs: number;
+  modelSteps: number;
+  toolCalls: number;
+  toolDurationMs: number;
+}
+
+export interface HostModelStepDiagnostic {
+  step: number;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
+export interface HostToolCallDiagnostic {
+  callId: string;
+  name: string;
+  durationMs: number;
+  isError: boolean;
+}
+
+export interface HostTurnDiagnostic {
+  threadId: string;
+  title: string;
+  status: "completed" | "failed";
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  model?: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  modelSteps: readonly HostModelStepDiagnostic[];
+  toolCalls: readonly HostToolCallDiagnostic[];
+}
+
+export interface HostProjectDiagnosticsSnapshot {
+  projectId: string;
+  projectName: string;
+  generatedAt: string;
+  totals: HostDiagnosticsTotals;
+  turns: readonly HostTurnDiagnostic[];
+}
+
+export type HostSearchMode = "all" | "files";
+
+export interface HostSearchRequest {
+  projectId: string;
+  threadId?: string;
+  query: string;
+  mode: HostSearchMode;
+  limit?: number;
+}
+
+export interface HostSearchResult {
+  id: string;
+  kind: "message" | "file" | "command" | "tool" | "memory";
+  projectId: string;
+  threadId?: string;
+  messageId?: string;
+  activityId?: string;
+  path?: string;
+  line?: number;
+  title: string;
+  subtitle: string;
+  snippet: string;
+}
+
 export type HostConversationStatus = "pending" | "completed";
 
 export type HostTaskWorkspace =
@@ -207,6 +312,106 @@ export interface HostSystemFile {
   content?: string;
   binary: boolean;
   size: number;
+}
+
+export interface HostConversationFileChange {
+  path: string;
+  status: "added" | "modified" | "deleted";
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  oldContent?: string;
+  newContent?: string;
+}
+
+export interface HostConversationChangesSnapshot {
+  threadId: string;
+  additions: number;
+  deletions: number;
+  revision: string;
+  files: readonly HostConversationFileChange[];
+}
+
+export interface HostConversationChangesRestoreRequest {
+  revision: string;
+  paths?: readonly string[];
+}
+
+export interface HostWorktreeDeliveryConflict {
+  path: string;
+  reason:
+    | "both_added"
+    | "target_deleted"
+    | "target_modified"
+    | "merge_conflict"
+    | "unsafe_target";
+}
+
+export interface HostWorktreeDeliveryPreflight {
+  taskBranch: string;
+  targetBranch: string;
+  sourceBranch?: string;
+  branchChanged: boolean;
+  files: number;
+  pendingFiles: number;
+  alreadyAppliedFiles: number;
+  conflicts: readonly HostWorktreeDeliveryConflict[];
+}
+
+export interface HostWorktreeDeliveryResult
+  extends HostWorktreeDeliveryPreflight {
+  appliedFiles: number;
+  commit?: string;
+}
+
+export interface HostCodeHostCheck {
+  name: string;
+  status: "queued" | "running" | "success" | "failure" | "skipped";
+  url?: string;
+}
+
+export interface HostCodeHostReviewComment {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  url?: string;
+  path?: string;
+  line?: number;
+  kind: "comment" | "review" | "inline";
+  state?: string;
+}
+
+export interface HostCodeHostPullRequest {
+  number: number;
+  url: string;
+  title: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  headBranch: string;
+  baseBranch: string;
+  ciStatus: "none" | "pending" | "success" | "failure";
+  reviewDecision?: string;
+  checks: readonly HostCodeHostCheck[];
+  comments: readonly HostCodeHostReviewComment[];
+}
+
+export interface HostCodeHostDeliveryStatus {
+  provider: "github";
+  available: boolean;
+  reason?: string;
+  repository?: string;
+  remote?: string;
+  taskBranch: string;
+  baseBranch: string;
+  pushed: boolean;
+  ahead: number;
+  pullRequest?: HostCodeHostPullRequest;
+}
+
+export interface HostCodeHostCommitPushResult {
+  commit: string;
+  status: HostCodeHostDeliveryStatus;
 }
 
 export interface ThreadlightHostHealth {
@@ -716,6 +921,9 @@ export type MethodResult<Method extends ThreadlightMethod> =
   ThreadlightMethodMap[Method]["result"];
 
 export interface ThreadlightNotificationMap {
+  "connector/authorization-requested": {
+    url: string;
+  };
   "thread/title": {
     threadId: string;
     title: string;

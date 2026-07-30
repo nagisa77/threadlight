@@ -178,6 +178,7 @@ export interface ThreadlightAppProps {
   memory?: ProjectMemoryAdapter;
   search?: SearchAdapter;
   voiceInput?: VoiceInputAdapter;
+  connectorAuthorization?: ConnectorAuthorizationAdapter;
   attachmentStage?: AttachmentStageAdapter;
   attachmentPreview?: AttachmentPreviewAdapter;
   computerShare?: ComputerShareAdapter;
@@ -190,6 +191,12 @@ export interface ThreadlightAppProps {
 
 export interface ClipboardAdapter {
   writeText(text: string): Promise<void>;
+}
+
+export interface ConnectorAuthorizationAdapter {
+  authorize<Result>(
+    action: () => Promise<Result>,
+  ): Promise<Result>;
 }
 
 export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
@@ -216,6 +223,9 @@ export interface AttachmentStageAdapter {
 
 export interface AttachmentPreviewAdapter {
   imageUrl(attachment: AttachmentData): string | undefined;
+  loadImageUrl?(
+    attachment: AttachmentData,
+  ): Promise<string | undefined>;
 }
 
 export type ComputerPermissionCapability =
@@ -337,6 +347,7 @@ function ThreadlightAppContent({
   memory,
   search,
   voiceInput,
+  connectorAuthorization,
   attachmentStage,
   attachmentPreview,
   computerShare,
@@ -2351,36 +2362,43 @@ function ThreadlightAppContent({
     setConnectorBusy(true);
     setConnectorError(undefined);
     try {
-      let status = connectorSetup.status;
-      if (!status.configured) {
-        status = await client.configureConnector(
-          state.threadId,
+      const authorize = async () => {
+        let status = connectorSetup.status;
+        if (!status.configured) {
+          status = await client.configureConnector(
+            state.threadId!,
+            capability.id,
+            clientId,
+            clientSecret,
+          );
+          setConnectorSetup({
+            capability: { ...capability, status: status.status },
+            selection,
+            status,
+          });
+          updateCapabilityStatus(capability.id, status.status);
+        }
+        status = await client.authorizeConnector(
+          state.threadId!,
           capability.id,
-          clientId,
-          clientSecret,
         );
-        setConnectorSetup({
-          capability: { ...capability, status: status.status },
-          selection,
-          status,
-        });
+        const connected = { ...capability, status: status.status };
         updateCapabilityStatus(capability.id, status.status);
+        if (status.status !== "ready") {
+          setConnectorSetup({ capability: connected, selection, status });
+          throw new Error(t("capabilityNeedsAuthorization"));
+        }
+        setConnectorSetup(undefined);
+        commitCapabilitySelection({
+          ...selection,
+          status: "ready",
+        });
+      };
+      if (connectorAuthorization) {
+        await connectorAuthorization.authorize(authorize);
+      } else {
+        await authorize();
       }
-      status = await client.authorizeConnector(
-        state.threadId,
-        capability.id,
-      );
-      const connected = { ...capability, status: status.status };
-      updateCapabilityStatus(capability.id, status.status);
-      if (status.status !== "ready") {
-        setConnectorSetup({ capability: connected, selection, status });
-        throw new Error(t("capabilityNeedsAuthorization"));
-      }
-      setConnectorSetup(undefined);
-      commitCapabilitySelection({
-        ...selection,
-        status: "ready",
-      });
     } catch (error) {
       setConnectorError(errorMessage(error));
     } finally {
@@ -6198,23 +6216,26 @@ export function MessageAttachments({
 }) {
   const { t } = useI18n();
   const images = attachments
-    .filter((attachment) => attachment.kind === "image")
-    .flatMap((attachment) => {
-      const url = previewUrlFor(attachmentPreview, attachment);
-      return url ? [{ attachment, url }] : [];
-    });
-  const imageIds = new Set(images.map(({ attachment }) => attachment.id));
+    .filter(
+      (attachment) =>
+        attachment.kind === "image" &&
+        Boolean(
+          attachmentPreview &&
+            (previewUrlFor(attachmentPreview, attachment) ||
+              attachmentPreview.loadImageUrl),
+        ),
+    );
+  const imageIds = new Set(images.map((attachment) => attachment.id));
   const files = attachments.filter((attachment) => !imageIds.has(attachment.id));
   return (
     <div className="message-attachments" aria-label={t("messageAttachments")}>
       {images.length > 0 && (
         <div className="message-image-grid">
-          {images.map(({ attachment, url }) => (
-            <img
+          {images.map((attachment) => (
+            <AttachmentImage
               key={attachment.id}
-              src={url}
-              alt={attachment.name}
-              loading="lazy"
+              attachment={attachment}
+              attachmentPreview={attachmentPreview!}
             />
           ))}
         </div>
@@ -6234,6 +6255,56 @@ export function MessageAttachments({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function AttachmentImage({
+  attachment,
+  attachmentPreview,
+}: {
+  attachment: AttachmentData;
+  attachmentPreview: AttachmentPreviewAdapter;
+}) {
+  const [url, setUrl] = useState(() =>
+    previewUrlFor(attachmentPreview, attachment),
+  );
+
+  useEffect(() => {
+    let active = true;
+    const immediate = previewUrlFor(attachmentPreview, attachment);
+    setUrl(immediate);
+    if (!immediate && attachmentPreview.loadImageUrl) {
+      void attachmentPreview
+        .loadImageUrl(attachment)
+        .then((loaded) => {
+          if (active && loaded) setUrl(loaded);
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      active = false;
+    };
+  }, [
+    attachment.id,
+    attachment.mimeType,
+    attachment.path,
+    attachmentPreview,
+  ]);
+
+  return url ? (
+    <img
+      src={url}
+      alt={attachment.name}
+      loading="lazy"
+    />
+  ) : (
+    <div
+      className="message-image-placeholder"
+      aria-label={attachment.name}
+    >
+      <FileText size={18} />
+      <span>{attachment.name}</span>
     </div>
   );
 }

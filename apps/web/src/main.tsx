@@ -76,8 +76,14 @@ function WebApp() {
       <ThreadlightApp
         client={session.client}
         clipboard={session.clipboard}
+        connectorAuthorization={session.connectorAuthorization}
         settings={session.settings}
+        diagnostics={session.diagnostics}
+        search={session.search}
         projects={session.projects}
+        attachmentStage={session.attachmentStage}
+        attachmentPreview={session.attachmentPreview}
+        voiceInput={session.voiceInput}
         memory={session.memory}
         terminal={session.terminal}
         workspace={session.workspace}

@@ -1,10 +1,22 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { TerminalPanel, type TerminalAdapter } from "../src/terminal.js";
+import {
+  projectTerminalCreateRequest,
+  TerminalPanel,
+  type TerminalAdapter,
+} from "../src/terminal.js";
 import type { WorkspaceAdapter } from "../src/workspace-panel.js";
 
 describe("TerminalPanel", () => {
+  it("opens interactive terminals in the original project directory", () => {
+    expect(projectTerminalCreateRequest("project-1")).toEqual({
+      projectId: "project-1",
+      cols: 80,
+      rows: 24,
+    });
+  });
+
   it("defaults to a terminal and offers terminal or file views from add", () => {
     const adapter: TerminalAdapter = {
       create: vi.fn(),

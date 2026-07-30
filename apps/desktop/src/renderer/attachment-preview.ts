@@ -1,4 +1,8 @@
-export function attachmentPreviewUrl(path: string): string {
+export function attachmentPreviewUrl(
+  path: string,
+  attachmentId?: string,
+  mimeType?: string,
+): string {
   const bytes = new TextEncoder().encode(path);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -6,5 +10,11 @@ export function attachmentPreviewUrl(path: string): string {
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
-  return `threadlight-attachment://local/${encodedPath}`;
+  const prefix = attachmentId
+    ? `${encodeURIComponent(attachmentId)}/`
+    : "";
+  const query = mimeType
+    ? `?mimeType=${encodeURIComponent(mimeType)}`
+    : "";
+  return `threadlight-attachment://local/${prefix}${encodedPath}${query}`;
 }

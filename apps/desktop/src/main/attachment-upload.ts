@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { statSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 
+import type { HostAttachmentUpload } from "@threadlight/client";
 import type { AttachmentData } from "@threadlight/protocol";
 import type { DesktopAttachmentReferenceRequest } from "../shared/desktop-api.js";
 
@@ -29,6 +31,22 @@ export function createAttachmentReference(
     kind: mimeType.startsWith("image/") ? "image" : "file",
     path,
   };
+}
+
+export async function uploadAttachmentReference(
+  request: DesktopAttachmentReferenceRequest,
+  projectId: string,
+  upload: (attachment: HostAttachmentUpload) => Promise<AttachmentData>,
+): Promise<AttachmentData> {
+  const attachment = createAttachmentReference(request);
+  const content = Uint8Array.from(await readFile(attachment.path)).buffer;
+  return upload({
+    projectId,
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    size: attachment.size,
+    content,
+  });
 }
 
 export function resolveAttachmentUrlPath(encodedPath: string): string {

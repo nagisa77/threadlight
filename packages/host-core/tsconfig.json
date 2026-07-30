@@ -7,6 +7,7 @@
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
   "references": [
+    { "path": "../project-memory" },
     { "path": "../protocol" }
   ],
   "include": [

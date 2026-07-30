@@ -17,7 +17,10 @@ import type {
 } from "@threadlight/protocol";
 
 const DESKTOP_CONNECTION_RPC_FD = "THREADLIGHT_CONNECTION_RPC_FD";
-const OAUTH_CALLBACK_ORIGIN = "http://127.0.0.1:43119";
+const OAUTH_CALLBACK_URL_PREFIX_ENV =
+  "THREADLIGHT_OAUTH_CALLBACK_URL_PREFIX";
+const DEFAULT_OAUTH_CALLBACK_URL_PREFIX =
+  "http://127.0.0.1:43119/oauth/callback";
 const AUTHORIZATION_TIMEOUT_MS = 5 * 60 * 1_000;
 
 export interface DesktopConnectorStatus {
@@ -38,7 +41,11 @@ export class DesktopConnectionClient {
   >();
   private nextId = 1;
 
-  constructor(private readonly transport: Duplex) {
+  constructor(
+    private readonly transport: Duplex,
+    private readonly oauthCallbackUrlPrefix =
+      DEFAULT_OAUTH_CALLBACK_URL_PREFIX,
+  ) {
     this.lines = createInterface({ input: transport });
     this.lines.on("line", (line) => this.receive(line));
     transport.on("error", (error) => this.failAll(error));
@@ -48,7 +55,11 @@ export class DesktopConnectionClient {
   }
 
   oauthProvider(spec: McpOAuthSpec): InteractiveOAuthClientProvider {
-    return new DesktopOAuthProvider(this, spec);
+    return new DesktopOAuthProvider(
+      this,
+      spec,
+      this.oauthCallbackUrlPrefix,
+    );
   }
 
   connectorStatus(
@@ -59,7 +70,7 @@ export class DesktopConnectionClient {
   }
 
   connectorRedirectUrl(connectorId: string): string {
-    return `${OAUTH_CALLBACK_ORIGIN}/oauth/callback/${encodeURIComponent(connectorId)}`;
+    return oauthCallbackUrl(this.oauthCallbackUrlPrefix, connectorId);
   }
 
   configureConnector(
@@ -147,9 +158,12 @@ class DesktopOAuthProvider implements InteractiveOAuthClientProvider {
   constructor(
     private readonly client: DesktopConnectionClient,
     private readonly spec: McpOAuthSpec,
+    oauthCallbackUrlPrefix: string,
   ) {
-    this.redirectUrl =
-      `${OAUTH_CALLBACK_ORIGIN}/oauth/callback/${encodeURIComponent(spec.connectorId)}`;
+    this.redirectUrl = oauthCallbackUrl(
+      oauthCallbackUrlPrefix,
+      spec.connectorId,
+    );
     this.clientMetadata = {
       redirect_uris: [this.redirectUrl],
       client_name: "Threadlight",
@@ -288,5 +302,28 @@ export function createDesktopConnectionClientFromEnvironment(
   }
   return new DesktopConnectionClient(
     new Socket({ fd, readable: true, writable: true }),
+    normalizeOAuthCallbackUrlPrefix(
+      environment[OAUTH_CALLBACK_URL_PREFIX_ENV] ??
+        DEFAULT_OAUTH_CALLBACK_URL_PREFIX,
+    ),
   );
+}
+
+function normalizeOAuthCallbackUrlPrefix(value: string): string {
+  const url = new URL(value.trim());
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(
+      `${OAUTH_CALLBACK_URL_PREFIX_ENV} must use http or https`,
+    );
+  }
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/+$/, "");
+}
+
+function oauthCallbackUrl(
+  prefix: string,
+  connectorId: string,
+): string {
+  return `${normalizeOAuthCallbackUrlPrefix(prefix)}/${encodeURIComponent(connectorId)}`;
 }

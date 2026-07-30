@@ -235,7 +235,7 @@ const zh = {
   connectCapability: "连接 {name}",
   manageCapabilityConnection: "管理 {name} 连接",
   connectorConfigurationDescription:
-    "输入 Google Cloud OAuth 凭据。凭据将由系统安全存储加密保存。",
+    "输入 Google Cloud OAuth 凭据。凭据将加密保存在当前 Threadlight Host。",
   connectorAuthorizationDescription:
     "继续后将在浏览器中打开 Google 授权页面。",
   connectorConnectedDescription:
@@ -248,7 +248,7 @@ const zh = {
   connectorBrowserNotice:
     "完成 Google 授权后，此窗口会自动关闭并选中该能力。",
   connectorConnectedNotice:
-    "断开连接会从本机安全存储中清除 OAuth 凭据和 token。",
+    "断开连接会从当前 Threadlight Host 清除 OAuth 凭据和 token。",
   configureAndConnect: "保存并连接",
   continueToAuthorization: "继续授权",
   waitingForAuthorization: "等待浏览器授权…",
@@ -796,7 +796,7 @@ const en: Messages = {
   connectCapability: "Connect {name}",
   manageCapabilityConnection: "Manage {name} connection",
   connectorConfigurationDescription:
-    "Enter Google Cloud OAuth credentials. They are encrypted by the operating system secure storage.",
+    "Enter Google Cloud OAuth credentials. They are encrypted on the current Threadlight Host.",
   connectorAuthorizationDescription:
     "Continue to open Google's authorization page in your browser.",
   connectorConnectedDescription:
@@ -809,7 +809,7 @@ const en: Messages = {
   connectorBrowserNotice:
     "After Google authorization, this dialog closes and the capability is selected automatically.",
   connectorConnectedNotice:
-    "Disconnecting clears the OAuth credentials and tokens from secure storage on this device.",
+    "Disconnecting clears the OAuth credentials and tokens from the current Threadlight Host.",
   configureAndConnect: "Save and connect",
   continueToAuthorization: "Continue to authorization",
   waitingForAuthorization: "Waiting for browser authorization…",
@@ -1356,7 +1356,7 @@ const ja: Messages = {
   connectCapability: "{name} に接続",
   manageCapabilityConnection: "{name} の接続を管理",
   connectorConfigurationDescription:
-    "Google Cloud の OAuth 認証情報を入力します。認証情報は OS の安全なストレージで暗号化されます。",
+    "Google Cloud の OAuth 認証情報を入力します。認証情報は現在の Threadlight Host に暗号化して保存されます。",
   connectorAuthorizationDescription:
     "続行すると、ブラウザで Google の認証ページが開きます。",
   connectorConnectedDescription:
@@ -1369,7 +1369,7 @@ const ja: Messages = {
   connectorBrowserNotice:
     "Google の認証が完了すると、この画面は閉じて機能が自動選択されます。",
   connectorConnectedNotice:
-    "切断すると、このデバイスの安全なストレージから OAuth 認証情報とトークンが削除されます。",
+    "切断すると、現在の Threadlight Host から OAuth 認証情報とトークンが削除されます。",
   configureAndConnect: "保存して接続",
   continueToAuthorization: "認証を続ける",
   waitingForAuthorization: "ブラウザ認証を待っています…",
@@ -1926,7 +1926,7 @@ const zhTW: Messages = {
   connectCapability: "連接 {name}",
   manageCapabilityConnection: "管理 {name} 連接",
   connectorConfigurationDescription:
-    "輸入 Google Cloud OAuth 憑證。憑證會由作業系統安全儲存加密保存。",
+    "輸入 Google Cloud OAuth 憑證。憑證會加密儲存在目前的 Threadlight Host。",
   connectorAuthorizationDescription:
     "繼續後將在瀏覽器開啟 Google 授權頁面。",
   connectorConnectedDescription:
@@ -1939,7 +1939,7 @@ const zhTW: Messages = {
   connectorBrowserNotice:
     "完成 Google 授權後，此視窗會自動關閉並選取該能力。",
   connectorConnectedNotice:
-    "中斷連接會從本機安全儲存中清除 OAuth 憑證和權杖。",
+    "中斷連接會從目前的 Threadlight Host 清除 OAuth 憑證和權杖。",
   configureAndConnect: "儲存並連接",
   continueToAuthorization: "繼續授權",
   waitingForAuthorization: "等待瀏覽器授權…",
@@ -2486,7 +2486,7 @@ const ko: Messages = {
   connectCapability: "{name} 연결",
   manageCapabilityConnection: "{name} 연결 관리",
   connectorConfigurationDescription:
-    "Google Cloud OAuth 자격 증명을 입력하세요. 운영체제 보안 저장소로 암호화됩니다.",
+    "Google Cloud OAuth 자격 증명을 입력하세요. 현재 Threadlight Host에 암호화되어 저장됩니다.",
   connectorAuthorizationDescription:
     "계속하면 브라우저에서 Google 인증 페이지가 열립니다.",
   connectorConnectedDescription:
@@ -2499,7 +2499,7 @@ const ko: Messages = {
   connectorBrowserNotice:
     "Google 인증이 완료되면 이 창이 닫히고 기능이 자동으로 선택됩니다.",
   connectorConnectedNotice:
-    "연결을 해제하면 이 기기의 보안 저장소에서 OAuth 자격 증명과 토큰이 삭제됩니다.",
+    "연결을 해제하면 현재 Threadlight Host에서 OAuth 자격 증명과 토큰이 삭제됩니다.",
   configureAndConnect: "저장하고 연결",
   continueToAuthorization: "인증 계속",
   waitingForAuthorization: "브라우저 인증 대기 중…",

@@ -114,4 +114,28 @@ describe("voice composer", () => {
     expect(html).toContain("diagram.png");
     expect(html).not.toContain("<img");
   });
+
+  it("reserves an image slot while an authenticated preview loads", () => {
+    const html = renderToStaticMarkup(
+      <MessageAttachments
+        attachments={[
+          {
+            id: "attachment-1",
+            name: "remote-diagram.png",
+            mimeType: "image/png",
+            size: 5,
+            kind: "image",
+            path: "/remote/project/remote-diagram.png",
+          },
+        ]}
+        attachmentPreview={{
+          imageUrl: () => undefined,
+          loadImageUrl: vi.fn(),
+        }}
+      />,
+    );
+
+    expect(html).toContain('class="message-image-placeholder"');
+    expect(html).toContain("remote-diagram.png");
+  });
 });

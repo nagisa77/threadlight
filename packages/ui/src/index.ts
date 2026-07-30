@@ -96,6 +96,7 @@ export type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
   ClipboardAdapter,
+  ConnectorAuthorizationAdapter,
   ComputerPermissionAdapter,
   ComputerPermissionCapability,
   ComputerPermissionSnapshot,

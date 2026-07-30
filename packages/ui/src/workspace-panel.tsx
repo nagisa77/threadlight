@@ -608,7 +608,6 @@ export function WorkspacePanel({
                 key={tab.id}
                 adapter={terminal}
                 projectId={projectId}
-                threadId={threadId}
                 hidden={tab.id !== activeTab?.id}
                 label={tab.title}
               />

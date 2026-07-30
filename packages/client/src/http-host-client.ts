@@ -1,10 +1,22 @@
 import type {
+  AttachmentData,
+  HostCodeHostCommitPushResult,
+  HostCodeHostDeliveryStatus,
+  HostConversationChangesRestoreRequest,
+  HostConversationChangesSnapshot,
   HostDirectoryListing,
   HostFileListing,
+  HostProviderDiagnostic,
+  HostProviderTestRequest,
   HostProjectsSnapshot,
+  HostProjectDiagnosticsSnapshot,
+  HostSearchRequest,
+  HostSearchResult,
   HostSettingsSnapshot,
   HostSettingsUpdate,
   HostSystemFile,
+  HostWorktreeDeliveryPreflight,
+  HostWorktreeDeliveryResult,
   ThreadlightHostHealth,
 } from "@threadlight/protocol";
 
@@ -12,6 +24,19 @@ export interface HttpHostClientOptions {
   endpoint: string;
   token: string;
   fetch?: typeof globalThis.fetch;
+}
+
+export interface HostAttachmentUpload {
+  projectId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  content: ArrayBuffer;
+}
+
+export interface HostAudioTranscriptionRequest {
+  audio: ArrayBuffer;
+  mimeType: string;
 }
 
 export class HttpHostClient {
@@ -34,6 +59,21 @@ export class HttpHostClient {
     return this.request("/v1/host/projects");
   }
 
+  diagnostics(projectId: string): Promise<HostProjectDiagnosticsSnapshot> {
+    return this.request(
+      `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics`,
+    );
+  }
+
+  search(
+    request: HostSearchRequest,
+  ): Promise<readonly HostSearchResult[]> {
+    return this.request("/v1/host/search", {
+      method: "POST",
+      body: request,
+    });
+  }
+
   directories(path: string): Promise<HostDirectoryListing> {
     return this.request(
       `/v1/host/directories?path=${encodeURIComponent(path)}`,
@@ -50,6 +90,46 @@ export class HttpHostClient {
     return this.request(
       `/v1/host/file?path=${encodeURIComponent(path)}`,
     );
+  }
+
+  async uploadAttachment(
+    upload: HostAttachmentUpload,
+  ): Promise<AttachmentData> {
+    const query = new URLSearchParams({
+      name: upload.name,
+      mimeType: upload.mimeType,
+      size: String(upload.size),
+    });
+    const response = await this.fetcher(
+      `${this.endpoint}/v1/host/projects/${encodeURIComponent(upload.projectId)}/attachments?${query}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.options.token}`,
+          "Content-Type": "application/octet-stream",
+        },
+        body: upload.content,
+      },
+    );
+    return this.jsonResponse(response);
+  }
+
+  async downloadAttachment(
+    projectId: string,
+    attachmentId: string,
+  ): Promise<ArrayBuffer> {
+    const response = await this.fetcher(
+      `${this.endpoint}/v1/host/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.options.token}`,
+        },
+      },
+    );
+    if (!response.ok) {
+      await this.throwResponseError(response);
+    }
+    return response.arrayBuffer();
   }
 
   registerProject(path: string): Promise<HostProjectsSnapshot> {
@@ -121,6 +201,131 @@ export class HttpHostClient {
     });
   }
 
+  conversationChanges(
+    projectId: string,
+    threadId: string,
+  ): Promise<HostConversationChangesSnapshot> {
+    return this.request(this.conversationAction(projectId, threadId, "changes"));
+  }
+
+  conversationWorkspaceList(
+    projectId: string,
+    threadId: string,
+    path = "",
+  ): Promise<
+    readonly {
+      name: string;
+      path: string;
+      type: "file" | "directory";
+    }[]
+  > {
+    const query = new URLSearchParams({ path });
+    return this.request(
+      `${this.conversationAction(projectId, threadId, "workspace/list")}?${query}`,
+    );
+  }
+
+  conversationWorkspaceFile(
+    projectId: string,
+    threadId: string,
+    path: string,
+  ): Promise<{
+    path: string;
+    name: string;
+    content?: string;
+    binary: boolean;
+    size: number;
+  }> {
+    const query = new URLSearchParams({ path });
+    return this.request(
+      `${this.conversationAction(projectId, threadId, "workspace/file")}?${query}`,
+    );
+  }
+
+  restoreConversationChanges(
+    projectId: string,
+    threadId: string,
+    input: HostConversationChangesRestoreRequest,
+  ): Promise<HostConversationChangesSnapshot> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "changes/restore"),
+      { method: "POST", body: input },
+    );
+  }
+
+  preflightWorktreeDelivery(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<HostWorktreeDeliveryPreflight> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "delivery/preflight"),
+      { method: "POST", body: { revision } },
+    );
+  }
+
+  applyWorktreeDelivery(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<HostWorktreeDeliveryResult> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "delivery/apply"),
+      { method: "POST", body: { revision } },
+    );
+  }
+
+  commitWorktreeDelivery(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    message: string,
+  ): Promise<HostWorktreeDeliveryResult> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "delivery/commit"),
+      { method: "POST", body: { revision, message } },
+    );
+  }
+
+  codeHostDeliveryStatus(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<HostCodeHostDeliveryStatus> {
+    const query = new URLSearchParams({ revision });
+    return this.request(
+      `${this.conversationAction(projectId, threadId, "code-host/status")}?${query}`,
+    );
+  }
+
+  commitAndPushCodeHostDelivery(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    message: string,
+  ): Promise<HostCodeHostCommitPushResult> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "code-host/commit-push"),
+      { method: "POST", body: { revision, message } },
+    );
+  }
+
+  createDraftPullRequest(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    title: string,
+    body?: string,
+  ): Promise<HostCodeHostDeliveryStatus> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "code-host/create-pr"),
+      {
+        method: "POST",
+        body: { revision, title, ...(body ? { body } : {}) },
+      },
+    );
+  }
+
   settings(): Promise<HostSettingsSnapshot> {
     return this.request("/v1/host/settings");
   }
@@ -132,6 +337,37 @@ export class HttpHostClient {
       method: "PUT",
       body: update,
     });
+  }
+
+  testProvider(
+    request: HostProviderTestRequest,
+  ): Promise<HostProviderDiagnostic> {
+    return this.request("/v1/host/provider/test", {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  async transcribeAudio(
+    request: HostAudioTranscriptionRequest,
+  ): Promise<string> {
+    const query = new URLSearchParams({ mimeType: request.mimeType });
+    const response = await this.fetcher(
+      `${this.endpoint}/v1/host/audio/transcriptions?${query}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.options.token}`,
+          "Content-Type": "application/octet-stream",
+        },
+        body: request.audio,
+      },
+    );
+    const result = await this.jsonResponse<{ text: string }>(response);
+    if (typeof result.text !== "string" || !result.text.trim()) {
+      throw new Error("语音转写没有返回文字，请重试。");
+    }
+    return result.text.trim();
   }
 
   private async request<Result>(
@@ -153,19 +389,43 @@ export class HttpHostClient {
         ? {}
         : { body: JSON.stringify(options.body) }),
     });
+    return this.jsonResponse(response);
+  }
+
+  private conversationAction(
+    projectId: string,
+    threadId: string,
+    action: string,
+  ): string {
+    return `/v1/host/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(threadId)}/${action}`;
+  }
+
+  private async jsonResponse<Result>(response: Response): Promise<Result> {
     const payload = (await response.json()) as Result | { error?: string };
     if (!response.ok) {
-      throw new Error(
-        typeof payload === "object" &&
-          payload !== null &&
-          "error" in payload &&
-          typeof payload.error === "string"
-          ? payload.error
-          : `Threadlight Host request failed (${response.status}).`,
-      );
+      throw new Error(responseError(payload, response.status));
     }
     return payload as Result;
   }
+
+  private async throwResponseError(response: Response): Promise<never> {
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      // Binary endpoints can fail before a JSON response is available.
+    }
+    throw new Error(responseError(payload, response.status));
+  }
+}
+
+function responseError(payload: unknown, status: number): string {
+  return typeof payload === "object" &&
+    payload !== null &&
+    "error" in payload &&
+    typeof payload.error === "string"
+    ? payload.error
+    : `Threadlight Host request failed (${status}).`;
 }
 
 function normalizeEndpoint(value: string): string {

@@ -203,7 +203,6 @@ export function TerminalPanel({
               key={tab.id}
               adapter={adapter}
               projectId={projectId}
-              threadId={threadId}
               hidden={tab.id !== activeTab?.id}
               label={tab.title}
             />
@@ -228,13 +227,11 @@ export function TerminalPanel({
 export function TerminalView({
   adapter,
   projectId,
-  threadId,
   hidden = false,
   label,
 }: {
   adapter: TerminalAdapter;
   projectId: string;
-  threadId?: string;
   hidden?: boolean;
   label?: string;
 }) {
@@ -265,12 +262,7 @@ export function TerminalView({
       }
     });
     void adapter
-      .create({
-        projectId,
-        ...(threadId ? { threadId } : {}),
-        cols: DEFAULT_COLUMNS,
-        rows: DEFAULT_ROWS,
-      })
+      .create(projectTerminalCreateRequest(projectId))
       .then((created) => {
         createdSessionId = created.id;
         if (mounted) {
@@ -290,7 +282,7 @@ export function TerminalView({
       if (sessionId.current === createdSessionId) sessionId.current = null;
       if (createdSessionId) void adapter.close(createdSessionId);
     };
-  }, [adapter, projectId, threadId]);
+  }, [adapter, projectId]);
 
   const registerOutputWriter = useCallback(
     (writer: ((data: string) => void) | undefined) => {
@@ -333,6 +325,16 @@ export function TerminalView({
       )}
     </div>
   );
+}
+
+export function projectTerminalCreateRequest(
+  projectId: string,
+): Parameters<TerminalAdapter["create"]>[0] {
+  return {
+    projectId,
+    cols: DEFAULT_COLUMNS,
+    rows: DEFAULT_ROWS,
+  };
 }
 
 function TerminalViewport({

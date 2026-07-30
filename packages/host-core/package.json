@@ -15,6 +15,9 @@
     "dist"
   ],
   "dependencies": {
-    "@threadlight/protocol": "0.1.0"
+    "@threadlight/project-memory": "0.1.0",
+    "@threadlight/protocol": "0.1.0",
+    "diff": "^9.0.0",
+    "ignore": "^7.0.6"
   }
 }

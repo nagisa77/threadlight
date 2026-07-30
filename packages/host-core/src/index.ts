@@ -22,3 +22,69 @@ export {
   type RuntimeSettings,
   type SecretCodec,
 } from "./settings-store.js";
+export {
+  testProviderConnection,
+  type ProviderDiagnosticOptions,
+} from "./provider-diagnostics.js";
+export {
+  MAX_TRANSCRIPTION_BYTES,
+  parseAudioTranscriptionRequest,
+  transcribeAudio,
+  type AudioTranscriptionOptions,
+  type AudioTranscriptionRequest,
+} from "./audio-transcription.js";
+export {
+  projectDiagnostics,
+  type DiagnosticsProject,
+} from "./project-diagnostics.js";
+export {
+  ProjectSearchService,
+  matchScore,
+  matchingSnippet,
+  type SearchRequest,
+} from "./project-search.js";
+export {
+  isBinaryFileContent,
+  MAX_FILE_PREVIEW_BYTES,
+} from "./file-preview.js";
+export {
+  ConversationChangeTracker,
+  ConversationRestoreConflictError,
+  type ConversationChangesSnapshot,
+  type ConversationDeliveryFile,
+  type ConversationFileChange,
+  type WorkspaceEntry,
+  type WorkspaceFile,
+} from "./conversation-changes.js";
+export {
+  TaskWorkspaceManager,
+  type FolderTaskWorkspace,
+  type GitTaskWorkspace,
+  type TaskWorkspace,
+  type TaskWorkspaceManagerOptions,
+} from "./task-workspace.js";
+export {
+  WorktreeDeliveryManager,
+  type WorktreeDeliveryConflict,
+  type WorktreeDeliveryManagerOptions,
+  type WorktreeDeliveryPreflight,
+  type WorktreeDeliveryRequest,
+  type WorktreeDeliveryResult,
+} from "./worktree-delivery.js";
+export {
+  CodeHostDeliveryManager,
+  type CodeHostCheck,
+  type CodeHostCommitPushResult,
+  type CodeHostDeliveryManagerOptions,
+  type CodeHostDeliveryRequest,
+  type CodeHostDeliveryStatus,
+  type CodeHostProvider,
+  type CodeHostPullRequest,
+  type CodeHostPullRequestInput,
+  type CodeHostReviewComment,
+  type CommandRunner,
+} from "./code-host-delivery.js";
+export {
+  GitHubCliProvider,
+  type GitHubCliProviderOptions,
+} from "./github-cli-provider.js";

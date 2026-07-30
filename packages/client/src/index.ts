@@ -17,6 +17,8 @@ export {
 } from "./http-runtime-transport.js";
 export {
   HttpHostClient,
+  type HostAttachmentUpload,
+  type HostAudioTranscriptionRequest,
   type HttpHostClientOptions,
 } from "./http-host-client.js";
 export {

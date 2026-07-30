@@ -139,6 +139,7 @@ export class HttpRuntimeTransport implements ClientTransport {
   private headers(extra?: Record<string, string>): Record<string, string> {
     return {
       Authorization: `Bearer ${this.options.token}`,
+      "X-Threadlight-Host-Endpoint": this.endpoint,
       ...extra,
     };
   }

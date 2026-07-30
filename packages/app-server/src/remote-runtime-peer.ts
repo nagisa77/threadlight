@@ -1,7 +1,13 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
+import {
+  createInterface,
+  type Interface as ReadlineInterface,
+} from "node:readline";
+import type { Duplex } from "node:stream";
 
-import type {
+import {
+  DESKTOP_CONNECTION_METHODS,
+  type DesktopConnectionRequest,
   JsonRpcOutgoing,
   JsonRpcRequest,
 } from "@threadlight/protocol";
@@ -19,10 +25,15 @@ export interface JsonLineRuntimePeerOptions {
   cwd: string;
   environment?: NodeJS.ProcessEnv;
   onLog?: (message: string) => void;
+  handleConnectionRequest?(
+    request: DesktopConnectionRequest,
+  ): Promise<unknown>;
 }
 
 export class JsonLineRuntimePeer implements RuntimePeer {
   private child?: ChildProcessWithoutNullStreams;
+  private connectionLines?: ReadlineInterface;
+  private connectionPipe?: Duplex;
   private readonly listeners = new Set<(message: JsonRpcOutgoing) => void>();
   private readonly exitListeners = new Set<(error: Error) => void>();
   private exitError?: Error;
@@ -43,9 +54,24 @@ export class JsonLineRuntimePeer implements RuntimePeer {
           this.options.environment?.THREADLIGHT_PROJECT_ROOT ??
           this.options.cwd,
       },
-      stdio: ["pipe", "pipe", "pipe"],
+      stdio: this.options.handleConnectionRequest
+        ? ["pipe", "pipe", "pipe", "pipe"]
+        : ["pipe", "pipe", "pipe"],
     });
     this.child = child;
+    if (this.options.handleConnectionRequest) {
+      const connectionPipe = child.stdio[3] as Duplex | undefined;
+      if (!connectionPipe) {
+        child.kill();
+        this.child = undefined;
+        throw new Error("Failed to create Host connection RPC pipe");
+      }
+      this.connectionPipe = connectionPipe;
+      this.connectionLines = createInterface({ input: connectionPipe });
+      this.connectionLines.on("line", (line) => {
+        void this.receiveConnection(line);
+      });
+    }
 
     const stdout = createInterface({ input: child.stdout });
     stdout.on("line", (line) => {
@@ -119,6 +145,7 @@ export class JsonLineRuntimePeer implements RuntimePeer {
   async stop(): Promise<void> {
     const child = this.child;
     this.child = undefined;
+    this.closeConnectionTransport();
     if (!child || child.killed) return;
 
     await new Promise<void>((resolve) => {
@@ -139,7 +166,69 @@ export class JsonLineRuntimePeer implements RuntimePeer {
   ): void {
     if (this.child !== child) return;
     this.child = undefined;
+    this.closeConnectionTransport();
     this.exitError = error;
     for (const listener of this.exitListeners) listener(error);
   }
+
+  private async receiveConnection(line: string): Promise<void> {
+    const pipe = this.connectionPipe;
+    if (!pipe || !line.trim()) return;
+    let request: DesktopConnectionRequest | undefined;
+    try {
+      const value = JSON.parse(line) as unknown;
+      if (!isDesktopConnectionRequest(value)) {
+        throw new Error("Invalid Host connection request");
+      }
+      request = value;
+      const result = await this.options.handleConnectionRequest?.(request);
+      if (!pipe.destroyed) {
+        pipe.write(
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: request.id,
+            result,
+          })}\n`,
+        );
+      }
+    } catch (error) {
+      if (!request || pipe.destroyed) return;
+      pipe.write(
+        `${JSON.stringify({
+          jsonrpc: "2.0",
+          id: request.id,
+          error: {
+            code: -32021,
+            message: error instanceof Error ? error.message : String(error),
+          },
+        })}\n`,
+      );
+    }
+  }
+
+  private closeConnectionTransport(): void {
+    this.connectionLines?.close();
+    this.connectionLines = undefined;
+    this.connectionPipe?.destroy();
+    this.connectionPipe = undefined;
+  }
+}
+
+function isDesktopConnectionRequest(
+  value: unknown,
+): value is DesktopConnectionRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const request = value as Record<string, unknown>;
+  return (
+    request.jsonrpc === "2.0" &&
+    (typeof request.id === "string" ||
+      typeof request.id === "number" ||
+      request.id === null) &&
+    typeof request.method === "string" &&
+    DESKTOP_CONNECTION_METHODS.includes(
+      request.method as (typeof DESKTOP_CONNECTION_METHODS)[number],
+    )
+  );
 }

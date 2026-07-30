@@ -13,4 +13,19 @@ describe("attachmentPreviewUrl", () => {
     );
     expect(url).not.toContain(path);
   });
+
+  it("includes opaque attachment metadata for authenticated remote previews", () => {
+    const path = "/srv/project/.threadlight/uploads/private-image.png";
+
+    const url = attachmentPreviewUrl(
+      path,
+      "attachment-1",
+      "image/png",
+    );
+
+    expect(url).toBe(
+      `threadlight-attachment://local/attachment-1/${Buffer.from(path, "utf8").toString("base64url")}?mimeType=image%2Fpng`,
+    );
+    expect(url).not.toContain(path);
+  });
 });

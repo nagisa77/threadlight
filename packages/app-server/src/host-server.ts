@@ -1,5 +1,11 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { readdir, stat } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
@@ -16,14 +22,35 @@ import {
 import type { Duplex } from "node:stream";
 
 import {
+  CodeHostDeliveryManager,
+  ConversationChangeTracker,
+  GitHubCliProvider,
+  type AudioTranscriptionOptions,
+  type AudioTranscriptionRequest,
+  MAX_TRANSCRIPTION_BYTES,
+  projectDiagnostics,
+  ProjectSearchService,
+  TaskWorkspaceManager,
+  type GitTaskWorkspace,
+  type TaskWorkspace,
+  WorktreeDeliveryManager,
   type ProjectStore,
   type SettingsStore,
+  transcribeAudio,
+  testProviderConnection,
+  type RuntimeSettings,
 } from "@threadlight/host-core";
 import type {
   TerminalSessionController,
 } from "@threadlight/terminal-core";
 import type {
+  AttachmentData,
   HostDirectoryListing,
+  HostProjectSummary,
+  HostProviderDiagnostic,
+  HostProviderTestRequest,
+  HostSearchRequest,
+  HostSearchResult,
   HostSettingsUpdate,
   JsonRpcId,
   JsonRpcOutgoing,
@@ -40,6 +67,7 @@ import type { RuntimePeer } from "./remote-runtime-peer.js";
 import { RemoteWorkspace } from "./remote-workspace.js";
 
 const MAX_BODY_BYTES = 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_TERMINAL_MESSAGE_BYTES = 256 * 1024;
 const RPC_TIMEOUT_MS = 120_000;
 const BROWSER_TERMINAL_TOKEN_PREFIX = "threadlight.token.";
@@ -51,16 +79,37 @@ export interface ThreadlightHostServerOptions {
   homePath: string;
   projects: ProjectStore;
   settings: SettingsStore;
+  testProvider?(
+    request: HostProviderTestRequest,
+    settings: RuntimeSettings,
+  ): Promise<HostProviderDiagnostic>;
+  transcribeAudio?(
+    request: AudioTranscriptionRequest,
+    options: AudioTranscriptionOptions,
+  ): Promise<string>;
+  acceptOAuthCallback?(input: {
+    connectorId: string;
+    code?: string;
+    error?: string;
+    state: string;
+  }): boolean;
   createPeer(input: {
     projectId: string;
     projectRoot: string;
+    projectBasePath: string;
+    oauthCallbackUrlPrefix?: string;
   }): RuntimePeer;
   createTerminalSessions?(
     send: (event: TerminalSessionEvent) => void,
   ): TerminalSessionController;
+  taskWorkspaces?: TaskWorkspaceManager;
+  conversationChanges?: ConversationChangeTracker;
+  worktreeDelivery?: WorktreeDeliveryManager;
+  codeHostDelivery?: CodeHostDeliveryManager;
   host?: string;
   port?: number;
   allowedOrigin?: string;
+  oauthCallbackUrlPrefix?: string;
 }
 
 export interface ThreadlightHostAddress {
@@ -71,17 +120,21 @@ export interface ThreadlightHostAddress {
 interface RuntimeContext {
   peer: RuntimePeer;
   workspace: RemoteWorkspace;
-  eventClients: Set<ServerResponse>;
+  projectId: string;
+  workspacePath: string;
   unsubscribe: () => void;
   unsubscribeExit: () => void;
 }
 
 interface PendingResponse {
   projectId: string;
+  runtimeKey: string;
   originalId: JsonRpcId;
   method: string;
   response: ServerResponse;
   timeout: NodeJS.Timeout;
+  workspace?: TaskWorkspace;
+  pendingSnapshotId?: string;
 }
 
 export class ThreadlightHostServer {
@@ -91,6 +144,16 @@ export class ThreadlightHostServer {
   private readonly pending = new Map<string, PendingResponse>();
   private readonly terminalGateway?: HostTerminalGateway;
   private readonly terminalWebSockets?: WebSocketServer;
+  private readonly projectSearch = new ProjectSearchService();
+  private readonly taskWorkspaces: TaskWorkspaceManager;
+  private readonly conversationChanges: ConversationChangeTracker;
+  private readonly worktreeDelivery: WorktreeDeliveryManager;
+  private readonly codeHostDelivery: CodeHostDeliveryManager;
+  private readonly eventClients = new Map<string, Set<ServerResponse>>();
+  private readonly initializationParams = new Map<
+    string,
+    Record<string, unknown> | undefined
+  >();
   private server?: Server;
 
   constructor(private readonly options: ThreadlightHostServerOptions) {
@@ -99,6 +162,23 @@ export class ThreadlightHostServer {
     }
     this.listenHost = options.host ?? "127.0.0.1";
     this.port = options.port ?? 7432;
+    this.taskWorkspaces =
+      options.taskWorkspaces ??
+      new TaskWorkspaceManager(join(options.homePath, "worktrees"));
+    this.conversationChanges =
+      options.conversationChanges ??
+      new ConversationChangeTracker(
+        join(options.homePath, "review-snapshots"),
+      );
+    this.worktreeDelivery =
+      options.worktreeDelivery ??
+      new WorktreeDeliveryManager(this.conversationChanges);
+    this.codeHostDelivery =
+      options.codeHostDelivery ??
+      new CodeHostDeliveryManager(
+        this.conversationChanges,
+        new GitHubCliProvider(),
+      );
     if (options.createTerminalSessions) {
       this.terminalGateway = new HostTerminalGateway({
         projects: options.projects,
@@ -138,7 +218,8 @@ export class ThreadlightHostServer {
   }
 
   async stop(): Promise<void> {
-    for (const pending of this.pending.values()) {
+    const pendingResponses = [...this.pending.values()];
+    for (const pending of pendingResponses) {
       clearTimeout(pending.timeout);
       this.writeJson(pending.response, 503, {
         jsonrpc: "2.0",
@@ -147,6 +228,11 @@ export class ThreadlightHostServer {
       });
     }
     this.pending.clear();
+    await Promise.all(
+      pendingResponses.map((pending) =>
+        this.discardPendingWorkspace(pending),
+      ),
+    );
     this.terminalGateway?.close();
     this.terminalWebSockets?.close();
     await this.stopRuntimes();
@@ -164,8 +250,24 @@ export class ThreadlightHostServer {
     response: ServerResponse,
   ): Promise<void> {
     this.applyCors(request, response);
+    const url = new URL(request.url ?? "/", "http://host.local");
     if (request.method === "OPTIONS") {
       response.writeHead(204).end();
+      return;
+    }
+    const oauthCallback = hostOAuthCallbackRoute(url.pathname);
+    if (request.method === "GET" && oauthCallback) {
+      try {
+        this.handleOAuthCallback(
+          response,
+          url,
+          oauthCallback.connectorId,
+        );
+      } catch {
+        this.writeJson(response, 400, {
+          error: "Invalid OAuth callback",
+        });
+      }
       return;
     }
     if (!this.authorized(request)) {
@@ -173,7 +275,6 @@ export class ThreadlightHostServer {
       return;
     }
 
-    const url = new URL(request.url ?? "/", "http://host.local");
     try {
       if (request.method === "GET" && url.pathname === "/v1/health") {
         this.writeJson(response, 200, {
@@ -207,8 +308,61 @@ export class ThreadlightHostServer {
     response: ServerResponse,
     url: URL,
   ): Promise<boolean> {
+    const conversationRoute = hostConversationWorkspaceRoute(url.pathname);
+    if (conversationRoute) {
+      await this.handleConversationWorkspaceApi(
+        request,
+        response,
+        url,
+        conversationRoute,
+      );
+      return true;
+    }
+    const attachmentRoute = hostAttachmentRoute(url.pathname);
+    if (attachmentRoute) {
+      if (request.method === "POST" && !attachmentRoute.attachmentId) {
+        this.writeJson(
+          response,
+          200,
+          await this.uploadHostAttachment(
+            request,
+            url,
+            attachmentRoute.projectId,
+          ),
+        );
+        return true;
+      }
+      if (request.method === "GET" && attachmentRoute.attachmentId) {
+        await this.writeHostAttachment(
+          response,
+          attachmentRoute.projectId,
+          attachmentRoute.attachmentId,
+        );
+        return true;
+      }
+      return false;
+    }
+    const diagnosticsProjectId = hostDiagnosticsProjectId(url.pathname);
+    if (request.method === "GET" && diagnosticsProjectId) {
+      const project = this.options.projects.project(diagnosticsProjectId);
+      if (!project) {
+        throw new Error(`Unknown project: ${diagnosticsProjectId}`);
+      }
+      this.writeJson(response, 200, projectDiagnostics(project));
+      return true;
+    }
     if (request.method === "GET" && url.pathname === "/v1/host/projects") {
       this.writeJson(response, 200, this.options.projects.snapshot());
+      return true;
+    }
+    if (request.method === "POST" && url.pathname === "/v1/host/search") {
+      this.writeJson(
+        response,
+        200,
+        await this.searchHostProject(
+          parseHostSearchRequest(await jsonBody(request)),
+        ),
+      );
       return true;
     }
     if (
@@ -311,7 +465,12 @@ export class ThreadlightHostServer {
       } else if (url.pathname.endsWith("/read")) {
         snapshot = this.options.projects.markConversationRead(target);
       } else if (url.pathname.endsWith("/delete")) {
+        const workspace = this.options.projects
+          .project(target.projectId)
+          ?.conversations.find(({ id }) => id === target.id)
+          ?.workspace;
         snapshot = this.options.projects.deleteConversation(target);
+        await this.disposeConversationWorkspace(target, workspace);
       } else {
         return false;
       }
@@ -329,7 +488,294 @@ export class ThreadlightHostServer {
       this.writeJson(response, 200, snapshot);
       return true;
     }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/provider/test"
+    ) {
+      const diagnostic = await (
+        this.options.testProvider ?? testProviderConnection
+      )(
+        parseProviderTestRequest(await jsonBody(request)),
+        this.options.settings.runtimeSettings(),
+      );
+      this.writeJson(response, 200, diagnostic);
+      return true;
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/audio/transcriptions"
+    ) {
+      this.writeJson(
+        response,
+        200,
+        await this.transcribeHostAudio(request, url),
+      );
+      return true;
+    }
     return false;
+  }
+
+  private async handleConversationWorkspaceApi(
+    request: IncomingMessage,
+    response: ServerResponse,
+    url: URL,
+    route: { projectId: string; threadId: string; action: string },
+  ): Promise<void> {
+    const context = this.conversationWorkspace(
+      route.projectId,
+      route.threadId,
+    );
+    const { project, workspace } = context;
+
+    if (request.method === "GET" && route.action === "changes") {
+      this.writeJson(
+        response,
+        200,
+        await this.conversationChanges.changes(
+          project.id,
+          route.threadId,
+          workspace.path,
+        ),
+      );
+      return;
+    }
+    if (request.method === "POST" && route.action === "changes/restore") {
+      const body = await jsonBody(request);
+      this.writeJson(
+        response,
+        200,
+        await this.conversationChanges.restore(
+          project.id,
+          route.threadId,
+          workspace.path,
+          requiredString(body.revision, "revision"),
+          optionalStringArray(body.paths, "paths"),
+        ),
+      );
+      return;
+    }
+    if (request.method === "GET" && route.action === "workspace/list") {
+      this.writeJson(
+        response,
+        200,
+        await this.conversationChanges.listWorkspace(
+          workspace.path,
+          url.searchParams.get("path") ?? "",
+        ),
+      );
+      return;
+    }
+    if (request.method === "GET" && route.action === "workspace/file") {
+      this.writeJson(
+        response,
+        200,
+        await this.conversationChanges.readWorkspaceFile(
+          workspace.path,
+          requiredQuery(url, "path"),
+        ),
+      );
+      return;
+    }
+
+    const body =
+      request.method === "POST" ? await jsonBody(request) : undefined;
+    const revision =
+      request.method === "GET"
+        ? requiredQuery(url, "revision")
+        : requiredString(body?.revision, "revision");
+    const worktree = this.requireWorktreeWorkspace(context);
+    const deliveryRequest = {
+      projectId: project.id,
+      threadId: route.threadId,
+      revision,
+      projectPath: project.basePath,
+      workspace: worktree,
+    };
+
+    if (request.method === "POST" && route.action === "delivery/preflight") {
+      this.writeJson(
+        response,
+        200,
+        await this.worktreeDelivery.preflight(deliveryRequest),
+      );
+      return;
+    }
+    if (request.method === "POST" && route.action === "delivery/apply") {
+      this.writeJson(
+        response,
+        200,
+        await this.worktreeDelivery.apply(deliveryRequest),
+      );
+      return;
+    }
+    if (request.method === "POST" && route.action === "delivery/commit") {
+      this.writeJson(
+        response,
+        200,
+        await this.worktreeDelivery.commit(
+          deliveryRequest,
+          requiredString(body?.message, "message"),
+        ),
+      );
+      return;
+    }
+
+    const codeHostRequest = {
+      projectId: project.id,
+      threadId: route.threadId,
+      revision,
+      workspace: worktree,
+    };
+    if (request.method === "GET" && route.action === "code-host/status") {
+      this.writeJson(
+        response,
+        200,
+        await this.codeHostDelivery.status(codeHostRequest),
+      );
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      route.action === "code-host/commit-push"
+    ) {
+      this.writeJson(
+        response,
+        200,
+        await this.codeHostDelivery.commitAndPush(
+          codeHostRequest,
+          requiredString(body?.message, "message"),
+        ),
+      );
+      return;
+    }
+    if (
+      request.method === "POST" &&
+      route.action === "code-host/create-pr"
+    ) {
+      this.writeJson(
+        response,
+        200,
+        await this.codeHostDelivery.createDraftPullRequest(
+          codeHostRequest,
+          {
+            title: requiredString(body?.title, "title"),
+            ...(typeof body?.body === "string" ? { body: body.body } : {}),
+          },
+        ),
+      );
+      return;
+    }
+    this.writeJson(response, 404, { error: "Not found" });
+  }
+
+  private async transcribeHostAudio(
+    request: IncomingMessage,
+    url: URL,
+  ): Promise<{ text: string }> {
+    const apiKey = this.options.settings.runtimeSettings().openAIApiKey;
+    if (!apiKey) {
+      throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+    }
+    const mimeType = audioMimeType(url.searchParams.get("mimeType"));
+    const declaredLength = Number(request.headers["content-length"]);
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > MAX_TRANSCRIPTION_BYTES
+    ) {
+      throw new Error("录音超过 25 MB，请缩短后重试。");
+    }
+    const content = await readBinaryBody(request, MAX_TRANSCRIPTION_BYTES);
+    const audio = Uint8Array.from(content).buffer;
+    const text = await (this.options.transcribeAudio ?? transcribeAudio)(
+      { audio, mimeType },
+      { apiKey },
+    );
+    return { text };
+  }
+
+  private searchHostProject(
+    request: HostSearchRequest,
+  ): Promise<readonly HostSearchResult[]> {
+    const project = this.options.projects.project(request.projectId);
+    if (!project) throw new Error(`Unknown project: ${request.projectId}`);
+    const conversation = request.threadId
+      ? project.conversations.find(
+          ({ id }) => id === request.threadId,
+        )
+      : undefined;
+    if (request.threadId && !conversation) {
+      throw new Error("Unknown conversation");
+    }
+    return this.projectSearch.search({
+      project,
+      workspacePath: conversation?.workspace?.path ?? project.basePath,
+      query: request.query,
+      mode: request.mode,
+      limit: request.limit ?? 80,
+    });
+  }
+
+  private async uploadHostAttachment(
+    request: IncomingMessage,
+    url: URL,
+    projectId: string,
+  ): Promise<AttachmentData> {
+    const project = this.options.projects.project(projectId);
+    if (!project) throw new Error(`Unknown project: ${projectId}`);
+    const name = attachmentName(url.searchParams.get("name"));
+    const mimeType = attachmentMimeType(url.searchParams.get("mimeType"));
+    const size = attachmentSize(url.searchParams.get("size"));
+    const declaredLength = Number(request.headers["content-length"]);
+    if (
+      Number.isFinite(declaredLength) &&
+      declaredLength > MAX_ATTACHMENT_BYTES
+    ) {
+      throw new Error("Attachment must be smaller than 50 MB.");
+    }
+    const content = await readBinaryBody(request, MAX_ATTACHMENT_BYTES);
+    if (content.byteLength !== size) {
+      throw new Error("Attachment size changed during upload.");
+    }
+
+    const id = randomUUID();
+    const root = attachmentUploadRoot(project.basePath);
+    await mkdir(root, { recursive: true });
+    const path = join(root, `${id}-${name}`);
+    await writeFile(path, content, { flag: "wx", mode: 0o600 });
+    return {
+      id,
+      name,
+      mimeType,
+      size,
+      kind: mimeType.startsWith("image/") ? "image" : "file",
+      path,
+    };
+  }
+
+  private async writeHostAttachment(
+    response: ServerResponse,
+    projectId: string,
+    attachmentId: string,
+  ): Promise<void> {
+    const project = this.options.projects.project(projectId);
+    if (!project) throw new Error(`Unknown project: ${projectId}`);
+    if (!/^[a-f0-9-]{36}$/i.test(attachmentId)) {
+      throw new Error("Invalid attachment id.");
+    }
+    const root = attachmentUploadRoot(project.basePath);
+    const entry = (await readdir(root, { withFileTypes: true })).find(
+      (candidate) =>
+        candidate.isFile() &&
+        candidate.name.startsWith(`${attachmentId}-`),
+    );
+    if (!entry) throw new Error("Attachment not found.");
+    const content = await readFile(join(root, entry.name));
+    response.writeHead(200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(content.byteLength),
+      "Cache-Control": "private, max-age=3600",
+    });
+    response.end(content);
   }
 
   private async handleRuntimeApi(
@@ -340,7 +786,6 @@ export class ThreadlightHostServer {
   ): Promise<void> {
     const project = this.options.projects.project(route.projectId);
     if (!project) throw new Error(`Unknown project: ${route.projectId}`);
-    const context = await this.runtime(project.id, project.basePath);
     if (request.method === "GET" && route.action === "/events") {
       response.writeHead(200, {
         "Content-Type": "application/x-ndjson; charset=utf-8",
@@ -349,14 +794,26 @@ export class ThreadlightHostServer {
         "X-Accel-Buffering": "no",
       });
       response.write("\n");
-      context.eventClients.add(response);
-      response.once("close", () => context.eventClients.delete(response));
+      const clients = this.projectEventClients(project.id);
+      clients.add(response);
+      response.once("close", () => clients.delete(response));
       return;
     }
     if (request.method === "POST" && route.action === "/rpc") {
-      await this.forwardRpc(request, response, project.id, context);
+      await this.forwardRpc(
+        request,
+        response,
+        project.id,
+        project.basePath,
+        this.oauthCallbackUrlPrefix(request),
+      );
       return;
     }
+    const context = await this.runtime(
+      project.id,
+      project.basePath,
+      this.oauthCallbackUrlPrefix(request),
+    );
     if (request.method === "GET" && route.action === "/workspace/list") {
       this.writeJson(
         response,
@@ -383,26 +840,46 @@ export class ThreadlightHostServer {
   private async runtime(
     projectId: string,
     projectRoot: string,
+    oauthCallbackUrlPrefix?: string,
   ): Promise<RuntimeContext> {
-    const existing = this.runtimes.get(projectId);
+    const key = runtimeKey(projectId, projectRoot);
+    const existing = this.runtimes.get(key);
     if (existing) return existing;
-    const peer = this.options.createPeer({ projectId, projectRoot });
+    const peer = this.options.createPeer({
+      projectId,
+      projectRoot,
+      projectBasePath:
+        this.options.projects.project(projectId)?.basePath ?? projectRoot,
+      ...(oauthCallbackUrlPrefix ? { oauthCallbackUrlPrefix } : {}),
+    });
     await peer.start();
+    if (this.initializationParams.has(projectId)) {
+      try {
+        await initializeRuntimePeer(
+          peer,
+          this.initializationParams.get(projectId),
+        );
+      } catch (error) {
+        await peer.stop().catch(() => undefined);
+        throw error;
+      }
+    }
     const context: RuntimeContext = {
       peer,
       workspace: new RemoteWorkspace(projectRoot),
-      eventClients: new Set(),
+      projectId,
+      workspacePath: projectRoot,
       unsubscribe: () => undefined,
       unsubscribeExit: () => undefined,
     };
-    context.unsubscribe = peer.onMessage((message) =>
-      this.handlePeerMessage(projectId, context, message),
-    );
+    context.unsubscribe = peer.onMessage((message) => {
+      void this.handlePeerMessage(projectId, context, message);
+    });
     context.unsubscribeExit =
       peer.onExit?.((error) =>
         this.handleRuntimeExit(projectId, context, error),
       ) ?? (() => undefined);
-    this.runtimes.set(projectId, context);
+    this.runtimes.set(key, context);
     return context;
   }
 
@@ -410,7 +887,8 @@ export class ThreadlightHostServer {
     request: IncomingMessage,
     response: ServerResponse,
     projectId: string,
-    context: RuntimeContext,
+    projectRoot: string,
+    oauthCallbackUrlPrefix?: string,
   ): Promise<void> {
     const message = JSON.parse(
       await readBody(request, MAX_BODY_BYTES),
@@ -426,6 +904,57 @@ export class ThreadlightHostServer {
       message.params && typeof message.params === "object"
         ? (message.params as Record<string, unknown>)
         : undefined;
+    let workspace: TaskWorkspace = { mode: "folder", path: projectRoot };
+    let pendingSnapshotId: string | undefined;
+    if (message.method === "thread/start") {
+      workspace = await this.taskWorkspaces.prepare(projectId, projectRoot);
+      pendingSnapshotId = `host:${randomUUID()}`;
+      try {
+        await this.conversationChanges.beginPendingSnapshot(
+          projectId,
+          pendingSnapshotId,
+          workspace.path,
+        );
+      } catch (error) {
+        await this.taskWorkspaces.remove(workspace).catch(() => undefined);
+        throw error;
+      }
+    } else if (typeof params?.threadId === "string") {
+      const conversation = this.options.projects
+        .project(projectId)
+        ?.conversations.find(({ id }) => id === params.threadId);
+      workspace = conversation?.workspace ?? workspace;
+      if (
+        message.method === "thread/resume" ||
+        message.method === "turn/start"
+      ) {
+        await this.conversationChanges.ensureSnapshot(
+          projectId,
+          params.threadId,
+          workspace.path,
+        );
+      }
+    }
+    let context: RuntimeContext;
+    try {
+      context = await this.runtime(
+        projectId,
+        workspace.path,
+        oauthCallbackUrlPrefix,
+      );
+    } catch (error) {
+      if (pendingSnapshotId) {
+        await this.conversationChanges
+          .discardPendingSnapshot(projectId, pendingSnapshotId)
+          .catch(() => undefined);
+        await this.taskWorkspaces.remove(workspace).catch(() => undefined);
+      }
+      throw error;
+    }
+    if (message.method === "initialize") {
+      this.initializationParams.set(projectId, params);
+    }
+    const contextKey = runtimeKey(projectId, workspace.path);
     if (
       message.method === "turn/start" &&
       typeof params?.threadId === "string"
@@ -449,28 +978,39 @@ export class ThreadlightHostServer {
         id: pending.originalId,
         error: { code: -32001, message: "Host runtime request timed out." },
       });
+      void this.discardPendingWorkspace(pending);
     }, RPC_TIMEOUT_MS);
     this.pending.set(internalId, {
       projectId,
+      runtimeKey: contextKey,
       originalId: message.id,
       method: message.method,
       response,
       timeout,
+      ...(message.method === "thread/start" ? { workspace } : {}),
+      ...(pendingSnapshotId ? { pendingSnapshotId } : {}),
     });
     try {
       await context.peer.send({ ...message, id: internalId });
     } catch (error) {
       clearTimeout(timeout);
       this.pending.delete(internalId);
+      if (pendingSnapshotId) {
+        await this.conversationChanges.discardPendingSnapshot(
+          projectId,
+          pendingSnapshotId,
+        );
+        await this.taskWorkspaces.remove(workspace);
+      }
       throw error;
     }
   }
 
-  private handlePeerMessage(
+  private async handlePeerMessage(
     projectId: string,
     context: RuntimeContext,
     message: JsonRpcOutgoing,
-  ): void {
+  ): Promise<void> {
     if ("id" in message && typeof message.id === "string") {
       const pending = this.pending.get(message.id);
       if (pending) {
@@ -481,13 +1021,24 @@ export class ThreadlightHostServer {
             ?.threadId;
           if (typeof threadId === "string") {
             const project = this.options.projects.project(projectId);
-            if (project) {
+            if (project && pending.workspace) {
               this.options.projects.setConversationWorkspace(
                 { projectId, id: threadId },
-                { mode: "folder", path: project.basePath },
+                pending.workspace,
               );
+              if (pending.pendingSnapshotId) {
+                await this.conversationChanges.commitPendingSnapshot(
+                  projectId,
+                  pending.pendingSnapshotId,
+                  threadId,
+                );
+              }
             }
+          } else {
+            await this.discardPendingWorkspace(pending);
           }
+        } else if (pending.method === "thread/start") {
+          await this.discardPendingWorkspace(pending);
         }
         this.writeJson(pending.response, 200, {
           ...message,
@@ -498,7 +1049,9 @@ export class ThreadlightHostServer {
     }
     this.recordNotification(projectId, message);
     const line = `${JSON.stringify(message)}\n`;
-    for (const client of context.eventClients) client.write(line);
+    for (const client of this.projectEventClients(projectId)) {
+      client.write(line);
+    }
   }
 
   private recordNotification(
@@ -533,22 +1086,173 @@ export class ThreadlightHostServer {
     }
   }
 
+  publishConnectorAuthorization(projectId: string, url: string): void {
+    const notification = {
+      jsonrpc: "2.0",
+      method: "connector/authorization-requested",
+      params: { url },
+    } satisfies JsonRpcOutgoing;
+    const line = `${JSON.stringify(notification)}\n`;
+    for (const client of this.projectEventClients(projectId)) {
+      client.write(line);
+    }
+  }
+
+  private handleOAuthCallback(
+    response: ServerResponse,
+    url: URL,
+    connectorId: string,
+  ): void {
+    const code = url.searchParams.get("code") ?? undefined;
+    const oauthError = url.searchParams.get("error") ?? undefined;
+    const state = url.searchParams.get("state") ?? "";
+    const accepted =
+      Boolean(state) &&
+      Boolean(code || oauthError) &&
+      Boolean(
+        this.options.acceptOAuthCallback?.({
+          connectorId,
+          ...(code ? { code } : {}),
+          ...(oauthError ? { error: oauthError } : {}),
+          state,
+        }),
+      );
+    const authorized = accepted && Boolean(code);
+    response.writeHead(authorized ? 200 : 400, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+      "Content-Security-Policy":
+        "default-src 'none'; style-src 'unsafe-inline'",
+    });
+    response.end(
+      oauthResultPage(
+        authorized
+          ? "Connection complete"
+          : accepted
+            ? "Authorization cancelled"
+            : "Connection failed",
+        authorized
+          ? "You can close this window and return to Threadlight."
+          : accepted
+            ? "No connection was created. Return to Threadlight to try again."
+            : "The authorization response was invalid or expired.",
+      ),
+    );
+  }
+
+  private oauthCallbackUrlPrefix(
+    request: IncomingMessage,
+  ): string | undefined {
+    if (this.options.oauthCallbackUrlPrefix) {
+      return normalizeOAuthCallbackUrlPrefix(
+        this.options.oauthCallbackUrlPrefix,
+      );
+    }
+    const endpoint = request.headers["x-threadlight-host-endpoint"];
+    if (typeof endpoint === "string") {
+      return `${normalizeHostEndpoint(endpoint)}/v1/host/oauth/callback`;
+    }
+    const host = request.headers.host;
+    if (!host) return;
+    const forwardedProtocol = request.headers["x-forwarded-proto"];
+    const protocol =
+      typeof forwardedProtocol === "string" &&
+      forwardedProtocol.split(",", 1)[0]?.trim() === "https"
+        ? "https"
+        : "http";
+    return `${normalizeHostEndpoint(`${protocol}://${host}`)}/v1/host/oauth/callback`;
+  }
+
+  private projectEventClients(projectId: string): Set<ServerResponse> {
+    let clients = this.eventClients.get(projectId);
+    if (!clients) {
+      clients = new Set();
+      this.eventClients.set(projectId, clients);
+    }
+    return clients;
+  }
+
+  private conversationWorkspace(
+    projectId: string,
+    threadId: string,
+  ): { project: HostProjectSummary; workspace: TaskWorkspace } {
+    const project = this.options.projects.project(projectId);
+    if (!project) throw new Error(`Unknown project: ${projectId}`);
+    const conversation = project.conversations.find(
+      ({ id }) => id === threadId,
+    );
+    if (!conversation) throw new Error("Unknown conversation");
+    return {
+      project,
+      workspace: conversation.workspace ?? {
+        mode: "folder",
+        path: project.basePath,
+      },
+    };
+  }
+
+  private requireWorktreeWorkspace(
+    context: { workspace: TaskWorkspace },
+  ): GitTaskWorkspace {
+    if (context.workspace.mode !== "worktree") {
+      throw new Error("Only isolated worktree tasks can be delivered");
+    }
+    return context.workspace;
+  }
+
+  private async discardPendingWorkspace(
+    pending: PendingResponse,
+  ): Promise<void> {
+    if (pending.pendingSnapshotId) {
+      await this.conversationChanges
+        .discardPendingSnapshot(
+          pending.projectId,
+          pending.pendingSnapshotId,
+        )
+        .catch(() => undefined);
+    }
+    if (pending.workspace) {
+      await this.taskWorkspaces
+        .remove(pending.workspace)
+        .catch(() => undefined);
+    }
+  }
+
+  private async disposeConversationWorkspace(target: {
+    projectId: string;
+    id: string;
+  }, workspace?: TaskWorkspace): Promise<void> {
+    await this.conversationChanges
+      .deleteSnapshot(target.projectId, target.id)
+      .catch(() => undefined);
+    if (workspace?.mode !== "worktree") return;
+    const key = runtimeKey(target.projectId, workspace.path);
+    const runtime = this.runtimes.get(key);
+    if (runtime) {
+      this.runtimes.delete(key);
+      runtime.unsubscribe();
+      runtime.unsubscribeExit();
+      await runtime.peer.stop().catch(() => undefined);
+    }
+    await this.taskWorkspaces.remove(workspace);
+  }
+
   private handleRuntimeExit(
     projectId: string,
     context: RuntimeContext,
     error: Error,
   ): void {
-    if (this.runtimes.get(projectId) === context) {
-      this.runtimes.delete(projectId);
+    const key = runtimeKey(projectId, context.workspacePath);
+    if (this.runtimes.get(key) === context) {
+      this.runtimes.delete(key);
     }
     context.unsubscribe();
     context.unsubscribeExit();
-    for (const client of context.eventClients) client.end();
-    context.eventClients.clear();
     for (const [id, pending] of this.pending) {
-      if (pending.projectId !== projectId) continue;
+      if (pending.runtimeKey !== key) continue;
       clearTimeout(pending.timeout);
       this.pending.delete(id);
+      void this.discardPendingWorkspace(pending);
       this.writeJson(pending.response, 502, {
         jsonrpc: "2.0",
         id: pending.originalId,
@@ -566,10 +1270,13 @@ export class ThreadlightHostServer {
     for (const context of contexts) {
       context.unsubscribe();
       context.unsubscribeExit();
-      for (const client of context.eventClients) client.end();
-      context.eventClients.clear();
       await context.peer.stop();
     }
+    for (const clients of this.eventClients.values()) {
+      for (const client of clients) client.end();
+      clients.clear();
+    }
+    this.eventClients.clear();
   }
 
   private authorized(
@@ -635,7 +1342,7 @@ export class ThreadlightHostServer {
       response.setHeader("Vary", "Origin");
       response.setHeader(
         "Access-Control-Allow-Headers",
-        "Authorization, Content-Type",
+        "Authorization, Content-Type, X-Threadlight-Host-Endpoint",
       );
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
     }
@@ -697,6 +1404,161 @@ function runtimeRoute(
   };
 }
 
+function hostConversationWorkspaceRoute(
+  pathname: string,
+):
+  | { projectId: string; threadId: string; action: string }
+  | undefined {
+  const match =
+    /^\/v1\/host\/projects\/([^/]+)\/conversations\/([^/]+)\/(.+)$/.exec(
+      pathname,
+    );
+  if (!match) return;
+  return {
+    projectId: decodeURIComponent(match[1]!),
+    threadId: decodeURIComponent(match[2]!),
+    action: match[3]!,
+  };
+}
+
+function runtimeKey(projectId: string, workspacePath: string): string {
+  return `${projectId}\u0000${workspacePath}`;
+}
+
+async function initializeRuntimePeer(
+  peer: RuntimePeer,
+  params: Record<string, unknown> | undefined,
+): Promise<void> {
+  const id = `host:initialize:${randomUUID()}`;
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error("Host task runtime initialization timed out."));
+    }, RPC_TIMEOUT_MS);
+    const unsubscribe = peer.onMessage((message) => {
+      if (!("id" in message) || message.id !== id) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      if ("error" in message && message.error) {
+        reject(new Error(message.error.message));
+      } else {
+        resolve();
+      }
+    });
+    try {
+      void Promise.resolve(peer.send({
+        jsonrpc: "2.0",
+        id,
+        method: "initialize",
+        ...(params ? { params } : {}),
+      } as JsonRpcRequest)).catch((error) => {
+        clearTimeout(timeout);
+        unsubscribe();
+        reject(error);
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      unsubscribe();
+      reject(error);
+    }
+  });
+}
+
+function hostAttachmentRoute(
+  pathname: string,
+): { projectId: string; attachmentId?: string } | undefined {
+  const match =
+    /^\/v1\/host\/projects\/([^/]+)\/attachments(?:\/([^/]+))?$/.exec(
+      pathname,
+    );
+  if (!match) return;
+  return {
+    projectId: decodeURIComponent(match[1]!),
+    ...(match[2]
+      ? { attachmentId: decodeURIComponent(match[2]) }
+      : {}),
+  };
+}
+
+function attachmentUploadRoot(projectRoot: string): string {
+  return join(projectRoot, ".threadlight", "uploads");
+}
+
+function attachmentName(value: string | null): string {
+  const name = basename(value?.trim() ?? "");
+  if (!name || name === "." || name === ".." || name.length > 255) {
+    throw new Error("A valid attachment name is required.");
+  }
+  return name;
+}
+
+function attachmentMimeType(value: string | null): string {
+  const mimeType = value?.trim() ?? "";
+  if (!mimeType || mimeType.length > 255 || /[\r\n]/.test(mimeType)) {
+    throw new Error("A valid attachment MIME type is required.");
+  }
+  return mimeType;
+}
+
+function attachmentSize(value: string | null): number {
+  const size = Number(value);
+  if (
+    !Number.isSafeInteger(size) ||
+    size <= 0 ||
+    size > MAX_ATTACHMENT_BYTES
+  ) {
+    throw new Error("Attachment must be non-empty and smaller than 50 MB.");
+  }
+  return size;
+}
+
+function parseProviderTestRequest(
+  value: Record<string, unknown>,
+): HostProviderTestRequest {
+  if (!isModelProvider(value.provider)) {
+    throw new Error("Invalid provider");
+  }
+  const model = requiredString(value.model, "model").trim();
+  if (
+    value.baseUrl !== undefined &&
+    (typeof value.baseUrl !== "string" || !value.baseUrl.trim())
+  ) {
+    throw new Error("Base URL must be a non-empty string");
+  }
+  if (
+    value.apiKey !== undefined &&
+    value.apiKey !== null &&
+    typeof value.apiKey !== "string"
+  ) {
+    throw new Error("API key must be a string or null");
+  }
+  return {
+    provider: value.provider,
+    model,
+    ...(typeof value.baseUrl === "string"
+      ? { baseUrl: value.baseUrl.trim() }
+      : {}),
+    ...(value.apiKey === undefined
+      ? {}
+      : { apiKey: value.apiKey as string | null }),
+  };
+}
+
+function isModelProvider(
+  value: unknown,
+): value is HostProviderTestRequest["provider"] {
+  return (
+    value === "openai" ||
+    value === "deepseek" ||
+    value === "qwen" ||
+    value === "kimi" ||
+    value === "doubao" ||
+    value === "gemini" ||
+    value === "grok" ||
+    value === "custom"
+  );
+}
+
 async function jsonBody(
   request: IncomingMessage,
 ): Promise<Record<string, unknown>> {
@@ -710,6 +1572,24 @@ async function jsonBody(
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`${name} is required.`);
+  }
+  return value;
+}
+
+function requiredQuery(url: URL, name: string): string {
+  return requiredString(url.searchParams.get(name), name);
+}
+
+function optionalStringArray(
+  value: unknown,
+  name: string,
+): readonly string[] | undefined {
+  if (value === undefined) return;
+  if (
+    !Array.isArray(value) ||
+    value.some((entry) => typeof entry !== "string")
+  ) {
+    throw new Error(`${name} must be an array of strings`);
   }
   return value;
 }
@@ -799,6 +1679,15 @@ function readBody(
   request: IncomingMessage,
   limit: number,
 ): Promise<string> {
+  return readBinaryBody(request, limit).then((content) =>
+    content.toString("utf8"),
+  );
+}
+
+function readBinaryBody(
+  request: IncomingMessage,
+  limit: number,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
@@ -811,9 +1700,125 @@ function readBody(
       }
       chunks.push(chunk);
     });
-    request.on("end", () =>
-      resolve(Buffer.concat(chunks).toString("utf8")),
-    );
+    request.on("end", () => resolve(Buffer.concat(chunks)));
     request.on("error", reject);
   });
+}
+
+function audioMimeType(value: string | null): string {
+  const mimeType = value?.trim() ?? "";
+  if (
+    !mimeType ||
+    mimeType.length > 255 ||
+    mimeType.includes("\r") ||
+    mimeType.includes("\n")
+  ) {
+    throw new Error("Invalid audio transcription MIME type");
+  }
+  return mimeType;
+}
+
+function parseHostSearchRequest(value: unknown): HostSearchRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid search request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    !request.projectId ||
+    request.projectId.length > 256 ||
+    (request.threadId !== undefined &&
+      (typeof request.threadId !== "string" ||
+        !request.threadId ||
+        request.threadId.length > 256)) ||
+    typeof request.query !== "string" ||
+    request.query.length > 2_000 ||
+    (request.mode !== "all" && request.mode !== "files") ||
+    (request.limit !== undefined &&
+      (!Number.isInteger(request.limit) ||
+        Number(request.limit) < 1 ||
+        Number(request.limit) > 200))
+  ) {
+    throw new Error("Invalid search request");
+  }
+  return {
+    projectId: request.projectId,
+    ...(typeof request.threadId === "string"
+      ? { threadId: request.threadId }
+      : {}),
+    query: request.query,
+    mode: request.mode,
+    ...(typeof request.limit === "number"
+      ? { limit: request.limit }
+      : {}),
+  };
+}
+
+function hostOAuthCallbackRoute(
+  pathname: string,
+): { connectorId: string } | undefined {
+  const match =
+    /^\/v1\/host\/oauth\/callback\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(
+      pathname,
+    );
+  return match?.[1] ? { connectorId: match[1] } : undefined;
+}
+
+function hostDiagnosticsProjectId(pathname: string): string | undefined {
+  const match =
+    /^\/v1\/host\/projects\/([^/]+)\/diagnostics$/.exec(pathname);
+  if (!match?.[1]) return;
+  const projectId = decodeURIComponent(match[1]);
+  if (!projectId || projectId.length > 256) {
+    throw new Error("Invalid project id");
+  }
+  return projectId;
+}
+
+function normalizeHostEndpoint(value: string): string {
+  if (!value.trim() || value.length > 2048) {
+    throw new Error("Invalid Threadlight Host endpoint");
+  }
+  const url = new URL(value.trim());
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error("Invalid Threadlight Host endpoint");
+  }
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/+$/, "");
+}
+
+function normalizeOAuthCallbackUrlPrefix(value: string): string {
+  const prefix = normalizeHostEndpoint(value);
+  const url = new URL(prefix);
+  if (
+    !url.pathname.endsWith("/v1/host/oauth/callback") &&
+    !url.pathname.endsWith("/oauth/callback")
+  ) {
+    throw new Error("Invalid OAuth callback URL prefix");
+  }
+  return prefix;
+}
+
+function oauthResultPage(title: string, message: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${title}</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: Canvas; color: CanvasText; }
+      main { width: min(28rem, calc(100vw - 3rem)); text-align: center; }
+      h1 { font-size: 1.35rem; margin: 0 0 .75rem; }
+      p { line-height: 1.55; opacity: .72; margin: 0; }
+    </style>
+  </head>
+  <body><main><h1>${title}</h1><p>${message}</p></main></body>
+</html>`;
 }

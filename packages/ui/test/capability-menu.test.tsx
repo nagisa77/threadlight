@@ -254,7 +254,7 @@ describe("CapabilityMenu", () => {
 
     expect(html).toContain("管理 Gmail 连接");
     expect(html).toContain("断开并清除凭据");
-    expect(html).toContain("从本机安全存储中清除");
+    expect(html).toContain("从当前 Threadlight Host 清除");
     expect(html).toContain(">完成</button>");
     expect(html).not.toContain("继续授权");
   });

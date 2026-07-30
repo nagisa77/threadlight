@@ -14,11 +14,17 @@ import {
 import { TerminalSessionManager } from "@threadlight/terminal-core";
 
 import { createHostSecretCodec } from "./host-secret-codec.js";
+import {
+  HostConnectionService,
+  HostConnectionStore,
+} from "./host-connection-service.js";
 import { ThreadlightHostServer } from "./host-server.js";
 import { hostTerminalEnvironment } from "./host-terminal-environment.js";
 import { JsonLineRuntimePeer } from "./remote-runtime-peer.js";
 
 const args = parseArgs(process.argv.slice(2));
+const publicUrl =
+  args.publicUrl ?? process.env.THREADLIGHT_HOST_PUBLIC_URL;
 const token =
   args.token ??
   process.env.THREADLIGHT_HOST_TOKEN;
@@ -35,14 +41,22 @@ const homePath = resolve(
     join(homedir(), ".threadlight"),
 );
 const projects = new ProjectStore(join(homePath, "project-map.json"));
+const secretCodec = createHostSecretCodec(
+  join(homePath, "host-secret.key"),
+);
 const settings = new SettingsStore(
   join(homePath, "settings.json"),
-  createHostSecretCodec(join(homePath, "host-secret.key")),
+  secretCodec,
+);
+const connections = new HostConnectionStore(
+  join(homePath, "connection-store.json"),
+  secretCodec,
 );
 if (args.project) projects.register(resolve(args.project));
 
 const entry = fileURLToPath(new URL("./bin.js", import.meta.url));
-const server = new ThreadlightHostServer({
+let server: ThreadlightHostServer;
+server = new ThreadlightHostServer({
   token,
   hostId: readOrCreateHostId(join(homePath, "host-id")),
   name: args.name?.trim() || hostname(),
@@ -52,13 +66,47 @@ const server = new ThreadlightHostServer({
   host: args.host,
   port: args.port,
   allowedOrigin: args.origin,
-  createPeer: ({ projectRoot }) =>
-    new JsonLineRuntimePeer({
+  ...(publicUrl
+    ? {
+        oauthCallbackUrlPrefix:
+          `${normalizePublicUrl(publicUrl)}/v1/host/oauth/callback`,
+      }
+    : {}),
+  acceptOAuthCallback: (input) =>
+    connections.acceptAuthorizationCallback(input),
+  createPeer: ({
+    projectId,
+    projectRoot,
+    projectBasePath,
+    oauthCallbackUrlPrefix,
+  }) => {
+    const connectionService = new HostConnectionService(
+      connections,
+      (url) => server.publishConnectorAuthorization(projectId, url),
+    );
+    return new JsonLineRuntimePeer({
       entry,
       cwd: projectRoot,
-      environment: runtimeEnvironment(settings.runtimeSettings()),
+      environment: {
+        ...runtimeEnvironment(settings.runtimeSettings()),
+        THREADLIGHT_CONNECTION_RPC_FD: "3",
+        ...(oauthCallbackUrlPrefix
+          ? {
+              THREADLIGHT_OAUTH_CALLBACK_URL_PREFIX:
+                oauthCallbackUrlPrefix,
+            }
+          : {}),
+        THREADLIGHT_ATTACHMENT_ROOT: join(
+          projectBasePath,
+          ".threadlight",
+          "uploads",
+        ),
+      },
       onLog: (message) => process.stderr.write(`[app-server] ${message}\n`),
-    }),
+      handleConnectionRequest: (request) =>
+        connectionService.handle(request),
+    });
+  },
   createTerminalSessions: (send) =>
     new TerminalSessionManager(send, {
       environment: hostTerminalEnvironment(process.env),
@@ -91,6 +139,7 @@ interface HostArgs {
   token?: string;
   origin?: string;
   name?: string;
+  publicUrl?: string;
 }
 
 function parseArgs(values: string[]): HostArgs {
@@ -105,7 +154,8 @@ function parseArgs(values: string[]): HostArgs {
       flag !== "--project" &&
       flag !== "--token" &&
       flag !== "--origin" &&
-      flag !== "--name"
+      flag !== "--name" &&
+      flag !== "--public-url"
     ) {
       throw new Error(`Unknown Threadlight Host option: ${flag}`);
     }
@@ -117,6 +167,7 @@ function parseArgs(values: string[]): HostArgs {
     if (flag === "--token") result.token = value;
     if (flag === "--origin") result.origin = value;
     if (flag === "--name") result.name = value;
+    if (flag === "--public-url") result.publicUrl = value;
     if (flag === "--port") {
       const port = Number.parseInt(value, 10);
       if (!Number.isInteger(port) || port < 0 || port > 65_535) {
@@ -126,6 +177,20 @@ function parseArgs(values: string[]): HostArgs {
     }
   }
   return result;
+}
+
+function normalizePublicUrl(value: string): string {
+  const url = new URL(value.trim());
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username ||
+    url.password
+  ) {
+    throw new Error("--public-url must use http or https");
+  }
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/+$/, "");
 }
 
 function readOrCreateHostId(path: string): string {
