@@ -300,7 +300,9 @@ describe("ThreadlightHostServer", () => {
     const root = temporaryDirectory("threadlight-host-terminal-");
     const workspace = createWorkspace(root, "project", "value");
     const taskWorkspace = join(root, "task-workspace");
+    const worktreeWorkspace = join(root, "task-worktree");
     mkdirSync(taskWorkspace);
+    mkdirSync(worktreeWorkspace);
     const projects = new ProjectStore(join(root, "home", "project-map.json"), {
       createId: () => "project-1",
     });
@@ -308,6 +310,17 @@ describe("ThreadlightHostServer", () => {
     projects.setConversationWorkspace(
       { projectId: "project-1", id: "thread-1" },
       { mode: "folder", path: taskWorkspace },
+    );
+    projects.setConversationWorkspace(
+      { projectId: "project-1", id: "thread-2" },
+      {
+        mode: "worktree",
+        path: worktreeWorkspace,
+        root: worktreeWorkspace,
+        repositoryRoot: workspace,
+        branch: "threadlight/project-abcdef1234",
+        baseCommit: "abc123",
+      },
     );
     const settings = new SettingsStore(
       join(root, "home", "settings.json"),
@@ -370,6 +383,27 @@ describe("ThreadlightHostServer", () => {
     });
     expect(terminalSessions[0]?.creates).toEqual([
       { cwd: realpathSync(taskWorkspace), cols: 100, rows: 30 },
+    ]);
+
+    const worktreeOpenedMessage = nextWebSocketMessage(socket);
+    socket.send(
+      JSON.stringify({
+        type: "open",
+        requestId: "open-2",
+        projectId: "project-1",
+        threadId: "thread-2",
+        cols: 80,
+        rows: 24,
+      }),
+    );
+    expect(await worktreeOpenedMessage).toEqual({
+      type: "opened",
+      requestId: "open-2",
+      session: { id: "terminal-1", shell: "zsh" },
+    });
+    expect(terminalSessions[0]?.creates).toEqual([
+      { cwd: realpathSync(taskWorkspace), cols: 100, rows: 30 },
+      { cwd: realpathSync(workspace), cols: 80, rows: 24 },
     ]);
 
     const dataMessage = nextWebSocketMessage(socket);

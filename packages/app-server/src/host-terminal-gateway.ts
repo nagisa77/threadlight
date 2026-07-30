@@ -218,11 +218,15 @@ function terminalWorkingDirectory(
 ): string {
   const project = projects.project(projectId);
   if (!project) throw new Error(`Unknown project: ${projectId}`);
-  const workspacePath = threadId
+  const workspace = threadId
     ? project.conversations.find(
         (conversation) => conversation.id === threadId,
-      )?.workspace?.path
+      )?.workspace
     : undefined;
+  const workspacePath =
+    workspace?.mode === "worktree"
+      ? workspace.repositoryRoot
+      : workspace?.path;
   const directory = realpathSync(workspacePath ?? project.basePath);
   if (!statSync(directory).isDirectory()) {
     throw new Error("Terminal workspace is not a directory");
