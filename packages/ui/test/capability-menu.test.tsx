@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import {
   CapabilityChips,
   CapabilityMenu,
-  ComposerAddMenu,
   ConnectorSetupDialog,
   MessageCapabilityReceipts,
 } from "../src/capabilities.js";
@@ -15,8 +14,10 @@ describe("CapabilityMenu", () => {
     const html = renderToStaticMarkup(
       <I18nProvider language="zh-CN">
         <CapabilityMenu
+          actions={[]}
           activeIndex={0}
           loading={false}
+          onSelectAction={() => undefined}
           onSelect={() => undefined}
           capabilities={[
             {
@@ -48,11 +49,13 @@ describe("CapabilityMenu", () => {
     expect(html).toContain("lucide-file-text");
   });
 
-  it("uses the same command menu surface for file and Plan actions", () => {
+  it("uses one menu surface for files, tools, and skills", () => {
     const html = renderToStaticMarkup(
       <I18nProvider language="zh-CN">
-        <ComposerAddMenu
+        <CapabilityMenu
           activeIndex={1}
+          loading={false}
+          onSelectAction={() => undefined}
           onSelect={() => undefined}
           actions={[
             {
@@ -61,22 +64,45 @@ describe("CapabilityMenu", () => {
               description: "选择本地文件",
               icon: "attachment",
             },
+          ]}
+          capabilities={[
             {
-              id: "plan",
-              name: "使用 Plan 模式",
+              id: "tool:plan",
+              kind: "tool",
+              name: "Plan",
               description: "先研究再计划",
               icon: "plan",
-              active: true,
+              visibility: "featured",
+            },
+            {
+              id: "skill:excel",
+              kind: "skill",
+              name: "Excel",
+              description: "创建并验证工作簿",
+              icon: "excel",
+              visibility: "featured",
+            },
+            {
+              id: "skill:powerpoint",
+              kind: "skill",
+              name: "PowerPoint",
+              description: "创建并验证演示文稿",
+              icon: "powerpoint",
+              visibility: "featured",
             },
           ]}
         />
       </I18nProvider>,
     );
 
-    expect(html).toContain('id="composer-add-menu"');
+    expect(html).toContain('id="composer-capability-menu"');
     expect(html).toContain("lucide-paperclip");
     expect(html).toContain("lucide-list-todo");
-    expect(html).toContain("已开启");
+    expect(html).toContain("lucide-table-2");
+    expect(html).toContain("lucide-presentation");
+    expect(html).toContain("添加");
+    expect(html).toContain("工具");
+    expect(html).toContain("技能");
   });
 
   it("renders selected and applied capability receipts, including legacy refs", () => {

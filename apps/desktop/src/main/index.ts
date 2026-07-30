@@ -31,6 +31,8 @@ import {
   AppServerProcess,
   resolveAppServerEntry,
 } from "./app-server-process.js";
+import { RemoteRuntimeConnection } from "./remote-runtime-connection.js";
+import { RemoteRuntimeCredentialStore } from "./remote-runtime-credential-store.js";
 import {
   COMPUTER_CAPTURE_URL,
   computerCaptureHtml,
@@ -58,6 +60,9 @@ import {
   TaskWorkspaceManager,
   type TaskWorkspace,
 } from "./task-workspace.js";
+import { WorktreeDeliveryManager } from "./worktree-delivery.js";
+import { CodeHostDeliveryManager } from "./code-host-delivery.js";
+import { GitHubCliProvider } from "./github-cli-provider.js";
 import {
   ConnectionStore,
   DesktopConnectionService,
@@ -74,6 +79,14 @@ import {
   SettingsStore,
 } from "./settings-store.js";
 import { ProjectStore } from "./project-store.js";
+import { ProjectSearchService } from "./project-search.js";
+import { AutomationStore } from "./automation-store.js";
+import { ExecutionPolicyStore } from "./execution-policy-store.js";
+import {
+  AutomationScheduler,
+  type AutomationAlert,
+  type AutomationExecutionResult,
+} from "./automation-scheduler.js";
 import { projectDiagnostics } from "./diagnostics.js";
 import { testProviderConnection } from "./provider-diagnostics.js";
 import {
@@ -96,6 +109,13 @@ import {
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
+  DESKTOP_AUTOMATIONS_CHANGED_CHANNEL,
+  DESKTOP_AUTOMATIONS_CREATE_CHANNEL,
+  DESKTOP_AUTOMATIONS_DELETE_CHANNEL,
+  DESKTOP_AUTOMATIONS_GET_CHANNEL,
+  DESKTOP_AUTOMATIONS_RUN_CHANNEL,
+  DESKTOP_AUTOMATIONS_UPDATE_CHANNEL,
+  DESKTOP_AUTOMATION_OPEN_CHANNEL,
   DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL,
   DESKTOP_COMPUTER_SHARE_GET_CHANNEL,
   DESKTOP_COMPUTER_SHARE_SHOW_CHANNEL,
@@ -107,6 +127,12 @@ import {
   DESKTOP_CLIPBOARD_WRITE_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
   DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL,
+  DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,
+  DESKTOP_WORKTREE_DELIVERY_COMMIT_CHANNEL,
+  DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL,
+  DESKTOP_CODE_HOST_DELIVERY_STATUS_CHANNEL,
+  DESKTOP_CODE_HOST_DELIVERY_COMMIT_PUSH_CHANNEL,
+  DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
   DESKTOP_CONVERSATION_READ_CHANNEL,
   DESKTOP_CONVERSATION_UPDATE_CHANNEL,
@@ -114,8 +140,11 @@ import {
   DESKTOP_DIAGNOSTICS_GET_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
+  DESKTOP_PROJECT_UPDATE_CHANNEL,
+  DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
+  DESKTOP_SEARCH_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
   DESKTOP_PROJECT_OPENERS_GET_CHANNEL,
   DESKTOP_PROJECT_OPEN_WITH_CHANNEL,
@@ -127,6 +156,11 @@ import {
   DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL,
   DESKTOP_SYSTEM_FILE_GET_CHANNEL,
   DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL,
+  DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL,
+  DESKTOP_EXECUTION_APPROVAL_RESOLVED_CHANNEL,
+  DESKTOP_EXECUTION_APPROVAL_RESPOND_CHANNEL,
+  DESKTOP_EXECUTION_POLICY_GET_CHANNEL,
+  DESKTOP_EXECUTION_POLICY_REVOKE_CHANNEL,
   type DesktopProviderTestRequest,
   DESKTOP_TERMINAL_CLOSE_CHANNEL,
   DESKTOP_TERMINAL_CREATE_CHANNEL,
@@ -137,15 +171,26 @@ import {
   DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
   DESKTOP_WORKSPACE_LIST_CHANNEL,
   type DesktopAttachmentReferenceRequest,
+  type DesktopAutomation,
+  type DesktopAutomationCreateRequest,
+  type DesktopAutomationTarget,
+  type DesktopAutomationUpdateRequest,
   type DesktopConversationTarget,
   type DesktopConversationMetadataUpdate,
   type DesktopConversationUpdate,
   type DesktopConversationChangesRequest,
   type DesktopConversationChangesRestoreRequest,
+  type DesktopWorktreeDeliveryCommitRequest,
+  type DesktopWorktreeDeliveryRequest,
+  type DesktopCodeHostCommitPushRequest,
+  type DesktopCodeHostCreatePullRequest,
   type DesktopComputerPermissionCapability,
   type DesktopProjectOpenWithRequest,
+  type DesktopProjectMetadataUpdate,
+  type DesktopRemoteRuntimeConnectRequest,
   type DesktopProjectOpener,
   type DesktopSettingsUpdate,
+  type DesktopSearchRequest,
   type DesktopSystemFileRequest,
   type DesktopTaskWorkspace,
   type DesktopTerminalCreateRequest,
@@ -153,6 +198,9 @@ import {
   type DesktopTerminalWriteRequest,
   type DesktopWorkspaceFileRequest,
   type DesktopWorkspaceListRequest,
+  type DesktopExecutionApprovalRequest,
+  type DesktopExecutionApprovalResponse,
+  type DesktopExecutionPolicyRevokeRequest,
 } from "../shared/desktop-api.js";
 import {
   DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
@@ -181,8 +229,9 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let mainWindow: BrowserWindow | null = null;
+type RuntimeProcess = AppServerProcess | RemoteRuntimeConnection;
 interface AppServerRuntime {
-  process: AppServerProcess;
+  process: RuntimeProcess;
   projectId: string;
   projectRoot: string;
   workspace: DesktopTaskWorkspace;
@@ -201,10 +250,41 @@ let computerPermissionService: ComputerPermissionService | null = null;
 let terminalService: TerminalSessionManager | null = null;
 let conversationChangeTracker: ConversationChangeTracker | null = null;
 let taskWorkspaceManager: TaskWorkspaceManager | null = null;
+let worktreeDeliveryManager: WorktreeDeliveryManager | null = null;
+let codeHostDeliveryManager: CodeHostDeliveryManager | null = null;
+let projectSearchService: ProjectSearchService | null = null;
+let automationStore: AutomationStore | null = null;
+let automationScheduler: AutomationScheduler | null = null;
 let connectionStore: ConnectionStore | null = null;
 let connectionService: DesktopConnectionService | null = null;
+let remoteRuntimeCredentials: RemoteRuntimeCredentialStore | null = null;
+let executionPolicyStore: ExecutionPolicyStore | null = null;
+const taskExecutionGrants = new Set<string>();
+const pendingExecutionApprovals = new Map<
+  string,
+  {
+    request: DesktopExecutionApprovalRequest;
+    runtimeKey: string;
+  }
+>();
 const pendingOAuthCallbacks: string[] = [];
 let rendererMessageQueue = Promise.resolve();
+let automationRequestId = 0;
+const automationRpcWaiters = new Map<
+  string,
+  {
+    resolve(result: unknown): void;
+    reject(error: Error): void;
+    timer: ReturnType<typeof setTimeout>;
+  }
+>();
+const automationTurnWaiters = new Map<
+  string,
+  {
+    resolve(result: AutomationExecutionResult): void;
+  }
+>();
+const automationThreads = new Map<string, string>();
 const appIconPath = resolve(
   import.meta.dirname,
   "../../resources/app-icon.png",
@@ -316,17 +396,47 @@ function createWindow(): void {
 }
 
 function ensureAppServer(
-  window: BrowserWindow,
+  window: BrowserWindow | null,
   projectId: string,
   projectRoot: string,
   workspace: DesktopTaskWorkspace,
-): AppServerProcess {
-  const existing = appServers.get(workspace.path);
+): RuntimeProcess {
+  const key = runtimeKey(projectId, workspace.path);
+  const existing = appServers.get(key);
   if (existing) {
     existing.process.start();
     return existing.process;
   }
-  const appServer = new AppServerProcess({
+  const send = (message: JsonRpcOutgoing) => {
+    rendererMessageQueue = rendererMessageQueue
+      .then(async () => {
+        if (handleExecutionApprovalNotification(projectId, workspace, message)) {
+          return;
+        }
+        await recordProjectMessage(projectId, workspace, message);
+        const rendererWindow = mainWindow ?? window;
+        if (rendererWindow && !rendererWindow.isDestroyed()) {
+          sendToRenderer(rendererWindow, message);
+        }
+      })
+      .catch(() => {
+        const rendererWindow = mainWindow ?? window;
+        if (rendererWindow && !rendererWindow.isDestroyed()) {
+          sendToRenderer(rendererWindow, message);
+        }
+      });
+  };
+  const project = projectStore?.project(projectId);
+  const appServer: RuntimeProcess =
+    project?.runtime?.kind === "remote"
+      ? new RemoteRuntimeConnection({
+          endpoint: project.runtime.endpoint,
+          token:
+            remoteRuntimeCredentials?.get(projectId) ??
+            missingRemoteRuntimeToken(projectId),
+          send,
+        })
+      : new AppServerProcess({
     entry: resolveAppServerEntry({
       appPath: app.getAppPath(),
       isPackaged: app.isPackaged,
@@ -346,16 +456,7 @@ function ensureAppServer(
         model: DEFAULT_MODEL,
       },
     ),
-    send: (message) => {
-      rendererMessageQueue = rendererMessageQueue
-        .then(async () => {
-          await recordProjectMessage(projectId, workspace, message);
-          sendToRenderer(window, message);
-        })
-        .catch(() => {
-          sendToRenderer(window, message);
-        });
-    },
+    send,
     handleComputerRequest: (request) => {
       if (!computerService) {
         throw new Error("Desktop computer service is not available");
@@ -369,7 +470,7 @@ function ensureAppServer(
       return connectionService.handle(request);
     },
   });
-  appServers.set(workspace.path, {
+  appServers.set(key, {
     process: appServer,
     projectId,
     projectRoot,
@@ -379,9 +480,38 @@ function ensureAppServer(
   return appServer;
 }
 
+function missingRemoteRuntimeToken(projectId: string): never {
+  throw new Error(`Remote runtime credentials are missing for ${projectId}.`);
+}
+
 function stopAppServers(): void {
+  for (const pending of pendingExecutionApprovals.values()) {
+    appServers.get(pending.runtimeKey)?.process.send({
+      jsonrpc: "2.0",
+      method: "execution/approval/respond",
+      params: {
+        requestId: pending.request.requestId,
+        decision: "deny",
+      },
+    });
+  }
+  pendingExecutionApprovals.clear();
+  taskExecutionGrants.clear();
   for (const runtime of appServers.values()) runtime.process.stop();
   appServers.clear();
+  for (const [threadId, waiter] of automationTurnWaiters) {
+    waiter.resolve({
+      threadId,
+      error: "The automation runtime stopped before the task finished.",
+    });
+  }
+  automationTurnWaiters.clear();
+  automationThreads.clear();
+  for (const [id, waiter] of automationRpcWaiters) {
+    clearTimeout(waiter.timer);
+    waiter.reject(new Error("The automation runtime stopped"));
+    automationRpcWaiters.delete(id);
+  }
   threadProjects.clear();
   pendingThreadStarts.clear();
   processWorkspaces.clear();
@@ -428,7 +558,46 @@ async function recordProjectMessage(
         // A task can be removed while a late runtime notification is queued.
       }
     }
-    if (projectStore && settingsStore) {
+    const automationId =
+      typeof threadId === "string"
+        ? automationThreads.get(threadId)
+        : undefined;
+    if (
+      automationId &&
+      typeof threadId === "string" &&
+      (message.method === "turn/completed" ||
+        message.method === "turn/failed")
+    ) {
+      try {
+        projectStore?.markConversationUnread({ projectId, id: threadId });
+      } catch {
+        // A task can be removed while a late automation result is queued.
+      }
+      const params = message.params as Record<string, unknown>;
+      const diagnostics = params.diagnostics as
+        | { toolCalls?: readonly { isError?: boolean }[] }
+        | undefined;
+      automationTurnWaiters.get(threadId)?.resolve(
+        message.method === "turn/failed"
+          ? {
+              threadId,
+              error:
+                typeof params.error === "string"
+                  ? params.error
+                  : "Automation failed",
+            }
+          : {
+              threadId,
+              output:
+                typeof params.output === "string" ? params.output : "",
+              toolError: diagnostics?.toolCalls?.some(
+                (tool) => tool.isError,
+              ),
+            },
+      );
+      automationTurnWaiters.delete(threadId);
+      automationThreads.delete(threadId);
+    } else if (projectStore && settingsStore) {
       handleTaskCompletion(projectId, message, {
         language: settingsStore.snapshot().language,
         markUnread: (target) => projectStore!.markConversationUnread(target),
@@ -442,6 +611,7 @@ async function recordProjectMessage(
     pending?.projectId !== projectId ||
     pending.workspace.path !== workspace.path
   ) {
+    settleAutomationRpc(message);
     return;
   }
   pendingThreadStarts.delete(message.id);
@@ -453,18 +623,23 @@ async function recordProjectMessage(
       { projectId, id: threadId },
       workspace,
     );
-    await conversationChangeTracker?.commitPendingSnapshot(
-      projectId,
-      requestKey(message.id),
-      threadId,
-    );
+    if (projectStore?.project(projectId)?.runtime?.kind !== "remote") {
+      await conversationChangeTracker?.commitPendingSnapshot(
+        projectId,
+        requestKey(message.id),
+        threadId,
+      );
+    }
   } else {
-    await conversationChangeTracker?.discardPendingSnapshot(
-      projectId,
-      requestKey(message.id),
-    );
+    if (projectStore?.project(projectId)?.runtime?.kind !== "remote") {
+      await conversationChangeTracker?.discardPendingSnapshot(
+        projectId,
+        requestKey(message.id),
+      );
+    }
     await disposeTaskWorkspace(workspace);
   }
+  settleAutomationRpc(message);
 }
 
 function projectIdForThread(threadId: string): string | undefined {
@@ -477,6 +652,193 @@ function projectIdForThread(threadId: string): string | undefined {
     );
   if (project) threadProjects.set(threadId, project.id);
   return project?.id;
+}
+
+function handleExecutionApprovalNotification(
+  projectId: string,
+  workspace: DesktopTaskWorkspace,
+  message: JsonRpcOutgoing,
+): boolean {
+  if (
+    "method" in message &&
+    message.method === "execution/approval-resolved"
+  ) {
+    const requestId = (message.params as { requestId?: unknown } | undefined)
+      ?.requestId;
+    if (typeof requestId === "string") {
+      pendingExecutionApprovals.delete(requestId);
+      const window = mainWindow;
+      if (window && !window.isDestroyed()) {
+        window.webContents.send(
+          DESKTOP_EXECUTION_APPROVAL_RESOLVED_CHANNEL,
+          requestId,
+        );
+      }
+    }
+    return true;
+  }
+  if (
+    !("method" in message) ||
+    message.method !== "execution/approval-required"
+  ) {
+    return false;
+  }
+  const request = parseExecutionApprovalRequest(
+    projectId,
+    message.params,
+  );
+  if (!request) return true;
+  const key = taskExecutionGrantKey(request);
+  const granted =
+    taskExecutionGrants.has(key) ||
+    executionPolicyStore?.allows(projectId, request.permissionKey) === true;
+  const runtimeId = runtimeKey(projectId, workspace.path);
+  if (granted) {
+    appServers.get(runtimeId)?.process.send({
+      jsonrpc: "2.0",
+      method: "execution/approval/respond",
+      params: { requestId: request.requestId, decision: "allow" },
+    });
+    return true;
+  }
+  pendingExecutionApprovals.set(request.requestId, {
+    request,
+    runtimeKey: runtimeId,
+  });
+  const window = mainWindow;
+  if (window && !window.isDestroyed()) {
+    window.webContents.send(
+      DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL,
+      request,
+    );
+    window.show();
+  }
+  return true;
+}
+
+function parseExecutionApprovalRequest(
+  projectId: string,
+  value: unknown,
+): DesktopExecutionApprovalRequest | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return;
+  const input = value as Record<string, unknown>;
+  const required = [
+    "requestId",
+    "threadId",
+    "runId",
+    "toolName",
+    "permissionKey",
+    "summary",
+  ] as const;
+  if (required.some((key) => typeof input[key] !== "string")) return;
+  const project = projectStore?.project(projectId);
+  return {
+    requestId: input.requestId as string,
+    projectId,
+    projectName: project?.name ?? "Project",
+    threadId: input.threadId as string,
+    runId: input.runId as string,
+    toolName: input.toolName as string,
+    permissionKey: input.permissionKey as string,
+    risk: "write",
+    summary: input.summary as string,
+    ...(typeof input.detail === "string" ? { detail: input.detail } : {}),
+    external: input.external === true,
+  };
+}
+
+function taskExecutionGrantKey(
+  request: Pick<
+    DesktopExecutionApprovalRequest,
+    "projectId" | "threadId" | "permissionKey"
+  >,
+): string {
+  return `${request.projectId}\0${request.threadId}\0${request.permissionKey}`;
+}
+
+function handleExecutionApprovalRespond(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): void {
+  requireTrustedSender(event);
+  const response = parseExecutionApprovalResponse(value);
+  const pending = pendingExecutionApprovals.get(response.requestId);
+  if (!pending) throw new Error("This approval request is no longer pending.");
+  pendingExecutionApprovals.delete(response.requestId);
+  if (response.decision === "allow") {
+    if (response.scope === "task") {
+      taskExecutionGrants.add(taskExecutionGrantKey(pending.request));
+    } else if (response.scope === "project") {
+      executionPolicyStore?.grant(pending.request.projectId, {
+        permissionKey: pending.request.permissionKey,
+        label: pending.request.summary,
+        external: pending.request.external,
+      });
+    }
+  }
+  appServers.get(pending.runtimeKey)?.process.send({
+    jsonrpc: "2.0",
+    method: "execution/approval/respond",
+    params: {
+      requestId: response.requestId,
+      decision: response.decision,
+    },
+  });
+}
+
+function parseExecutionApprovalResponse(
+  value: unknown,
+): DesktopExecutionApprovalResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Invalid execution approval response");
+  }
+  const input = value as Record<string, unknown>;
+  if (
+    typeof input.requestId !== "string" ||
+    (input.decision !== "allow" && input.decision !== "deny") ||
+    !["once", "task", "project"].includes(String(input.scope))
+  ) {
+    throw new TypeError("Invalid execution approval response");
+  }
+  return {
+    requestId: input.requestId,
+    decision: input.decision,
+    scope: input.scope as DesktopExecutionApprovalResponse["scope"],
+  };
+}
+
+function handleExecutionPolicyGet(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (typeof value !== "string") throw new TypeError("projectId is required");
+  requireProject(value);
+  if (!executionPolicyStore) throw new Error("Execution policy is unavailable");
+  return executionPolicyStore.snapshot(value);
+}
+
+function handleExecutionPolicyRevoke(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Invalid execution policy revoke request");
+  }
+  const request = value as Partial<DesktopExecutionPolicyRevokeRequest>;
+  if (
+    typeof request.projectId !== "string" ||
+    typeof request.permissionKey !== "string"
+  ) {
+    throw new TypeError("Invalid execution policy revoke request");
+  }
+  requireProject(request.projectId);
+  if (!executionPolicyStore) throw new Error("Execution policy is unavailable");
+  return executionPolicyStore.revoke(
+    request.projectId,
+    request.permissionKey,
+  );
 }
 
 function projectForRequest(request: JsonRpcRequest) {
@@ -507,7 +869,9 @@ function workspaceForRequest(
   const sessionId = params?.sessionId;
   if (typeof sessionId === "string") {
     const workspacePath = processWorkspaces.get(sessionId);
-    const runtime = workspacePath ? appServers.get(workspacePath) : undefined;
+    const runtime = workspacePath
+      ? appServers.get(runtimeKey(project.id, workspacePath))
+      : undefined;
     if (runtime) return runtime.workspace;
   }
   return folderWorkspace(project.basePath);
@@ -556,18 +920,21 @@ async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void>
   if (value.method === "thread/start" && value.id !== undefined) {
     let workspace: TaskWorkspace | undefined;
     try {
-      if (!taskWorkspaceManager) {
+      if (project.runtime?.kind === "remote") {
+        workspace = folderWorkspace(project.runtime.workspacePath);
+      } else if (!taskWorkspaceManager) {
         throw new Error("Task workspace management is not available");
+      } else {
+        workspace = await taskWorkspaceManager.prepare(
+          project.id,
+          project.basePath,
+        );
+        await conversationChangeTracker?.beginPendingSnapshot(
+          project.id,
+          requestKey(value.id),
+          workspace.path,
+        );
       }
-      workspace = await taskWorkspaceManager.prepare(
-        project.id,
-        project.basePath,
-      );
-      await conversationChangeTracker?.beginPendingSnapshot(
-        project.id,
-        requestKey(value.id),
-        workspace.path,
-      );
     } catch (error) {
       if (workspace) await disposeTaskWorkspace(workspace);
       if (value.id !== undefined) {
@@ -592,10 +959,12 @@ async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void>
     try {
       await runtime.initialize();
     } catch (error) {
-      await conversationChangeTracker?.discardPendingSnapshot(
-        project.id,
-        requestKey(value.id),
-      );
+      if (project.runtime?.kind !== "remote") {
+        await conversationChangeTracker?.discardPendingSnapshot(
+          project.id,
+          requestKey(value.id),
+        );
+      }
       await disposeTaskWorkspace(workspace);
       sendToRenderer(mainWindow, {
         jsonrpc: "2.0",
@@ -623,11 +992,13 @@ async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void>
     const threadId = (value.params as Record<string, unknown>).threadId;
     if (typeof threadId === "string") {
       try {
-        await conversationChangeTracker?.ensureSnapshot(
-          project.id,
-          threadId,
-          workspace.path,
-        );
+        if (project.runtime?.kind !== "remote") {
+          await conversationChangeTracker?.ensureSnapshot(
+            project.id,
+            threadId,
+            workspace.path,
+          );
+        }
       } catch (error) {
         if (value.id !== undefined) {
           sendToRenderer(mainWindow, {
@@ -700,10 +1071,12 @@ function handleSettingsUpdate(event: IpcMainInvokeEvent, value: unknown) {
   ) {
     const environment = runtimeEnvironment(nextRuntimeSettings);
     for (const runtime of appServers.values()) {
-      runtime.process.restart({
-        ...environment,
-        THREADLIGHT_PROJECT_ROOT: runtime.projectRoot,
-      });
+      if (runtime.process instanceof AppServerProcess) {
+        runtime.process.restart({
+          ...environment,
+          THREADLIGHT_PROJECT_ROOT: runtime.projectRoot,
+        });
+      }
     }
   }
   return snapshot;
@@ -735,6 +1108,73 @@ function handleProjectsGet(event: IpcMainInvokeEvent) {
   return projectStore.snapshot();
 }
 
+function handleAutomationsGet(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!automationStore) throw new Error("Automations are not available");
+  const project = requireProject(value);
+  return automationStore.snapshot(project.id);
+}
+
+function handleAutomationCreate(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!automationStore) throw new Error("Automations are not available");
+  const request = parseAutomationRequest(value);
+  requireProject(request.projectId);
+  const snapshot = automationStore.create(request);
+  sendAutomationSnapshot(request.projectId);
+  return snapshot;
+}
+
+function handleAutomationUpdate(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!automationStore) throw new Error("Automations are not available");
+  const request = parseAutomationRequest(value, true);
+  requireProject(request.projectId);
+  const snapshot = automationStore.update(request);
+  sendAutomationSnapshot(request.projectId);
+  return snapshot;
+}
+
+function handleAutomationDelete(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!automationStore) throw new Error("Automations are not available");
+  const target = parseAutomationTarget(value);
+  requireProject(target.projectId);
+  const snapshot = automationStore.delete(target.projectId, target.id);
+  sendAutomationSnapshot(target.projectId);
+  return snapshot;
+}
+
+function handleAutomationRun(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!automationStore || !automationScheduler) {
+    throw new Error("Automations are not available");
+  }
+  const target = parseAutomationTarget(value);
+  requireProject(target.projectId);
+  const automation = automationStore.get(target.id);
+  if (!automation || automation.projectId !== target.projectId) {
+    throw new Error("Unknown automation");
+  }
+  automationScheduler.runNow(target.id);
+  return automationStore.snapshot(target.projectId);
+}
+
 async function handleProjectOpen(event: IpcMainInvokeEvent) {
   requireTrustedSender(event);
   if (!projectStore || !mainWindow) {
@@ -759,6 +1199,51 @@ async function handleProjectOpen(event: IpcMainInvokeEvent) {
   return snapshot;
 }
 
+async function handleRemoteRuntimeConnect(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!projectStore || !remoteRuntimeCredentials || !mainWindow) {
+    throw new Error("Remote Runtime is not available.");
+  }
+  const request = parseRemoteRuntimeConnectRequest(value);
+  const endpoint = normalizeRemoteRuntimeEndpoint(request.endpoint);
+  const probe = new RemoteRuntimeConnection({
+    endpoint,
+    token: request.token,
+    send: () => undefined,
+  });
+  let health;
+  try {
+    health = await probe.health();
+    if (health.protocolVersion !== 1) {
+      throw new Error(
+        `Unsupported Remote Runtime protocol: ${health.protocolVersion}`,
+      );
+    }
+  } finally {
+    probe.stop();
+  }
+  const snapshot = projectStore.registerRemote({
+    name: request.name?.trim() || health.name,
+    endpoint,
+    workspacePath: health.workspacePath,
+    runtimeId: health.runtimeId,
+  });
+  if (!snapshot.activeProjectId) {
+    throw new Error("Remote Runtime project was not registered.");
+  }
+  remoteRuntimeCredentials.set(snapshot.activeProjectId, request.token);
+  ensureAppServer(
+    mainWindow,
+    snapshot.activeProjectId,
+    health.workspacePath,
+    folderWorkspace(health.workspacePath),
+  );
+  return snapshot;
+}
+
 function handleProjectActivate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!projectStore || !mainWindow) {
@@ -779,11 +1264,22 @@ function handleProjectActivate(event: IpcMainInvokeEvent, value: unknown) {
   return snapshot;
 }
 
+function handleProjectUpdate(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  return projectStore.updateProject(parseProjectMetadataUpdate(value));
+}
+
 async function handleProjectOpenersGet(
   event: IpcMainInvokeEvent,
   value: unknown,
 ) {
   requireTrustedSender(event);
+  const selectedProject =
+    typeof value === "string" && value
+      ? requireProject(value)
+      : projectStore?.activeProject();
+  if (selectedProject?.runtime?.kind === "remote") return [];
   const basePath =
     typeof value === "string" && value
       ? requireProject(value).basePath
@@ -834,6 +1330,9 @@ async function handleProjectOpenWith(
   requireTrustedSender(event);
   const request = parseProjectOpenWithRequest(value);
   const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    throw new Error("Remote workspaces cannot be opened by a local app.");
+  }
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
     : folderWorkspace(project.basePath);
@@ -904,6 +1403,30 @@ async function handleConversationChangesGet(
   const request = parseConversationChangesRequest(value);
   const project = requireProject(request.projectId);
   const workspace = workspaceForThread(project, request.threadId);
+  if (project.runtime?.kind === "remote") {
+    const changes = await requireRemoteRuntime(project.id).getWorkspaceChanges();
+    const files = changes.files.map((file) => ({
+      path: file.path,
+      status:
+        file.status === "added" || file.status === "untracked"
+          ? "added" as const
+          : file.status === "deleted"
+            ? "deleted" as const
+            : "modified" as const,
+      additions: file.additions,
+      deletions: file.deletions,
+      binary: file.binary,
+      ...(file.oldText !== undefined ? { oldContent: file.oldText } : {}),
+      ...(file.newText !== undefined ? { newContent: file.newText } : {}),
+    }));
+    return {
+      threadId: request.threadId,
+      additions: files.reduce((total, file) => total + file.additions, 0),
+      deletions: files.reduce((total, file) => total + file.deletions, 0),
+      revision: changes.revision,
+      files,
+    };
+  }
   return conversationChangeTracker.changes(
     project.id,
     request.threadId,
@@ -921,6 +1444,11 @@ async function handleConversationChangesRestore(
   }
   const request = parseConversationChangesRestoreRequest(value);
   const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    throw new Error(
+      "Remote Runtime review is read-only. Restore files from the remote workspace.",
+    );
+  }
   const workspace = workspaceForThread(project, request.threadId);
   return conversationChangeTracker.restore(
     project.id,
@@ -929,6 +1457,107 @@ async function handleConversationChangesRestore(
     request.revision,
     request.paths,
   );
+}
+
+async function handleWorktreeDeliveryPreflight(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseWorktreeDeliveryRequest(value);
+  const delivery = requireWorktreeDelivery(request);
+  return delivery.manager.preflight(delivery.request);
+}
+
+async function handleWorktreeDeliveryApply(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseWorktreeDeliveryRequest(value);
+  const delivery = requireWorktreeDelivery(request);
+  return delivery.manager.apply(delivery.request);
+}
+
+async function handleWorktreeDeliveryCommit(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseWorktreeDeliveryCommitRequest(value);
+  const delivery = requireWorktreeDelivery(request);
+  return delivery.manager.commit(delivery.request, request.message);
+}
+
+async function handleCodeHostDeliveryStatus(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseWorktreeDeliveryRequest(value);
+  const delivery = requireCodeHostDelivery(request);
+  return delivery.manager.status(delivery.request);
+}
+
+async function handleCodeHostDeliveryCommitPush(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseCodeHostCommitPushRequest(value);
+  const delivery = requireCodeHostDelivery(request);
+  return delivery.manager.commitAndPush(delivery.request, request.message);
+}
+
+async function handleCodeHostDeliveryCreatePr(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseCodeHostCreatePullRequest(value);
+  const delivery = requireCodeHostDelivery(request);
+  return delivery.manager.createDraftPullRequest(delivery.request, {
+    title: request.title,
+    ...(request.body ? { body: request.body } : {}),
+  });
+}
+
+function requireWorktreeDelivery(request: DesktopWorktreeDeliveryRequest) {
+  if (!worktreeDeliveryManager) {
+    throw new Error("Worktree delivery is not available");
+  }
+  const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    throw new Error("Remote Runtime tasks do not use local worktree delivery.");
+  }
+  const workspace = workspaceForThread(project, request.threadId);
+  if (workspace.mode !== "worktree") {
+    throw new Error("Only isolated worktree tasks can be delivered");
+  }
+  return {
+    manager: worktreeDeliveryManager,
+    request: {
+      ...request,
+      projectPath: project.basePath,
+      workspace,
+    },
+  };
+}
+
+function requireCodeHostDelivery(request: DesktopWorktreeDeliveryRequest) {
+  if (!codeHostDeliveryManager) {
+    throw new Error("GitHub delivery is not available");
+  }
+  const delivery = requireWorktreeDelivery(request);
+  return {
+    manager: codeHostDeliveryManager,
+    request: {
+      projectId: request.projectId,
+      threadId: request.threadId,
+      revision: request.revision,
+      workspace: delivery.request.workspace,
+    },
+  };
 }
 
 async function handleWorkspaceList(
@@ -941,6 +1570,16 @@ async function handleWorkspaceList(
   }
   const request = parseWorkspaceListRequest(value);
   const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    const entries = await requireRemoteRuntime(project.id).listWorkspace(
+      request.path,
+    );
+    return entries.map((entry) => ({
+      name: entry.name,
+      path: entry.path,
+      type: entry.kind,
+    }));
+  }
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
     : folderWorkspace(project.basePath);
@@ -960,6 +1599,18 @@ async function handleWorkspaceFileGet(
   }
   const request = parseWorkspaceFileRequest(value);
   const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    const file = await requireRemoteRuntime(project.id).getWorkspaceFile(
+      request.path,
+    );
+    return {
+      path: file.path,
+      name: file.path.split("/").at(-1) ?? file.path,
+      ...(file.binary ? {} : { content: file.content }),
+      binary: file.binary,
+      size: file.size,
+    };
+  }
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
     : folderWorkspace(project.basePath);
@@ -979,6 +1630,9 @@ async function handleWorkspaceFileReveal(
   }
   const request = parseWorkspaceFileRequest(value);
   const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    throw new Error("Remote files cannot be revealed in the local file manager.");
+  }
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
     : folderWorkspace(project.basePath);
@@ -1027,6 +1681,21 @@ async function handleProjectMemoryGet(
 ) {
   requireTrustedSender(event);
   const project = requireProject(value);
+  if (project.runtime?.kind === "remote") {
+    const file = await requireRemoteRuntime(project.id)
+      .getWorkspaceFile(".threadlight/MEMORY.md")
+      .catch(() => ({
+        path: ".threadlight/MEMORY.md",
+        content: "",
+        binary: false,
+        size: 0,
+      }));
+    return {
+      path: file.path,
+      content: file.content,
+      revision: `remote:${file.size}:${file.content.length}`,
+    };
+  }
   const snapshot = await new ProjectMemoryStore(project.basePath).read();
   return {
     path: snapshot.path,
@@ -1041,9 +1710,40 @@ async function handleProjectMemoryOpen(
 ): Promise<void> {
   requireTrustedSender(event);
   const project = requireProject(value);
+  if (project.runtime?.kind === "remote") {
+    throw new Error("Remote project memory cannot be opened by a local app.");
+  }
   const snapshot = await new ProjectMemoryStore(project.basePath).read();
   const error = await shell.openPath(snapshot.absolutePath);
   if (error) throw new Error(error);
+}
+
+async function handleSearch(event: IpcMainInvokeEvent, value: unknown) {
+  requireTrustedSender(event);
+  if (!projectSearchService) throw new Error("Search is not available");
+  const request = parseSearchRequest(value);
+  const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    throw new Error("Remote Runtime search is not available in this version.");
+  }
+  if (
+    request.threadId &&
+    !project.conversations.some(
+      (conversation) => conversation.id === request.threadId,
+    )
+  ) {
+    throw new Error("Unknown conversation");
+  }
+  const workspace = request.threadId
+    ? workspaceForThread(project, request.threadId)
+    : folderWorkspace(project.basePath);
+  return projectSearchService.search({
+    project,
+    workspacePath: workspace.path,
+    query: request.query,
+    mode: request.mode,
+    limit: request.limit ?? 80,
+  });
 }
 
 async function handleAudioTranscription(
@@ -1124,6 +1824,40 @@ function parseComputerPermission(
   return value;
 }
 
+function parseRemoteRuntimeConnectRequest(
+  value: unknown,
+): DesktopRemoteRuntimeConnectRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid Remote Runtime connection.");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.endpoint !== "string" ||
+    !request.endpoint.trim() ||
+    typeof request.token !== "string" ||
+    !request.token.trim() ||
+    (request.name !== undefined && typeof request.name !== "string")
+  ) {
+    throw new Error("Remote Runtime endpoint and token are required.");
+  }
+  return {
+    endpoint: request.endpoint,
+    token: request.token,
+    ...(typeof request.name === "string" ? { name: request.name } : {}),
+  };
+}
+
+function normalizeRemoteRuntimeEndpoint(value: string): string {
+  const url = new URL(value.trim());
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Remote Runtime endpoint must use http or https.");
+  }
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
 function handleTerminalCreate(
   event: IpcMainInvokeEvent,
   value: unknown,
@@ -1132,6 +1866,11 @@ function handleTerminalCreate(
   if (!terminalService) throw new Error("Terminal is not available");
   const request = parseTerminalCreateRequest(value);
   const project = requireProject(request.projectId);
+  if (project.runtime?.kind === "remote") {
+    throw new Error(
+      "Use agent commands for the remote shell; the local terminal cannot attach to this runtime.",
+    );
+  }
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
     : folderWorkspace(project.basePath);
@@ -1480,9 +2219,13 @@ function parseConversationMetadataUpdate(
     (update.title !== undefined && typeof update.title !== "string") ||
     (update.pinned !== undefined && typeof update.pinned !== "boolean") ||
     (update.archived !== undefined && typeof update.archived !== "boolean") ||
+    (update.accessMode !== undefined &&
+      update.accessMode !== "approval" &&
+      update.accessMode !== "full") ||
     (update.title === undefined &&
       update.pinned === undefined &&
-      update.archived === undefined)
+      update.archived === undefined &&
+      update.accessMode === undefined)
   ) {
     throw new Error("Invalid conversation metadata update");
   }
@@ -1496,7 +2239,27 @@ function parseConversationMetadataUpdate(
     ...(typeof update.archived === "boolean"
       ? { archived: update.archived }
       : {}),
+    ...(update.accessMode === "approval" || update.accessMode === "full"
+      ? { accessMode: update.accessMode }
+      : {}),
   };
+}
+
+function parseProjectMetadataUpdate(
+  value: unknown,
+): DesktopProjectMetadataUpdate {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid project metadata update");
+  }
+  const update = value as Record<string, unknown>;
+  if (
+    typeof update.id !== "string" ||
+    !update.id ||
+    typeof update.pinned !== "boolean"
+  ) {
+    throw new Error("Invalid project metadata update");
+  }
+  return { id: update.id, pinned: update.pinned };
 }
 
 function parseProjectOpenWithRequest(
@@ -1574,6 +2337,70 @@ function parseConversationChangesRestoreRequest(
   };
 }
 
+function parseWorktreeDeliveryRequest(
+  value: unknown,
+): DesktopWorktreeDeliveryRequest {
+  const request = parseConversationChangesRequest(value);
+  const delivery = value as Record<string, unknown>;
+  if (typeof delivery.revision !== "string" || !delivery.revision) {
+    throw new Error("Invalid worktree delivery request");
+  }
+  return { ...request, revision: delivery.revision };
+}
+
+function parseWorktreeDeliveryCommitRequest(
+  value: unknown,
+): DesktopWorktreeDeliveryCommitRequest {
+  const request = parseWorktreeDeliveryRequest(value);
+  const commit = value as Record<string, unknown>;
+  if (
+    typeof commit.message !== "string" ||
+    !commit.message.trim() ||
+    commit.message.length > 1_000
+  ) {
+    throw new Error("Invalid worktree delivery commit message");
+  }
+  return { ...request, message: commit.message.trim() };
+}
+
+function parseCodeHostCommitPushRequest(
+  value: unknown,
+): DesktopCodeHostCommitPushRequest {
+  const request = parseWorktreeDeliveryRequest(value);
+  const input = value as Record<string, unknown>;
+  if (
+    typeof input.message !== "string" ||
+    !input.message.trim() ||
+    input.message.length > 1_000
+  ) {
+    throw new Error("Invalid GitHub delivery commit message");
+  }
+  return { ...request, message: input.message.trim() };
+}
+
+function parseCodeHostCreatePullRequest(
+  value: unknown,
+): DesktopCodeHostCreatePullRequest {
+  const request = parseWorktreeDeliveryRequest(value);
+  const input = value as Record<string, unknown>;
+  if (
+    typeof input.title !== "string" ||
+    !input.title.trim() ||
+    input.title.length > 256 ||
+    (input.body !== undefined &&
+      (typeof input.body !== "string" || input.body.length > 20_000))
+  ) {
+    throw new Error("Invalid Draft PR details");
+  }
+  return {
+    ...request,
+    title: input.title.trim(),
+    ...(typeof input.body === "string" && input.body.trim()
+      ? { body: input.body.trim() }
+      : {}),
+  };
+}
+
 function parseWorkspaceListRequest(
   value: unknown,
 ): DesktopWorkspaceListRequest {
@@ -1633,6 +2460,117 @@ function parseSystemFileRequest(
     throw new Error("Invalid system file request");
   }
   return { path: request.path };
+}
+
+function parseSearchRequest(value: unknown): DesktopSearchRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid search request");
+  }
+  const request = value as Record<string, unknown>;
+  if (
+    typeof request.projectId !== "string" ||
+    !request.projectId ||
+    (request.threadId !== undefined &&
+      (typeof request.threadId !== "string" || !request.threadId)) ||
+    typeof request.query !== "string" ||
+    request.query.length > 2_000 ||
+    (request.mode !== "all" && request.mode !== "files") ||
+    (request.limit !== undefined &&
+      (!Number.isInteger(request.limit) ||
+        Number(request.limit) < 1 ||
+        Number(request.limit) > 200))
+  ) {
+    throw new Error("Invalid search request");
+  }
+  return {
+    projectId: request.projectId,
+    ...(typeof request.threadId === "string"
+      ? { threadId: request.threadId }
+      : {}),
+    query: request.query,
+    mode: request.mode,
+    ...(typeof request.limit === "number" ? { limit: request.limit } : {}),
+  };
+}
+
+function parseAutomationRequest(
+  value: unknown,
+): DesktopAutomationCreateRequest;
+function parseAutomationRequest(
+  value: unknown,
+  update: true,
+): DesktopAutomationUpdateRequest;
+function parseAutomationRequest(
+  value: unknown,
+  update = false,
+): DesktopAutomationCreateRequest | DesktopAutomationUpdateRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid automation request");
+  }
+  const request = value as Record<string, unknown>;
+  const schedule =
+    request.schedule &&
+    typeof request.schedule === "object" &&
+    !Array.isArray(request.schedule)
+      ? (request.schedule as Record<string, unknown>)
+      : undefined;
+  if (
+    typeof request.projectId !== "string" ||
+    !request.projectId ||
+    (update && (typeof request.id !== "string" || !request.id)) ||
+    typeof request.name !== "string" ||
+    request.name.length > 120 ||
+    (request.kind !== "tests" &&
+      request.kind !== "dependencies" &&
+      request.kind !== "issue-triage") ||
+    typeof request.prompt !== "string" ||
+    request.prompt.length > 12_000 ||
+    typeof request.enabled !== "boolean" ||
+    !schedule ||
+    (schedule.cadence !== "daily" &&
+      schedule.cadence !== "weekdays" &&
+      schedule.cadence !== "weekly") ||
+    typeof schedule.time !== "string" ||
+    (schedule.weekday !== undefined &&
+      (!Number.isInteger(schedule.weekday) ||
+        Number(schedule.weekday) < 0 ||
+        Number(schedule.weekday) > 6))
+  ) {
+    throw new Error("Invalid automation request");
+  }
+  const parsed: DesktopAutomationCreateRequest = {
+    projectId: request.projectId,
+    name: request.name,
+    kind: request.kind,
+    prompt: request.prompt,
+    enabled: request.enabled,
+    schedule: {
+      cadence: schedule.cadence,
+      time: schedule.time,
+      ...(typeof schedule.weekday === "number"
+        ? { weekday: schedule.weekday }
+        : {}),
+    },
+  };
+  return update
+    ? { ...parsed, id: request.id as string }
+    : parsed;
+}
+
+function parseAutomationTarget(value: unknown): DesktopAutomationTarget {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid automation target");
+  }
+  const target = value as Record<string, unknown>;
+  if (
+    typeof target.projectId !== "string" ||
+    !target.projectId ||
+    typeof target.id !== "string" ||
+    !target.id
+  ) {
+    throw new Error("Invalid automation target");
+  }
+  return { projectId: target.projectId, id: target.id };
 }
 
 function parseAttachmentReferenceRequest(
@@ -1745,6 +2683,181 @@ function showTaskCompletionNotification(
   notification.show();
 }
 
+function sendAutomationSnapshot(projectId: string): void {
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || !automationStore) return;
+  window.webContents.send(
+    DESKTOP_AUTOMATIONS_CHANGED_CHANNEL,
+    automationStore.snapshot(projectId),
+  );
+}
+
+function showAutomationAlert(alert: AutomationAlert): void {
+  if (!Notification.isSupported()) return;
+  const language = settingsStore?.snapshot().language ?? "en";
+  const title =
+    alert.status === "failed"
+      ? automationNotificationCopy(language).failed
+      : automationNotificationCopy(language).attention;
+  const notification = new Notification({
+    title,
+    body: `${alert.automation.name} · ${alert.summary}`,
+    icon: appIconPath,
+  });
+  notification.on("click", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) return;
+    window.show();
+    window.focus();
+    if (alert.threadId) {
+      const open = () =>
+        window.webContents.send(DESKTOP_AUTOMATION_OPEN_CHANNEL, {
+          projectId: alert.automation.projectId,
+          id: alert.threadId,
+        });
+      if (window.webContents.isLoadingMainFrame()) {
+        window.webContents.once("did-finish-load", () => {
+          setTimeout(open, 100);
+        });
+      } else {
+        open();
+      }
+    }
+  });
+  notification.show();
+}
+
+function automationNotificationCopy(language: string): {
+  attention: string;
+  failed: string;
+} {
+  switch (language) {
+    case "zh-CN":
+      return { attention: "自动化需要关注", failed: "自动化运行失败" };
+    case "zh-TW":
+      return { attention: "自動化需要關注", failed: "自動化執行失敗" };
+    case "ja":
+      return {
+        attention: "自動化の確認が必要です",
+        failed: "自動化の実行に失敗しました",
+      };
+    case "ko":
+      return {
+        attention: "자동화를 확인해야 합니다",
+        failed: "자동화 실행 실패",
+      };
+    default:
+      return {
+        attention: "Automation needs attention",
+        failed: "Automation run failed",
+      };
+  }
+}
+
+async function executeAutomation(
+  automation: DesktopAutomation,
+): Promise<AutomationExecutionResult> {
+  const project = requireProject(automation.projectId);
+  const workspace = folderWorkspace(project.basePath);
+  const runtime = ensureAppServer(
+    mainWindow,
+    project.id,
+    project.basePath,
+    workspace,
+  );
+  await runtime.initialize();
+  const started = await requestAutomationRuntime(runtime, "thread/start");
+  const threadId =
+    started &&
+    typeof started === "object" &&
+    !Array.isArray(started) &&
+    typeof (started as Record<string, unknown>).threadId === "string"
+      ? (started as Record<string, string>).threadId
+      : undefined;
+  if (!threadId) throw new Error("Automation task did not return a thread id");
+
+  threadProjects.set(threadId, project.id);
+  projectStore?.setConversationWorkspace(
+    { projectId: project.id, id: threadId },
+    workspace,
+  );
+  projectStore?.updateConversation({
+    projectId: project.id,
+    id: threadId,
+    title: `⏱ ${automation.name}`,
+  });
+  if (project.runtime?.kind !== "remote") {
+    await conversationChangeTracker?.ensureSnapshot(
+      project.id,
+      threadId,
+      workspace.path,
+    );
+  }
+  automationThreads.set(threadId, automation.id);
+  const completed = new Promise<AutomationExecutionResult>((resolve) => {
+    automationTurnWaiters.set(threadId, { resolve });
+  });
+
+  try {
+    await requestAutomationRuntime(runtime, "turn/start", {
+      threadId,
+      input: [
+        `Scheduled automation: ${automation.name}`,
+        automation.prompt,
+        "Run read-only checks only. Do not modify files, create commits, or change external state.",
+        "End the final response with exactly one status marker: AUTOMATION_STATUS: ok when no action is needed, or AUTOMATION_STATUS: attention when the user should investigate.",
+      ].join("\n\n"),
+    });
+    return await completed;
+  } catch (error) {
+    automationTurnWaiters.delete(threadId);
+    automationThreads.delete(threadId);
+    throw error;
+  }
+}
+
+function requestAutomationRuntime(
+  runtime: RuntimeProcess,
+  method: ThreadlightMethod,
+  params?: unknown,
+): Promise<unknown> {
+  const id = `threadlight:automation:${++automationRequestId}`;
+  const promise = new Promise<unknown>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      automationRpcWaiters.delete(id);
+      reject(new Error(`Automation runtime request timed out: ${method}`));
+    }, 15_000);
+    automationRpcWaiters.set(id, { resolve, reject, timer });
+  });
+  runtime.send({
+    jsonrpc: "2.0",
+    id,
+    method,
+    ...(params === undefined ? {} : { params }),
+  });
+  return promise;
+}
+
+function settleAutomationRpc(message: JsonRpcOutgoing): void {
+  if (
+    !("id" in message) ||
+    typeof message.id !== "string" ||
+    !message.id.startsWith("threadlight:automation:")
+  ) {
+    return;
+  }
+  const waiter = automationRpcWaiters.get(message.id);
+  if (!waiter) return;
+  automationRpcWaiters.delete(message.id);
+  clearTimeout(waiter.timer);
+  if ("error" in message && message.error) {
+    waiter.reject(new Error(message.error.message));
+  } else {
+    waiter.resolve(message.result);
+  }
+}
+
 function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const request = value as Record<string, unknown>;
@@ -1767,6 +2880,27 @@ function requestKey(id: JsonRpcId): string {
 
 function folderWorkspace(path: string): DesktopTaskWorkspace {
   return { mode: "folder", path };
+}
+
+function runtimeKey(projectId: string, workspacePath: string): string {
+  return `${projectId}\0${workspacePath}`;
+}
+
+function requireRemoteRuntime(projectId: string): RemoteRuntimeConnection {
+  const project = requireProject(projectId);
+  if (project.runtime?.kind !== "remote") {
+    throw new Error("Project is not connected to a Remote Runtime.");
+  }
+  const runtime = ensureAppServer(
+    mainWindow,
+    project.id,
+    project.basePath,
+    folderWorkspace(project.runtime.workspacePath),
+  );
+  if (!(runtime instanceof RemoteRuntimeConnection)) {
+    throw new Error("Remote Runtime connection is not available.");
+  }
+  return runtime;
 }
 
 function appServerEnvironment(
@@ -1814,9 +2948,11 @@ function processSessionIdFromMessage(
 async function disposeTaskWorkspace(
   workspace: DesktopTaskWorkspace,
 ): Promise<void> {
-  const runtime = appServers.get(workspace.path);
-  runtime?.process.stop();
-  appServers.delete(workspace.path);
+  for (const [key, runtime] of appServers) {
+    if (runtime.workspace.path !== workspace.path) continue;
+    runtime.process.stop();
+    appServers.delete(key);
+  }
   for (const [sessionId, workspacePath] of processWorkspaces) {
     if (workspacePath === workspace.path) processWorkspaces.delete(sessionId);
   }
@@ -1835,6 +2971,14 @@ app.whenReady().then(() => {
   conversationChangeTracker = new ConversationChangeTracker(
     join(threadlightHome, "review-snapshots"),
   );
+  worktreeDeliveryManager = new WorktreeDeliveryManager(
+    conversationChangeTracker,
+  );
+  codeHostDeliveryManager = new CodeHostDeliveryManager(
+    conversationChangeTracker,
+    new GitHubCliProvider(),
+  );
+  projectSearchService = new ProjectSearchService();
   taskWorkspaceManager = new TaskWorkspaceManager(
     join(threadlightHome, "worktrees"),
   );
@@ -1854,6 +2998,17 @@ app.whenReady().then(() => {
         safeStorage.decryptString(Buffer.from(value, "base64")),
     },
   );
+  remoteRuntimeCredentials = new RemoteRuntimeCredentialStore(
+    join(threadlightHome, "remote-runtime-credentials.json"),
+    {
+      encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
+      decrypt: (value) =>
+        safeStorage.decryptString(Buffer.from(value, "base64")),
+    },
+  );
+  executionPolicyStore = new ExecutionPolicyStore(
+    join(threadlightHome, "execution-policies.json"),
+  );
   connectionService = new DesktopConnectionService(
     connectionStore,
     (url) => shell.openExternal(url),
@@ -1868,6 +3023,14 @@ app.whenReady().then(() => {
     acceptOAuthCallback(callback);
   }
   projectStore = new ProjectStore(join(threadlightHome, "project-map.json"));
+  automationStore = new AutomationStore(
+    join(threadlightHome, "automations.json"),
+  );
+  automationScheduler = new AutomationScheduler(automationStore, {
+    execute: executeAutomation,
+    notify: showAutomationAlert,
+    onChange: sendAutomationSnapshot,
+  });
   computerPermissionService = new ComputerPermissionService(
     {
       screenRecordingStatus: () =>
@@ -1957,7 +3120,12 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_PROVIDER_TEST_CHANNEL, handleProviderTest);
   ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_CHANNEL, handleProjectOpen);
+  ipcMain.handle(
+    DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
+    handleRemoteRuntimeConnect,
+  );
   ipcMain.handle(DESKTOP_PROJECT_ACTIVATE_CHANNEL, handleProjectActivate);
+  ipcMain.handle(DESKTOP_PROJECT_UPDATE_CHANNEL, handleProjectUpdate);
   ipcMain.handle(DESKTOP_PROJECT_OPENERS_GET_CHANNEL, handleProjectOpenersGet);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_WITH_CHANNEL, handleProjectOpenWith);
   ipcMain.handle(
@@ -1975,6 +3143,21 @@ app.whenReady().then(() => {
   );
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_GET_CHANNEL, handleProjectMemoryGet);
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, handleProjectMemoryOpen);
+  ipcMain.handle(DESKTOP_SEARCH_CHANNEL, handleSearch);
+  ipcMain.handle(DESKTOP_AUTOMATIONS_GET_CHANNEL, handleAutomationsGet);
+  ipcMain.handle(
+    DESKTOP_AUTOMATIONS_CREATE_CHANNEL,
+    handleAutomationCreate,
+  );
+  ipcMain.handle(
+    DESKTOP_AUTOMATIONS_UPDATE_CHANNEL,
+    handleAutomationUpdate,
+  );
+  ipcMain.handle(
+    DESKTOP_AUTOMATIONS_DELETE_CHANNEL,
+    handleAutomationDelete,
+  );
+  ipcMain.handle(DESKTOP_AUTOMATIONS_RUN_CHANNEL, handleAutomationRun);
   ipcMain.handle(DESKTOP_AUDIO_TRANSCRIBE_CHANNEL, handleAudioTranscription);
   ipcMain.handle(
     DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
@@ -2007,6 +3190,30 @@ app.whenReady().then(() => {
     DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL,
     handleConversationChangesRestore,
   );
+  ipcMain.handle(
+    DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL,
+    handleWorktreeDeliveryPreflight,
+  );
+  ipcMain.handle(
+    DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,
+    handleWorktreeDeliveryApply,
+  );
+  ipcMain.handle(
+    DESKTOP_WORKTREE_DELIVERY_COMMIT_CHANNEL,
+    handleWorktreeDeliveryCommit,
+  );
+  ipcMain.handle(
+    DESKTOP_CODE_HOST_DELIVERY_STATUS_CHANNEL,
+    handleCodeHostDeliveryStatus,
+  );
+  ipcMain.handle(
+    DESKTOP_CODE_HOST_DELIVERY_COMMIT_PUSH_CHANNEL,
+    handleCodeHostDeliveryCommitPush,
+  );
+  ipcMain.handle(
+    DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL,
+    handleCodeHostDeliveryCreatePr,
+  );
   ipcMain.handle(DESKTOP_WORKSPACE_LIST_CHANNEL, handleWorkspaceList);
   ipcMain.handle(DESKTOP_WORKSPACE_FILE_GET_CHANNEL, handleWorkspaceFileGet);
   ipcMain.handle(
@@ -2016,6 +3223,18 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL, handleSystemFileChoose);
   ipcMain.handle(DESKTOP_SYSTEM_FILE_GET_CHANNEL, handleSystemFileGet);
   ipcMain.handle(DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL, handleSystemFileReveal);
+  ipcMain.handle(
+    DESKTOP_EXECUTION_APPROVAL_RESPOND_CHANNEL,
+    handleExecutionApprovalRespond,
+  );
+  ipcMain.handle(
+    DESKTOP_EXECUTION_POLICY_GET_CHANNEL,
+    handleExecutionPolicyGet,
+  );
+  ipcMain.handle(
+    DESKTOP_EXECUTION_POLICY_REVOKE_CHANNEL,
+    handleExecutionPolicyRevoke,
+  );
   ipcMain.on(
     DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
     handleComputerPreviewClose,
@@ -2029,6 +3248,7 @@ app.whenReady().then(() => {
     handleComputerPreviewDrag,
   );
   createWindow();
+  automationScheduler.start();
 
   for (const argument of process.argv) {
     if (argument.startsWith("threadlight://")) {
@@ -2059,6 +3279,7 @@ function acceptOAuthCallback(value: string): void {
 }
 
 app.on("before-quit", () => {
+  automationScheduler?.stop();
   stopAppServers();
   void connectionService?.dispose();
   computerService?.dispose();

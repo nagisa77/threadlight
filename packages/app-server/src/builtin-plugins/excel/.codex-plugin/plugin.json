@@ -1,0 +1,11 @@
+{
+  "name": "excel",
+  "version": "1.0.0",
+  "description": "Create, edit, analyze, and verify Excel workbook artifacts.",
+  "skills": "./skills/",
+  "presentation": {
+    "icon": "excel",
+    "visibility": "featured",
+    "keywords": ["excel", "xlsx", "xlsm", "xls", "csv", "tsv", "spreadsheet", "表格", "电子表格"]
+  }
+}

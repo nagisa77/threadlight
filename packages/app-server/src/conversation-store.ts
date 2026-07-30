@@ -8,6 +8,7 @@ import {
 import { basename, dirname, join } from "node:path";
 
 import type {
+  ConversationAccessMode,
   ConversationMessageData,
   QueuedTurnData,
 } from "@threadlight/protocol";
@@ -31,6 +32,7 @@ export interface StoredConversation {
   title?: string;
   titleGeneratedAt?: string;
   titleStatus?: "pending" | "completed";
+  accessMode?: ConversationAccessMode;
   messages: readonly ConversationMessageData[];
   queuedTurns?: readonly QueuedTurnData[];
   modelState?: unknown;
@@ -156,6 +158,9 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     (conversation.titleStatus === undefined ||
       conversation.titleStatus === "pending" ||
       conversation.titleStatus === "completed") &&
+    (conversation.accessMode === undefined ||
+      conversation.accessMode === "approval" ||
+      conversation.accessMode === "full") &&
     Array.isArray(conversation.messages) &&
     conversation.messages.every(isConversationMessage) &&
     (conversation.queuedTurns === undefined ||
@@ -216,10 +221,42 @@ function isConversationMessage(value: unknown): boolean {
     (message.plan === undefined || isAgentPlan(message.plan)) &&
     (message.diagnostics === undefined ||
       isTurnDiagnostics(message.diagnostics)) &&
+    (message.sources === undefined ||
+      (Array.isArray(message.sources) &&
+        message.sources.every(isMessageSource))) &&
+    (message.citations === undefined ||
+      (Array.isArray(message.citations) &&
+        message.citations.every(isMessageCitation))) &&
     (message.progress === undefined ||
       (Array.isArray(message.progress) &&
         message.progress.every(isConversationProgress))) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isMessageSource(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const source = value as Record<string, unknown>;
+  return (
+    typeof source.id === "string" &&
+    typeof source.title === "string" &&
+    typeof source.url === "string" &&
+    /^https?:\/\//.test(source.url) &&
+    typeof source.domain === "string" &&
+    (source.description === undefined ||
+      typeof source.description === "string")
+  );
+}
+
+function isMessageCitation(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const citation = value as Record<string, unknown>;
+  return (
+    typeof citation.id === "string" &&
+    Array.isArray(citation.sourceIds) &&
+    citation.sourceIds.length > 0 &&
+    citation.sourceIds.every((id) => typeof id === "string") &&
+    typeof citation.excerpt === "string"
   );
 }
 

@@ -3,14 +3,24 @@ export {
   ComputerPermissionCard,
   ConversationChangesButton,
   currentPlanStep,
+  filterProjectsForPicker,
   filterProjectsForTaskList,
+  NewTaskProjectPrompt,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
+  ProjectPickerPopover,
+  RuntimeStatusControl,
   TaskSearchDialog,
   ThreadlightApp,
   TurnStatusPill,
 } from "./app.js";
 export { activeProject } from "./projects.js";
+export {
+  ActionPopover,
+  ActionPopoverItem,
+  anchoredPopoverPosition,
+} from "./popover.js";
+export type { PopoverPosition } from "./popover.js";
 export {
   fileReaderReference,
   MarkdownContent,
@@ -19,7 +29,12 @@ export {
   workspaceFileReference,
 } from "./markdown.js";
 export { MemoryDocument, ProjectMemoryPage } from "./memory.js";
+export {
+  CommandPalette,
+  paletteEntryMatches,
+} from "./command-palette.js";
 export { DiagnosticsPage, formatDuration } from "./diagnostics.js";
+export { AutomationsPage } from "./automations.js";
 export {
   initialSessionState,
   sessionReducer,
@@ -44,6 +59,16 @@ export {
   ThemePicker,
   createSettingsUpdate,
 } from "./settings.js";
+export {
+  ConversationAccessControl,
+  ConversationAccessPopover,
+  ExecutionApprovalGate,
+  ExecutionPolicyPage,
+  type ExecutionApprovalRequest,
+  type ExecutionApprovalScope,
+  type ExecutionPolicyAdapter,
+  type ExecutionPolicySnapshot,
+} from "./execution-policy.js";
 export { TerminalPanel } from "./terminal.js";
 export {
   ProjectOpenControl,
@@ -54,6 +79,7 @@ export {
   buildChangeTree,
   FileSource,
   formatFileSize,
+  GitHubDeliveryCard,
   ReviewChangesTree,
   ReviewView,
   WorkspacePanel,
@@ -99,9 +125,27 @@ export type {
   ProjectMemorySnapshot,
 } from "./memory.js";
 export type {
+  CommandPaletteEntry,
+  CommandPaletteMode,
+  SearchAdapter,
+  SearchResult,
+} from "./command-palette.js";
+export type {
   DiagnosticsAdapter,
   ProjectDiagnosticsSnapshot,
 } from "./diagnostics.js";
+export type {
+  Automation,
+  AutomationAdapter,
+  AutomationCadence,
+  AutomationCreateRequest,
+  AutomationKind,
+  AutomationRun,
+  AutomationRunStatus,
+  AutomationSchedule,
+  AutomationsSnapshot,
+  AutomationUpdateRequest,
+} from "./automations.js";
 export type {
   ConversationMessage,
   ConversationProgress,
@@ -140,6 +184,14 @@ export type {
 export type {
   ConversationChangesSnapshot,
   ConversationFileChange,
+  CodeHostCheck,
+  CodeHostCommitPushResult,
+  CodeHostDeliveryStatus,
+  CodeHostPullRequest,
+  CodeHostReviewComment,
+  WorktreeDeliveryConflict,
+  WorktreeDeliveryPreflight,
+  WorktreeDeliveryResult,
   WorkspaceAdapter,
   WorkspaceEntry,
   WorkspaceFile,

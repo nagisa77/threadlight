@@ -1,5 +1,6 @@
 import type {
   AttachmentData,
+  ConversationAccessMode,
   FollowUpDelivery,
   JsonRpcId,
   JsonRpcNotification,
@@ -90,7 +91,7 @@ export class ThreadlightClient {
   }
 
   initialize() {
-    return this.request("initialize");
+    return this.request("initialize", undefined);
   }
 
   startThread() {
@@ -151,11 +152,13 @@ export class ThreadlightClient {
     attachments: readonly AttachmentData[] = [],
     mode: TurnMode = "default",
     capabilityRefs: readonly string[] = [],
+    accessMode: ConversationAccessMode = "approval",
   ) {
     return this.request("turn/start", {
       threadId,
       input,
       ...(mode === "plan" ? { mode } : {}),
+      ...(accessMode === "full" ? { accessMode } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
     });

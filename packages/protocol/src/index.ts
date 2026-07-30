@@ -231,6 +231,7 @@ export interface ConnectorStatusData {
 }
 
 export type TurnMode = "default" | "plan";
+export type ConversationAccessMode = "approval" | "full";
 export type PlanSource = "user" | "model";
 export type PlanItemStatusData = "pending" | "in_progress" | "completed";
 
@@ -276,8 +277,26 @@ export interface ConversationMessageData {
   plan?: AgentPlanData;
   progress?: readonly ConversationProgressData[];
   diagnostics?: TurnDiagnosticsData;
+  /** Web sources cited by this assistant message. */
+  sources?: readonly MessageSourceData[];
+  /** Inline citations anchored in `text` through threadlight-source links. */
+  citations?: readonly MessageCitationData[];
   /** @deprecated Kept for conversations written before ordered progress. */
   activities?: readonly ConversationActivityData[];
+}
+
+export interface MessageSourceData {
+  id: string;
+  title: string;
+  url: string;
+  domain: string;
+  description?: string;
+}
+
+export interface MessageCitationData {
+  id: string;
+  sourceIds: readonly string[];
+  excerpt: string;
 }
 
 export type FollowUpDelivery = "inject" | "queued";
@@ -334,7 +353,13 @@ export type AgentEventData =
 
 export interface ThreadlightMethodMap {
   initialize: {
-    params: undefined;
+    params:
+      | {
+          capabilities?: {
+            executionApprovals?: boolean;
+          };
+        }
+      | undefined;
     result: { name: string; protocolVersion: string };
   };
   "thread/start": {
@@ -387,6 +412,7 @@ export interface ThreadlightMethodMap {
       threadId: string;
       input: string;
       mode?: TurnMode;
+      accessMode?: ConversationAccessMode;
       attachments?: readonly AttachmentData[];
       capabilityRefs?: readonly string[];
     };
@@ -435,6 +461,13 @@ export interface ThreadlightMethodMap {
     params: { sessionId: string };
     result: ProcessSnapshotData;
   };
+  "execution/approval/respond": {
+    params: {
+      requestId: string;
+      decision: "allow" | "deny";
+    };
+    result: { accepted: boolean };
+  };
 }
 
 export const THREADLIGHT_METHODS = [
@@ -457,6 +490,7 @@ export const THREADLIGHT_METHODS = [
   "process/read",
   "process/wait",
   "process/kill",
+  "execution/approval/respond",
 ] as const satisfies readonly (keyof ThreadlightMethodMap)[];
 
 export type ThreadlightMethod = keyof ThreadlightMethodMap;
@@ -478,6 +512,8 @@ export interface ThreadlightNotificationMap {
     usage: TokenUsageData;
     diagnostics?: TurnDiagnosticsData;
     capabilities?: readonly MessageCapabilityData[];
+    sources?: readonly MessageSourceData[];
+    citations?: readonly MessageCitationData[];
   };
   "turn/failed": {
     threadId: string;
@@ -499,6 +535,21 @@ export interface ThreadlightNotificationMap {
     itemId: string;
     message: ConversationMessageData;
     precedingAssistantMessage?: ConversationMessageData;
+  };
+  "execution/approval-required": {
+    requestId: string;
+    threadId: string;
+    runId: string;
+    toolName: string;
+    permissionKey: string;
+    risk: "write";
+    summary: string;
+    detail?: string;
+    external: boolean;
+  };
+  "execution/approval-resolved": {
+    requestId: string;
+    threadId: string;
   };
 }
 

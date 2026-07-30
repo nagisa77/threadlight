@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  isCommandPaletteShortcut,
+  isFileSearchShortcut,
   isTaskSearchShortcut,
   isTogglePanelShortcut,
 } from "../src/keyboard-shortcuts.js";
@@ -50,6 +52,7 @@ describe("panel keyboard shortcuts", () => {
 
 describe("task search keyboard shortcut", () => {
   it("uses command/control-K without extra modifiers", () => {
+    expect(isCommandPaletteShortcut(shortcut({ key: "k" }))).toBe(true);
     expect(isTaskSearchShortcut(shortcut({ key: "k" }))).toBe(true);
     expect(
       isTaskSearchShortcut(
@@ -60,5 +63,17 @@ describe("task search keyboard shortcut", () => {
       isTaskSearchShortcut(shortcut({ key: "k", shiftKey: true })),
     ).toBe(false);
     expect(isTaskSearchShortcut(shortcut({ key: "j" }))).toBe(false);
+  });
+
+  it("uses command/control-P for file quick open", () => {
+    expect(isFileSearchShortcut(shortcut({ key: "p" }))).toBe(true);
+    expect(
+      isFileSearchShortcut(
+        shortcut({ key: "P", metaKey: false, ctrlKey: true }),
+      ),
+    ).toBe(true);
+    expect(
+      isFileSearchShortcut(shortcut({ key: "p", shiftKey: true })),
+    ).toBe(false);
   });
 });

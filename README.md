@@ -92,6 +92,7 @@ Threadlight 不只是一个聊天界面，也不把 Agent 简化成一次模型�
 - 流式展示回答、执行进度、工具活动与命令输出。
 - 支持图片和文件拖放、附件预览与语音转写输入。
 - 会话级后台进程管理：查询、增量读取、等待与终止。
+- GitHub 交付：从隔离任务分支 Commit & Push、创建 Draft PR，并在 Review 中查看 CI 与 review comments。
 - 临时 MCP runtime：按任务连接 stdio 或 Streamable HTTP Server。
 - macOS Computer Use：共享 App、窗口或显示器，并通过画中画预览 Agent 看到的稳定画布。
 - 键盘快捷键、可调整面板、多标签终端与文件视图。
@@ -185,6 +186,31 @@ npm run desktop:preview
 ```bash
 npm run desktop:package
 ```
+
+### 单独启动 Remote Runtime
+
+在远程开发机、容器或 SSH workspace 中安装并构建后，可以只启动 Runtime：
+
+```bash
+export OPENAI_API_KEY="your-model-key"
+export THREADLIGHT_RUNTIME_TOKEN="$(openssl rand -hex 32)"
+
+npm run build:packages
+npm run runtime -- \
+  --workspace /absolute/path/to/repository \
+  --host 127.0.0.1 \
+  --port 7432
+```
+
+桌面端通过侧栏的服务器按钮连接 `http://127.0.0.1:7432`。推荐保持 Runtime 只监听回环地址，并使用 SSH 隧道：
+
+```bash
+ssh -N -L 7432:127.0.0.1:7432 user@development-host
+```
+
+容器中可改为 `--host 0.0.0.0`，但跨不可信网络时需要 HTTPS 反向代理、VPN 或 SSH 隧道。访问令牌会在桌面端使用系统安全存储加密，Runtime 不会把令牌写入日志。
+
+完整用法见 [Remote Runtime 文档](./docs/REMOTE_RUNTIME.zh-CN.md)。远程 Transport 使用浏览器兼容的 HTTP + NDJSON，`@threadlight/client` 的 `HttpRuntimeTransport` 不依赖 Electron，可供后续 Web 端复用。
 
 | 服务 | 必需配置 | 可选配置 |
 | --- | --- | --- |

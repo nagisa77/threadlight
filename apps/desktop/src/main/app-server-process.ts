@@ -180,7 +180,12 @@ export class AppServerProcess {
     };
     this.pending.add(id);
     child.stdin.write(
-      `${JSON.stringify({ jsonrpc: "2.0", id, method: "initialize" })}\n`,
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method: "initialize",
+        params: { capabilities: { executionApprovals: true } },
+      })}\n`,
       (error) => {
         if (error) this.rejectInitialization(id, error);
       },

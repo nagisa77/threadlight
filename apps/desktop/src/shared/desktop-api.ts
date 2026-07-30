@@ -1,5 +1,6 @@
 import type {
   AttachmentData,
+  ConversationAccessMode,
   JsonRpcOutgoing,
   JsonRpcRequest,
 } from "@threadlight/protocol";
@@ -16,6 +17,9 @@ export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
 export const DESKTOP_PROJECTS_GET_CHANNEL = "threadlight:projects:get";
 export const DESKTOP_PROJECT_OPEN_CHANNEL = "threadlight:project:open";
 export const DESKTOP_PROJECT_ACTIVATE_CHANNEL = "threadlight:project:activate";
+export const DESKTOP_PROJECT_UPDATE_CHANNEL = "threadlight:project:update";
+export const DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL =
+  "threadlight:remote-runtime:connect";
 export const DESKTOP_PROJECT_OPENERS_GET_CHANNEL =
   "threadlight:project-openers:get";
 export const DESKTOP_PROJECT_OPEN_WITH_CHANNEL =
@@ -32,6 +36,21 @@ export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
   "threadlight:project-memory:get";
 export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
   "threadlight:project-memory:open";
+export const DESKTOP_SEARCH_CHANNEL = "threadlight:search";
+export const DESKTOP_AUTOMATIONS_GET_CHANNEL =
+  "threadlight:automations:get";
+export const DESKTOP_AUTOMATIONS_CREATE_CHANNEL =
+  "threadlight:automations:create";
+export const DESKTOP_AUTOMATIONS_UPDATE_CHANNEL =
+  "threadlight:automations:update";
+export const DESKTOP_AUTOMATIONS_DELETE_CHANNEL =
+  "threadlight:automations:delete";
+export const DESKTOP_AUTOMATIONS_RUN_CHANNEL =
+  "threadlight:automations:run";
+export const DESKTOP_AUTOMATIONS_CHANGED_CHANNEL =
+  "threadlight:automations:changed";
+export const DESKTOP_AUTOMATION_OPEN_CHANNEL =
+  "threadlight:automation:open";
 export const DESKTOP_AUDIO_TRANSCRIBE_CHANNEL =
   "threadlight:audio:transcribe";
 export const DESKTOP_ATTACHMENT_REFERENCE_CHANNEL =
@@ -61,6 +80,18 @@ export const DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL =
   "threadlight:conversation-changes:get";
 export const DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL =
   "threadlight:conversation-changes:restore";
+export const DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL =
+  "threadlight:worktree-delivery:preflight";
+export const DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL =
+  "threadlight:worktree-delivery:apply";
+export const DESKTOP_WORKTREE_DELIVERY_COMMIT_CHANNEL =
+  "threadlight:worktree-delivery:commit";
+export const DESKTOP_CODE_HOST_DELIVERY_STATUS_CHANNEL =
+  "threadlight:code-host-delivery:status";
+export const DESKTOP_CODE_HOST_DELIVERY_COMMIT_PUSH_CHANNEL =
+  "threadlight:code-host-delivery:commit-push";
+export const DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL =
+  "threadlight:code-host-delivery:create-pr";
 export const DESKTOP_WORKSPACE_LIST_CHANNEL = "threadlight:workspace:list";
 export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
   "threadlight:workspace-file:get";
@@ -72,6 +103,16 @@ export const DESKTOP_SYSTEM_FILE_GET_CHANNEL =
   "threadlight:system-file:get";
 export const DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL =
   "threadlight:system-file:reveal";
+export const DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL =
+  "threadlight:execution-approval:required";
+export const DESKTOP_EXECUTION_APPROVAL_RESOLVED_CHANNEL =
+  "threadlight:execution-approval:resolved";
+export const DESKTOP_EXECUTION_APPROVAL_RESPOND_CHANNEL =
+  "threadlight:execution-approval:respond";
+export const DESKTOP_EXECUTION_POLICY_GET_CHANNEL =
+  "threadlight:execution-policy:get";
+export const DESKTOP_EXECUTION_POLICY_REVOKE_CHANNEL =
+  "threadlight:execution-policy:revoke";
 
 export type DesktopModelProvider =
   | "openai"
@@ -224,6 +265,7 @@ export interface DesktopConversationSummary {
   titleGeneratedAt?: string;
   pinnedAt?: string;
   archivedAt?: string;
+  accessMode?: ConversationAccessMode;
   workspace?: DesktopTaskWorkspace;
 }
 
@@ -241,6 +283,7 @@ export type DesktopTaskWorkspace =
       repositoryRoot: string;
       branch: string;
       baseCommit: string;
+      sourceBranch?: string;
     };
 
 export interface DesktopProject {
@@ -248,12 +291,32 @@ export interface DesktopProject {
   name: string;
   basePath: string;
   lastOpenedAt: string;
+  pinnedAt?: string;
   conversations: readonly DesktopConversationSummary[];
+  runtime?: DesktopProjectRuntime;
+}
+
+export interface DesktopProjectMetadataUpdate {
+  id: string;
+  pinned: boolean;
+}
+
+export interface DesktopProjectRuntime {
+  kind: "remote";
+  endpoint: string;
+  workspacePath: string;
+  runtimeId: string;
 }
 
 export interface DesktopProjectsSnapshot {
   activeProjectId?: string;
   projects: readonly DesktopProject[];
+}
+
+export interface DesktopRemoteRuntimeConnectRequest {
+  endpoint: string;
+  token: string;
+  name?: string;
 }
 
 export interface DesktopProjectOpenerOption {
@@ -282,6 +345,7 @@ export interface DesktopConversationMetadataUpdate {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
+  accessMode?: ConversationAccessMode;
 }
 
 export interface DesktopConversationTarget {
@@ -386,6 +450,104 @@ export interface DesktopConversationChangesRestoreRequest
   paths?: readonly string[];
 }
 
+export interface DesktopWorktreeDeliveryRequest
+  extends DesktopConversationChangesRequest {
+  revision: string;
+}
+
+export interface DesktopWorktreeDeliveryCommitRequest
+  extends DesktopWorktreeDeliveryRequest {
+  message: string;
+}
+
+export interface DesktopWorktreeDeliveryConflict {
+  path: string;
+  reason:
+    | "both_added"
+    | "target_deleted"
+    | "target_modified"
+    | "merge_conflict"
+    | "unsafe_target";
+}
+
+export interface DesktopWorktreeDeliveryPreflight {
+  taskBranch: string;
+  targetBranch: string;
+  sourceBranch?: string;
+  branchChanged: boolean;
+  files: number;
+  pendingFiles: number;
+  alreadyAppliedFiles: number;
+  conflicts: readonly DesktopWorktreeDeliveryConflict[];
+}
+
+export interface DesktopWorktreeDeliveryResult
+  extends DesktopWorktreeDeliveryPreflight {
+  appliedFiles: number;
+  commit?: string;
+}
+
+export interface DesktopCodeHostCheck {
+  name: string;
+  status: "queued" | "running" | "success" | "failure" | "skipped";
+  url?: string;
+}
+
+export interface DesktopCodeHostReviewComment {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  url?: string;
+  path?: string;
+  line?: number;
+  kind: "comment" | "review" | "inline";
+  state?: string;
+}
+
+export interface DesktopCodeHostPullRequest {
+  number: number;
+  url: string;
+  title: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  headBranch: string;
+  baseBranch: string;
+  ciStatus: "none" | "pending" | "success" | "failure";
+  reviewDecision?: string;
+  checks: readonly DesktopCodeHostCheck[];
+  comments: readonly DesktopCodeHostReviewComment[];
+}
+
+export interface DesktopCodeHostDeliveryStatus {
+  provider: "github";
+  available: boolean;
+  reason?: string;
+  repository?: string;
+  remote?: string;
+  taskBranch: string;
+  baseBranch: string;
+  pushed: boolean;
+  ahead: number;
+  pullRequest?: DesktopCodeHostPullRequest;
+}
+
+export interface DesktopCodeHostCommitPushRequest
+  extends DesktopWorktreeDeliveryRequest {
+  message: string;
+}
+
+export interface DesktopCodeHostCommitPushResult {
+  commit: string;
+  status: DesktopCodeHostDeliveryStatus;
+}
+
+export interface DesktopCodeHostCreatePullRequest
+  extends DesktopWorktreeDeliveryRequest {
+  title: string;
+  body?: string;
+}
+
 export interface DesktopConversationFileChange {
   path: string;
   status: "added" | "modified" | "deleted";
@@ -434,6 +596,143 @@ export interface DesktopSystemFileRequest {
   path: string;
 }
 
+export type DesktopSearchMode = "all" | "files";
+
+export interface DesktopSearchRequest {
+  projectId: string;
+  threadId?: string;
+  query: string;
+  mode: DesktopSearchMode;
+  limit?: number;
+}
+
+export interface DesktopSearchResult {
+  id: string;
+  kind: "message" | "file" | "command" | "tool" | "memory";
+  projectId: string;
+  threadId?: string;
+  messageId?: string;
+  activityId?: string;
+  path?: string;
+  line?: number;
+  title: string;
+  subtitle: string;
+  snippet: string;
+}
+
+export type DesktopAutomationKind =
+  | "tests"
+  | "dependencies"
+  | "issue-triage";
+
+export type DesktopAutomationCadence =
+  | "daily"
+  | "weekdays"
+  | "weekly";
+
+export interface DesktopAutomationSchedule {
+  cadence: DesktopAutomationCadence;
+  time: string;
+  weekday?: number;
+}
+
+export type DesktopAutomationRunStatus =
+  | "running"
+  | "succeeded"
+  | "attention"
+  | "failed";
+
+export interface DesktopAutomationRun {
+  status: DesktopAutomationRunStatus;
+  startedAt: string;
+  completedAt?: string;
+  threadId?: string;
+  summary?: string;
+}
+
+export interface DesktopAutomation {
+  id: string;
+  projectId: string;
+  name: string;
+  kind: DesktopAutomationKind;
+  prompt: string;
+  enabled: boolean;
+  schedule: DesktopAutomationSchedule;
+  createdAt: string;
+  updatedAt: string;
+  nextRunAt?: string;
+  lastRun?: DesktopAutomationRun;
+}
+
+export interface DesktopAutomationsSnapshot {
+  projectId: string;
+  generatedAt: string;
+  automations: readonly DesktopAutomation[];
+}
+
+export interface DesktopAutomationCreateRequest {
+  projectId: string;
+  name: string;
+  kind: DesktopAutomationKind;
+  prompt: string;
+  enabled: boolean;
+  schedule: DesktopAutomationSchedule;
+}
+
+export interface DesktopAutomationUpdateRequest
+  extends DesktopAutomationCreateRequest {
+  id: string;
+}
+
+export interface DesktopAutomationTarget {
+  projectId: string;
+  id: string;
+}
+
+export interface DesktopExecutionApprovalRequest {
+  requestId: string;
+  projectId: string;
+  projectName: string;
+  threadId: string;
+  runId: string;
+  toolName: string;
+  permissionKey: string;
+  risk: "write";
+  summary: string;
+  detail?: string;
+  external: boolean;
+}
+
+export type DesktopExecutionApprovalScope = "once" | "task" | "project";
+
+export interface DesktopExecutionApprovalResponse {
+  requestId: string;
+  decision: "allow" | "deny";
+  scope: DesktopExecutionApprovalScope;
+}
+
+export interface DesktopExecutionPolicyGrant {
+  permissionKey: string;
+  label: string;
+  external: boolean;
+  grantedAt: string;
+}
+
+export interface DesktopExecutionPolicySnapshot {
+  projectId: string;
+  rules: {
+    read: "allow";
+    write: "ask";
+    destructive: "deny";
+  };
+  permanentGrants: readonly DesktopExecutionPolicyGrant[];
+}
+
+export interface DesktopExecutionPolicyRevokeRequest {
+  projectId: string;
+  permissionKey: string;
+}
+
 export interface DesktopApi {
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
@@ -448,7 +747,13 @@ export interface DesktopApi {
   ): Promise<DesktopProviderDiagnostic>;
   getProjects(): Promise<DesktopProjectsSnapshot>;
   openProject(): Promise<DesktopProjectsSnapshot>;
+  connectRemoteRuntime(
+    request: DesktopRemoteRuntimeConnectRequest,
+  ): Promise<DesktopProjectsSnapshot>;
   activateProject(projectId: string): Promise<DesktopProjectsSnapshot>;
+  updateProject(
+    update: DesktopProjectMetadataUpdate,
+  ): Promise<DesktopProjectsSnapshot>;
   getProjectOpeners(
     projectId?: string,
   ): Promise<readonly DesktopProjectOpenerOption[]>;
@@ -467,6 +772,41 @@ export interface DesktopApi {
   ): Promise<DesktopProjectsSnapshot>;
   getProjectMemory(projectId: string): Promise<DesktopProjectMemorySnapshot>;
   openProjectMemory(projectId: string): Promise<void>;
+  search(request: DesktopSearchRequest): Promise<readonly DesktopSearchResult[]>;
+  getAutomations(projectId: string): Promise<DesktopAutomationsSnapshot>;
+  createAutomation(
+    request: DesktopAutomationCreateRequest,
+  ): Promise<DesktopAutomationsSnapshot>;
+  updateAutomation(
+    request: DesktopAutomationUpdateRequest,
+  ): Promise<DesktopAutomationsSnapshot>;
+  deleteAutomation(
+    target: DesktopAutomationTarget,
+  ): Promise<DesktopAutomationsSnapshot>;
+  runAutomation(
+    target: DesktopAutomationTarget,
+  ): Promise<DesktopAutomationsSnapshot>;
+  onAutomationsChanged(
+    listener: (snapshot: DesktopAutomationsSnapshot) => void,
+  ): () => void;
+  onAutomationOpen(
+    listener: (target: DesktopConversationTarget) => void,
+  ): () => void;
+  onExecutionApprovalRequired(
+    listener: (request: DesktopExecutionApprovalRequest) => void,
+  ): () => void;
+  onExecutionApprovalResolved(
+    listener: (requestId: string) => void,
+  ): () => void;
+  respondExecutionApproval(
+    response: DesktopExecutionApprovalResponse,
+  ): Promise<void>;
+  getExecutionPolicy(
+    projectId: string,
+  ): Promise<DesktopExecutionPolicySnapshot>;
+  revokeExecutionPolicyGrant(
+    request: DesktopExecutionPolicyRevokeRequest,
+  ): Promise<DesktopExecutionPolicySnapshot>;
   transcribeAudio(
     request: DesktopAudioTranscriptionRequest,
   ): Promise<string>;
@@ -500,6 +840,24 @@ export interface DesktopApi {
   restoreConversationChanges(
     request: DesktopConversationChangesRestoreRequest,
   ): Promise<DesktopConversationChangesSnapshot>;
+  preflightWorktreeDelivery(
+    request: DesktopWorktreeDeliveryRequest,
+  ): Promise<DesktopWorktreeDeliveryPreflight>;
+  applyWorktreeDelivery(
+    request: DesktopWorktreeDeliveryRequest,
+  ): Promise<DesktopWorktreeDeliveryResult>;
+  commitWorktreeDelivery(
+    request: DesktopWorktreeDeliveryCommitRequest,
+  ): Promise<DesktopWorktreeDeliveryResult>;
+  getCodeHostDeliveryStatus(
+    request: DesktopWorktreeDeliveryRequest,
+  ): Promise<DesktopCodeHostDeliveryStatus>;
+  commitAndPushCodeHostDelivery(
+    request: DesktopCodeHostCommitPushRequest,
+  ): Promise<DesktopCodeHostCommitPushResult>;
+  createDraftPullRequest(
+    request: DesktopCodeHostCreatePullRequest,
+  ): Promise<DesktopCodeHostDeliveryStatus>;
   listWorkspace(
     request: DesktopWorkspaceListRequest,
   ): Promise<readonly DesktopWorkspaceEntry[]>;

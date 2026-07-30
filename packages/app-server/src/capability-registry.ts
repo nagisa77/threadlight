@@ -149,6 +149,7 @@ export function skillCapabilitySources(
 }
 
 function humanizeCapabilityName(value: string): string {
+  if (value === "powerpoint") return "PowerPoint";
   return value
     .split("-")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))

@@ -15,9 +15,20 @@ export function isTogglePanelShortcut(
   );
 }
 
-export function isTaskSearchShortcut(event: ShortcutEvent) {
+export function isCommandPaletteShortcut(event: ShortcutEvent) {
   return (
     event.key.toLowerCase() === "k" &&
+    (event.metaKey || event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey
+  );
+}
+
+export const isTaskSearchShortcut = isCommandPaletteShortcut;
+
+export function isFileSearchShortcut(event: ShortcutEvent) {
+  return (
+    event.key.toLowerCase() === "p" &&
     (event.metaKey || event.ctrlKey) &&
     !event.altKey &&
     !event.shiftKey

@@ -8,6 +8,23 @@ export {
   MemoryConversationStore,
 } from "./conversation-store.js";
 export { jsonLineSender, serveJsonLines } from "./stdio.js";
+export {
+  JsonLineRuntimePeer,
+  type JsonLineRuntimePeerOptions,
+  type RuntimePeer,
+} from "./remote-runtime-peer.js";
+export {
+  RemoteRuntimeServer,
+  type RemoteRuntimeAddress,
+  type RemoteRuntimeServerOptions,
+} from "./remote-runtime-server.js";
+export {
+  RemoteWorkspace,
+  type RemoteWorkspaceChangedFile,
+  type RemoteWorkspaceChanges,
+  type RemoteWorkspaceEntry,
+  type RemoteWorkspaceFile,
+} from "./remote-workspace.js";
 export { createWorkspaceAgentFactory } from "./workspace-agent.js";
 export {
   loadWorkspaceContext,
@@ -40,6 +57,14 @@ export {
   createSkillCreateTool,
 } from "./skill-creator.js";
 export {
+  classifyToolCall,
+  ExecutionPolicyRunController,
+} from "./execution-policy-controller.js";
+export {
+  finalizeSourceCitations,
+  SourceCitationRunController,
+} from "./source-citations.js";
+export {
   createSkillPluginThreadRuntime,
   defaultBuiltinPluginRoot,
   defaultBuiltinSkillRoot,
@@ -62,6 +87,12 @@ export type {
   AttachmentProvider,
   AttachmentRuntime,
 } from "./attachment-runtime.js";
+export type {
+  ExecutionApprovalRequest,
+  ExecutionApprovalRequester,
+  ExecutionRisk,
+} from "./execution-policy-controller.js";
+export type { FinalizedSourceCitations } from "./source-citations.js";
 export type { ModelStatePersistenceOptions } from "./model-state-persistence.js";
 export type {
   ConversationStore,

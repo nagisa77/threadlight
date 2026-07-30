@@ -174,6 +174,36 @@ describe("ThreadlightClient", () => {
     client.dispose();
   });
 
+  it("sends full access only when the conversation explicitly selects it", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const started = client.startTurn(
+      "thread-1",
+      "Use the trusted workspace",
+      [],
+      "default",
+      [],
+      "full",
+    );
+
+    expect(transport.sent[0]).toMatchObject({
+      method: "turn/start",
+      params: {
+        threadId: "thread-1",
+        input: "Use the trusted workspace",
+        accessMode: "full",
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: { turnId: "turn-1" },
+    });
+    await expect(started).resolves.toEqual({ turnId: "turn-1" });
+    client.dispose();
+  });
+
   it("sends connector configuration and authorization requests", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

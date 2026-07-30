@@ -25,6 +25,7 @@ import type {
   AgentPlanData,
   CapabilityDescriptor,
   ConnectorStatusData,
+  ConversationAccessMode,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,
@@ -70,9 +71,16 @@ import {
   UserActionRunController,
 } from "./run-controllers.js";
 import { TurnCapabilityController } from "./turn-capability-controller.js";
+import {
+  ExecutionPolicyRunController,
+  type ExecutionApprovalRequest,
+  type ExecutionApprovalRequester,
+} from "./execution-policy-controller.js";
+import { SourceCitationRunController } from "./source-citations.js";
 
 interface ThreadState {
   agent: Agent;
+  accessMode: ConversationAccessMode;
   promptSnapshot: PromptSnapshot;
   conversation: StoredConversation;
   progress: readonly ConversationProgressData[];
@@ -89,6 +97,7 @@ interface ThreadState {
   activeTurn?: {
     id: string;
     controller: AbortController;
+    sourceCitations?: SourceCitationRunController;
   };
   pendingAssistantOutput?: {
     text: string;
@@ -200,6 +209,18 @@ export class AppServer {
   private readonly modelName?: string;
   private readonly generateConversationTitles: boolean;
   private readonly threads = new Map<string, ThreadState>();
+  private readonly executionApprovals: ExecutionApprovalRequester = {
+    request: (request, signal) =>
+      this.requestExecutionApproval(request, signal),
+  };
+  private readonly pendingExecutionApprovals = new Map<
+    string,
+    {
+      resolve(decision: "allow" | "deny"): void;
+      dispose(): void;
+    }
+  >();
+  private executionApprovalsEnabled = false;
   private initialized = false;
 
   constructor(options: AppServerOptions) {
@@ -251,6 +272,7 @@ export class AppServer {
   private async dispatch(method: string, params: unknown): Promise<unknown> {
     switch (method) {
       case "initialize":
+        this.enableClientCapabilities(params);
         this.initialized = true;
         return { name: "threadlight", protocolVersion: "0.1" };
       case "thread/start":
@@ -289,6 +311,8 @@ export class AppServer {
         return this.processRequest(params, "wait");
       case "process/kill":
         return this.processRequest(params, "kill");
+      case "execution/approval/respond":
+        return this.resolveExecutionApproval(params);
       default:
         throw new RpcError(-32601, `Method not found: ${method}`);
     }
@@ -532,6 +556,7 @@ export class AppServer {
       threadId,
       input,
       mode: modeValue,
+      accessMode: accessModeValue,
       attachments: attachmentValue,
       capabilityRefs: capabilityRefsValue,
     } = objectParams(params);
@@ -542,6 +567,7 @@ export class AppServer {
     const attachments = parseAttachments(attachmentValue);
     const capabilityRefs = parseCapabilityRefs(capabilityRefsValue);
     const mode = parseTurnMode(modeValue);
+    const accessMode = parseConversationAccessMode(accessModeValue);
     for (const attachment of attachments) {
       this.requireLocalAttachment(attachment);
     }
@@ -573,6 +599,7 @@ export class AppServer {
       threadId,
       input,
       mode,
+      accessMode,
       attachments,
       capabilityRefs,
       capabilities,
@@ -584,6 +611,7 @@ export class AppServer {
     threadId: string,
     input: string,
     mode: TurnMode,
+    accessMode: ConversationAccessMode,
     attachments: readonly AttachmentData[],
     capabilityRefs: readonly string[],
     capabilities: readonly MessageCapabilityData[],
@@ -595,6 +623,7 @@ export class AppServer {
     }
     const turnId = randomUUID();
     const controller = new AbortController();
+    thread.accessMode = accessMode;
     thread.activeTurn = { id: turnId, controller };
     thread.progress = [];
     thread.injectedInputPendingModelResponse = false;
@@ -614,6 +643,7 @@ export class AppServer {
         this.updateConversation(
           {
             ...conversation,
+            accessMode,
             ...(queuedItem
               ? {
                   queuedTurns: (conversation.queuedTurns ?? []).filter(
@@ -644,6 +674,7 @@ export class AppServer {
         turnId,
         input,
         mode,
+        accessMode,
         attachments,
         capabilityRefs,
         capabilities,
@@ -831,6 +862,7 @@ export class AppServer {
     turnId: string,
     input: string,
     mode: TurnMode,
+    accessMode: ConversationAccessMode,
     attachments: readonly AttachmentData[],
     capabilityRefs: readonly string[],
     capabilities: readonly MessageCapabilityData[],
@@ -902,10 +934,22 @@ export class AppServer {
         turnTools,
         capabilityController?.tools() ?? [],
       );
+      const sourceCitationController = new SourceCitationRunController();
+      if (thread.activeTurn?.id === turnId) {
+        thread.activeTurn.sourceCitations = sourceCitationController;
+      }
       const runController = new UserActionRunController(
         composeRunControllers([
+          this.executionApprovalsEnabled && accessMode !== "full"
+            ? new ExecutionPolicyRunController(
+                threadId,
+                this.executionApprovals,
+                controller.signal,
+              )
+            : undefined,
           planController,
           capabilityController,
+          sourceCitationController,
           new ProjectMemoryReminderController(),
           new ResearchCoverageRunController(input),
           attachmentRuntime.controller,
@@ -952,6 +996,7 @@ export class AppServer {
       );
       const persistedModelState =
         this.modelStatePersistence.prepare(result.modelState);
+      const sourcedOutput = sourceCitationController.finalize(result.output);
       const turnDiagnostics = diagnostics.complete(
         "completed",
         this.now(),
@@ -982,13 +1027,19 @@ export class AppServer {
               {
                 id: randomUUID(),
                 role: "assistant",
-                text: result.output,
+                text: sourcedOutput.text,
                 ...(thread.progress.length > 0
                   ? { progress: thread.progress }
                   : {}),
                 ...(thread.plan ? { plan: thread.plan } : {}),
                 ...(appliedCapabilities.length > 0
                   ? { capabilities: appliedCapabilities }
+                  : {}),
+                ...(sourcedOutput.sources.length > 0
+                  ? {
+                      sources: sourcedOutput.sources,
+                      citations: sourcedOutput.citations,
+                    }
                   : {}),
                 diagnostics: turnDiagnostics,
               },
@@ -1000,11 +1051,17 @@ export class AppServer {
       this.notify("turn/completed", {
         threadId,
         turnId,
-        output: result.output,
+        output: sourcedOutput.text,
         usage: result.usage,
         diagnostics: turnDiagnostics,
         ...(appliedCapabilities.length > 0
           ? { capabilities: appliedCapabilities }
+          : {}),
+        ...(sourcedOutput.sources.length > 0
+          ? {
+              sources: sourcedOutput.sources,
+              citations: sourcedOutput.citations,
+            }
           : {}),
       });
       this.requestConversationTitle(threadId, thread);
@@ -1062,6 +1119,10 @@ export class AppServer {
     let message: ConversationMessageData | undefined;
     let precedingAssistantMessage: ConversationMessageData | undefined;
     const pendingAssistantOutput = thread.pendingAssistantOutput;
+    const finalizedPendingOutput =
+      thread.activeTurn?.sourceCitations?.finalize(
+        pendingAssistantOutput?.text ?? "",
+      );
     await this.mutateConversation(thread, (conversation) => {
       consumed = (conversation.queuedTurns ?? []).find(
         ({ delivery }) => delivery === "inject",
@@ -1076,9 +1137,15 @@ export class AppServer {
         precedingAssistantMessage = {
           id: randomUUID(),
           role: "assistant",
-          text: pendingAssistantOutput.text,
+          text: finalizedPendingOutput?.text ?? pendingAssistantOutput.text,
           ...(thread.progress.length > 0
             ? { progress: thread.progress }
+            : {}),
+          ...(finalizedPendingOutput?.sources.length
+            ? {
+                sources: finalizedPendingOutput.sources,
+                citations: finalizedPendingOutput.citations,
+              }
             : {}),
         };
       }
@@ -1211,6 +1278,7 @@ export class AppServer {
         threadId,
         item.input,
         "default",
+        thread.accessMode,
         [],
         [],
         [],
@@ -1311,6 +1379,67 @@ export class AppServer {
     this.send({ jsonrpc: "2.0", method, params });
   }
 
+  private enableClientCapabilities(params: unknown): void {
+    if (!params || typeof params !== "object" || Array.isArray(params)) return;
+    const capabilities = (params as Record<string, unknown>).capabilities;
+    if (
+      capabilities &&
+      typeof capabilities === "object" &&
+      !Array.isArray(capabilities) &&
+      (capabilities as Record<string, unknown>).executionApprovals === true
+    ) {
+      this.executionApprovalsEnabled = true;
+    }
+  }
+
+  private requestExecutionApproval(
+    request: ExecutionApprovalRequest,
+    signal?: AbortSignal,
+  ): Promise<"allow" | "deny"> {
+    if (signal?.aborted) return Promise.resolve("deny");
+    const requestId = randomUUID();
+    return new Promise<"allow" | "deny">((resolve) => {
+      const onAbort = () => settle("deny");
+      const settle = (decision: "allow" | "deny") => {
+        const pending = this.pendingExecutionApprovals.get(requestId);
+        if (!pending) return;
+        this.pendingExecutionApprovals.delete(requestId);
+        pending.dispose();
+        resolve(decision);
+        this.notify("execution/approval-resolved", {
+          requestId,
+          threadId: request.threadId,
+        });
+      };
+      this.pendingExecutionApprovals.set(requestId, {
+        resolve: settle,
+        dispose: () => signal?.removeEventListener("abort", onAbort),
+      });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.notify("execution/approval-required", {
+        requestId,
+        ...request,
+      });
+    });
+  }
+
+  private resolveExecutionApproval(params: unknown): { accepted: boolean } {
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      throw new RpcError(-32602, "Approval response params must be an object");
+    }
+    const { requestId, decision } = params as Record<string, unknown>;
+    if (typeof requestId !== "string") {
+      throw new RpcError(-32602, "requestId must be a string");
+    }
+    if (decision !== "allow" && decision !== "deny") {
+      throw new RpcError(-32602, "decision must be allow or deny");
+    }
+    const pending = this.pendingExecutionApprovals.get(requestId);
+    if (!pending) return { accepted: false };
+    pending.resolve(decision);
+    return { accepted: true };
+  }
+
   private async createThreadState(
     conversation: StoredConversation,
   ): Promise<ThreadState> {
@@ -1345,6 +1474,7 @@ export class AppServer {
           };
       return {
         agent,
+        accessMode: conversation.accessMode ?? "approval",
         promptSnapshot,
         conversation: snapshottedConversation,
         conversationMutation: Promise.resolve(),
@@ -1498,6 +1628,17 @@ function parseTurnMode(value: unknown): TurnMode {
   if (value === undefined || value === "default") return "default";
   if (value === "plan") return value;
   throw new RpcError(-32602, "mode must be default or plan");
+}
+
+function parseConversationAccessMode(
+  value: unknown,
+): ConversationAccessMode {
+  if (value === undefined || value === "approval") return "approval";
+  if (value === "full") return value;
+  throw new RpcError(
+    -32602,
+    "accessMode must be approval or full",
+  );
 }
 
 const SUGGESTION_LANGUAGES = new Set<SuggestionLanguage>([

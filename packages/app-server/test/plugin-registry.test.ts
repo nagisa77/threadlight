@@ -33,15 +33,17 @@ afterEach(() => {
 });
 
 describe("plugins", () => {
-  it("ships Documents, PDF, and Gmail as distinct built-in plugins", async () => {
+  it("ships artifact skills and Gmail as distinct built-in plugins", async () => {
     const registry = await PluginRegistry.discover({
       roots: [defaultBuiltinPluginRoot()],
       environment: {},
     });
     expect(registry.plugins.map(({ name }) => name)).toEqual([
       "documents",
+      "excel",
       "gmail",
       "pdf",
+      "powerpoint",
     ]);
     const gmail = registry.mcpServers().find(
       ({ server }) => server.id === "gmail",
@@ -390,7 +392,7 @@ describe("plugins", () => {
     await mcpRuntime.dispose();
   });
 
-  it("ships full Documents and PDF skill references for progressive disclosure", async () => {
+  it("ships full artifact skill references for progressive disclosure", async () => {
     const root = temporaryDirectory("threadlight-builtin-skill-resources-");
     const runtime = await createSkillPluginThreadRuntime({
       workspaceRoot: root,
@@ -406,6 +408,12 @@ describe("plugins", () => {
     const pdf = runtime.snapshot.skills.skills.find(
       ({ invocationName }) => invocationName === "pdf:pdf",
     );
+    const excel = runtime.snapshot.skills.skills.find(
+      ({ invocationName }) => invocationName === "excel:excel",
+    );
+    const powerpoint = runtime.snapshot.skills.skills.find(
+      ({ invocationName }) => invocationName === "powerpoint:powerpoint",
+    );
 
     expect(documents?.resources).toEqual(
       expect.arrayContaining([
@@ -419,6 +427,81 @@ describe("plugins", () => {
         expect.stringMatching(/pdf\/references\/quality-checks\.md$/),
       ]),
     );
+    expect(excel?.resources).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/excel\/references\/tooling\.md$/),
+        expect.stringMatching(/excel\/references\/quality-checks\.md$/),
+      ]),
+    );
+    expect(powerpoint?.resources).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/powerpoint\/references\/tooling\.md$/),
+        expect.stringMatching(
+          /powerpoint\/references\/quality-checks\.md$/,
+        ),
+      ]),
+    );
+  });
+
+  it("injects Excel and PowerPoint workflows into an offline scripted turn", async () => {
+    const root = temporaryDirectory("threadlight-office-skills-");
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [],
+      repoSkillRoots: [],
+      userSkillRoots: [],
+      pluginRoots: [defaultBuiltinPluginRoot()],
+    });
+    const excel = runtime.capabilities.find(
+      ({ kind, name }) => kind === "skill" && name === "Excel",
+    );
+    const powerpoint = runtime.capabilities.find(
+      ({ kind, name }) => kind === "skill" && name === "PowerPoint",
+    );
+
+    expect(excel).toMatchObject({
+      icon: "excel",
+      visibility: "featured",
+    });
+    expect(powerpoint).toMatchObject({
+      icon: "powerpoint",
+      visibility: "featured",
+    });
+
+    const resolved = await runtime.resolveCapabilities(
+      [excel!.id, powerpoint!.id],
+      new AbortController().signal,
+    );
+    const requests: ModelRequest[] = [];
+    const result = await new AgentLoop({
+      async generate(request) {
+        requests.push(request);
+        expect(request.instructions).toContain(
+          "Do not replace formulas with cached values",
+        );
+        expect(request.instructions).toContain(
+          "Treat slides as a visual narrative",
+        );
+        return {
+          text: "The workbook and deck workflows are loaded.",
+          toolCalls: [],
+        };
+      },
+    }).run(
+      defineAgent({
+        name: "office-artifacts",
+        instructions: resolved.promptBlocks
+          .map(({ content }) => content)
+          .join("\n\n"),
+      }),
+      "Create an Excel model and a PowerPoint deck.",
+    );
+
+    expect(result.output).toBe(
+      "The workbook and deck workflows are loaded.",
+    );
+    expect(requests).toHaveLength(1);
   });
 
   it("loads plugin skills with a plugin namespace", async () => {

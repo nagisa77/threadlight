@@ -1,0 +1,4 @@
+interface:
+  display_name: "PowerPoint"
+  short_description: "Create, edit, and visually verify presentation decks"
+  default_prompt: "Use $powerpoint to create or edit a polished, verified presentation."

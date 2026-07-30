@@ -26,7 +26,8 @@
     "desktop:preview": "npm run build:packages && npm run preview --workspace @threadlight/desktop",
     "test": "npm run build && vitest run",
     "typecheck": "tsc -b --pretty false && npm run typecheck --workspace @threadlight/desktop",
-    "start": "node packages/app-server/dist/bin.js"
+    "start": "node packages/app-server/dist/bin.js",
+    "runtime": "node packages/app-server/dist/remote-bin.js"
   },
   "engines": {
     "node": ">=22"

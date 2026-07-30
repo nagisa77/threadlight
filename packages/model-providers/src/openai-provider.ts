@@ -106,6 +106,18 @@ const OPENAI_CONTEXT_FILE_EXTENSIONS = [
   ".yml",
 ] as const;
 
+const OPENAI_NATIVE_COMPUTER_MODEL_PATTERNS = [
+  /^gpt-5\.5(?:-\d{4}-\d{2}-\d{2})?$/,
+  /^gpt-5\.6(?:-|$)/,
+] as const;
+
+export function supportsOpenAINativeComputerTool(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  return OPENAI_NATIVE_COMPUTER_MODEL_PATTERNS.some((pattern) =>
+    pattern.test(normalized),
+  );
+}
+
 export class OpenAIResponsesProvider implements ModelProvider {
   private readonly client: OpenAI;
   private readonly defaultModel: string;
@@ -171,6 +183,13 @@ export class OpenAIResponsesProvider implements ModelProvider {
     request: ModelRequest,
     options: ModelGenerateOptions = {},
   ): Promise<ModelTurn> {
+    const model = request.model ?? this.defaultModel;
+    const availableTools = supportsOpenAINativeComputerTool(model)
+      ? request.tools
+      : request.tools.filter(
+          (tool) => tool.kind !== "computer" && tool.name !== "computer_share",
+        );
+    const computerToolsRemoved = availableTools.length !== request.tools.length;
     const input: OpenAI.Responses.ResponseInput = Array.isArray(request.state)
       ? sanitizeResponseInput(request.state)
       : [];
@@ -242,7 +261,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
       input.push({ role: "user", content: request.input });
     }
 
-    const tools: OpenAI.Responses.Tool[] = request.tools.map((tool) =>
+    const tools: OpenAI.Responses.Tool[] = availableTools.map((tool) =>
       tool.kind === "computer"
         ? { type: "computer" }
         : {
@@ -255,8 +274,15 @@ export class OpenAIResponsesProvider implements ModelProvider {
     );
 
     const params = {
-      model: request.model ?? this.defaultModel,
-      instructions: request.instructions,
+      model,
+      instructions: computerToolsRemoved
+        ? [
+            request.instructions,
+            "The selected model does not support computer tools. Continue with the remaining available tools and do not attempt computer interaction.",
+          ]
+            .filter(Boolean)
+            .join("\n\n")
+        : request.instructions,
       input,
       tools,
     };
@@ -286,7 +312,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
           ];
         }
         if (item.type === "computer_call") {
-          const computerTool = request.tools.find(
+          const computerTool = availableTools.find(
             (tool) => tool.kind === "computer",
           );
           return [

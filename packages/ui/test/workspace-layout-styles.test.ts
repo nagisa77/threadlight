@@ -34,3 +34,17 @@ describe("workspace titlebar hit regions", () => {
     );
   });
 });
+
+describe("expanded composer layout", () => {
+  it("starts with a roomy top-aligned editor above the action toolbar", () => {
+    expect(styles).toMatch(
+      /\.composer\s*\{[^}]*min-height:\s*102px;[^}]*flex-direction:\s*column;[^}]*border-radius:\s*18px;/s,
+    );
+    expect(styles).toMatch(
+      /\.composer textarea\s*\{[^}]*width:\s*100%;[^}]*min-height:\s*42px;[^}]*padding:\s*2px 3px 0;/s,
+    );
+    expect(styles).toMatch(
+      /\.composer-toolbar\s*\{[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;[^}]*margin-top:\s*auto;/s,
+    );
+  });
+});

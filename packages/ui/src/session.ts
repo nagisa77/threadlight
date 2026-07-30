@@ -10,11 +10,14 @@ import {
   type AgentPlanData,
   type AgentEventData,
   type CapabilityDescriptor,
+  type ConversationAccessMode,
   type ConversationActivityData,
   type ConversationMessageData,
   type ConversationProgressData,
   type FollowUpDelivery,
   type MessageCapabilityData,
+  type MessageCitationData,
+  type MessageSourceData,
   type ProcessSnapshotData,
   type QueuedTurnData,
   type TurnDiagnosticsData,
@@ -37,6 +40,8 @@ export interface ConversationMessage {
   progress?: readonly ConversationProgress[];
   activities?: readonly ToolActivity[];
   diagnostics?: TurnDiagnosticsData;
+  sources?: readonly MessageSourceData[];
+  citations?: readonly MessageCitationData[];
 }
 
 export interface SessionState {
@@ -79,6 +84,8 @@ export type SessionAction =
       output: string;
       capabilities?: readonly MessageCapabilityData[];
       diagnostics?: TurnDiagnosticsData;
+      sources?: readonly MessageSourceData[];
+      citations?: readonly MessageCitationData[];
     }
   | {
       type: "turn.failed";
@@ -189,6 +196,8 @@ export function sessionReducer(
         false,
         action.capabilities,
         action.diagnostics,
+        action.sources,
+        action.citations,
       );
     case "turn.failed":
       return completeTurn(
@@ -316,6 +325,8 @@ function completeTurn(
   error = false,
   capabilities: readonly MessageCapabilityData[] = [],
   diagnostics?: TurnDiagnosticsData,
+  sources: readonly MessageSourceData[] = [],
+  citations: readonly MessageCitationData[] = [],
 ): SessionState {
   return {
     ...state,
@@ -335,6 +346,7 @@ function completeTurn(
         ...(state.plan ? { plan: state.plan } : {}),
         ...(!error && capabilities.length > 0 ? { capabilities } : {}),
         ...(diagnostics ? { diagnostics } : {}),
+        ...(sources.length > 0 ? { sources, citations } : {}),
       },
     ],
   };
@@ -363,6 +375,7 @@ export async function requestTurnStart(
       attachments: readonly AttachmentData[],
       mode: TurnMode,
       capabilityRefs: readonly string[],
+      accessMode: ConversationAccessMode,
     ): Promise<unknown>;
   },
   threadId: string,
@@ -370,6 +383,7 @@ export async function requestTurnStart(
   attachments: readonly AttachmentData[],
   mode: TurnMode = "default",
   capabilityRefs: readonly string[] = [],
+  accessMode: ConversationAccessMode = "approval",
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await client.startTurn(
@@ -378,6 +392,7 @@ export async function requestTurnStart(
       attachments,
       mode,
       capabilityRefs,
+      accessMode,
     );
     return { ok: true };
   } catch (error) {
@@ -482,6 +497,8 @@ export function useThreadlightSession(
         output,
         capabilities,
         diagnostics,
+        sources,
+        citations,
       }) => {
         updateSession(threadId, {
           type: "turn.completed",
@@ -489,6 +506,8 @@ export function useThreadlightSession(
           output,
           capabilities,
           diagnostics,
+          sources,
+          citations,
         });
       }),
       client.on("turn/failed", ({ threadId, error, diagnostics }) => {
@@ -618,6 +637,7 @@ export function useThreadlightSession(
       attachments: readonly AttachmentData[] = [],
       mode: TurnMode = "default",
       capabilities: readonly CapabilityDescriptor[] = [],
+      accessMode: ConversationAccessMode = "approval",
     ) => {
       const text = value.trim();
       if ((!text && attachments.length === 0) || !state.threadId || state.isRunning) {
@@ -654,6 +674,7 @@ export function useThreadlightSession(
         attachments,
         mode,
         capabilities.map(({ id }) => id),
+        accessMode,
       );
       if (!started.ok) {
         updateSession(threadId, {

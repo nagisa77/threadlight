@@ -9,6 +9,7 @@ import {
   GROK_DEFAULT_BASE_URL,
   KIMI_DEFAULT_BASE_URL,
   QWEN_DEFAULT_BASE_URL,
+  supportsOpenAINativeComputerTool,
   type ModelProviderId,
 } from "@threadlight/model-providers";
 import {
@@ -78,11 +79,12 @@ if (!providerApiKey && providerId !== "custom") {
 }
 
 const providerBaseUrl = baseUrlFor(providerId, process.env);
+const modelName =
+  process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId);
 const provider = createModelProvider({
   provider: providerId,
   apiKey: providerApiKey,
-  defaultModel:
-    process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId),
+  defaultModel: modelName,
   ...(providerBaseUrl ? { baseURL: providerBaseUrl } : {}),
 });
 
@@ -113,6 +115,7 @@ const tools = [
 ];
 const computerUseEnabled =
   providerId === "openai" &&
+  supportsOpenAINativeComputerTool(modelName) &&
   process.platform === "darwin" &&
   process.env.THREADLIGHT_COMPUTER_USE !== "0";
 
@@ -158,8 +161,7 @@ const send = jsonLineSender(process.stdout);
 const server = new AppServer({
   loop,
   generateConversationTitles: true,
-  modelName:
-    process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId),
+  modelName,
   attachmentProvider: provider,
   modelStatePersistence: new ModelStatePersistence({
     prepareState: (state, options) =>

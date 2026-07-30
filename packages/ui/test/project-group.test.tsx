@@ -15,8 +15,11 @@ import {
   hasUserInput,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
+  ProjectActionPopover,
   ProjectConversationItem,
   ProjectGroup,
+  ProjectListHeading,
+  RuntimeStatusControl,
   showsProjectLevelActivity,
   TaskSearchDialog,
   ThreadlightApp,
@@ -163,6 +166,27 @@ describe("ThreadlightApp", () => {
     );
     expect(html).not.toContain('class="brand"');
     client.dispose();
+  });
+
+  it("combines runtime status and remote entry into one compact row", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeStatusControl
+        status="ready"
+        label="运行时已连接"
+        mode="本地"
+        title="连接 Remote Runtime"
+        onOpen={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain(
+      'class="runtime-status-control pressable"',
+    );
+    expect(html).toContain("运行时已连接");
+    expect(html).toContain("本地");
+    expect(html).toContain("status-dot ready");
+    expect(html).toContain("runtime-status-chevron");
+    expect(html).not.toContain("lucide-server");
   });
 
   it("keeps both chat and workspace panel usable while resizing", () => {
@@ -337,6 +361,28 @@ describe("ProjectGroup", () => {
     expect(hasUserInput([{ role: "user" }])).toBe(true);
   });
 
+  it("keeps only search and add project in the project heading", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ProjectListHeading
+          searchDisabled={false}
+          addDisabled={false}
+          onSearch={vi.fn()}
+          onAdd={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html.match(/<button/g)).toHaveLength(2);
+    expect(html).toContain("lucide-search");
+    expect(html).toContain("lucide-plus");
+    expect(html).toContain('aria-label="添加项目"');
+    expect(html).not.toContain("lucide-notebook-text");
+    expect(html).not.toContain("lucide-activity");
+    expect(html).not.toContain("lucide-calendar-clock");
+    expect(html).not.toContain("lucide-server");
+  });
+
   it("starts collapsed without a visual active class", () => {
     const html = renderToStaticMarkup(
       <ProjectGroup
@@ -365,6 +411,77 @@ describe("ProjectGroup", () => {
     expect(html).toContain('aria-current="location"');
     expect(html).not.toContain("新任务");
     expect(html).not.toContain("project-row pressable active");
+  });
+
+  it("uses project-level ellipsis and compose actions without a chevron", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ProjectGroup
+          project={{
+            id: "project-1",
+            name: "Threadlight",
+            basePath: "/workspace/threadlight",
+            lastOpenedAt: "2026-07-30T00:00:00.000Z",
+            conversations: [],
+          }}
+          active
+          disabled={false}
+          onSelect={vi.fn()}
+          onNewTask={vi.fn()}
+          onOpenMemory={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('aria-label="管理项目“Threadlight”"');
+    expect(html).toContain('aria-label="新建任务"');
+    expect(html).toContain("lucide-ellipsis");
+    expect(html).toContain("lucide-square-pen");
+    expect(html).not.toContain("lucide-chevron-right");
+  });
+
+  it("keeps all project actions in the shared popover order", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ProjectActionPopover
+          project={{
+            id: "project-1",
+            name: "Threadlight",
+            basePath: "/workspace/threadlight",
+            lastOpenedAt: "2026-07-30T00:00:00.000Z",
+            conversations: [],
+          }}
+          busy={false}
+          position={{
+            top: 80,
+            left: 20,
+            transformOrigin: "top right",
+          }}
+          onClose={vi.fn()}
+          onNewTask={vi.fn()}
+          onOpenMemory={vi.fn()}
+          onOpenSecurity={vi.fn()}
+          onRevealInFinder={vi.fn()}
+          onToggleProjectPinned={vi.fn()}
+          onOpenDiagnostics={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    const actions = [
+      "新建任务",
+      "项目记忆管理",
+      "安全执行",
+      "在 Finder 中显示",
+      "置顶项目",
+      "用量与诊断",
+    ];
+
+    for (const action of actions) expect(html).toContain(action);
+    for (let index = 1; index < actions.length; index += 1) {
+      expect(html.indexOf(actions[index - 1]!)).toBeLessThan(
+        html.indexOf(actions[index]!),
+      );
+    }
   });
 
   it("offers an accessible management action for each task", () => {
@@ -513,6 +630,28 @@ describe("ProjectGroup", () => {
 
     expect(html).toContain('role="alertdialog"');
     expect(html).toContain("此操作无法撤销");
+  });
+
+  it("describes every worktree artifact removed by discarding a task", () => {
+    const html = renderToStaticMarkup(
+      <DeleteConversationDialog
+        conversation={{
+          id: "thread-1",
+          title: "隔离任务",
+          createdAt: "2026-07-21T00:00:00.000Z",
+          updatedAt: "2026-07-21T00:00:00.000Z",
+        }}
+        discard
+        deleting={false}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("丢弃这个任务");
+    expect(html).toContain("独立 worktree");
+    expect(html).toContain("任务分支");
+    expect(html).toContain("对话记录");
   });
 
   it("filters task search by lifecycle while keeping running state live", () => {

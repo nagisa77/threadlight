@@ -50,6 +50,37 @@ const ready = true;
     expect(html).toContain('rel="noreferrer noopener"');
   });
 
+  it("renders inline citation markers and a message source trigger", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent
+        sources={[
+          {
+            id: "s1",
+            title: "Threadlight",
+            url: "https://example.com/threadlight",
+            domain: "example.com",
+          },
+        ]}
+        citations={[
+          {
+            id: "citation-1",
+            sourceIds: ["s1"],
+            excerpt: "Threadlight is an agent runtime.",
+          },
+        ]}
+      >
+        {
+          "Threadlight is an agent runtime.[1](threadlight-source:citation-1)"
+        }
+      </MarkdownContent>,
+    );
+
+    expect(html).toContain('class="source-citation-marker pressable"');
+    expect(html).toContain("查看引用 1");
+    expect(html).toContain("1 个来源");
+    expect(html).not.toContain('href="threadlight-source:');
+  });
+
   it("does not mark non-web links as external web pages", () => {
     const html = renderToStaticMarkup(
       <MarkdownContent>{`[Email](mailto:hello@example.com)`}</MarkdownContent>,

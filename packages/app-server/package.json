@@ -12,7 +12,8 @@
     }
   },
   "bin": {
-    "threadlight-app-server": "./dist/bin.js"
+    "threadlight-app-server": "./dist/bin.js",
+    "threadlight-runtime": "./dist/remote-bin.js"
   },
   "files": [
     "dist"

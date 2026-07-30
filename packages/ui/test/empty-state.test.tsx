@@ -1,7 +1,36 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { EmptyState } from "../src/app.js";
+import {
+  EmptyState,
+  NewTaskProjectPrompt,
+  ProjectPickerPopover,
+  filterProjectsForPicker,
+} from "../src/app.js";
+import type { ProjectSummary } from "../src/projects.js";
+
+const projects: readonly ProjectSummary[] = [
+  {
+    id: "threadlight",
+    name: "threadlight",
+    basePath: "/Users/tim/Desktop/threadlight",
+    lastOpenedAt: "2026-07-30T10:00:00.000Z",
+    conversations: [],
+  },
+  {
+    id: "remote",
+    name: "Compute Lab",
+    basePath: "/workspace/model",
+    lastOpenedAt: "2026-07-30T09:00:00.000Z",
+    conversations: [],
+    runtime: {
+      kind: "remote",
+      endpoint: "https://runtime.example.test",
+      workspacePath: "/workspace/model",
+      runtimeId: "runtime-1",
+    },
+  },
+];
 
 describe("empty state", () => {
   it("renders the three AI-provided questions instead of static defaults", () => {
@@ -42,5 +71,57 @@ describe("empty state", () => {
 
     expect(html.match(/suggestion-placeholder/g)).toHaveLength(3);
     expect(html).toContain("AI 正在生成项目问题推荐");
+  });
+
+  it("replaces the two-line empty copy with an inline project prompt", () => {
+    const html = renderToStaticMarkup(
+      <NewTaskProjectPrompt
+        project={projects[0]!}
+        projects={projects}
+        onSelectProject={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("接下来要在");
+    expect(html).toContain("threadlight");
+    expect(html).toContain("中构建什么？");
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).not.toContain("描述目标，Threadlight");
+  });
+
+  it("searches projects by name and runtime path", () => {
+    expect(filterProjectsForPicker(projects, "compute")).toEqual([
+      projects[1],
+    ]);
+    expect(filterProjectsForPicker(projects, "WORKSPACE/MODEL")).toEqual([
+      projects[1],
+    ]);
+    expect(filterProjectsForPicker(projects, "missing")).toEqual([]);
+  });
+
+  it("renders the generic searchable project popover with current selection", () => {
+    const html = renderToStaticMarkup(
+      <ProjectPickerPopover
+        projects={projects}
+        currentProjectId="threadlight"
+        query="thread"
+        position={{
+          top: 80,
+          left: 20,
+          transformOrigin: "top right",
+        }}
+        onQueryChange={vi.fn()}
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="action-popover project-picker-popover"');
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain('placeholder="搜索项目"');
+    expect(html).toContain('role="listbox"');
+    expect(html).toContain('aria-selected="true"');
+    expect(html).toContain("threadlight");
+    expect(html).not.toContain("Compute Lab");
   });
 });

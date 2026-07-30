@@ -17,6 +17,8 @@ import type {
   DesktopConversationUpdate,
   DesktopConversationSummary,
   DesktopProject,
+  DesktopProjectMetadataUpdate,
+  DesktopProjectRuntime,
   DesktopProjectsSnapshot,
   DesktopTaskWorkspace,
 } from "../shared/desktop-api.js";
@@ -61,12 +63,14 @@ export class ProjectStore {
       ...(stored.activeProjectId
         ? { activeProjectId: stored.activeProjectId }
         : {}),
-      projects: stored.projects.map((project) => ({
-        ...project,
-        conversations: project.conversations
-          .map(normalizeConversation)
-          .sort(compareConversations),
-      })),
+      projects: stored.projects
+        .map((project) => ({
+          ...project,
+          conversations: project.conversations
+            .map(normalizeConversation)
+            .sort(compareConversations),
+        }))
+        .sort(compareProjects),
     };
   }
 
@@ -97,6 +101,46 @@ export class ProjectStore {
     return this.snapshot();
   }
 
+  registerRemote(input: {
+    name: string;
+    endpoint: string;
+    workspacePath: string;
+    runtimeId: string;
+  }): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const timestamp = this.now().toISOString();
+    let project = stored.projects.find(
+      (candidate) =>
+        candidate.runtime?.kind === "remote" &&
+        candidate.runtime.runtimeId === input.runtimeId,
+    );
+    const runtime: DesktopProjectRuntime = {
+      kind: "remote",
+      endpoint: input.endpoint,
+      workspacePath: input.workspacePath,
+      runtimeId: input.runtimeId,
+    };
+    if (project) {
+      project.name = input.name.trim() || project.name;
+      project.basePath = input.workspacePath;
+      project.runtime = runtime;
+      project.lastOpenedAt = timestamp;
+    } else {
+      project = {
+        id: this.createId(),
+        name: input.name.trim() || basename(input.workspacePath),
+        basePath: input.workspacePath,
+        lastOpenedAt: timestamp,
+        conversations: [],
+        runtime,
+      };
+      stored.projects.push(project);
+    }
+    stored.activeProjectId = project.id;
+    this.write(stored);
+    return this.snapshot();
+  }
+
   activate(projectId: string): DesktopProjectsSnapshot {
     const stored = this.read();
     const project = stored.projects.find(
@@ -104,10 +148,29 @@ export class ProjectStore {
     );
     if (!project) throw new Error(`Unknown project: ${projectId}`);
 
-    canonicalDirectory(project.basePath);
-    ensureConversationDirectory(project.basePath);
+    if (project.runtime?.kind !== "remote") {
+      canonicalDirectory(project.basePath);
+      ensureConversationDirectory(project.basePath);
+    }
     project.lastOpenedAt = this.now().toISOString();
     stored.activeProjectId = project.id;
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  updateProject(
+    update: DesktopProjectMetadataUpdate,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const project = stored.projects.find(
+      (candidate) => candidate.id === update.id,
+    );
+    if (!project) throw new Error(`Unknown project: ${update.id}`);
+    if (update.pinned) {
+      project.pinnedAt ??= this.now().toISOString();
+    } else {
+      delete project.pinnedAt;
+    }
     this.write(stored);
     return this.snapshot();
   }
@@ -240,6 +303,9 @@ export class ProjectStore {
         delete conversation.pinnedAt;
       }
     }
+    if (update.accessMode !== undefined) {
+      conversation.accessMode = update.accessMode;
+    }
     this.write(stored);
     return this.snapshot();
   }
@@ -269,7 +335,9 @@ export class ProjectStore {
       throw new Error("Archive the conversation before deleting it");
     }
 
-    rmSync(conversationPath(project.basePath, target.id), { force: true });
+    if (project.runtime?.kind !== "remote") {
+      rmSync(conversationPath(project.basePath, target.id), { force: true });
+    }
 
     project.conversations = project.conversations.filter(
       (conversation) => conversation.id !== target.id,
@@ -408,8 +476,22 @@ function isProject(value: unknown): boolean {
     typeof project.name === "string" &&
     typeof project.basePath === "string" &&
     typeof project.lastOpenedAt === "string" &&
+    (project.pinnedAt === undefined ||
+      typeof project.pinnedAt === "string") &&
+    (project.runtime === undefined || isProjectRuntime(project.runtime)) &&
     Array.isArray(project.conversations) &&
     project.conversations.every(isConversation)
+  );
+}
+
+function isProjectRuntime(value: unknown): value is DesktopProjectRuntime {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const runtime = value as Record<string, unknown>;
+  return (
+    runtime.kind === "remote" &&
+    typeof runtime.endpoint === "string" &&
+    typeof runtime.workspacePath === "string" &&
+    typeof runtime.runtimeId === "string"
   );
 }
 
@@ -434,6 +516,9 @@ function isConversation(value: unknown): boolean {
       typeof conversation.pinnedAt === "string") &&
     (conversation.archivedAt === undefined ||
       typeof conversation.archivedAt === "string") &&
+    (conversation.accessMode === undefined ||
+      conversation.accessMode === "approval" ||
+      conversation.accessMode === "full") &&
     (conversation.workspace === undefined ||
       isTaskWorkspace(conversation.workspace))
   );
@@ -482,6 +567,16 @@ function compareConversations(
   return right.updatedAt.localeCompare(left.updatedAt);
 }
 
+function compareProjects(
+  left: DesktopProject,
+  right: DesktopProject,
+): number {
+  if (!left.pinnedAt && !right.pinnedAt) return 0;
+  if (!left.pinnedAt) return 1;
+  if (!right.pinnedAt) return -1;
+  return right.pinnedAt.localeCompare(left.pinnedAt);
+}
+
 function isTaskWorkspace(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const workspace = value as Record<string, unknown>;
@@ -499,7 +594,10 @@ function isTaskWorkspace(value: unknown): boolean {
     typeof workspace.branch === "string" &&
     workspace.branch.startsWith("threadlight/") &&
     typeof workspace.baseCommit === "string" &&
-    workspace.baseCommit.length > 0
+    workspace.baseCommit.length > 0 &&
+    (workspace.sourceBranch === undefined ||
+      (typeof workspace.sourceBranch === "string" &&
+        workspace.sourceBranch.length > 0))
   );
 }
 

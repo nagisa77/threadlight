@@ -4,13 +4,16 @@ import {
   ThreadlightApp,
   type AttachmentPreviewAdapter,
   type AttachmentStageAdapter,
+  type AutomationAdapter,
   type ClipboardAdapter,
   type ComputerPermissionAdapter,
   type ComputerShareAdapter,
   type DiagnosticsAdapter,
+  type ExecutionPolicyAdapter,
   type ProjectMemoryAdapter,
   type ProjectOpenerAdapter,
   type ProjectsAdapter,
+  type SearchAdapter,
   type SettingsAdapter,
   type TerminalAdapter,
   type VoiceInputAdapter,
@@ -36,8 +39,12 @@ const diagnostics: DiagnosticsAdapter = {
 const projects: ProjectsAdapter = {
   load: () => window.threadlightDesktop.getProjects(),
   openFolder: () => window.threadlightDesktop.openProject(),
+  connectRemote: (request) =>
+    window.threadlightDesktop.connectRemoteRuntime(request),
   activate: (projectId) =>
     window.threadlightDesktop.activateProject(projectId),
+  updateProject: (update) =>
+    window.threadlightDesktop.updateProject(update),
   upsertConversation: (update) =>
     window.threadlightDesktop.upsertConversation(update),
   updateConversation: (update) =>
@@ -59,6 +66,47 @@ const projectOpener: ProjectOpenerAdapter = {
 const memory: ProjectMemoryAdapter = {
   load: (projectId) => window.threadlightDesktop.getProjectMemory(projectId),
   open: (projectId) => window.threadlightDesktop.openProjectMemory(projectId),
+};
+const search: SearchAdapter = {
+  search: (projectId, threadId, query, mode) =>
+    window.threadlightDesktop.search({
+      projectId,
+      ...(threadId ? { threadId } : {}),
+      query,
+      mode,
+    }),
+};
+const automations: AutomationAdapter = {
+  load: (projectId) => window.threadlightDesktop.getAutomations(projectId),
+  create: (request) => window.threadlightDesktop.createAutomation(request),
+  update: (request) => window.threadlightDesktop.updateAutomation(request),
+  delete: (projectId, id) =>
+    window.threadlightDesktop.deleteAutomation({ projectId, id }),
+  run: (projectId, id) =>
+    window.threadlightDesktop.runAutomation({ projectId, id }),
+  subscribe: (listener) =>
+    window.threadlightDesktop.onAutomationsChanged(listener),
+  subscribeOpen: (listener) =>
+    window.threadlightDesktop.onAutomationOpen(listener),
+};
+const executionPolicy: ExecutionPolicyAdapter = {
+  subscribe: (listener) =>
+    window.threadlightDesktop.onExecutionApprovalRequired(listener),
+  subscribeResolved: (listener) =>
+    window.threadlightDesktop.onExecutionApprovalResolved(listener),
+  respond: (requestId, decision, scope) =>
+    window.threadlightDesktop.respondExecutionApproval({
+      requestId,
+      decision,
+      scope,
+    }),
+  load: (projectId) =>
+    window.threadlightDesktop.getExecutionPolicy(projectId),
+  revoke: (projectId, permissionKey) =>
+    window.threadlightDesktop.revokeExecutionPolicyGrant({
+      projectId,
+      permissionKey,
+    }),
 };
 const voiceInput: VoiceInputAdapter = {
   async prepare() {
@@ -113,6 +161,52 @@ const workspace: WorkspaceAdapter = {
       revision,
       ...(paths ? { paths } : {}),
     }),
+  preflightDelivery: (projectId, threadId, revision) =>
+    window.threadlightDesktop.preflightWorktreeDelivery({
+      projectId,
+      threadId,
+      revision,
+    }),
+  applyDelivery: (projectId, threadId, revision) =>
+    window.threadlightDesktop.applyWorktreeDelivery({
+      projectId,
+      threadId,
+      revision,
+    }),
+  commitDelivery: (projectId, threadId, revision, message) =>
+    window.threadlightDesktop.commitWorktreeDelivery({
+      projectId,
+      threadId,
+      revision,
+      message,
+    }),
+  getCodeHostStatus: (projectId, threadId, revision) =>
+    window.threadlightDesktop.getCodeHostDeliveryStatus({
+      projectId,
+      threadId,
+      revision,
+    }),
+  commitAndPush: (projectId, threadId, revision, message) =>
+    window.threadlightDesktop.commitAndPushCodeHostDelivery({
+      projectId,
+      threadId,
+      revision,
+      message,
+    }),
+  createDraftPullRequest: (
+    projectId,
+    threadId,
+    revision,
+    title,
+    body,
+  ) =>
+    window.threadlightDesktop.createDraftPullRequest({
+      projectId,
+      threadId,
+      revision,
+      title,
+      ...(body?.trim() ? { body } : {}),
+    }),
   list: (projectId, path, threadId) =>
     window.threadlightDesktop.listWorkspace({
       projectId,
@@ -150,6 +244,8 @@ createRoot(root).render(
     projects={projects}
     projectOpener={projectOpener}
     memory={memory}
+    search={search}
+    automations={automations}
     voiceInput={voiceInput}
     attachmentStage={attachmentStage}
     attachmentPreview={attachmentPreview}
@@ -157,5 +253,6 @@ createRoot(root).render(
     computerPermissions={computerPermissions}
     terminal={terminal}
     workspace={workspace}
+    executionPolicy={executionPolicy}
   />,
 );

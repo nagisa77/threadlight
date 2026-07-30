@@ -1,5 +1,8 @@
 export { OpenAICompatibleChatProvider } from "./openai-compatible-chat-provider.js";
-export { OpenAIResponsesProvider } from "./openai-provider.js";
+export {
+  OpenAIResponsesProvider,
+  supportsOpenAINativeComputerTool,
+} from "./openai-provider.js";
 export {
   createModelProvider,
   CUSTOM_DEFAULT_BASE_URL,

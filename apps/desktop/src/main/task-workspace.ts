@@ -32,6 +32,7 @@ export interface GitTaskWorkspace {
   repositoryRoot: string;
   branch: string;
   baseCommit: string;
+  sourceBranch?: string;
 }
 
 export type TaskWorkspace = FolderTaskWorkspace | GitTaskWorkspace;
@@ -110,6 +111,9 @@ export class TaskWorkspaceManager {
       repositoryRoot: repository.root,
       branch,
       baseCommit: repository.baseCommit,
+      ...(repository.sourceBranch
+        ? { sourceBranch: repository.sourceBranch }
+        : {}),
     };
   }
 
@@ -147,7 +151,11 @@ export class TaskWorkspaceManager {
 
   private async repository(
     projectPath: string,
-  ): Promise<{ root: string; baseCommit: string } | undefined> {
+  ): Promise<{
+    root: string;
+    baseCommit: string;
+    sourceBranch?: string;
+  } | undefined> {
     let rootOutput: string;
     try {
       ({ stdout: rootOutput } = await this.runGit(projectPath, [
@@ -179,7 +187,16 @@ export class TaskWorkspaceManager {
         "Git projects require at least one commit before Threadlight can create a task worktree.",
       );
     }
-    return { root, baseCommit };
+    const { stdout: branchOutput } = await this.runGit(projectPath, [
+      "branch",
+      "--show-current",
+    ]);
+    const sourceBranch = branchOutput.trim() || "detached HEAD";
+    return {
+      root,
+      baseCommit,
+      sourceBranch,
+    };
   }
 
   private async copyWorkingState(

@@ -77,6 +77,15 @@ export interface ConversationChangesSnapshot {
   files: readonly ConversationFileChange[];
 }
 
+export interface ConversationDeliveryFile {
+  path: string;
+  status: ConversationFileChange["status"];
+  binary: boolean;
+  baselineContent?: Buffer;
+  taskContent?: Buffer;
+  taskMode?: number;
+}
+
 export interface WorkspaceEntry {
   name: string;
   path: string;
@@ -289,6 +298,63 @@ export class ConversationChangeTracker {
       }
     }
     return this.changes(projectId, threadId, workspacePath);
+  }
+
+  async deliveryFiles(
+    projectId: string,
+    threadId: string,
+    workspacePath: string,
+    revision: string,
+  ): Promise<readonly ConversationDeliveryFile[]> {
+    const changes = await this.changes(projectId, threadId, workspacePath);
+    if (!revision || changes.revision !== revision) {
+      throw new ConversationRestoreConflictError();
+    }
+
+    const snapshotPath = this.threadPath(projectId, threadId);
+    const manifest = await readManifest(snapshotPath);
+    const current = await scanWorkspace(workspacePath);
+    const baselineByPath = new Map(
+      manifest.entries.map((entry) => [entry.path, entry]),
+    );
+    const currentByPath = new Map(current.map((entry) => [entry.path, entry]));
+
+    const files = await Promise.all(
+      changes.files.map(async (change) => {
+        const baseline = baselineByPath.get(change.path);
+        const task = currentByPath.get(change.path);
+        const taskPath = resolveWorkspacePath(workspacePath, change.path);
+        const [baselineContent, taskContent] = await Promise.all([
+          baseline
+            ? readRevisionFile(
+                join(snapshotPath, "files", change.path),
+                baseline.hash,
+              )
+            : undefined,
+          task
+            ? readRevisionFile(taskPath, task.hash)
+            : assertRevisionFileMissing(taskPath).then(() => undefined),
+        ]);
+        return {
+          path: change.path,
+          status: change.status,
+          binary: change.binary,
+          ...(baselineContent !== undefined ? { baselineContent } : {}),
+          ...(taskContent !== undefined
+            ? { taskContent, taskMode: task?.mode }
+            : {}),
+        };
+      }),
+    );
+    const confirmed = await this.changes(
+      projectId,
+      threadId,
+      workspacePath,
+    );
+    if (confirmed.revision !== revision) {
+      throw new ConversationRestoreConflictError();
+    }
+    return files;
   }
 
   async listWorkspace(
@@ -509,6 +575,34 @@ function normalizeRelativePath(value: string): string {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+async function readRevisionFile(
+  path: string,
+  expectedHash: string,
+): Promise<Buffer> {
+  let content: Buffer;
+  try {
+    content = await readFile(path);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      throw new ConversationRestoreConflictError();
+    }
+    throw error;
+  }
+  const hash = createHash("sha256").update(content).digest("hex");
+  if (hash !== expectedHash) throw new ConversationRestoreConflictError();
+  return content;
+}
+
+async function assertRevisionFileMissing(path: string): Promise<void> {
+  try {
+    await lstat(path);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return;
+    throw error;
+  }
+  throw new ConversationRestoreConflictError();
 }
 
 function lineChangeCounts(

@@ -9,15 +9,26 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  BookOpen,
+  ExternalLink,
   Eye,
   FileCode2,
   FolderOpen,
   LoaderCircle,
+  LocateFixed,
+  X,
 } from "lucide-react";
-import Markdown, { type Components } from "react-markdown";
+import Markdown, {
+  defaultUrlTransform,
+  type Components,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type {
+  MessageCitationData,
+  MessageSourceData,
+} from "@threadlight/protocol";
 
-import { useI18n } from "./i18n.js";
+import { useI18n, type Language } from "./i18n.js";
 
 export interface MarkdownContentProps {
   children: string;
@@ -25,6 +36,8 @@ export interface MarkdownContentProps {
   onRevealLocalFile?(
     reference: LocalFileReference,
   ): void | Promise<void>;
+  sources?: readonly MessageSourceData[];
+  citations?: readonly MessageCitationData[];
 }
 
 export interface LocalFileReference {
@@ -47,9 +60,82 @@ export function MarkdownContent({
   children,
   onOpenLocalFile,
   onRevealLocalFile,
+  sources = [],
+  citations = [],
 }: MarkdownContentProps) {
+  const { language } = useI18n();
+  const labels = sourceCopy(language);
+  const citationNamespace = useId().replaceAll(":", "");
+  const sourceTrigger = useRef<HTMLButtonElement>(null);
+  const lastSourceOpener = useRef<HTMLElement | null>(null);
+  const [sourceDrawer, setSourceDrawer] = useState<{
+    citationId?: string;
+  }>();
+  const citationById = new Map(
+    citations.map((citation) => [citation.id, citation]),
+  );
+
+  function openSources(citationId: string | undefined, opener: HTMLElement) {
+    lastSourceOpener.current = opener;
+    setSourceDrawer(citationId ? { citationId } : {});
+  }
+
+  function closeSources() {
+    setSourceDrawer(undefined);
+    requestAnimationFrame(() => lastSourceOpener.current?.focus());
+  }
+
+  function locateCitation(citationId: string) {
+    setSourceDrawer(undefined);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const marker = document.getElementById(
+          citationAnchorId(citationNamespace, citationId),
+        );
+        const target =
+          marker?.closest("p, li, blockquote, td, th") ?? marker;
+        if (!(target instanceof HTMLElement)) return;
+        target.scrollIntoView({
+          behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+            .matches
+            ? "auto"
+            : "smooth",
+          block: "center",
+        });
+        target.classList.add("source-citation-target");
+        marker?.focus({ preventScroll: true });
+        window.setTimeout(
+          () => target.classList.remove("source-citation-target"),
+          1_800,
+        );
+      });
+    });
+  }
+
   const components: Components = {
     a({ href, node: _node, className, children: linkChildren, ...props }) {
+      const citationId = parseSourceCitationHref(href);
+      const citation = citationId
+        ? citationById.get(citationId)
+        : undefined;
+      if (citation) {
+        return (
+          <button
+            type="button"
+            id={citationAnchorId(citationNamespace, citation.id)}
+            className="source-citation-marker pressable"
+            aria-label={labels.openCitation.replace(
+              "{number}",
+              String(linkChildren),
+            )}
+            onClick={(event) =>
+              openSources(citation.id, event.currentTarget)
+            }
+          >
+            {linkChildren}
+          </button>
+        );
+      }
       const localFile = parseLocalFileReference(href);
       if (localFile && onOpenLocalFile) {
         return (
@@ -92,11 +178,297 @@ export function MarkdownContent({
 
   return (
     <div className="markdown-content">
-      <Markdown components={components} remarkPlugins={[remarkGfm]}>
+      <Markdown
+        components={components}
+        remarkPlugins={[remarkGfm]}
+        urlTransform={(url) =>
+          url.startsWith("threadlight-source:")
+            ? url
+            : defaultUrlTransform(url)
+        }
+      >
         {children}
       </Markdown>
+      {sources.length > 0 && citations.length > 0 ? (
+        <button
+          ref={sourceTrigger}
+          type="button"
+          className="message-sources-trigger pressable"
+          onClick={(event) => openSources(undefined, event.currentTarget)}
+        >
+          <BookOpen size={13} />
+          {labels.sourceCount.replace(
+            "{count}",
+            String(sources.length),
+          )}
+        </button>
+      ) : null}
+      {sourceDrawer
+        ? createPortal(
+            <SourceDrawer
+              sources={sources}
+              citations={citations}
+              activeCitationId={sourceDrawer.citationId}
+              onClose={closeSources}
+              onLocate={locateCitation}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
+}
+
+function SourceDrawer({
+  sources,
+  citations,
+  activeCitationId,
+  onClose,
+  onLocate,
+}: {
+  sources: readonly MessageSourceData[];
+  citations: readonly MessageCitationData[];
+  activeCitationId?: string;
+  onClose(): void;
+  onLocate(citationId: string): void;
+}) {
+  const { language } = useI18n();
+  const labels = sourceCopy(language);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLElement>(null);
+  const titleId = useId();
+  const activeCitation = citations.find(
+    (citation) => citation.id === activeCitationId,
+  );
+  const orderedSources = [...sources].sort((left, right) => {
+    const leftActive = activeCitation?.sourceIds.includes(left.id) ? 0 : 1;
+    const rightActive = activeCitation?.sourceIds.includes(right.id) ? 0 : 1;
+    return leftActive - rightActive;
+  });
+
+  useEffect(() => {
+    closeButton.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="source-drawer-backdrop"
+      role="presentation"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <aside
+        ref={drawer}
+        className="source-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onKeyDown={(event) => {
+          if (event.key !== "Tab") return;
+          const focusable = [
+            ...(drawer.current?.querySelectorAll<HTMLElement>(
+              'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
+            ) ?? []),
+          ];
+          const first = focusable[0];
+          const last = focusable.at(-1);
+          if (!first || !last) return;
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }}
+      >
+        <header className="source-drawer-header">
+          <div>
+            <h2 id={titleId}>{labels.sources}</h2>
+            <p>
+              {labels.drawerSubtitle.replace(
+                "{count}",
+                String(sources.length),
+              )}
+            </p>
+          </div>
+          <button
+            ref={closeButton}
+            type="button"
+            className="source-drawer-close pressable"
+            aria-label={labels.close}
+            title={labels.close}
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="source-drawer-list">
+          {orderedSources.map((source) => {
+            const sourceCitations = citations.filter((citation) =>
+              citation.sourceIds.includes(source.id),
+            );
+            const preferredCitation =
+              sourceCitations.find(
+                (citation) => citation.id === activeCitationId,
+              ) ?? sourceCitations[0];
+            const active = activeCitation?.sourceIds.includes(source.id);
+            return (
+              <article
+                key={source.id}
+                className={`source-card ${active ? "active" : ""}`}
+              >
+                <div className="source-card-domain">
+                  <span className="source-card-number">
+                    {sourceNumber(source, sources)}
+                  </span>
+                  <span>{source.domain}</span>
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    aria-label={`${labels.openPage}: ${source.title}`}
+                    title={labels.openPage}
+                  >
+                    <ExternalLink size={13} />
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  className="source-card-title pressable"
+                  onClick={() =>
+                    preferredCitation &&
+                    onLocate(preferredCitation.id)
+                  }
+                >
+                  <strong>{source.title}</strong>
+                  {source.description ? (
+                    <span>{source.description}</span>
+                  ) : null}
+                  <small>
+                    <LocateFixed size={12} />
+                    {labels.locate}
+                  </small>
+                </button>
+                {sourceCitations.length > 1 ? (
+                  <div className="source-card-citations">
+                    <p>
+                      {labels.supports.replace(
+                        "{count}",
+                        String(sourceCitations.length),
+                      )}
+                    </p>
+                    {sourceCitations.map((citation) => (
+                      <button
+                        key={citation.id}
+                        type="button"
+                        className={`source-card-excerpt pressable ${
+                          citation.id === activeCitationId ? "active" : ""
+                        }`}
+                        onClick={() => onLocate(citation.id)}
+                      >
+                        “{citation.excerpt}”
+                      </button>
+                    ))}
+                  </div>
+                ) : preferredCitation?.excerpt ? (
+                  <button
+                    type="button"
+                    className="source-card-excerpt pressable"
+                    onClick={() => onLocate(preferredCitation.id)}
+                  >
+                    “{preferredCitation.excerpt}”
+                  </button>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function parseSourceCitationHref(href: string | undefined): string | undefined {
+  if (!href?.startsWith("threadlight-source:")) return;
+  const id = href.slice("threadlight-source:".length);
+  return /^citation-\d+$/.test(id) ? id : undefined;
+}
+
+function citationAnchorId(namespace: string, citationId: string): string {
+  return `source-${namespace}-${citationId}`;
+}
+
+function sourceNumber(
+  source: MessageSourceData,
+  sources: readonly MessageSourceData[],
+): number {
+  const encoded = /^s(\d+)$/.exec(source.id)?.[1];
+  return encoded ? Number(encoded) : sources.indexOf(source) + 1;
+}
+
+function sourceCopy(language: Language) {
+  return {
+    "zh-CN": {
+      sources: "来源",
+      sourceCount: "{count} 个来源",
+      drawerSubtitle: "{count} 个网页来源，点击可定位到对应原句",
+      openCitation: "查看引用 {number}",
+      openPage: "打开原网页",
+      locate: "定位到对应原句",
+      supports: "支持 {count} 处内容",
+      close: "关闭来源",
+    },
+    "zh-TW": {
+      sources: "來源",
+      sourceCount: "{count} 個來源",
+      drawerSubtitle: "{count} 個網頁來源，點擊可定位到對應原句",
+      openCitation: "查看引用 {number}",
+      openPage: "開啟原網頁",
+      locate: "定位到對應原句",
+      supports: "支援 {count} 處內容",
+      close: "關閉來源",
+    },
+    en: {
+      sources: "Sources",
+      sourceCount: "{count} sources",
+      drawerSubtitle: "{count} web sources · select one to locate its sentence",
+      openCitation: "View citation {number}",
+      openPage: "Open original page",
+      locate: "Locate cited sentence",
+      supports: "Supports {count} passages",
+      close: "Close sources",
+    },
+    ja: {
+      sources: "出典",
+      sourceCount: "{count} 件の出典",
+      drawerSubtitle: "{count} 件のウェブ出典・選択すると該当文へ移動",
+      openCitation: "引用 {number} を表示",
+      openPage: "元のページを開く",
+      locate: "引用文へ移動",
+      supports: "{count} 箇所を裏付け",
+      close: "出典を閉じる",
+    },
+    ko: {
+      sources: "출처",
+      sourceCount: "출처 {count}개",
+      drawerSubtitle: "웹 출처 {count}개 · 선택하면 인용 문장으로 이동",
+      openCitation: "인용 {number} 보기",
+      openPage: "원본 페이지 열기",
+      locate: "인용 문장으로 이동",
+      supports: "{count}개 문단 지원",
+      close: "출처 닫기",
+    },
+  }[language];
 }
 
 interface ContextMenuPosition {

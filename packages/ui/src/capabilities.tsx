@@ -4,7 +4,6 @@ import type {
   MessageCapabilityData,
 } from "@threadlight/protocol";
 import {
-  AtSign,
   Check,
   FileText,
   FileType2,
@@ -14,8 +13,10 @@ import {
   Monitor,
   Paperclip,
   Plug,
+  Presentation,
   Settings2,
   Sparkles,
+  Table2,
   Wrench,
   X,
 } from "lucide-react";
@@ -36,11 +37,10 @@ export interface CapabilityQuery {
 }
 
 export interface ComposerAddAction {
-  id: "attachment" | "plan";
+  id: "attachment";
   name: string;
   description: string;
-  icon: "attachment" | "plan";
-  active?: boolean;
+  icon: "attachment";
 }
 
 export function capabilityQueryAt(
@@ -96,6 +96,33 @@ export function filterCapabilities(
       if (left.kind === right.kind) return 0;
       return left.kind === "tool" ? -1 : 1;
     });
+}
+
+export function filterComposerAddActions(
+  actions: readonly ComposerAddAction[],
+  query: string,
+): ComposerAddAction[] {
+  const normalized = query.trim().toLocaleLowerCase();
+  if (!normalized) return [...actions];
+  return actions.filter((action) =>
+    [
+      action.name,
+      action.description,
+      action.id,
+      ...(action.id === "attachment"
+        ? [
+            "file",
+            "image",
+            "document",
+            "upload",
+            "文件",
+            "图片",
+            "文档",
+            "附件",
+          ]
+        : []),
+    ].some((value) => value.toLocaleLowerCase().includes(normalized)),
+  );
 }
 
 export function connectorCapabilityForSelection(
@@ -251,28 +278,63 @@ export function MessageCapabilityReceipts({
 }
 
 export function CapabilityMenu({
+  actions,
   capabilities,
   activeIndex,
   loading,
+  onSelectAction,
   onSelect,
 }: {
+  actions: readonly ComposerAddAction[];
   capabilities: readonly CapabilityDescriptor[];
   activeIndex: number;
   loading: boolean;
+  onSelectAction(action: ComposerAddAction): void;
   onSelect(capability: CapabilityDescriptor): void;
 }) {
   const { t } = useI18n();
+  const empty = actions.length === 0 && capabilities.length === 0;
   return (
     <MenuFrame
       id="composer-capability-menu"
-      icon={<AtSign size={14} />}
+      icon={<Plug size={14} />}
       title={t("capabilities")}
     >
-      {loading ? (
+      {actions.length > 0 && (
+        <div className="capability-group">
+          <p className="capability-group-label">{t("add")}</p>
+          {actions.map((action, index) => (
+            <button
+              type="button"
+              id={`composer-capability-${index}`}
+              className="capability-option"
+              role="option"
+              aria-selected={index === activeIndex}
+              key={action.id}
+              onPointerDown={(event) => {
+                event.preventDefault();
+                onSelectAction(action);
+              }}
+            >
+              <span
+                className={`capability-option-icon icon-${action.icon}`}
+                aria-hidden="true"
+              >
+                <CapabilityIcon icon={action.icon} kind="tool" />
+              </span>
+              <span className="capability-option-copy">
+                <strong>{action.name}</strong>
+                <small>{action.description}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {loading && capabilities.length === 0 ? (
         <p className="capability-menu-empty">
           {t("loadingCapabilities")}
         </p>
-      ) : capabilities.length === 0 ? (
+      ) : empty ? (
         <p className="capability-menu-empty">
           {t("noMatchingCapabilities")}
         </p>
@@ -292,10 +354,10 @@ export function CapabilityMenu({
               {grouped.map(({ capability, index }) => (
                 <button
                   type="button"
-                  id={`composer-capability-${index}`}
+                  id={`composer-capability-${actions.length + index}`}
                   className="capability-option"
                   role="option"
-                  aria-selected={index === activeIndex}
+                  aria-selected={actions.length + index === activeIndex}
                   key={capability.id}
                   onPointerDown={(event) => {
                     event.preventDefault();
@@ -521,59 +583,6 @@ export function ConnectorSetupDialog({
   );
 }
 
-export function ComposerAddMenu({
-  actions,
-  activeIndex,
-  onSelect,
-}: {
-  actions: readonly ComposerAddAction[];
-  activeIndex: number;
-  onSelect(action: ComposerAddAction): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <MenuFrame
-      id="composer-add-menu"
-      icon={<Plug size={14} />}
-      title={t("add")}
-    >
-      <div className="capability-group">
-        {actions.map((action, index) => (
-          <button
-            type="button"
-            id={`composer-add-${index}`}
-            className="capability-option"
-            role="option"
-            aria-selected={index === activeIndex}
-            aria-pressed={action.active}
-            key={action.id}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              onSelect(action);
-            }}
-          >
-            <span
-              className={`capability-option-icon icon-${action.icon}`}
-              aria-hidden="true"
-            >
-              <CapabilityIcon icon={action.icon} kind="tool" />
-            </span>
-            <span className="capability-option-copy">
-              <strong>{action.name}</strong>
-              <small>{action.description}</small>
-            </span>
-            {action.active && (
-              <span className="capability-option-kind">
-                {t("enabled")}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    </MenuFrame>
-  );
-}
-
 function MenuFrame({
   id,
   icon,
@@ -611,6 +620,8 @@ function CapabilityIcon({
   if (icon === "gmail") return <Mail size={14} />;
   if (icon === "documents") return <FileText size={14} />;
   if (icon === "pdf") return <FileType2 size={14} />;
+  if (icon === "excel") return <Table2 size={14} />;
+  if (icon === "powerpoint") return <Presentation size={14} />;
   if (icon === "computer") return <Monitor size={14} />;
   if (icon === "plan") return <ListTodo size={14} />;
   if (icon === "attachment") return <Paperclip size={14} />;

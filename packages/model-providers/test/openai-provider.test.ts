@@ -4,9 +4,84 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { OpenAIResponsesProvider } from "../src/openai-provider.js";
+import {
+  OpenAIResponsesProvider,
+  supportsOpenAINativeComputerTool,
+} from "../src/openai-provider.js";
 
 describe("OpenAIResponsesProvider", () => {
+  it("omits computer tools for models that do not support the native protocol", async () => {
+    const response = {
+      output_text: "Hello",
+      output: [],
+    } as unknown as OpenAI.Responses.Response;
+    const responseStream = {
+      on() {
+        return responseStream;
+      },
+      async finalResponse() {
+        return response;
+      },
+    };
+    const stream = vi.fn(() => responseStream);
+    const client = { responses: { stream } } as unknown as OpenAI;
+    const provider = new OpenAIResponsesProvider({
+      client,
+      defaultModel: "gpt-4.1-mini",
+    });
+
+    await provider.generate({
+      instructions: "Use tools when helpful",
+      input: "hihihi",
+      tools: [
+        {
+          name: "computer",
+          description: "Control the computer",
+          parameters: {},
+          kind: "computer",
+        },
+        {
+          name: "computer_share",
+          description: "Select shared content",
+          parameters: { type: "object" },
+        },
+        {
+          name: "lookup",
+          description: "Look up a value",
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+            additionalProperties: false,
+          },
+        },
+      ],
+    });
+
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      model: "gpt-4.1-mini",
+      tools: [{ type: "function", name: "lookup" }],
+      instructions: expect.stringContaining(
+        "The selected model does not support computer tools",
+      ),
+    });
+  });
+
+  it.each([
+    ["gpt-5.6", true],
+    ["gpt-5.6-sol", true],
+    ["GPT-5.6-TERRA", true],
+    ["gpt-5.5", true],
+    ["gpt-5.5-2026-05-01", true],
+    ["computer-use-preview", false],
+    ["gpt-4.1-mini", false],
+    ["gpt-5-mini", false],
+    ["gpt-5.4-mini", false],
+    ["custom-model", false],
+  ])("reports native computer support for %s", (model, supported) => {
+    expect(supportsOpenAINativeComputerTool(model)).toBe(supported);
+  });
+
   it("runs the native computer tool protocol alongside function tools", async () => {
     const responses = [
       {

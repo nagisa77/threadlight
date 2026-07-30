@@ -1,3 +1,5 @@
+import type { ConversationAccessMode } from "@threadlight/protocol";
+
 export interface ConversationSummary {
   id: string;
   title: string;
@@ -8,6 +10,7 @@ export interface ConversationSummary {
   renamedAt?: string;
   pinnedAt?: string;
   archivedAt?: string;
+  accessMode?: ConversationAccessMode;
   workspace?: TaskWorkspace;
 }
 
@@ -25,6 +28,7 @@ export type TaskWorkspace =
       repositoryRoot: string;
       branch: string;
       baseCommit: string;
+      sourceBranch?: string;
     };
 
 export interface ProjectSummary {
@@ -32,7 +36,14 @@ export interface ProjectSummary {
   name: string;
   basePath: string;
   lastOpenedAt: string;
+  pinnedAt?: string;
   conversations: readonly ConversationSummary[];
+  runtime?: {
+    kind: "remote";
+    endpoint: string;
+    workspacePath: string;
+    runtimeId: string;
+  };
 }
 
 export interface ProjectsSnapshot {
@@ -55,12 +66,22 @@ export interface ConversationMetadataUpdate extends ConversationSummaryTarget {
   title?: string;
   pinned?: boolean;
   archived?: boolean;
+  accessMode?: ConversationAccessMode;
 }
 
 export interface ProjectsAdapter {
   load(): Promise<ProjectsSnapshot>;
   openFolder(): Promise<ProjectsSnapshot>;
+  connectRemote?(input: {
+    endpoint: string;
+    token: string;
+    name?: string;
+  }): Promise<ProjectsSnapshot>;
   activate(projectId: string): Promise<ProjectsSnapshot>;
+  updateProject?(update: {
+    id: string;
+    pinned: boolean;
+  }): Promise<ProjectsSnapshot>;
   upsertConversation(
     update: ConversationSummaryUpdate,
   ): Promise<ProjectsSnapshot>;

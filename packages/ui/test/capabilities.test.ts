@@ -4,6 +4,7 @@ import {
   capabilityQueryAt,
   connectorCapabilityForSelection,
   filterCapabilities,
+  filterComposerAddActions,
   nextCapabilityIndex,
   removeCapabilityQuery,
 } from "../src/capabilities.js";
@@ -78,6 +79,22 @@ describe("composer capabilities", () => {
     expect(
       filterCapabilities(capabilities, "audit", new Set()),
     ).toEqual([capabilities[2]]);
+  });
+
+  it("uses the same searchable file action for both composer entry points", () => {
+    const actions = [
+      {
+        id: "attachment" as const,
+        name: "添加图片或文件",
+        description: "从本地选择图片、文档或其他文件",
+        icon: "attachment" as const,
+      },
+    ];
+
+    expect(filterComposerAddActions(actions, "")).toEqual(actions);
+    expect(filterComposerAddActions(actions, "文件")).toEqual(actions);
+    expect(filterComposerAddActions(actions, "file")).toEqual(actions);
+    expect(filterComposerAddActions(actions, "Excel")).toEqual([]);
   });
 
   it("resolves a plugin skill to its required connector", () => {

@@ -4,6 +4,7 @@ export type {
   CapabilityDescriptor,
   CapabilityKind,
   ConnectorStatusData,
+  ConversationAccessMode,
   ConversationActivityData,
   ConversationMessageData,
   ConversationProgressData,

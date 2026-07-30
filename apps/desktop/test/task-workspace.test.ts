@@ -67,6 +67,7 @@ describe("TaskWorkspaceManager", () => {
       mode: "worktree",
       branch: expect.stringMatching(/^threadlight\/app-/),
       repositoryRoot: await realpath(repository),
+      sourceBranch: expect.stringMatching(/^(main|master)$/),
     });
     if (workspace.mode !== "worktree") throw new Error("Expected a worktree");
     expect(workspace.path).not.toBe(project);

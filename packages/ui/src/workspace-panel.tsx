@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -17,12 +18,20 @@ import {
   Folder,
   FolderOpen,
   FolderTree,
+  GitCommitHorizontal,
+  GitBranch,
+  GitMerge,
+  GitPullRequestDraft,
   LoaderCircle,
+  MessageSquareText,
   Plus,
   RefreshCw,
   RotateCcw,
   Rows3,
   Terminal,
+  Trash2,
+  TriangleAlert,
+  UploadCloud,
   X,
 } from "lucide-react";
 import DiffViewer from "react-diff-viewer-continued";
@@ -60,6 +69,82 @@ export interface ConversationChangesSnapshot {
   files: readonly ConversationFileChange[];
 }
 
+export interface WorktreeDeliveryConflict {
+  path: string;
+  reason:
+    | "both_added"
+    | "target_deleted"
+    | "target_modified"
+    | "merge_conflict"
+    | "unsafe_target";
+}
+
+export interface WorktreeDeliveryPreflight {
+  taskBranch: string;
+  targetBranch: string;
+  sourceBranch?: string;
+  branchChanged: boolean;
+  files: number;
+  pendingFiles: number;
+  alreadyAppliedFiles: number;
+  conflicts: readonly WorktreeDeliveryConflict[];
+}
+
+export interface WorktreeDeliveryResult extends WorktreeDeliveryPreflight {
+  appliedFiles: number;
+  commit?: string;
+}
+
+export interface CodeHostCheck {
+  name: string;
+  status: "queued" | "running" | "success" | "failure" | "skipped";
+  url?: string;
+}
+
+export interface CodeHostReviewComment {
+  id: string;
+  author: string;
+  body: string;
+  createdAt: string;
+  url?: string;
+  path?: string;
+  line?: number;
+  kind: "comment" | "review" | "inline";
+  state?: string;
+}
+
+export interface CodeHostPullRequest {
+  number: number;
+  url: string;
+  title: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  headBranch: string;
+  baseBranch: string;
+  ciStatus: "none" | "pending" | "success" | "failure";
+  reviewDecision?: string;
+  checks: readonly CodeHostCheck[];
+  comments: readonly CodeHostReviewComment[];
+}
+
+export interface CodeHostDeliveryStatus {
+  provider: "github";
+  available: boolean;
+  reason?: string;
+  repository?: string;
+  remote?: string;
+  taskBranch: string;
+  baseBranch: string;
+  pushed: boolean;
+  ahead: number;
+  pullRequest?: CodeHostPullRequest;
+}
+
+export interface CodeHostCommitPushResult {
+  commit: string;
+  status: CodeHostDeliveryStatus;
+}
+
 export interface WorkspaceEntry {
   name: string;
   path: string;
@@ -85,6 +170,40 @@ export interface WorkspaceAdapter {
     revision: string,
     paths?: readonly string[],
   ): Promise<ConversationChangesSnapshot>;
+  preflightDelivery?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<WorktreeDeliveryPreflight>;
+  applyDelivery?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<WorktreeDeliveryResult>;
+  commitDelivery?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    message: string,
+  ): Promise<WorktreeDeliveryResult>;
+  getCodeHostStatus?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<CodeHostDeliveryStatus>;
+  commitAndPush?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    message: string,
+  ): Promise<CodeHostCommitPushResult>;
+  createDraftPullRequest?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+    title: string,
+    body?: string,
+  ): Promise<CodeHostDeliveryStatus>;
   list(
     projectId: string,
     path?: string,
@@ -139,6 +258,10 @@ export function WorkspacePanel({
   onRefreshChanges,
   onRestoreChanges,
   restoreDisabled = false,
+  deliveryEnabled = false,
+  deliveryDisabled = false,
+  taskTitle,
+  onDiscardTask,
   toolbarActions,
 }: {
   adapter: WorkspaceAdapter;
@@ -161,6 +284,10 @@ export function WorkspacePanel({
     revision: string,
   ): Promise<void>;
   restoreDisabled?: boolean;
+  deliveryEnabled?: boolean;
+  deliveryDisabled?: boolean;
+  taskTitle?: string;
+  onDiscardTask?(): void;
   toolbarActions?: ReactNode;
 }) {
   const { t } = useI18n();
@@ -458,13 +585,25 @@ export function WorkspacePanel({
               />
             ))}
         {activeTab?.kind === "review" ? (
-          <ReviewView
-            changes={changes}
-            loading={changesLoading}
-            error={changesError}
-            layout={diffLayout}
-            onLayoutChange={setDiffLayout}
-            onRefresh={onRefreshChanges}
+            <ReviewView
+              changes={changes}
+              loading={changesLoading}
+              error={changesError}
+              layout={diffLayout}
+              projectId={projectId}
+              threadId={threadId}
+              deliveryEnabled={deliveryEnabled}
+              deliveryDisabled={deliveryDisabled}
+              defaultCommitMessage={taskTitle}
+              onPreflightDelivery={adapter.preflightDelivery}
+              onApplyDelivery={adapter.applyDelivery}
+              onCommitDelivery={adapter.commitDelivery}
+              onGetCodeHostStatus={adapter.getCodeHostStatus}
+              onCommitAndPush={adapter.commitAndPush}
+              onCreateDraftPullRequest={adapter.createDraftPullRequest}
+              onDiscardTask={onDiscardTask}
+              onLayoutChange={setDiffLayout}
+              onRefresh={onRefreshChanges}
             onRestore={onRestoreChanges}
             restoreDisabled={restoreDisabled}
           />
@@ -495,6 +634,18 @@ export function ReviewView({
   loading,
   error,
   layout,
+  projectId,
+  threadId,
+  deliveryEnabled = false,
+  deliveryDisabled = false,
+  defaultCommitMessage,
+  onPreflightDelivery,
+  onApplyDelivery,
+  onCommitDelivery,
+  onGetCodeHostStatus,
+  onCommitAndPush,
+  onCreateDraftPullRequest,
+  onDiscardTask,
   onLayoutChange,
   onRefresh,
   onRestore,
@@ -504,6 +655,18 @@ export function ReviewView({
   loading: boolean;
   error?: string;
   layout: "unified" | "split";
+  projectId?: string;
+  threadId?: string;
+  deliveryEnabled?: boolean;
+  deliveryDisabled?: boolean;
+  defaultCommitMessage?: string;
+  onPreflightDelivery?: WorkspaceAdapter["preflightDelivery"];
+  onApplyDelivery?: WorkspaceAdapter["applyDelivery"];
+  onCommitDelivery?: WorkspaceAdapter["commitDelivery"];
+  onGetCodeHostStatus?: WorkspaceAdapter["getCodeHostStatus"];
+  onCommitAndPush?: WorkspaceAdapter["commitAndPush"];
+  onCreateDraftPullRequest?: WorkspaceAdapter["createDraftPullRequest"];
+  onDiscardTask?(): void;
   onLayoutChange(layout: "unified" | "split"): void;
   onRefresh(): void;
   onRestore?(
@@ -525,6 +688,23 @@ export function ReviewView({
   }>();
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState<string>();
+  const [deliveryBusy, setDeliveryBusy] = useState(false);
+  const [deliveryError, setDeliveryError] = useState<string>();
+  const [deliveryResult, setDeliveryResult] =
+    useState<WorktreeDeliveryResult>();
+  const [pendingDelivery, setPendingDelivery] = useState<{
+    action: "apply" | "commit";
+    preflight: WorktreeDeliveryPreflight;
+    message: string;
+  }>();
+  const [codeHostStatus, setCodeHostStatus] =
+    useState<CodeHostDeliveryStatus>();
+  const [codeHostLoading, setCodeHostLoading] = useState(false);
+  const [codeHostError, setCodeHostError] = useState<string>();
+  const [pendingCodeHostAction, setPendingCodeHostAction] = useState<
+    | { action: "push"; message: string }
+    | { action: "pr"; title: string; body: string }
+  >();
 
   useEffect(() => {
     if (!changes?.files.length) {
@@ -539,6 +719,52 @@ export function ReviewView({
   useEffect(() => {
     if (largeChangeSet) setTreeVisible(true);
   }, [largeChangeSet]);
+
+  const refreshCodeHostStatus = useCallback(async () => {
+    if (
+      !changes ||
+      !projectId ||
+      !threadId ||
+      !deliveryEnabled ||
+      !onGetCodeHostStatus
+    ) {
+      setCodeHostStatus(undefined);
+      return;
+    }
+    setCodeHostLoading(true);
+    setCodeHostError(undefined);
+    try {
+      setCodeHostStatus(
+        await onGetCodeHostStatus(
+          projectId,
+          threadId,
+          changes.revision,
+        ),
+      );
+    } catch (reason) {
+      setCodeHostError(errorMessage(reason));
+    } finally {
+      setCodeHostLoading(false);
+    }
+  }, [
+    changes,
+    deliveryEnabled,
+    onGetCodeHostStatus,
+    projectId,
+    threadId,
+  ]);
+
+  useEffect(() => {
+    void refreshCodeHostStatus();
+  }, [refreshCodeHostStatus]);
+
+  useEffect(() => {
+    if (codeHostStatus?.pullRequest?.state !== "open") return;
+    const timer = window.setInterval(() => {
+      void refreshCodeHostStatus();
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [codeHostStatus?.pullRequest?.state, refreshCodeHostStatus]);
 
   function selectChangedFile(path: string) {
     setSelectedPath(path);
@@ -568,6 +794,123 @@ export function ReviewView({
     }
   }
 
+  async function beginDelivery(action: "apply" | "commit") {
+    if (
+      !changes ||
+      !projectId ||
+      !threadId ||
+      !onPreflightDelivery ||
+      deliveryBusy
+    ) {
+      return;
+    }
+    setDeliveryBusy(true);
+    setDeliveryError(undefined);
+    try {
+      const preflight = await onPreflightDelivery(
+        projectId,
+        threadId,
+        changes.revision,
+      );
+      setPendingDelivery({
+        action,
+        preflight,
+        message: defaultCommitMessage?.trim() || t("defaultCommitMessage"),
+      });
+    } catch (reason) {
+      setDeliveryError(errorMessage(reason));
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
+  async function confirmDelivery() {
+    if (
+      !pendingDelivery ||
+      !changes ||
+      !projectId ||
+      !threadId ||
+      deliveryBusy
+    ) {
+      return;
+    }
+    setDeliveryBusy(true);
+    setDeliveryError(undefined);
+    try {
+      const result =
+        pendingDelivery.action === "apply"
+          ? await onApplyDelivery?.(
+              projectId,
+              threadId,
+              changes.revision,
+            )
+          : await onCommitDelivery?.(
+              projectId,
+              threadId,
+              changes.revision,
+              pendingDelivery.message,
+            );
+      if (!result) throw new Error(t("deliveryUnavailable"));
+      setDeliveryResult(result);
+      setPendingDelivery(undefined);
+    } catch (reason) {
+      setDeliveryError(errorMessage(reason));
+    } finally {
+      setDeliveryBusy(false);
+    }
+  }
+
+  async function confirmCodeHostAction() {
+    if (
+      !pendingCodeHostAction ||
+      !changes ||
+      !projectId ||
+      !threadId ||
+      codeHostLoading
+    ) {
+      return;
+    }
+    setCodeHostLoading(true);
+    setCodeHostError(undefined);
+    try {
+      if (pendingCodeHostAction.action === "push") {
+        if (!onCommitAndPush) throw new Error(t("githubDeliveryUnavailable"));
+        const result = await onCommitAndPush(
+          projectId,
+          threadId,
+          changes.revision,
+          pendingCodeHostAction.message,
+        );
+        setCodeHostStatus(result.status);
+      } else {
+        if (!onCreateDraftPullRequest) {
+          throw new Error(t("githubDeliveryUnavailable"));
+        }
+        setCodeHostStatus(
+          await onCreateDraftPullRequest(
+            projectId,
+            threadId,
+            changes.revision,
+            pendingCodeHostAction.title,
+            pendingCodeHostAction.body,
+          ),
+        );
+      }
+      setPendingCodeHostAction(undefined);
+    } catch (reason) {
+      setCodeHostError(errorMessage(reason));
+    } finally {
+      setCodeHostLoading(false);
+    }
+  }
+
+  const showDeliveryCenter = Boolean(
+    deliveryEnabled && projectId && threadId,
+  );
+  const canDeliverChanges = Boolean(
+    changes?.files.length && onPreflightDelivery,
+  );
+
   return (
     <div className="review-view">
       <div className="review-toolbar">
@@ -581,6 +924,63 @@ export function ReviewView({
           )}
         </div>
         <div className="review-actions">
+          {showDeliveryCenter && (
+            <>
+              <button
+                type="button"
+                className="review-delivery-button primary pressable"
+                disabled={
+                  loading ||
+                  deliveryBusy ||
+                  deliveryDisabled ||
+                  !canDeliverChanges ||
+                  !onApplyDelivery
+                }
+                title={
+                  deliveryDisabled
+                    ? t("deliveryUnavailableWhileRunning")
+                    : t("applyToOriginalBranch")
+                }
+                onClick={() => void beginDelivery("apply")}
+              >
+                {deliveryBusy ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <GitMerge size={14} />
+                )}
+                {t("applyToOriginal")}
+              </button>
+              <button
+                type="button"
+                className="review-delivery-button pressable"
+                disabled={
+                  loading ||
+                  deliveryBusy ||
+                  deliveryDisabled ||
+                  !canDeliverChanges ||
+                  !onCommitDelivery
+                }
+                title={t("stageAndCommitDescription")}
+                onClick={() => void beginDelivery("commit")}
+              >
+                <GitCommitHorizontal size={14} />
+                {t("stageAndCommit")}
+              </button>
+              {onDiscardTask && (
+                <button
+                  type="button"
+                  className="review-discard-button pressable"
+                  disabled={deliveryBusy || deliveryDisabled}
+                  title={t("discardTaskDescription")}
+                  onClick={onDiscardTask}
+                >
+                  <Trash2 size={14} />
+                  {t("discardTask")}
+                </button>
+              )}
+              <span className="review-action-divider" aria-hidden="true" />
+            </>
+          )}
           {changes && changes.files.length > 0 && onRestore && (
             <button
               type="button"
@@ -649,6 +1049,75 @@ export function ReviewView({
         </div>
       </div>
 
+      {(deliveryError || deliveryResult) && !pendingDelivery && (
+        <div
+          className={`delivery-feedback ${deliveryError ? "error" : "success"}`}
+          role="status"
+        >
+          {deliveryError ? (
+            <TriangleAlert size={14} aria-hidden="true" />
+          ) : (
+            <GitMerge size={14} aria-hidden="true" />
+          )}
+          <span>
+            {deliveryError ??
+              (deliveryResult?.commit
+                ? t("deliveryCommitted", {
+                    branch: deliveryResult.targetBranch,
+                    commit: deliveryResult.commit.slice(0, 8),
+                  })
+                : t("deliveryApplied", {
+                    branch: deliveryResult?.targetBranch ?? "",
+                    count: deliveryResult?.appliedFiles ?? 0,
+                  }))}
+          </span>
+          <button
+            type="button"
+            className="delivery-feedback-dismiss pressable"
+            aria-label={t("dismiss")}
+            onClick={() => {
+              setDeliveryError(undefined);
+              setDeliveryResult(undefined);
+            }}
+          >
+            <X size={13} />
+          </button>
+        </div>
+      )}
+
+      {showDeliveryCenter && onGetCodeHostStatus && (
+        <GitHubDeliveryCard
+          status={codeHostStatus}
+          loading={codeHostLoading}
+          error={codeHostError}
+          disabled={deliveryDisabled}
+          onRefresh={() => void refreshCodeHostStatus()}
+          onCommitPush={
+            onCommitAndPush && changes?.files.length
+              ? () =>
+                  setPendingCodeHostAction({
+                    action: "push",
+                    message:
+                      defaultCommitMessage?.trim() ||
+                      t("defaultCommitMessage"),
+                  })
+              : undefined
+          }
+          onCreateDraftPr={
+            onCreateDraftPullRequest
+              ? () =>
+                  setPendingCodeHostAction({
+                    action: "pr",
+                    title:
+                      defaultCommitMessage?.trim() ||
+                      t("defaultPullRequestTitle"),
+                    body: t("defaultPullRequestBody"),
+                  })
+              : undefined
+          }
+        />
+      )}
+
       <div className={`review-view-body ${treeVisible ? "has-tree" : ""}`}>
         <div className="review-scroll">
           {loading && !changes ? (
@@ -715,6 +1184,41 @@ export function ReviewView({
             setRestoreError(undefined);
             onRefresh();
           }}
+        />
+      )}
+      {pendingDelivery && (
+        <WorktreeDeliveryDialog
+          action={pendingDelivery.action}
+          preflight={pendingDelivery.preflight}
+          message={pendingDelivery.message}
+          busy={deliveryBusy}
+          error={deliveryError}
+          onMessageChange={(message) =>
+            setPendingDelivery((current) =>
+              current ? { ...current, message } : current,
+            )
+          }
+          onCancel={() => {
+            if (deliveryBusy) return;
+            setPendingDelivery(undefined);
+            setDeliveryError(undefined);
+          }}
+          onConfirm={() => void confirmDelivery()}
+        />
+      )}
+      {pendingCodeHostAction && (
+        <GitHubDeliveryDialog
+          action={pendingCodeHostAction.action}
+          value={pendingCodeHostAction}
+          busy={codeHostLoading}
+          error={codeHostError}
+          onChange={setPendingCodeHostAction}
+          onCancel={() => {
+            if (codeHostLoading) return;
+            setPendingCodeHostAction(undefined);
+            setCodeHostError(undefined);
+          }}
+          onConfirm={() => void confirmCodeHostAction()}
         />
       )}
     </div>
@@ -864,6 +1368,564 @@ function RestoreChangesDialog({
       </section>
     </div>
   );
+}
+
+export function GitHubDeliveryCard({
+  status,
+  loading,
+  error,
+  disabled,
+  onRefresh,
+  onCommitPush,
+  onCreateDraftPr,
+}: {
+  status?: CodeHostDeliveryStatus;
+  loading: boolean;
+  error?: string;
+  disabled: boolean;
+  onRefresh(): void;
+  onCommitPush?(): void;
+  onCreateDraftPr?(): void;
+}) {
+  const { t } = useI18n();
+  const pullRequest = status?.pullRequest;
+  const comments = pullRequest?.comments.slice(0, 8) ?? [];
+  return (
+    <section className="github-delivery-card" aria-label={t("githubDelivery")}>
+      <div className="github-delivery-heading">
+        <span className="github-delivery-icon" aria-hidden="true">
+          <GitBranch size={16} />
+        </span>
+        <div>
+          <strong>{t("githubDelivery")}</strong>
+          <span>
+            {status?.repository ??
+              (loading ? t("loadingGitHubStatus") : t("githubCliRequired"))}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="panel-icon-button pressable"
+          aria-label={t("refreshGitHubStatus")}
+          title={t("refreshGitHubStatus")}
+          disabled={loading}
+          onClick={onRefresh}
+        >
+          <RefreshCw className={loading ? "spin" : undefined} size={14} />
+        </button>
+      </div>
+
+      {status && (
+        <div className="github-branch-route">
+          <code>{status.taskBranch}</code>
+          <span aria-hidden="true">→</span>
+          <code>{status.baseBranch}</code>
+          <span
+            className={`github-push-state ${status.pushed ? "ready" : ""}`}
+          >
+            {status.pushed ? t("branchPushed") : t("branchLocalOnly")}
+          </span>
+        </div>
+      )}
+
+      {(error || (status && !status.available)) && (
+        <p className="github-delivery-error" role="status">
+          <TriangleAlert size={13} />
+          {error ?? status?.reason ?? t("githubDeliveryUnavailable")}
+        </p>
+      )}
+
+      {status?.available && !pullRequest && (
+        <div className="github-delivery-actions">
+          {onCommitPush && (
+            <button
+              type="button"
+              className="github-delivery-button pressable"
+              disabled={disabled || loading}
+              onClick={onCommitPush}
+            >
+              <UploadCloud size={14} />
+              {status.pushed ? t("commitAndPushUpdates") : t("commitAndPush")}
+            </button>
+          )}
+          {onCreateDraftPr && (
+            <button
+              type="button"
+              className="github-delivery-button primary pressable"
+              disabled={disabled || loading || !status.pushed}
+              title={!status.pushed ? t("pushBeforeDraftPr") : undefined}
+              onClick={onCreateDraftPr}
+            >
+              <GitPullRequestDraft size={14} />
+              {t("createDraftPr")}
+            </button>
+          )}
+        </div>
+      )}
+
+      {pullRequest && (
+        <div className="github-pr">
+          <div className="github-pr-summary">
+            <GitPullRequestDraft size={15} aria-hidden="true" />
+            <a href={pullRequest.url} target="_blank" rel="noreferrer">
+              #{pullRequest.number} {pullRequest.title}
+            </a>
+            <span className="github-pr-draft">
+              {pullRequest.draft ? t("draft") : pullRequest.state}
+            </span>
+          </div>
+          <div className="github-pr-signals">
+            <span className={`github-ci-state ${pullRequest.ciStatus}`}>
+              {t(codeHostCiKey(pullRequest.ciStatus))}
+            </span>
+            {pullRequest.reviewDecision && (
+              <span className="github-review-decision">
+                {humanizeGitHubState(pullRequest.reviewDecision)}
+              </span>
+            )}
+            {pullRequest.comments.length > 0 && (
+              <span>
+                <MessageSquareText size={12} />
+                {t("reviewCommentCount", {
+                  count: pullRequest.comments.length,
+                })}
+              </span>
+            )}
+          </div>
+          {pullRequest.checks.length > 0 && (
+            <div className="github-checks">
+              {pullRequest.checks.map((check, index) =>
+                check.url ? (
+                  <a
+                    key={`${check.name}:${index}`}
+                    className={`github-check ${check.status}`}
+                    href={check.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span aria-hidden="true" />
+                    {check.name}
+                  </a>
+                ) : (
+                  <span
+                    key={`${check.name}:${index}`}
+                    className={`github-check ${check.status}`}
+                  >
+                    <span aria-hidden="true" />
+                    {check.name}
+                  </span>
+                ),
+              )}
+            </div>
+          )}
+          {comments.length > 0 && (
+            <div className="github-review-comments">
+              <strong>{t("reviewComments")}</strong>
+              {comments.map((comment) => {
+                const content = (
+                  <>
+                    <span>
+                      <b>@{comment.author}</b>
+                      {comment.path && (
+                        <code>
+                          {comment.path}
+                          {comment.line ? `:${comment.line}` : ""}
+                        </code>
+                      )}
+                      {comment.state && (
+                        <em>{humanizeGitHubState(comment.state)}</em>
+                      )}
+                    </span>
+                    {comment.body && <p>{comment.body}</p>}
+                  </>
+                );
+                return comment.url ? (
+                  <a
+                    key={comment.id}
+                    className="github-review-comment"
+                    href={comment.url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <div key={comment.id} className="github-review-comment">
+                    {content}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+type PendingGitHubAction =
+  | { action: "push"; message: string }
+  | { action: "pr"; title: string; body: string };
+
+function GitHubDeliveryDialog({
+  action,
+  value,
+  busy,
+  error,
+  onChange,
+  onCancel,
+  onConfirm,
+}: {
+  action: PendingGitHubAction["action"];
+  value: PendingGitHubAction;
+  busy: boolean;
+  error?: string;
+  onChange(value: PendingGitHubAction): void;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const { t } = useI18n();
+  const firstField = useRef<HTMLInputElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    firstField.current?.focus();
+    firstField.current?.select();
+  }, [action]);
+
+  useEffect(() => {
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [busy, onCancel]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!busy) onConfirm();
+  }
+
+  const valid =
+    value.action === "push"
+      ? Boolean(value.message.trim())
+      : Boolean(value.title.trim());
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        className="delivery-dialog github-delivery-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="github-delivery-dialog-title"
+      >
+        <span className="delivery-dialog-icon" aria-hidden="true">
+          {action === "push" ? (
+            <UploadCloud size={18} />
+          ) : (
+            <GitPullRequestDraft size={18} />
+          )}
+        </span>
+        <form onSubmit={submit}>
+          <div className="delivery-dialog-copy">
+            <h2 id="github-delivery-dialog-title">
+              {action === "push" ? t("commitAndPush") : t("createDraftPr")}
+            </h2>
+            <p>
+              {action === "push"
+                ? t("commitAndPushDescription")
+                : t("createDraftPrDescription")}
+            </p>
+            {value.action === "push" ? (
+              <label className="delivery-commit-field">
+                <span>{t("commitMessage")}</span>
+                <input
+                  ref={firstField}
+                  value={value.message}
+                  maxLength={1_000}
+                  disabled={busy}
+                  onChange={(event) =>
+                    onChange({ ...value, message: event.target.value })
+                  }
+                />
+              </label>
+            ) : (
+              <div className="github-pr-fields">
+                <label className="delivery-commit-field">
+                  <span>{t("pullRequestTitle")}</span>
+                  <input
+                    ref={firstField}
+                    value={value.title}
+                    maxLength={256}
+                    disabled={busy}
+                    onChange={(event) =>
+                      onChange({ ...value, title: event.target.value })
+                    }
+                  />
+                </label>
+                <label className="delivery-commit-field">
+                  <span>{t("pullRequestDescription")}</span>
+                  <textarea
+                    value={value.body}
+                    maxLength={20_000}
+                    rows={5}
+                    disabled={busy}
+                    onChange={(event) =>
+                      onChange({ ...value, body: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+            )}
+            {error && <p className="delivery-dialog-error">{error}</p>}
+          </div>
+          <div className="delivery-dialog-actions">
+            <button
+              ref={cancelButton}
+              type="button"
+              className="dialog-button secondary pressable"
+              disabled={busy}
+              onClick={onCancel}
+            >
+              {t("cancel")}
+            </button>
+            <button
+              type="submit"
+              className="dialog-button primary pressable"
+              disabled={busy || !valid}
+            >
+              {busy && <LoaderCircle className="spin" size={14} />}
+              {busy
+                ? t("publishingToGitHub")
+                : action === "push"
+                  ? t("commitAndPush")
+                  : t("createDraftPr")}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function codeHostCiKey(
+  status: CodeHostPullRequest["ciStatus"],
+): "ciNone" | "ciPending" | "ciSuccess" | "ciFailure" {
+  if (status === "pending") return "ciPending";
+  if (status === "success") return "ciSuccess";
+  if (status === "failure") return "ciFailure";
+  return "ciNone";
+}
+
+function humanizeGitHubState(value: string): string {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function WorktreeDeliveryDialog({
+  action,
+  preflight,
+  message,
+  busy,
+  error,
+  onMessageChange,
+  onCancel,
+  onConfirm,
+}: {
+  action: "apply" | "commit";
+  preflight: WorktreeDeliveryPreflight;
+  message: string;
+  busy: boolean;
+  error?: string;
+  onMessageChange(message: string): void;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const { t } = useI18n();
+  const messageInput = useRef<HTMLInputElement>(null);
+  const cancelButton = useRef<HTMLButtonElement>(null);
+  const blocked =
+    preflight.branchChanged || preflight.conflicts.length > 0;
+  const alreadyApplied =
+    action === "apply" && preflight.pendingFiles === 0;
+
+  useEffect(() => {
+    if (action === "commit" && !blocked) {
+      messageInput.current?.focus();
+      messageInput.current?.select();
+    } else {
+      cancelButton.current?.focus();
+    }
+  }, [action, blocked]);
+
+  useEffect(() => {
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [busy, onCancel]);
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        className="delivery-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delivery-dialog-title"
+        aria-describedby="delivery-dialog-description"
+      >
+        <span
+          className={`delivery-dialog-icon ${blocked ? "blocked" : ""}`}
+          aria-hidden="true"
+        >
+          {blocked ? (
+            <TriangleAlert size={18} />
+          ) : action === "commit" ? (
+            <GitCommitHorizontal size={18} />
+          ) : (
+            <GitMerge size={18} />
+          )}
+        </span>
+        <div className="delivery-dialog-copy">
+          <h2 id="delivery-dialog-title">
+            {blocked
+              ? t("deliveryBlocked")
+              : action === "commit"
+                ? t("commitDeliveryQuestion")
+                : t("applyDeliveryQuestion")}
+          </h2>
+          <p id="delivery-dialog-description">
+            {t("deliveryPreflightSummary", {
+              count: preflight.files,
+              branch: preflight.targetBranch,
+            })}
+          </p>
+          <div className="delivery-branch-route">
+            <code>{preflight.taskBranch}</code>
+            <GitMerge size={14} aria-hidden="true" />
+            <code>{preflight.targetBranch}</code>
+          </div>
+          {preflight.branchChanged && (
+            <p className="delivery-dialog-warning">
+              {t("deliveryBranchChanged", {
+                source: preflight.sourceBranch ?? "",
+                target: preflight.targetBranch,
+              })}
+            </p>
+          )}
+          {preflight.conflicts.length > 0 && (
+            <div className="delivery-conflicts">
+              <strong>
+                {t("deliveryConflicts", {
+                  count: preflight.conflicts.length,
+                })}
+              </strong>
+              <ul>
+                {preflight.conflicts.slice(0, 8).map((conflict) => (
+                  <li key={conflict.path}>
+                    <code>{conflict.path}</code>
+                    <span>{t(deliveryConflictKey(conflict.reason))}</span>
+                  </li>
+                ))}
+              </ul>
+              {preflight.conflicts.length > 8 && (
+                <small>
+                  {t("moreDeliveryConflicts", {
+                    count: preflight.conflicts.length - 8,
+                  })}
+                </small>
+              )}
+            </div>
+          )}
+          {alreadyApplied && (
+            <p className="delivery-dialog-notice">
+              {t("deliveryAlreadyApplied")}
+            </p>
+          )}
+          {action === "commit" && !blocked && (
+            <label className="delivery-commit-field">
+              <span>{t("commitMessage")}</span>
+              <input
+                ref={messageInput}
+                value={message}
+                maxLength={1_000}
+                disabled={busy}
+                onChange={(event) => onMessageChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    message.trim() &&
+                    !busy
+                  ) {
+                    event.preventDefault();
+                    onConfirm();
+                  }
+                }}
+              />
+            </label>
+          )}
+          {error && <p className="delivery-dialog-error">{error}</p>}
+        </div>
+        <div className="delivery-dialog-actions">
+          <button
+            ref={cancelButton}
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {blocked || alreadyApplied ? t("close") : t("cancel")}
+          </button>
+          {!blocked && !alreadyApplied && (
+            <button
+              type="button"
+              className="dialog-button primary pressable"
+              disabled={
+                busy || (action === "commit" && !message.trim())
+              }
+              onClick={onConfirm}
+            >
+              {busy && <LoaderCircle className="spin" size={14} />}
+              {busy
+                ? t("delivering")
+                : action === "commit"
+                  ? t("stageAndCommit")
+                  : t("applyToOriginal")}
+            </button>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function deliveryConflictKey(
+  reason: WorktreeDeliveryConflict["reason"],
+):
+  | "deliveryConflictBothAdded"
+  | "deliveryConflictTargetDeleted"
+  | "deliveryConflictTargetModified"
+  | "deliveryConflictMerge"
+  | "deliveryConflictUnsafe" {
+  if (reason === "both_added") return "deliveryConflictBothAdded";
+  if (reason === "target_deleted") return "deliveryConflictTargetDeleted";
+  if (reason === "target_modified") return "deliveryConflictTargetModified";
+  if (reason === "unsafe_target") return "deliveryConflictUnsafe";
+  return "deliveryConflictMerge";
 }
 
 export function FileView({

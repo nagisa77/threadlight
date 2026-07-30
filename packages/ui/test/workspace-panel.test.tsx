@@ -5,6 +5,7 @@ import {
   buildChangeTree,
   FileView,
   FileSource,
+  GitHubDeliveryCard,
   isPlanDocumentPath,
   PlanDocument,
   ReviewChangesTree,
@@ -63,6 +64,90 @@ describe("ReviewView", () => {
     expect(reviewDiffStylesForLayout("split")).toMatchObject({
       lineNumber: { minWidth: "44px" },
     });
+  });
+
+  it("offers worktree delivery actions only for an isolated task", () => {
+    const html = renderToStaticMarkup(
+      <ReviewView
+        changes={{
+          threadId: "thread-1",
+          additions: 1,
+          deletions: 0,
+          revision: "revision-1",
+          files: [change("src/index.ts", "modified")],
+        }}
+        loading={false}
+        layout="unified"
+        projectId="project-1"
+        threadId="thread-1"
+        deliveryEnabled
+        defaultCommitMessage="Fix delivery"
+        onPreflightDelivery={vi.fn()}
+        onApplyDelivery={vi.fn()}
+        onCommitDelivery={vi.fn()}
+        onDiscardTask={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onRefresh={vi.fn()}
+        onRestore={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("应用到原分支");
+    expect(html).toContain("暂存并提交");
+    expect(html).toContain("丢弃任务");
+    expect(html.indexOf("应用到原分支")).toBeLessThan(
+      html.indexOf("全部恢复"),
+    );
+  });
+
+  it("shows Draft PR, CI, checks, and review comments in GitHub delivery", () => {
+    const html = renderToStaticMarkup(
+      <GitHubDeliveryCard
+        status={{
+          provider: "github",
+          available: true,
+          repository: "acme/threadlight",
+          remote: "origin",
+          taskBranch: "threadlight/task",
+          baseBranch: "main",
+          pushed: true,
+          ahead: 0,
+          pullRequest: {
+            number: 42,
+            url: "https://github.test/acme/threadlight/pull/42",
+            title: "Deliver task",
+            state: "open",
+            draft: true,
+            headBranch: "threadlight/task",
+            baseBranch: "main",
+            ciStatus: "failure",
+            reviewDecision: "CHANGES_REQUESTED",
+            checks: [{ name: "test", status: "failure" }],
+            comments: [
+              {
+                id: "comment-1",
+                author: "reviewer",
+                body: "Please cover the error path.",
+                createdAt: "2026-07-30T10:00:00Z",
+                path: "src/index.ts",
+                line: 42,
+                kind: "inline",
+              },
+            ],
+          },
+        }}
+        loading={false}
+        disabled={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("acme/threadlight");
+    expect(html).toContain("#42 Deliver task");
+    expect(html).toContain("CI 失败");
+    expect(html).toContain("test");
+    expect(html).toContain("src/index.ts:42");
+    expect(html).toContain("Please cover the error path.");
   });
 
   it("builds a changed-files-only tree with added, modified, and deleted states", () => {

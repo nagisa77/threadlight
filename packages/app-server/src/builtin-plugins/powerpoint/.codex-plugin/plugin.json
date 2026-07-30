@@ -1,0 +1,11 @@
+{
+  "name": "powerpoint",
+  "version": "1.0.0",
+  "description": "Create, edit, and visually verify PowerPoint presentations.",
+  "skills": "./skills/",
+  "presentation": {
+    "icon": "powerpoint",
+    "visibility": "featured",
+    "keywords": ["powerpoint", "ppt", "pptx", "slides", "presentation", "deck", "演示", "幻灯片"]
+  }
+}

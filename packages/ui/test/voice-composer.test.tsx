@@ -40,6 +40,12 @@ describe("voice composer", () => {
     expect(html).toContain('aria-label="语音输入"');
     expect(html).toContain('aria-label="发送消息"');
     expect(html).toContain('aria-describedby="composer-hint"');
+    expect(html).toContain('rows="2"');
+    expect(html).toContain('class="composer-toolbar-start"');
+    expect(html).toContain('class="composer-toolbar-end"');
+    expect(html.indexOf("<textarea")).toBeLessThan(
+      html.indexOf('class="composer-toolbar"'),
+    );
     client.dispose();
   });
 

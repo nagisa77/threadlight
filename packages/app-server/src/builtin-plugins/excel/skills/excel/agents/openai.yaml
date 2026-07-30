@@ -1,0 +1,4 @@
+interface:
+  display_name: "Excel"
+  short_description: "Create, edit, analyze, and verify Excel workbooks"
+  default_prompt: "Use $excel to create or edit a verified Excel workbook."

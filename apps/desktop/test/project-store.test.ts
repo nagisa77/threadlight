@@ -88,6 +88,79 @@ describe("ProjectStore", () => {
     expect(store.activate("project-1").activeProjectId).toBe("project-1");
   });
 
+  it("persists project pinning and sorts pinned projects first", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-project-pins-"));
+    directories.push(root);
+    const first = join(root, "first");
+    const second = join(root, "second");
+    mkdirSync(first);
+    mkdirSync(second);
+    const ids = ["project-1", "project-2"];
+    let now = new Date("2026-07-30T08:00:00.000Z");
+    const mapPath = join(root, "project-map.json");
+    const store = new ProjectStore(mapPath, {
+      createId: () => ids.shift() ?? "unexpected",
+      now: () => now,
+    });
+
+    store.register(first);
+    store.register(second);
+    now = new Date("2026-07-30T08:01:00.000Z");
+    let snapshot = store.updateProject({
+      id: "project-2",
+      pinned: true,
+    });
+
+    expect(snapshot.projects.map(({ id }) => id)).toEqual([
+      "project-2",
+      "project-1",
+    ]);
+    expect(
+      new ProjectStore(mapPath).snapshot().projects[0]?.pinnedAt,
+    ).toBe("2026-07-30T08:01:00.000Z");
+
+    snapshot = store.updateProject({
+      id: "project-2",
+      pinned: false,
+    });
+    expect(snapshot.projects.find(({ id }) => id === "project-2")?.pinnedAt)
+      .toBeUndefined();
+  });
+
+  it("persists and activates a remote runtime without touching its path", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const store = new ProjectStore(join(root, "project-map.json"), {
+      createId: () => "remote-project",
+    });
+
+    const snapshot = store.registerRemote({
+      name: "Build host",
+      endpoint: "http://127.0.0.1:7432",
+      workspacePath: "/workspace/large-repository",
+      runtimeId: "runtime-1",
+    });
+
+    expect(snapshot).toMatchObject({
+      activeProjectId: "remote-project",
+      projects: [
+        {
+          id: "remote-project",
+          name: "Build host",
+          basePath: "/workspace/large-repository",
+          runtime: {
+            kind: "remote",
+            endpoint: "http://127.0.0.1:7432",
+            runtimeId: "runtime-1",
+          },
+        },
+      ],
+    });
+    expect(store.activate("remote-project").activeProjectId).toBe(
+      "remote-project",
+    );
+  });
+
   it("requires archiving before permanently removing a task", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);
@@ -400,6 +473,43 @@ describe("ProjectStore", () => {
     expect(
       store.snapshot().projects[0]?.conversations.map(({ id }) => id),
     ).toEqual(["thread-pinned", "thread-recent"]);
+  });
+
+  it("persists conversation-level full access without changing the project default", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    mkdirSync(projectPath);
+    const mapPath = join(root, "project-map.json");
+    const store = new ProjectStore(mapPath, {
+      createId: () => "project-1",
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-full",
+      title: "Trusted task",
+    });
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "thread-approval",
+      title: "Guarded task",
+    });
+
+    store.updateConversation({
+      projectId: "project-1",
+      id: "thread-full",
+      accessMode: "full",
+    });
+
+    const conversations =
+      new ProjectStore(mapPath).snapshot().projects[0]?.conversations;
+    expect(
+      conversations?.find(({ id }) => id === "thread-full"),
+    ).toMatchObject({ accessMode: "full" });
+    expect(
+      conversations?.find(({ id }) => id === "thread-approval")?.accessMode,
+    ).toBeUndefined();
   });
 
   it("persists the isolated workspace before the task is named", () => {
