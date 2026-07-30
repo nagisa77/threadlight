@@ -109,6 +109,8 @@ export type {
   ConversationStatus,
   ConversationSummaryTarget,
   ConversationSummaryUpdate,
+  HostSummary,
+  HostsSnapshot,
   ProjectSummary,
   ProjectsAdapter,
   ProjectsSnapshot,

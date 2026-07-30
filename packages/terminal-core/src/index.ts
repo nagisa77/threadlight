@@ -2,23 +2,15 @@ import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 
 import { spawn, type IPty } from "node-pty";
+import type {
+  TerminalSessionEvent,
+  TerminalSessionInfo,
+} from "@threadlight/protocol";
 
-export interface TerminalSessionInfo {
-  id: string;
-  shell: string;
-}
-
-export type TerminalSessionEvent =
-  | {
-      type: "data";
-      sessionId: string;
-      data: string;
-    }
-  | {
-      type: "exit";
-      sessionId: string;
-      exitCode: number;
-    };
+export type {
+  TerminalSessionEvent,
+  TerminalSessionInfo,
+} from "@threadlight/protocol";
 
 export interface TerminalProcess {
   write(data: string): void;
@@ -36,10 +28,19 @@ interface TerminalSession {
   disposeExit(): void;
 }
 
+export interface TerminalSessionController {
+  create(cwd: string, cols: number, rows: number): TerminalSessionInfo;
+  write(sessionId: string, data: string): void;
+  resize(sessionId: string, cols: number, rows: number): void;
+  close(sessionId: string): void;
+  dispose(): void;
+}
+
 export interface TerminalSessionManagerOptions {
   createId?(): string;
   environment?: NodeJS.ProcessEnv;
   shell?: string;
+  maxSessions?: number;
   spawnProcess?(
     shell: string,
     args: string[],
@@ -58,12 +59,14 @@ const MAX_COLUMNS = 1_000;
 const MIN_ROWS = 1;
 const MAX_ROWS = 500;
 const MAX_INPUT_LENGTH = 128 * 1024;
+const DEFAULT_MAX_SESSIONS = 32;
 
-export class TerminalSessionManager {
+export class TerminalSessionManager implements TerminalSessionController {
   readonly #sessions = new Map<string, TerminalSession>();
   readonly #createId: () => string;
   readonly #environment: NodeJS.ProcessEnv;
   readonly #shell: string;
+  readonly #maxSessions: number;
   readonly #spawnProcess: NonNullable<
     TerminalSessionManagerOptions["spawnProcess"]
   >;
@@ -82,6 +85,10 @@ export class TerminalSessionManager {
       (process.platform === "win32"
         ? (process.env.ComSpec ?? "powershell.exe")
         : "/bin/sh");
+    this.#maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
+    if (!Number.isInteger(this.#maxSessions) || this.#maxSessions < 1) {
+      throw new Error("Terminal session limit must be a positive integer");
+    }
     this.#spawnProcess =
       options.spawnProcess ??
       ((shell, args, spawnOptions) =>
@@ -89,6 +96,9 @@ export class TerminalSessionManager {
   }
 
   create(cwd: string, cols: number, rows: number): TerminalSessionInfo {
+    if (this.#sessions.size >= this.#maxSessions) {
+      throw new Error("Terminal session limit reached");
+    }
     const dimensions = validateDimensions(cols, rows);
     const id = this.#createId();
     const shell = this.#shell;

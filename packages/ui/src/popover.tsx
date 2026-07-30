@@ -6,6 +6,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 
 export interface PopoverPosition {
   top: number;
@@ -102,6 +103,7 @@ export function ActionPopover({
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       onCloseRef.current();
       returnFocusRef?.current?.focus();
       return;
@@ -152,7 +154,7 @@ export function ActionPopover({
     transformOrigin: position.transformOrigin,
   };
 
-  return (
+  const popover = (
     <div
       ref={root}
       className={`action-popover${className ? ` ${className}` : ""}`}
@@ -164,6 +166,10 @@ export function ActionPopover({
       {children}
     </div>
   );
+
+  return typeof document === "undefined"
+    ? popover
+    : createPortal(popover, document.body);
 }
 
 export function ActionPopoverItem({

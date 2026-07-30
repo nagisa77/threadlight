@@ -182,6 +182,18 @@ describe("CapabilityMenu", () => {
     expect(html).toContain(
       "http://127.0.0.1:43119/oauth/callback/gmail",
     );
+    expect(html).toContain(
+      '<div class="connector-dialog-actions"><button',
+    );
+    expect(html).not.toContain(
+      '<div class="connector-dialog-actions"><span></span>',
+    );
+    expect(html).toContain(
+      'class="dialog-button secondary pressable">取消</button>',
+    );
+    expect(html).toContain(
+      'class="dialog-button primary pressable" disabled="">保存并连接</button>',
+    );
   });
 
   it("offers connection management from a selected connector chip", () => {

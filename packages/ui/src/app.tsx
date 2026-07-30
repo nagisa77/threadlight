@@ -17,6 +17,8 @@ import type {
   CapabilityDescriptor,
   ConnectorStatusData,
   ConversationAccessMode,
+  HostDirectoryEntry,
+  HostDirectoryListing,
   TurnMode,
 } from "@threadlight/protocol";
 import {
@@ -147,6 +149,8 @@ import {
 import {
   activeProject,
   type ConversationSummary,
+  type HostSummary,
+  type HostsSnapshot,
   type ProjectSummary,
   type ProjectsAdapter,
   type ProjectsSnapshot,
@@ -395,9 +399,11 @@ function ThreadlightAppContent({
   const [connectorBusy, setConnectorBusy] = useState(false);
   const [connectorError, setConnectorError] = useState<string>();
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
+  const [hostSnapshot, setHostSnapshot] = useState<HostsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
   const [switchingProject, setSwitchingProject] = useState(false);
   const [remoteRuntimeOpen, setRemoteRuntimeOpen] = useState(false);
+  const [remoteProjectPathOpen, setRemoteProjectPathOpen] = useState(false);
   const [remoteRuntimeBusy, setRemoteRuntimeBusy] = useState(false);
   const [remoteRuntimeError, setRemoteRuntimeError] = useState<string>();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -473,6 +479,9 @@ function ThreadlightAppContent({
   const activeThreadIdRef = useRef<string | undefined>(undefined);
   const viewRef = useRef(view);
   const currentProject = activeProject(projectSnapshot);
+  const currentHost = hostSnapshot?.hosts.find(
+    (host) => host.id === hostSnapshot.activeHostId,
+  );
   const currentConversation = currentProject?.conversations.find(
     (conversation) => conversation.id === state.threadId,
   );
@@ -1231,6 +1240,14 @@ function ThreadlightAppContent({
     if (!projects) return;
     let active = true;
     void projects
+      .loadHosts?.()
+      .then((hosts) => {
+        if (active) setHostSnapshot(hosts);
+      })
+      .catch(() => {
+        // The project error below still leaves the connect form available.
+      });
+    void projects
       .load()
       .then(async (snapshot) => {
         if (!active) return;
@@ -1719,7 +1736,7 @@ function ThreadlightAppContent({
     setWorkspacePanelOpen(false);
   }
 
-  async function openProjectFolder() {
+  async function openProjectFolder(path?: string) {
     if (
       !projects ||
       switchingProject ||
@@ -1730,7 +1747,12 @@ function ThreadlightAppContent({
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
-      const snapshot = await projects.openFolder();
+      if (currentHost?.kind === "remote" && !path) {
+        setRemoteProjectPathOpen(true);
+        return;
+      }
+      const snapshot = await projects.openFolder(path);
+      setRemoteProjectPathOpen(false);
       setProjectSnapshot(snapshot);
       setView("thread");
       if (snapshot.activeProjectId === projectSnapshot?.activeProjectId) return;
@@ -1753,7 +1775,10 @@ function ThreadlightAppContent({
     setRemoteRuntimeError(undefined);
     setProjectError(undefined);
     try {
-      const snapshot = await projects.connectRemote(input);
+      const hosts = await projects.connectRemote(input);
+      setHostSnapshot(hosts);
+      await refreshHostSettings();
+      const snapshot = await projects.load();
       setProjectSnapshot(snapshot);
       setRemoteRuntimeOpen(false);
       setView("thread");
@@ -1764,6 +1789,89 @@ function ThreadlightAppContent({
     } finally {
       setRemoteRuntimeBusy(false);
     }
+  }
+
+  async function activateHost(hostId: string) {
+    if (!projects?.activateHost || switchingProject) return;
+    setSwitchingProject(true);
+    setProjectError(undefined);
+    setRemoteRuntimeError(undefined);
+    try {
+      const hosts = await projects.activateHost(hostId);
+      await refreshHostSettings();
+      const snapshot = await projects.load();
+      setHostSnapshot(hosts);
+      setProjectSnapshot(snapshot);
+      setRemoteRuntimeOpen(false);
+      setView("thread");
+      closeConversationPanels();
+      await connectProject(snapshot);
+    } catch (error) {
+      setRemoteRuntimeError(errorMessage(error));
+    } finally {
+      setSwitchingProject(false);
+    }
+  }
+
+  async function updateRemoteHost(input: {
+    hostId: string;
+    endpoint: string;
+    token?: string;
+    name?: string;
+  }) {
+    if (!projects?.updateRemoteHost || remoteRuntimeBusy) return;
+    const updatingActiveHost = hostSnapshot?.activeHostId === input.hostId;
+    setRemoteRuntimeBusy(true);
+    setRemoteRuntimeError(undefined);
+    setProjectError(undefined);
+    try {
+      const hosts = await projects.updateRemoteHost(input);
+      setHostSnapshot(hosts);
+      if (updatingActiveHost) {
+        await refreshHostSettings();
+        const snapshot = await projects.load();
+        setProjectSnapshot(snapshot);
+        closeConversationPanels();
+        await connectProject(snapshot);
+      }
+      setRemoteRuntimeOpen(false);
+    } catch (error) {
+      setRemoteRuntimeError(errorMessage(error));
+    } finally {
+      setRemoteRuntimeBusy(false);
+    }
+  }
+
+  async function deleteRemoteHost(hostId: string) {
+    if (!projects?.deleteRemoteHost || switchingProject) return;
+    const deletingActiveHost = hostSnapshot?.activeHostId === hostId;
+    setSwitchingProject(true);
+    setProjectError(undefined);
+    setRemoteRuntimeError(undefined);
+    try {
+      const hosts = await projects.deleteRemoteHost(hostId);
+      setHostSnapshot(hosts);
+      if (deletingActiveHost) {
+        await refreshHostSettings();
+        const snapshot = await projects.load();
+        setProjectSnapshot(snapshot);
+        setView("thread");
+        closeConversationPanels();
+        await connectProject(snapshot);
+      }
+    } catch (error) {
+      setRemoteRuntimeError(errorMessage(error));
+    } finally {
+      setSwitchingProject(false);
+    }
+  }
+
+  async function refreshHostSettings() {
+    if (!settings) return;
+    const snapshot = await settings.load();
+    if (isLanguage(snapshot.language)) onLanguageChange(snapshot.language);
+    if (isThemePreference(snapshot.theme)) onThemeChange(snapshot.theme);
+    onPreferredProjectOpenerChange(snapshot.preferredProjectOpener);
   }
 
   async function updateConversationMetadata(
@@ -2509,14 +2617,17 @@ function ThreadlightAppContent({
               currentProject || !projects ? state.connection : "idle"
             }
             label={
-              currentProject || !projects
+              currentHost?.name ??
+              (currentProject || !projects
                 ? connectionLabel(state.connection, t)
-                : t("noProjectOpen")
+                : t("noProjectOpen"))
             }
             mode={
-              currentProject?.runtime?.kind === "remote"
-                ? t("remoteRuntime")
-                : t("local")
+              `${currentHost?.kind === "remote" ? t("remoteHost") : t("local")} · ${
+                currentProject || !projects
+                  ? connectionLabel(state.connection, t)
+                  : t("noProjectOpen")
+              }`
             }
             disabled={switchingProject || voiceStatus !== "idle"}
             title={t("connectRemoteRuntime")}
@@ -3182,6 +3293,11 @@ function ThreadlightAppContent({
             projectId={currentProject.id}
             threadId={state.threadId}
             projectName={currentProject.name}
+            remoteFileRoot={
+              currentProject.runtime?.kind === "remote"
+                ? currentProject.runtime.workspacePath
+                : undefined
+            }
             changes={conversationChanges}
             changesLoading={conversationChangesLoading}
             changesError={conversationChangesError}
@@ -3258,14 +3374,38 @@ function ThreadlightAppContent({
       )}
       {remoteRuntimeOpen && projects?.connectRemote && (
         <RemoteRuntimeDialog
-          busy={remoteRuntimeBusy}
+          hosts={hostSnapshot}
+          activeHostId={hostSnapshot?.activeHostId}
+          busy={remoteRuntimeBusy || switchingProject}
           error={remoteRuntimeError}
           onCancel={() => {
             if (remoteRuntimeBusy) return;
             setRemoteRuntimeOpen(false);
             setRemoteRuntimeError(undefined);
           }}
+          onActivate={(hostId) => void activateHost(hostId)}
+          onUpdate={
+            projects.updateRemoteHost
+              ? (input) => void updateRemoteHost(input)
+              : undefined
+          }
+          onDelete={(hostId) => void deleteRemoteHost(hostId)}
           onConnect={(input) => void connectRemoteRuntime(input)}
+          onResetError={() => setRemoteRuntimeError(undefined)}
+        />
+      )}
+      {remoteProjectPathOpen && (
+        <RemoteProjectPathDialog
+          busy={switchingProject}
+          error={projectError}
+          hostName={currentHost?.name ?? t("remoteHost")}
+          onBrowse={projects?.listRemoteDirectories}
+          onCancel={() => {
+            if (!switchingProject) setRemoteProjectPathOpen(false);
+          }}
+          onOpen={(path) => {
+            void openProjectFolder(path);
+          }}
         />
       )}
       {connectorSetup && (
@@ -4169,8 +4309,12 @@ export function RuntimeStatusControl({
   const content = (
     <>
       <span className={`status-dot ${status}`} aria-hidden="true" />
-      <span className="runtime-status-label">{label}</span>
-      <span className="status-mode">{mode}</span>
+      <span className="runtime-status-label" title={label}>
+        {label}
+      </span>
+      <span className="status-mode" title={mode}>
+        {mode}
+      </span>
       {onOpen ? (
         <ChevronRight
           className="runtime-status-chevron"
@@ -5042,21 +5186,39 @@ function ProjectEmptyState({
   );
 }
 
-function RemoteRuntimeDialog({
+export function RemoteRuntimeDialog({
+  hosts,
+  activeHostId,
   busy,
   error,
   onCancel,
+  onActivate,
+  onUpdate,
+  onDelete,
   onConnect,
+  onResetError,
 }: {
+  hosts?: HostsSnapshot;
+  activeHostId?: string;
   busy: boolean;
   error?: string;
   onCancel(): void;
+  onActivate(hostId: string): void;
+  onUpdate?(input: {
+    hostId: string;
+    endpoint: string;
+    token?: string;
+    name?: string;
+  }): void;
+  onDelete?(hostId: string): void;
   onConnect(input: { endpoint: string; token: string; name?: string }): void;
+  onResetError?(): void;
 }) {
   const { t } = useI18n();
   const [endpoint, setEndpoint] = useState("http://127.0.0.1:7432");
   const [token, setToken] = useState("");
   const [name, setName] = useState("");
+  const [editingHostId, setEditingHostId] = useState<string>();
   const firstField = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -5071,11 +5233,39 @@ function RemoteRuntimeDialog({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
+    if (editingHostId && onUpdate) {
+      onUpdate({
+        hostId: editingHostId,
+        endpoint: endpoint.trim(),
+        ...(token.trim() ? { token } : {}),
+        ...(name.trim() ? { name: name.trim() } : {}),
+      });
+      return;
+    }
     onConnect({
       endpoint: endpoint.trim(),
       token,
       ...(name.trim() ? { name: name.trim() } : {}),
     });
+  }
+
+  function editHost(host: HostSummary) {
+    if (host.kind !== "remote" || !host.endpoint) return;
+    setEditingHostId(host.id);
+    setEndpoint(host.endpoint);
+    setToken("");
+    setName(host.name);
+    onResetError?.();
+    requestAnimationFrame(() => firstField.current?.focus());
+  }
+
+  function cancelEditing() {
+    setEditingHostId(undefined);
+    setEndpoint("http://127.0.0.1:7432");
+    setToken("");
+    setName("");
+    onResetError?.();
+    requestAnimationFrame(() => firstField.current?.focus());
   }
 
   return (
@@ -5103,7 +5293,79 @@ function RemoteRuntimeDialog({
             </p>
           </div>
         </div>
+        {hosts && hosts.hosts.length > 0 && (
+          <div className="host-connection-list" aria-label={t("savedHosts")}>
+            <p className="connector-section-label">{t("savedHosts")}</p>
+            {hosts.hosts.map((host) => {
+              const active = host.id === activeHostId;
+              return (
+                <div
+                  key={host.id}
+                  className={`host-connection-row ${active ? "active" : ""}`}
+                >
+                  <button
+                    type="button"
+                    className="host-connection-select pressable"
+                    disabled={busy || active}
+                    onClick={() => onActivate(host.id)}
+                  >
+                    <span className="host-connection-icon" aria-hidden="true">
+                      {host.kind === "local" ? (
+                        <Monitor size={15} />
+                      ) : (
+                        <Server size={15} />
+                      )}
+                    </span>
+                    <span className="host-connection-copy">
+                      <strong>{host.name}</strong>
+                      <small>
+                        {host.kind === "local"
+                          ? t("localHost")
+                          : host.endpoint}
+                      </small>
+                    </span>
+                    {active && <Check size={14} aria-label={t("current")} />}
+                  </button>
+                  {host.kind === "remote" && (onUpdate || onDelete) && (
+                    <span className="host-connection-actions">
+                      {onUpdate && (
+                        <button
+                          type="button"
+                          className="host-connection-edit pressable"
+                          aria-label={t("editHost", { name: host.name })}
+                          title={t("editHost", { name: host.name })}
+                          disabled={busy}
+                          onClick={() => editHost(host)}
+                        >
+                          <PencilLine size={14} />
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          type="button"
+                          className="host-connection-remove pressable"
+                          aria-label={t("removeHost", { name: host.name })}
+                          title={t("removeHost", { name: host.name })}
+                          disabled={busy}
+                          onClick={() => {
+                            if (editingHostId === host.id) cancelEditing();
+                            onDelete(host.id);
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
         <form onSubmit={submit}>
+          <p className="connector-section-label">
+            {editingHostId ? t("editSavedHost") : t("connectNewHost")}
+          </p>
           <div className="connector-fields">
             <label>
               <span>{t("remoteRuntimeEndpoint")}</span>
@@ -5125,8 +5387,11 @@ function RemoteRuntimeDialog({
                 value={token}
                 onChange={(event) => setToken(event.target.value)}
                 autoComplete="off"
-                required
+                required={!editingHostId}
                 disabled={busy}
+                placeholder={
+                  editingHostId ? t("remoteRuntimeTokenKeep") : undefined
+                }
               />
             </label>
             <label>
@@ -5150,6 +5415,250 @@ function RemoteRuntimeDialog({
               type="button"
               className="dialog-button secondary pressable"
               disabled={busy}
+              onClick={editingHostId ? cancelEditing : onCancel}
+            >
+              {t("cancel")}
+            </button>
+            <button
+              type="submit"
+              className="dialog-button primary pressable"
+              disabled={
+                busy ||
+                !endpoint.trim() ||
+                (!editingHostId && !token.trim())
+              }
+            >
+              {busy && <LoaderCircle className="spin" size={14} />}
+              {busy
+                ? editingHostId
+                  ? t("saving")
+                  : t("connectingRuntime")
+                : editingHostId
+                  ? t("saveChanges")
+                  : t("connect")}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function RemoteProjectPathDialog({
+  busy,
+  error,
+  hostName,
+  onBrowse,
+  onCancel,
+  onOpen,
+}: {
+  busy: boolean;
+  error?: string;
+  hostName: string;
+  onBrowse?(path: string): Promise<HostDirectoryListing>;
+  onCancel(): void;
+  onOpen(path: string): void;
+}) {
+  const { t } = useI18n();
+  const [path, setPath] = useState("");
+  const [directories, setDirectories] = useState<
+    readonly HostDirectoryEntry[]
+  >([]);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState<string>();
+  const [directoryPosition, setDirectoryPosition] =
+    useState<PopoverPosition>();
+  const [directoryDismissed, setDirectoryDismissed] = useState(false);
+  const firstField = useRef<HTMLInputElement>(null);
+  const firstDirectory = useRef<HTMLButtonElement>(null);
+  const browseRequest = useRef(0);
+
+  useEffect(() => {
+    firstField.current?.focus();
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [busy, onCancel]);
+
+  useEffect(() => {
+    if (
+      !onBrowse ||
+      directoryDismissed ||
+      (!path.startsWith("/") && path !== "~" && !path.startsWith("~/"))
+    ) {
+      setDirectoryPosition(undefined);
+      setDirectories([]);
+      setDirectoryError(undefined);
+      setDirectoryLoading(false);
+      return;
+    }
+
+    const request = ++browseRequest.current;
+    const timeout = window.setTimeout(() => {
+      const bounds = firstField.current?.getBoundingClientRect();
+      if (!bounds) return;
+      setDirectoryPosition(
+        anchoredPopoverPosition(bounds, {
+          width: Math.min(440, Math.max(320, bounds.width)),
+          height: 260,
+          align: "start",
+          gap: 5,
+        }),
+      );
+      setDirectoryLoading(true);
+      setDirectoryError(undefined);
+      void onBrowse(path)
+        .then((listing) => {
+          if (browseRequest.current !== request) return;
+          setDirectories(listing.directories);
+        })
+        .catch((browseError) => {
+          if (browseRequest.current !== request) return;
+          setDirectories([]);
+          setDirectoryError(errorMessage(browseError));
+        })
+        .finally(() => {
+          if (browseRequest.current === request) {
+            setDirectoryLoading(false);
+          }
+        });
+    }, 120);
+    return () => {
+      window.clearTimeout(timeout);
+      if (browseRequest.current === request) browseRequest.current += 1;
+    };
+  }, [directoryDismissed, onBrowse, path]);
+
+  function selectDirectory(directory: HostDirectoryEntry) {
+    setPath(
+      directory.path.endsWith("/") ? directory.path : `${directory.path}/`,
+    );
+    setDirectoryDismissed(false);
+    requestAnimationFrame(() => firstField.current?.focus());
+  }
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        className="connector-dialog remote-project-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remote-project-title"
+      >
+        <div className="connector-dialog-heading">
+          <span className="connector-dialog-icon" aria-hidden="true">
+            <FolderPlus size={18} />
+          </span>
+          <div>
+            <h2 id="remote-project-title">{t("addRemoteProject")}</h2>
+            <p>{t("addRemoteProjectDescription", { host: hostName })}</p>
+          </div>
+        </div>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!busy && path.trim()) onOpen(path.trim());
+          }}
+        >
+          <div className="connector-fields">
+            <label>
+              <span>{t("remoteProjectPath")}</span>
+              <input
+                ref={firstField}
+                value={path}
+                onChange={(event) => {
+                  setPath(event.target.value);
+                  setDirectoryDismissed(false);
+                }}
+                onFocus={() => setDirectoryDismissed(false)}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && directoryPosition) {
+                    event.preventDefault();
+                    firstDirectory.current?.focus();
+                  } else if (event.key === "Escape" && directoryPosition) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setDirectoryDismissed(true);
+                  }
+                }}
+                placeholder="/home/user/projects/example"
+                autoComplete="off"
+                spellCheck={false}
+                required
+                disabled={busy}
+              />
+            </label>
+          </div>
+          {directoryPosition && (
+            <ActionPopover
+              label={t("remoteFolders")}
+              className="remote-directory-popover"
+              role="dialog"
+              position={directoryPosition}
+              initialFocusRef={firstField}
+              returnFocusRef={firstField}
+              onClose={() => setDirectoryDismissed(true)}
+            >
+              <div
+                className="remote-directory-list"
+                role="listbox"
+                aria-label={t("remoteFolders")}
+              >
+                {directoryLoading ? (
+                  <p className="remote-directory-status" role="status">
+                    <LoaderCircle className="spin" size={14} />
+                    {t("loadingFolders")}
+                  </p>
+                ) : directoryError ? (
+                  <p className="remote-directory-status error" role="status">
+                    <TriangleAlert size={14} />
+                    {directoryError}
+                  </p>
+                ) : directories.length === 0 ? (
+                  <p className="remote-directory-status" role="status">
+                    {t("noMatchingFolders")}
+                  </p>
+                ) : (
+                  directories.map((directory, index) => (
+                    <button
+                      key={directory.path}
+                      ref={index === 0 ? firstDirectory : undefined}
+                      type="button"
+                      role="option"
+                      data-popover-item
+                      aria-selected={false}
+                      onClick={() => selectDirectory(directory)}
+                    >
+                      <span
+                        className="remote-directory-option-icon"
+                        aria-hidden="true"
+                      >
+                        <Folder size={15} />
+                      </span>
+                      <span className="remote-directory-option-copy">
+                        <strong>{directory.name}</strong>
+                        <small>{directory.path}</small>
+                      </span>
+                      <ChevronRight size={14} aria-hidden="true" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </ActionPopover>
+          )}
+          {error && <p className="connector-dialog-error">{error}</p>}
+          <div className="connector-dialog-actions">
+            <button
+              type="button"
+              className="dialog-button secondary pressable"
+              disabled={busy}
               onClick={onCancel}
             >
               {t("cancel")}
@@ -5157,10 +5666,10 @@ function RemoteRuntimeDialog({
             <button
               type="submit"
               className="dialog-button primary pressable"
-              disabled={busy || !endpoint.trim() || !token.trim()}
+              disabled={busy || !path.trim()}
             >
               {busy && <LoaderCircle className="spin" size={14} />}
-              {busy ? t("connectingRuntime") : t("connect")}
+              {busy ? t("opening") : t("openProject")}
             </button>
           </div>
         </form>

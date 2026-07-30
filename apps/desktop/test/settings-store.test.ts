@@ -164,6 +164,38 @@ describe("SettingsStore", () => {
     });
   });
 
+  it("treats secrets encrypted by another host as unconfigured", () => {
+    const { path } = createStore();
+    const incompatibleCodec: SecretCodec = {
+      encrypt: (value) => `other-host:${value}`,
+      decrypt: () => {
+        throw new Error("Unable to authenticate data");
+      },
+    };
+    const store = new SettingsStore(path, incompatibleCodec);
+    const compatibleStore = new SettingsStore(path, codec);
+
+    compatibleStore.update(
+      {
+        provider: "openai",
+        openAIApiKey: "machine-bound-secret",
+        ...DEFAULT_CONNECTIONS,
+        model: "gpt-5.6-sol",
+      },
+      {},
+    );
+
+    expect(store.snapshot({})).toMatchObject({
+      provider: "openai",
+      openAIApiKeyConfigured: false,
+      model: "gpt-5.6-sol",
+    });
+    expect(store.runtimeSettings({ OPENAI_API_KEY: "environment-key" }))
+      .toMatchObject({
+        openAIApiKey: "environment-key",
+      });
+  });
+
   it("maps provider settings to child-process environment variables", () => {
     expect(
       runtimeEnvironment({

@@ -187,22 +187,19 @@ npm run desktop:preview
 npm run desktop:package
 ```
 
-### 单独启动 Remote Runtime
+### 单独启动 Threadlight Host
 
-在远程开发机、容器或 SSH workspace 中安装并构建后，可以只启动 Runtime：
+在远程开发机、容器或 SSH workspace 中安装并构建后，可以启动无 UI、支持多项目且拥有独立设置的 Host：
 
 ```bash
-export OPENAI_API_KEY="your-model-key"
-export THREADLIGHT_RUNTIME_TOKEN="$(openssl rand -hex 32)"
+export THREADLIGHT_HOST_TOKEN="$(openssl rand -hex 32)"
 
-npm run build:packages
-npm run runtime -- \
-  --workspace /absolute/path/to/repository \
+npm run host:dev -- \
   --host 127.0.0.1 \
   --port 7432
 ```
 
-桌面端通过侧栏的服务器按钮连接 `http://127.0.0.1:7432`。推荐保持 Runtime 只监听回环地址，并使用 SSH 隧道：
+Host 的项目、任务和设置保存在远端 `~/.threadlight`，各项目数据保存在远端项目的 `.threadlight`。桌面端切换 Host 后只显示当前 Host 的工作域。推荐保持 Host 只监听回环地址，并使用 SSH 隧道：
 
 ```bash
 ssh -N -L 7432:127.0.0.1:7432 user@development-host
@@ -210,7 +207,19 @@ ssh -N -L 7432:127.0.0.1:7432 user@development-host
 
 容器中可改为 `--host 0.0.0.0`，但跨不可信网络时需要 HTTPS 反向代理、VPN 或 SSH 隧道。访问令牌会在桌面端使用系统安全存储加密，Runtime 不会把令牌写入日志。
 
-完整用法见 [Remote Runtime 文档](./docs/REMOTE_RUNTIME.zh-CN.md)。远程 Transport 使用浏览器兼容的 HTTP + NDJSON，`@threadlight/client` 的 `HttpRuntimeTransport` 不依赖 Electron，可供后续 Web 端复用。
+在本机模拟另一台独立 Host 时，请增加
+`--home "$HOME/.threadlight-host-dev"`，避免和桌面端的本机 Host 共用
+`~/.threadlight/settings.json`。`host:dev` 会先构建共享 packages 再启动服务。
+
+生成可复制到远端安装的无 UI 包：
+
+```bash
+npm run host:package
+```
+
+完整用法见 [Threadlight Host 文档](./docs/REMOTE_HOST.zh-CN.md)。远程 Runtime
+Transport 使用浏览器兼容的 HTTP + NDJSON，交互式终端使用经过 Host Token
+鉴权的 WebSocket；`@threadlight/client` 不依赖 Electron，可供后续 Web 端复用。
 
 | 服务 | 必需配置 | 可选配置 |
 | --- | --- | --- |

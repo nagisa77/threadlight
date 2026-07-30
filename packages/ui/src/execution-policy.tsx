@@ -80,9 +80,14 @@ const copy = {
     project: "项目",
     tool: "工具",
     deny: "拒绝",
+    allow: "允许",
+    scope: "授权范围",
     once: "允许本次",
+    onceBody: "仅执行当前操作",
     task: "此任务内允许",
+    taskBody: "本任务后续的同类操作",
     forever: "此项目永久允许",
+    foreverBody: "此项目后续的同类操作",
     hint: "只会授权同类操作；破坏性操作始终禁止。",
     safety: "安全执行",
     subtitle: "控制 Agent 在这个项目中可以执行的操作。",
@@ -109,9 +114,14 @@ const copy = {
     project: "專案",
     tool: "工具",
     deny: "拒絕",
+    allow: "允許",
+    scope: "授權範圍",
     once: "允許本次",
+    onceBody: "只執行目前操作",
     task: "此任務內允許",
+    taskBody: "此任務後續的同類操作",
     forever: "此專案永久允許",
+    foreverBody: "此專案後續的同類操作",
     hint: "只會授權同類操作；破壞性操作始終禁止。",
     safety: "安全執行",
     subtitle: "控制 Agent 在這個專案中可以執行的操作。",
@@ -138,9 +148,14 @@ const copy = {
     project: "Project",
     tool: "Tool",
     deny: "Deny",
+    allow: "Allow",
+    scope: "Permission scope",
     once: "Allow once",
+    onceBody: "Run only this operation",
     task: "Allow for task",
+    taskBody: "Similar operations in this task",
     forever: "Always allow in project",
+    foreverBody: "Similar operations in this project",
     hint: "Only similar operations are granted. Destructive actions stay blocked.",
     safety: "Safe execution",
     subtitle: "Control what the agent may do in this project.",
@@ -167,9 +182,14 @@ const copy = {
     project: "プロジェクト",
     tool: "ツール",
     deny: "拒否",
+    allow: "許可",
+    scope: "許可する範囲",
     once: "今回のみ許可",
+    onceBody: "現在の操作のみ実行",
     task: "このタスクで許可",
+    taskBody: "このタスク内の同種の操作",
     forever: "このプロジェクトで常に許可",
+    foreverBody: "このプロジェクト内の同種の操作",
     hint: "同種の操作だけを許可します。破壊的操作は常に禁止されます。",
     safety: "安全な実行",
     subtitle: "このプロジェクトで Agent が実行できる操作を管理します。",
@@ -196,9 +216,14 @@ const copy = {
     project: "프로젝트",
     tool: "도구",
     deny: "거부",
+    allow: "허용",
+    scope: "허용 범위",
     once: "이번만 허용",
+    onceBody: "현재 작업만 실행",
     task: "이 작업에서 허용",
+    taskBody: "이 작업의 유사한 작업",
     forever: "이 프로젝트에서 항상 허용",
+    foreverBody: "이 프로젝트의 유사한 작업",
     hint: "같은 종류의 작업만 허용하며 파괴적 작업은 계속 차단됩니다.",
     safety: "안전한 실행",
     subtitle: "이 프로젝트에서 Agent가 수행할 수 있는 작업을 관리합니다.",
@@ -400,14 +425,18 @@ export function ConversationAccessPopover({
 
 export function ExecutionApprovalGate({
   adapter,
+  initialRequests = [],
 }: {
   adapter: ExecutionPolicyAdapter;
+  initialRequests?: readonly ExecutionApprovalRequest[];
 }) {
   const { language } = useI18n();
   const labels = copy[language];
-  const [queue, setQueue] = useState<readonly ExecutionApprovalRequest[]>([]);
+  const [queue, setQueue] =
+    useState<readonly ExecutionApprovalRequest[]>(initialRequests);
   const [busy, setBusy] = useState(false);
-  const allowOnce = useRef<HTMLButtonElement>(null);
+  const [scope, setScope] = useState<ExecutionApprovalScope>("once");
+  const allowButton = useRef<HTMLButtonElement>(null);
   const request = queue[0];
 
   useEffect(
@@ -432,7 +461,10 @@ export function ExecutionApprovalGate({
   );
 
   useEffect(() => {
-    if (request) allowOnce.current?.focus();
+    if (request) {
+      setScope("once");
+      allowButton.current?.focus();
+    }
   }, [request?.requestId]);
 
   if (!request) return null;
@@ -458,6 +490,33 @@ export function ExecutionApprovalGate({
       event.preventDefault();
       void respond("deny", "once");
     }
+  };
+
+  const selectScopeWithKeyboard = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    current: ExecutionApprovalScope,
+  ) => {
+    const direction =
+      event.key === "ArrowRight" || event.key === "ArrowDown"
+        ? 1
+        : event.key === "ArrowLeft" || event.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (!direction) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const scopes: readonly ExecutionApprovalScope[] = [
+      "once",
+      "task",
+      "project",
+    ];
+    const index = scopes.indexOf(current);
+    const next = scopes[(index + direction + scopes.length) % scopes.length]!;
+    setScope(next);
+    const option = event.currentTarget.parentElement?.querySelector(
+      `[data-scope="${next}"]`,
+    );
+    if (option instanceof HTMLButtonElement) option.focus();
   };
 
   return (
@@ -505,41 +564,70 @@ export function ExecutionApprovalGate({
             {labels.external}
           </p>
         ) : null}
-        <p className="execution-approval-hint">{labels.hint}</p>
+        <div className="execution-approval-scope-picker">
+          <div className="execution-approval-scope-heading">
+            <span>{labels.scope}</span>
+            <p className="execution-approval-hint">{labels.hint}</p>
+          </div>
+          <div
+            className="execution-approval-scope-options"
+            role="radiogroup"
+            aria-label={labels.scope}
+          >
+            {([
+              ["once", labels.once, labels.onceBody],
+              ["task", labels.task, labels.taskBody],
+              ["project", labels.forever, labels.foreverBody],
+            ] as const).map(([value, title, body]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={scope === value}
+                data-scope={value}
+                tabIndex={scope === value ? 0 : -1}
+                className={`execution-approval-scope-option pressable ${
+                  scope === value ? "selected" : ""
+                }`}
+                disabled={busy}
+                onClick={() => setScope(value)}
+                onKeyDown={(event) =>
+                  selectScopeWithKeyboard(event, value)
+                }
+              >
+                <span
+                  className="execution-approval-radio"
+                  aria-hidden="true"
+                >
+                  {scope === value ? <Check size={11} /> : null}
+                </span>
+                <span>
+                  <strong>{title}</strong>
+                  <small>{body}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="execution-approval-actions">
           <button
             type="button"
-            className="secondary pressable"
+            className="dialog-button secondary pressable"
             disabled={busy}
             onClick={() => void respond("deny", "once")}
           >
             {labels.deny}
           </button>
           <button
-            ref={allowOnce}
+            ref={allowButton}
             type="button"
-            className="execution-approval-primary pressable"
+            className="dialog-button primary execution-approval-primary pressable"
             disabled={busy}
-            onClick={() => void respond("allow", "once")}
+            onClick={() => void respond("allow", scope)}
           >
-            {labels.once}
-          </button>
-          <button
-            type="button"
-            className="execution-approval-scope pressable"
-            disabled={busy}
-            onClick={() => void respond("allow", "task")}
-          >
-            {labels.task}
-          </button>
-          <button
-            type="button"
-            className="execution-approval-scope pressable"
-            disabled={busy}
-            onClick={() => void respond("allow", "project")}
-          >
-            {labels.forever}
+            {busy ? <LoaderCircle className="spin" size={13} /> : null}
+            {labels.allow}
           </button>
         </div>
       </section>

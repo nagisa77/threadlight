@@ -1,8 +1,12 @@
 import type {
   AttachmentData,
   ConversationAccessMode,
+  HostDirectoryListing,
+  HostFileListing,
   JsonRpcOutgoing,
   JsonRpcRequest,
+  TerminalSessionEvent,
+  TerminalSessionInfo,
 } from "@threadlight/protocol";
 
 export const DESKTOP_REQUEST_CHANNEL = "threadlight:request";
@@ -19,7 +23,13 @@ export const DESKTOP_PROJECT_OPEN_CHANNEL = "threadlight:project:open";
 export const DESKTOP_PROJECT_ACTIVATE_CHANNEL = "threadlight:project:activate";
 export const DESKTOP_PROJECT_UPDATE_CHANNEL = "threadlight:project:update";
 export const DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL =
-  "threadlight:remote-runtime:connect";
+  "threadlight:host:connect";
+export const DESKTOP_HOSTS_GET_CHANNEL = "threadlight:hosts:get";
+export const DESKTOP_HOST_ACTIVATE_CHANNEL = "threadlight:host:activate";
+export const DESKTOP_HOST_UPDATE_CHANNEL = "threadlight:host:update";
+export const DESKTOP_HOST_DELETE_CHANNEL = "threadlight:host:delete";
+export const DESKTOP_HOST_DIRECTORIES_CHANNEL =
+  "threadlight:host:directories";
 export const DESKTOP_PROJECT_OPENERS_GET_CHANNEL =
   "threadlight:project-openers:get";
 export const DESKTOP_PROJECT_OPEN_WITH_CHANNEL =
@@ -99,6 +109,8 @@ export const DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL =
   "threadlight:workspace-file:reveal";
 export const DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL =
   "threadlight:system-file:choose";
+export const DESKTOP_SYSTEM_FILE_LIST_CHANNEL =
+  "threadlight:system-file:list";
 export const DESKTOP_SYSTEM_FILE_GET_CHANNEL =
   "threadlight:system-file:get";
 export const DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL =
@@ -303,6 +315,7 @@ export interface DesktopProjectMetadataUpdate {
 
 export interface DesktopProjectRuntime {
   kind: "remote";
+  hostId: string;
   endpoint: string;
   workspacePath: string;
   runtimeId: string;
@@ -317,6 +330,25 @@ export interface DesktopRemoteRuntimeConnectRequest {
   endpoint: string;
   token: string;
   name?: string;
+}
+
+export interface DesktopHostUpdateRequest {
+  hostId: string;
+  endpoint: string;
+  token?: string;
+  name?: string;
+}
+
+export interface DesktopHostSummary {
+  id: string;
+  name: string;
+  kind: "local" | "remote";
+  endpoint?: string;
+}
+
+export interface DesktopHostsSnapshot {
+  activeHostId: string;
+  hosts: readonly DesktopHostSummary[];
 }
 
 export interface DesktopProjectOpenerOption {
@@ -411,10 +443,7 @@ export interface DesktopTerminalCreateRequest {
   rows: number;
 }
 
-export interface DesktopTerminalSession {
-  id: string;
-  shell: string;
-}
+export type DesktopTerminalSession = TerminalSessionInfo;
 
 export interface DesktopTerminalWriteRequest {
   sessionId: string;
@@ -427,17 +456,7 @@ export interface DesktopTerminalResizeRequest {
   rows: number;
 }
 
-export type DesktopTerminalEvent =
-  | {
-      type: "data";
-      sessionId: string;
-      data: string;
-    }
-  | {
-      type: "exit";
-      sessionId: string;
-      exitCode: number;
-    };
+export type DesktopTerminalEvent = TerminalSessionEvent;
 
 export interface DesktopConversationChangesRequest {
   projectId: string;
@@ -746,10 +765,15 @@ export interface DesktopApi {
     request: DesktopProviderTestRequest,
   ): Promise<DesktopProviderDiagnostic>;
   getProjects(): Promise<DesktopProjectsSnapshot>;
-  openProject(): Promise<DesktopProjectsSnapshot>;
+  openProject(path?: string): Promise<DesktopProjectsSnapshot>;
+  getHosts(): Promise<DesktopHostsSnapshot>;
   connectRemoteRuntime(
     request: DesktopRemoteRuntimeConnectRequest,
-  ): Promise<DesktopProjectsSnapshot>;
+  ): Promise<DesktopHostsSnapshot>;
+  activateHost(hostId: string): Promise<DesktopHostsSnapshot>;
+  updateHost(request: DesktopHostUpdateRequest): Promise<DesktopHostsSnapshot>;
+  deleteHost(hostId: string): Promise<DesktopHostsSnapshot>;
+  listRemoteDirectories(path: string): Promise<HostDirectoryListing>;
   activateProject(projectId: string): Promise<DesktopProjectsSnapshot>;
   updateProject(
     update: DesktopProjectMetadataUpdate,
@@ -866,6 +890,7 @@ export interface DesktopApi {
   ): Promise<DesktopWorkspaceFile>;
   revealWorkspaceFile(request: DesktopWorkspaceFileRequest): Promise<void>;
   chooseSystemFile(): Promise<string | undefined>;
+  listSystemFiles(path: string): Promise<HostFileListing>;
   getSystemFile(request: DesktopSystemFileRequest): Promise<DesktopWorkspaceFile>;
   revealSystemFile(request: DesktopSystemFileRequest): Promise<void>;
 }

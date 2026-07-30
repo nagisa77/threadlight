@@ -13,6 +13,7 @@ export {
   KIMI_DEFAULT_BASE_URL,
   QWEN_DEFAULT_BASE_URL,
 } from "./provider-factory.js";
+export { UnavailableModelProvider } from "./unavailable-provider.js";
 
 export type { OpenAICompatibleChatProviderOptions } from "./openai-compatible-chat-provider.js";
 export type { OpenAIResponsesProviderOptions } from "./openai-provider.js";

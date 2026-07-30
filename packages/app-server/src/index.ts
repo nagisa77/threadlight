@@ -9,15 +9,16 @@ export {
 } from "./conversation-store.js";
 export { jsonLineSender, serveJsonLines } from "./stdio.js";
 export {
+  ThreadlightHostServer,
+  type ThreadlightHostAddress,
+  type ThreadlightHostServerOptions,
+} from "./host-server.js";
+export { createHostSecretCodec } from "./host-secret-codec.js";
+export {
   JsonLineRuntimePeer,
   type JsonLineRuntimePeerOptions,
   type RuntimePeer,
 } from "./remote-runtime-peer.js";
-export {
-  RemoteRuntimeServer,
-  type RemoteRuntimeAddress,
-  type RemoteRuntimeServerOptions,
-} from "./remote-runtime-server.js";
 export {
   RemoteWorkspace,
   type RemoteWorkspaceChangedFile,

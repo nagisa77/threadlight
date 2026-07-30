@@ -4,7 +4,7 @@ import {
   TerminalSessionManager,
   type TerminalProcess,
   type TerminalSessionEvent,
-} from "../src/main/terminal-session.js";
+} from "../src/index.js";
 
 class ScriptedTerminalProcess implements TerminalProcess {
   readonly writes: string[] = [];
@@ -145,5 +145,19 @@ describe("TerminalSessionManager", () => {
     manager.dispose();
 
     expect(processes.every((process) => process.killed)).toBe(true);
+  });
+
+  it("enforces a bounded session count", () => {
+    const manager = new TerminalSessionManager(vi.fn(), {
+      createId: () => "terminal-1",
+      shell: "/bin/zsh",
+      maxSessions: 1,
+      spawnProcess: () => new ScriptedTerminalProcess(),
+    });
+    manager.create("/workspace/threadlight", 80, 24);
+
+    expect(() =>
+      manager.create("/workspace/threadlight", 80, 24),
+    ).toThrow("session limit");
   });
 });

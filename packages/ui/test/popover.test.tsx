@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FolderOpen, Pin } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
@@ -7,6 +8,11 @@ import {
   ActionPopoverItem,
   anchoredPopoverPosition,
 } from "../src/popover.js";
+
+const popoverSource = readFileSync(
+  new URL("../src/popover.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("ActionPopover", () => {
   it("positions below its trigger when space is available", () => {
@@ -62,6 +68,12 @@ describe("ActionPopover", () => {
       left: 280,
       transformOrigin: "top left",
     });
+  });
+
+  it("portals viewport-positioned popovers outside transformed ancestors", () => {
+    expect(popoverSource).toMatch(
+      /createPortal\(popover,\s*document\.body\)/,
+    );
   });
 
   it("renders a reusable accessible menu surface", () => {

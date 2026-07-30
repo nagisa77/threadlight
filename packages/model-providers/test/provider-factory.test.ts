@@ -9,9 +9,24 @@ import {
   GROK_DEFAULT_BASE_URL,
   KIMI_DEFAULT_BASE_URL,
   OpenAICompatibleChatProvider,
+  UnavailableModelProvider,
 } from "../src/index.js";
 
 describe("createModelProvider", () => {
+  it("keeps the runtime available until an unconfigured provider is used", async () => {
+    const provider = new UnavailableModelProvider(
+      "Configure the model provider first.",
+    );
+
+    await expect(
+      provider.generate({
+        instructions: "Work carefully",
+        input: "Start",
+        tools: [],
+      }),
+    ).rejects.toThrow("Configure the model provider first.");
+  });
+
   it("allows a keyless custom OpenAI-compatible endpoint", () => {
     expect(() =>
       createModelProvider({

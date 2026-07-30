@@ -1,6 +1,5 @@
 import {
   HttpRuntimeTransport,
-  type RemoteRuntimeHealth,
   type RemoteRuntimeWorkspaceChanges,
 } from "@threadlight/client";
 import type {
@@ -12,6 +11,7 @@ import type {
 export interface RemoteRuntimeConnectionOptions {
   endpoint: string;
   token: string;
+  projectId: string;
   send(message: JsonRpcOutgoing): void;
 }
 
@@ -30,6 +30,7 @@ export class RemoteRuntimeConnection {
     this.transport = new HttpRuntimeTransport({
       endpoint: options.endpoint,
       token: options.token,
+      projectId: options.projectId,
     });
   }
 
@@ -81,10 +82,6 @@ export class RemoteRuntimeConnection {
         });
     });
     return this.initialization;
-  }
-
-  health(): Promise<RemoteRuntimeHealth> {
-    return this.transport.health();
   }
 
   listWorkspace(path?: string) {

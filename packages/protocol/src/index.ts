@@ -60,6 +60,222 @@ export interface JsonRpcNotification<
 
 export type JsonRpcOutgoing = JsonRpcResponse | JsonRpcNotification;
 
+export type ThreadlightHostKind = "local" | "remote";
+
+export interface ThreadlightHostSummary {
+  id: string;
+  name: string;
+  kind: ThreadlightHostKind;
+  endpoint?: string;
+}
+
+export interface ThreadlightHostsSnapshot {
+  activeHostId: string;
+  hosts: readonly ThreadlightHostSummary[];
+}
+
+export type HostModelProvider =
+  | "openai"
+  | "deepseek"
+  | "qwen"
+  | "kimi"
+  | "doubao"
+  | "gemini"
+  | "grok"
+  | "custom";
+
+export type HostLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
+export type HostTheme = "system" | "light" | "dark";
+
+export interface HostSettingsSnapshot {
+  language: HostLanguage;
+  theme: HostTheme;
+  preferredProjectOpener: string;
+  provider: HostModelProvider;
+  openAIApiKeyConfigured: boolean;
+  deepSeekApiKeyConfigured: boolean;
+  qwenApiKeyConfigured: boolean;
+  kimiApiKeyConfigured: boolean;
+  doubaoApiKeyConfigured: boolean;
+  geminiApiKeyConfigured: boolean;
+  grokApiKeyConfigured: boolean;
+  customApiKeyConfigured: boolean;
+  searchApiKeyConfigured: boolean;
+  qwenBaseUrl: string;
+  kimiBaseUrl: string;
+  doubaoBaseUrl: string;
+  geminiBaseUrl: string;
+  grokBaseUrl: string;
+  customBaseUrl: string;
+  model: string;
+}
+
+export interface HostSettingsUpdate {
+  language?: HostLanguage;
+  theme?: HostTheme;
+  preferredProjectOpener?: string;
+  provider: HostModelProvider;
+  openAIApiKey?: string | null;
+  deepSeekApiKey?: string | null;
+  qwenApiKey?: string | null;
+  kimiApiKey?: string | null;
+  doubaoApiKey?: string | null;
+  geminiApiKey?: string | null;
+  grokApiKey?: string | null;
+  customApiKey?: string | null;
+  searchApiKey?: string | null;
+  qwenBaseUrl: string;
+  kimiBaseUrl: string;
+  doubaoBaseUrl: string;
+  geminiBaseUrl: string;
+  grokBaseUrl: string;
+  customBaseUrl: string;
+  model: string;
+}
+
+export type HostConversationStatus = "pending" | "completed";
+
+export type HostTaskWorkspace =
+  | {
+      mode: "folder";
+      path: string;
+    }
+  | {
+      mode: "worktree";
+      path: string;
+      root: string;
+      repositoryRoot: string;
+      branch: string;
+      baseCommit: string;
+      sourceBranch?: string;
+    };
+
+export interface HostConversationSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  status?: HostConversationStatus;
+  unread?: boolean;
+  renamedAt?: string;
+  titleGeneratedAt?: string;
+  pinnedAt?: string;
+  archivedAt?: string;
+  accessMode?: "approval" | "full";
+  workspace?: HostTaskWorkspace;
+}
+
+export interface HostProjectSummary {
+  id: string;
+  name: string;
+  basePath: string;
+  lastOpenedAt: string;
+  pinnedAt?: string;
+  conversations: readonly HostConversationSummary[];
+}
+
+export interface HostProjectsSnapshot {
+  activeProjectId?: string;
+  projects: readonly HostProjectSummary[];
+}
+
+export interface HostDirectoryEntry {
+  name: string;
+  path: string;
+}
+
+export interface HostDirectoryListing {
+  path: string;
+  directories: readonly HostDirectoryEntry[];
+}
+
+export interface HostFileEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+}
+
+export interface HostFileListing {
+  path: string;
+  parentPath?: string;
+  entries: readonly HostFileEntry[];
+}
+
+export interface HostSystemFile {
+  path: string;
+  name: string;
+  content?: string;
+  binary: boolean;
+  size: number;
+}
+
+export interface ThreadlightHostHealth {
+  ok: true;
+  protocolVersion: 2;
+  hostId: string;
+  name: string;
+  homePath: string;
+  capabilities?: {
+    terminal?: boolean;
+  };
+}
+
+export interface TerminalSessionInfo {
+  id: string;
+  shell: string;
+}
+
+export type TerminalSessionEvent =
+  | {
+      type: "data";
+      sessionId: string;
+      data: string;
+    }
+  | {
+      type: "exit";
+      sessionId: string;
+      exitCode: number;
+    };
+
+export type HostTerminalClientMessage =
+  | {
+      type: "open";
+      requestId: string;
+      projectId: string;
+      threadId?: string;
+      cols: number;
+      rows: number;
+    }
+  | {
+      type: "input";
+      sessionId: string;
+      data: string;
+    }
+  | {
+      type: "resize";
+      sessionId: string;
+      cols: number;
+      rows: number;
+    }
+  | {
+      type: "close";
+      sessionId: string;
+    };
+
+export type HostTerminalServerMessage =
+  | {
+      type: "opened";
+      requestId: string;
+      session: TerminalSessionInfo;
+    }
+  | TerminalSessionEvent
+  | {
+      type: "error";
+      requestId?: string;
+      sessionId?: string;
+      message: string;
+    };
+
 export const DESKTOP_COMPUTER_METHODS = [
   "computer/list",
   "computer/configure",

@@ -6,11 +6,14 @@ export {
 export {
   HttpRuntimeTransport,
   type HttpRuntimeTransportOptions,
-  type RemoteRuntimeHealth,
   type RemoteRuntimeWorkspaceChangedFile,
   type RemoteRuntimeWorkspaceChanges,
   type RemoteRuntimeWorkspaceEntry,
   type RemoteRuntimeWorkspaceFile,
 } from "./http-runtime-transport.js";
+export {
+  HttpHostClient,
+  type HttpHostClientOptions,
+} from "./http-host-client.js";
 
 export type { ClientTransport } from "./client.js";

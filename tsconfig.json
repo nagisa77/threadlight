@@ -2,6 +2,8 @@
   "files": [],
   "references": [
     { "path": "./packages/protocol" },
+    { "path": "./packages/terminal-core" },
+    { "path": "./packages/host-core" },
     { "path": "./packages/agent-loop" },
     { "path": "./packages/model-providers" },
     { "path": "./packages/project-memory" },

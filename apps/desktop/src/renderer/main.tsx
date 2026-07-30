@@ -38,9 +38,18 @@ const diagnostics: DiagnosticsAdapter = {
 };
 const projects: ProjectsAdapter = {
   load: () => window.threadlightDesktop.getProjects(),
-  openFolder: () => window.threadlightDesktop.openProject(),
+  openFolder: (path) => window.threadlightDesktop.openProject(path),
+  loadHosts: () => window.threadlightDesktop.getHosts(),
   connectRemote: (request) =>
     window.threadlightDesktop.connectRemoteRuntime(request),
+  activateHost: (hostId) =>
+    window.threadlightDesktop.activateHost(hostId),
+  updateRemoteHost: (request) =>
+    window.threadlightDesktop.updateHost(request),
+  deleteRemoteHost: (hostId) =>
+    window.threadlightDesktop.deleteHost(hostId),
+  listRemoteDirectories: (path) =>
+    window.threadlightDesktop.listRemoteDirectories(path),
   activate: (projectId) =>
     window.threadlightDesktop.activateProject(projectId),
   updateProject: (update) =>
@@ -226,6 +235,8 @@ const workspace: WorkspaceAdapter = {
       ...(threadId ? { threadId } : {}),
     }),
   chooseSystemFile: () => window.threadlightDesktop.chooseSystemFile(),
+  listSystemFiles: (path) =>
+    window.threadlightDesktop.listSystemFiles(path),
   readSystemFile: (path) =>
     window.threadlightDesktop.getSystemFile({ path }),
   revealSystemFile: (path) =>

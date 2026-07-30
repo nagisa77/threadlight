@@ -127,38 +127,60 @@ describe("ProjectStore", () => {
       .toBeUndefined();
   });
 
-  it("persists and activates a remote runtime without touching its path", () => {
+  it("projects one host at a time without mixing local and remote projects", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);
+    const local = join(root, "local");
+    mkdirSync(local);
     const store = new ProjectStore(join(root, "project-map.json"), {
-      createId: () => "remote-project",
+      createId: () => "local-project",
     });
+    store.register(local);
 
-    const snapshot = store.registerRemote({
-      name: "Build host",
-      endpoint: "http://127.0.0.1:7432",
-      workspacePath: "/workspace/large-repository",
-      runtimeId: "runtime-1",
-    });
+    const snapshot = store.replaceRemoteHostProjects(
+      {
+        hostId: "host-1",
+        endpoint: "http://127.0.0.1:7432",
+      },
+      {
+        activeProjectId: "remote-project",
+        projects: [
+          {
+            id: "remote-project",
+            name: "Large repository",
+            basePath: "/workspace/large-repository",
+            lastOpenedAt: "2026-07-30T08:00:00.000Z",
+            conversations: [],
+          },
+        ],
+      },
+    );
 
     expect(snapshot).toMatchObject({
       activeProjectId: "remote-project",
       projects: [
         {
           id: "remote-project",
-          name: "Build host",
+          name: "Large repository",
           basePath: "/workspace/large-repository",
           runtime: {
             kind: "remote",
+            hostId: "host-1",
             endpoint: "http://127.0.0.1:7432",
-            runtimeId: "runtime-1",
+            runtimeId: "remote-project",
           },
         },
       ],
     });
-    expect(store.activate("remote-project").activeProjectId).toBe(
+    expect(store.snapshotForHost("local").projects.map(({ id }) => id)).toEqual([
+      "local-project",
+    ]);
+    expect(store.snapshotForHost("host-1").projects.map(({ id }) => id)).toEqual([
       "remote-project",
-    );
+    ]);
+    expect(store.removeRemoteHost("host-1").projects.map(({ id }) => id))
+      .toEqual(["local-project"]);
+    expect(store.snapshotForHost("host-1").projects).toEqual([]);
   });
 
   it("requires archiving before permanently removing a task", () => {

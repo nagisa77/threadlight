@@ -1,4 +1,5 @@
 import type { ConversationAccessMode } from "@threadlight/protocol";
+import type { HostDirectoryListing } from "@threadlight/protocol";
 
 export interface ConversationSummary {
   id: string;
@@ -51,6 +52,18 @@ export interface ProjectsSnapshot {
   projects: readonly ProjectSummary[];
 }
 
+export interface HostSummary {
+  id: string;
+  name: string;
+  kind: "local" | "remote";
+  endpoint?: string;
+}
+
+export interface HostsSnapshot {
+  activeHostId: string;
+  hosts: readonly HostSummary[];
+}
+
 export interface ConversationSummaryUpdate {
   projectId: string;
   id: string;
@@ -71,12 +84,22 @@ export interface ConversationMetadataUpdate extends ConversationSummaryTarget {
 
 export interface ProjectsAdapter {
   load(): Promise<ProjectsSnapshot>;
-  openFolder(): Promise<ProjectsSnapshot>;
+  openFolder(path?: string): Promise<ProjectsSnapshot>;
+  loadHosts?(): Promise<HostsSnapshot>;
   connectRemote?(input: {
     endpoint: string;
     token: string;
     name?: string;
-  }): Promise<ProjectsSnapshot>;
+  }): Promise<HostsSnapshot>;
+  activateHost?(hostId: string): Promise<HostsSnapshot>;
+  updateRemoteHost?(input: {
+    hostId: string;
+    endpoint: string;
+    token?: string;
+    name?: string;
+  }): Promise<HostsSnapshot>;
+  deleteRemoteHost?(hostId: string): Promise<HostsSnapshot>;
+  listRemoteDirectories?(path: string): Promise<HostDirectoryListing>;
   activate(projectId: string): Promise<ProjectsSnapshot>;
   updateProject?(update: {
     id: string;

@@ -8,6 +8,7 @@ import type { ClientTransport } from "./client.js";
 export interface HttpRuntimeTransportOptions {
   endpoint: string;
   token: string;
+  projectId?: string;
   fetch?: typeof globalThis.fetch;
   reconnectDelayMs?: number;
   onConnectionChange?: (connected: boolean) => void;
@@ -28,7 +29,7 @@ export class HttpRuntimeTransport implements ClientTransport {
   }
 
   async send(message: JsonRpcRequest): Promise<void> {
-    const response = await this.fetcher(`${this.endpoint}/v1/rpc`, {
+    const response = await this.fetcher(this.url("/rpc"), {
       method: "POST",
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(message),
@@ -53,35 +54,20 @@ export class HttpRuntimeTransport implements ClientTransport {
     };
   }
 
-  async health(): Promise<RemoteRuntimeHealth> {
-    const response = await this.fetcher(`${this.endpoint}/v1/health`, {
-      headers: this.headers(),
-    });
-    const payload = await response.json() as RemoteRuntimeHealth | { error?: string };
-    if (!response.ok) {
-      throw new Error(
-        "error" in payload && typeof payload.error === "string"
-          ? payload.error
-          : `Remote runtime health check failed (${response.status}).`,
-      );
-    }
-    return payload as RemoteRuntimeHealth;
-  }
-
   async workspaceList(path = ""): Promise<RemoteRuntimeWorkspaceEntry[]> {
     return this.getJson(
-      `/v1/workspace/list?path=${encodeURIComponent(path)}`,
+      `/workspace/list?path=${encodeURIComponent(path)}`,
     );
   }
 
   async workspaceFile(path: string): Promise<RemoteRuntimeWorkspaceFile> {
     return this.getJson(
-      `/v1/workspace/file?path=${encodeURIComponent(path)}`,
+      `/workspace/file?path=${encodeURIComponent(path)}`,
     );
   }
 
   async workspaceChanges(): Promise<RemoteRuntimeWorkspaceChanges> {
-    return this.getJson("/v1/workspace/changes");
+    return this.getJson("/workspace/changes");
   }
 
   close(): void {
@@ -99,7 +85,7 @@ export class HttpRuntimeTransport implements ClientTransport {
 
   private async consumeEvents(abort: AbortController): Promise<void> {
     try {
-      const response = await this.fetcher(`${this.endpoint}/v1/events`, {
+      const response = await this.fetcher(this.url("/events"), {
         headers: this.headers(),
         signal: abort.signal,
       });
@@ -158,7 +144,7 @@ export class HttpRuntimeTransport implements ClientTransport {
   }
 
   private async getJson<Result>(path: string): Promise<Result> {
-    const response = await this.fetcher(`${this.endpoint}${path}`, {
+    const response = await this.fetcher(this.url(path), {
       headers: this.headers(),
     });
     const payload = await response.json() as Result | { error?: string };
@@ -174,14 +160,13 @@ export class HttpRuntimeTransport implements ClientTransport {
     }
     return payload as Result;
   }
-}
 
-export interface RemoteRuntimeHealth {
-  ok: true;
-  protocolVersion: number;
-  runtimeId: string;
-  name: string;
-  workspacePath: string;
+  private url(path: string): string {
+    const prefix = this.options.projectId
+      ? `/v1/projects/${encodeURIComponent(this.options.projectId)}/runtime`
+      : "/v1";
+    return `${this.endpoint}${prefix}${path}`;
+  }
 }
 
 export interface RemoteRuntimeWorkspaceEntry {

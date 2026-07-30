@@ -9,43 +9,43 @@ import { dirname } from "node:path";
 
 import type { SecretCodec } from "./settings-store.js";
 
-interface StoredRemoteRuntimeCredentials {
+interface StoredHostCredentials {
   version: 1;
   tokens: Record<string, string>;
 }
 
-export class RemoteRuntimeCredentialStore {
+export class HostCredentialStore {
   constructor(
     private readonly path: string,
     private readonly codec: SecretCodec,
   ) {}
 
-  get(projectId: string): string | undefined {
-    const encrypted = this.read().tokens[projectId];
+  get(hostId: string): string | undefined {
+    const encrypted = this.read().tokens[hostId];
     return encrypted ? this.codec.decrypt(encrypted) : undefined;
   }
 
-  set(projectId: string, token: string): void {
-    if (!projectId || !token.trim()) {
-      throw new Error("Remote runtime project and token are required.");
+  set(hostId: string, token: string): void {
+    if (!hostId || !token.trim()) {
+      throw new Error("Threadlight Host id and token are required.");
     }
     const stored = this.read();
-    stored.tokens[projectId] = this.codec.encrypt(token);
+    stored.tokens[hostId] = this.codec.encrypt(token);
     this.write(stored);
   }
 
-  delete(projectId: string): void {
+  delete(hostId: string): void {
     const stored = this.read();
-    if (!(projectId in stored.tokens)) return;
-    delete stored.tokens[projectId];
+    if (!(hostId in stored.tokens)) return;
+    delete stored.tokens[hostId];
     this.write(stored);
   }
 
-  private read(): StoredRemoteRuntimeCredentials {
+  private read(): StoredHostCredentials {
     try {
       const value = JSON.parse(readFileSync(this.path, "utf8")) as unknown;
       if (!isStoredCredentials(value)) {
-        throw new Error("Remote runtime credentials have an unsupported format.");
+        throw new Error("Host credentials have an unsupported format.");
       }
       return value;
     } catch (error) {
@@ -56,7 +56,7 @@ export class RemoteRuntimeCredentialStore {
     }
   }
 
-  private write(value: StoredRemoteRuntimeCredentials): void {
+  private write(value: StoredHostCredentials): void {
     mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
     const temporary = `${this.path}.tmp`;
     try {
@@ -74,7 +74,7 @@ export class RemoteRuntimeCredentialStore {
 
 function isStoredCredentials(
   value: unknown,
-): value is StoredRemoteRuntimeCredentials {
+): value is StoredHostCredentials {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const candidate = value as Record<string, unknown>;
   return (

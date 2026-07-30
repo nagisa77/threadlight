@@ -6,4 +6,5 @@ release/
 .env
 .DS_Store
 coverage/
+artifacts/
 .threadlight/

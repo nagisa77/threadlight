@@ -7,6 +7,10 @@ import {
 } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XtermTerminal } from "@xterm/xterm";
+import type {
+  TerminalSessionEvent,
+  TerminalSessionInfo,
+} from "@threadlight/protocol";
 import { File, Terminal, X } from "lucide-react";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
@@ -19,22 +23,8 @@ import {
 
 import "@xterm/xterm/css/xterm.css";
 
-export interface TerminalSessionInfo {
-  id: string;
-  shell: string;
-}
-
-export type TerminalEvent =
-  | {
-      type: "data";
-      sessionId: string;
-      data: string;
-    }
-  | {
-      type: "exit";
-      sessionId: string;
-      exitCode: number;
-    };
+export type TerminalEvent = TerminalSessionEvent;
+export type { TerminalSessionInfo };
 
 export interface TerminalAdapter {
   create(request: {

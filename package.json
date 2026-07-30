@@ -27,13 +27,17 @@
     "test": "npm run build && vitest run",
     "typecheck": "tsc -b --pretty false && npm run typecheck --workspace @threadlight/desktop",
     "start": "node packages/app-server/dist/bin.js",
-    "runtime": "node packages/app-server/dist/remote-bin.js"
+    "host": "node packages/app-server/dist/host-bin.js",
+    "host:dev": "npm run build:packages && npm run host --",
+    "host:package": "npm run build:packages && node scripts/package-host.mjs"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.12",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }

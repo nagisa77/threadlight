@@ -19,6 +19,7 @@ import {
   ProjectConversationItem,
   ProjectGroup,
   ProjectListHeading,
+  RemoteRuntimeDialog,
   RuntimeStatusControl,
   showsProjectLevelActivity,
   TaskSearchDialog,
@@ -186,7 +187,46 @@ describe("ThreadlightApp", () => {
     expect(html).toContain("本地");
     expect(html).toContain("status-dot ready");
     expect(html).toContain("runtime-status-chevron");
+    expect(html).toContain(
+      'class="runtime-status-label" title="运行时已连接"',
+    );
     expect(html).not.toContain("lucide-server");
+  });
+
+  it("offers editing only for saved remote Hosts", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <RemoteRuntimeDialog
+          hosts={{
+            activeHostId: "local",
+            hosts: [
+              {
+                id: "local",
+                name: "This Mac",
+                kind: "local",
+              },
+              {
+                id: "build-host",
+                name: "Build Host",
+                kind: "remote",
+                endpoint: "https://host.example.test",
+              },
+            ],
+          }}
+          activeHostId="local"
+          busy={false}
+          onCancel={vi.fn()}
+          onActivate={vi.fn()}
+          onUpdate={vi.fn()}
+          onDelete={vi.fn()}
+          onConnect={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('aria-label="编辑 Host“Build Host”"');
+    expect(html).not.toContain('aria-label="编辑 Host“This Mac”"');
+    expect(html).toContain('class="host-connection-actions"');
   });
 
   it("keeps both chat and workspace panel usable while resizing", () => {

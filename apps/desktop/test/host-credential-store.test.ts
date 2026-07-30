@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { RemoteRuntimeCredentialStore } from "../src/main/remote-runtime-credential-store.js";
+import { HostCredentialStore } from "../src/main/host-credential-store.js";
 
 const directories: string[] = [];
 
@@ -14,20 +14,20 @@ afterEach(() => {
   }
 });
 
-describe("RemoteRuntimeCredentialStore", () => {
-  it("persists only encrypted runtime tokens", () => {
-    const root = mkdtempSync(join(tmpdir(), "threadlight-runtime-token-"));
+describe("HostCredentialStore", () => {
+  it("persists only encrypted host tokens", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-host-token-"));
     directories.push(root);
     const path = join(root, "credentials.json");
-    const store = new RemoteRuntimeCredentialStore(path, {
+    const store = new HostCredentialStore(path, {
       encrypt: (value) => Buffer.from(`sealed:${value}`).toString("base64"),
       decrypt: (value) =>
         Buffer.from(value, "base64").toString("utf8").replace(/^sealed:/, ""),
     });
 
-    store.set("project-1", "runtime-secret");
+    store.set("host-1", "host-secret");
 
-    expect(store.get("project-1")).toBe("runtime-secret");
-    expect(readFileSync(path, "utf8")).not.toContain("runtime-secret");
+    expect(store.get("host-1")).toBe("host-secret");
+    expect(readFileSync(path, "utf8")).not.toContain("host-secret");
   });
 });

@@ -10,6 +10,7 @@ export interface RuntimePeer {
   start(): Promise<void>;
   send(message: JsonRpcRequest): void | Promise<void>;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
+  onExit?(listener: (error: Error) => void): () => void;
   stop(): Promise<void>;
 }
 
@@ -23,11 +24,14 @@ export interface JsonLineRuntimePeerOptions {
 export class JsonLineRuntimePeer implements RuntimePeer {
   private child?: ChildProcessWithoutNullStreams;
   private readonly listeners = new Set<(message: JsonRpcOutgoing) => void>();
+  private readonly exitListeners = new Set<(error: Error) => void>();
+  private exitError?: Error;
 
   constructor(private readonly options: JsonLineRuntimePeerOptions) {}
 
   async start(): Promise<void> {
     if (this.child) return;
+    this.exitError = undefined;
 
     const child = spawn(process.execPath, [this.options.entry], {
       cwd: this.options.cwd,
@@ -72,11 +76,25 @@ export class JsonLineRuntimePeer implements RuntimePeer {
       child.once("spawn", onSpawn);
       child.once("error", onError);
     });
+
+    child.once("exit", (code, signal) => {
+      this.handleExit(
+        child,
+        new Error(
+          signal
+            ? `Remote runtime app-server exited from ${signal}.`
+            : `Remote runtime app-server exited with code ${code ?? "unknown"}.`,
+        ),
+      );
+    });
+    child.once("error", (error) => this.handleExit(child, error));
+    child.stdin.once("error", (error) => this.handleExit(child, error));
   }
 
   send(message: JsonRpcRequest): void {
     if (!this.child || this.child.killed) {
-      throw new Error("Remote runtime app-server is not running.");
+      throw this.exitError ??
+        new Error("Remote runtime app-server is not running.");
     }
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
@@ -84,6 +102,18 @@ export class JsonLineRuntimePeer implements RuntimePeer {
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  onExit(listener: (error: Error) => void): () => void {
+    this.exitListeners.add(listener);
+    if (this.exitError) {
+      queueMicrotask(() => {
+        if (this.exitListeners.has(listener) && this.exitError) {
+          listener(this.exitError);
+        }
+      });
+    }
+    return () => this.exitListeners.delete(listener);
   }
 
   async stop(): Promise<void> {
@@ -101,5 +131,15 @@ export class JsonLineRuntimePeer implements RuntimePeer {
       });
       child.kill("SIGTERM");
     });
+  }
+
+  private handleExit(
+    child: ChildProcessWithoutNullStreams,
+    error: Error,
+  ): void {
+    if (this.child !== child) return;
+    this.child = undefined;
+    this.exitError = error;
+    for (const listener of this.exitListeners) listener(error);
   }
 }

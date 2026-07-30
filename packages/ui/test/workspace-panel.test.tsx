@@ -345,6 +345,40 @@ describe("WorkspacePanel", () => {
     expect(html).toContain("在 Finder 中显示");
     expect(html).toContain('aria-label="在 Finder 中显示"');
   });
+
+  it("uses the Host file browser instead of the local picker for remote projects", () => {
+    const adapter: WorkspaceAdapter = {
+      getChanges: vi.fn(),
+      list: vi.fn(async () => []),
+      read: vi.fn(),
+      listSystemFiles: vi.fn(async () => ({
+        path: "/srv/project",
+        parentPath: "/srv",
+        entries: [],
+      })),
+      readSystemFile: vi.fn(),
+      revealSystemFile: vi.fn(),
+    };
+    const html = renderToStaticMarkup(
+      <WorkspacePanel
+        adapter={adapter}
+        projectId="project-1"
+        projectName="threadlight"
+        remoteFileRoot="/srv/project"
+        changesLoading={false}
+        reviewRequest={0}
+        hidden={false}
+        onResizeStart={vi.fn()}
+        onResizeBy={vi.fn()}
+        onResetSize={vi.fn()}
+        onRefreshChanges={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="打开远端文件…"');
+    expect(html).not.toContain('aria-label="打开系统文件…"');
+    expect(html).not.toContain('aria-label="在 Finder 中显示"');
+  });
 });
 
 function change(

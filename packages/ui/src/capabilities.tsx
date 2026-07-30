@@ -538,7 +538,6 @@ export function ConnectorSetupDialog({
                 {t("disconnect")}
               </button>
             )}
-            <span />
             <button
               type="button"
               className="dialog-button secondary pressable"

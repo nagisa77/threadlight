@@ -18,14 +18,17 @@
     "@threadlight/app-server": "0.1.0",
     "@threadlight/builtin-tools": "0.1.0",
     "@threadlight/client": "0.1.0",
+    "@threadlight/host-core": "0.1.0",
     "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0",
+    "@threadlight/terminal-core": "0.1.0",
     "@threadlight/ui": "0.1.0",
     "diff": "^9.0.0",
     "ignore": "^7.0.6",
     "node-pty": "^1.1.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

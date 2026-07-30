@@ -159,6 +159,18 @@ export interface WorkspaceFile {
   size: number;
 }
 
+export interface SystemFileEntry {
+  name: string;
+  path: string;
+  kind: "directory" | "file";
+}
+
+export interface SystemFileListing {
+  path: string;
+  parentPath?: string;
+  entries: readonly SystemFileEntry[];
+}
+
 export interface WorkspaceAdapter {
   getChanges(
     projectId: string,
@@ -216,6 +228,7 @@ export interface WorkspaceAdapter {
   ): Promise<WorkspaceFile>;
   reveal?(projectId: string, path: string, threadId?: string): Promise<void>;
   chooseSystemFile?(): Promise<string | undefined>;
+  listSystemFiles?(path: string): Promise<SystemFileListing>;
   readSystemFile?(path: string): Promise<WorkspaceFile>;
   revealSystemFile?(path: string): Promise<void>;
 }
@@ -246,6 +259,7 @@ export function WorkspacePanel({
   projectId,
   threadId,
   projectName,
+  remoteFileRoot,
   changes,
   changesLoading,
   changesError,
@@ -269,6 +283,7 @@ export function WorkspacePanel({
   projectId: string;
   threadId?: string;
   projectName: string;
+  remoteFileRoot?: string;
   changes?: ConversationChangesSnapshot;
   changesLoading: boolean;
   changesError?: string;
@@ -296,6 +311,7 @@ export function WorkspacePanel({
   ]);
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const [diffLayout, setDiffLayout] = useState<"unified" | "split">("unified");
+  const [remoteFilePickerOpen, setRemoteFilePickerOpen] = useState(false);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   useEffect(() => {
@@ -386,7 +402,8 @@ export function WorkspacePanel({
     setTabs([createFileTab(t)]);
     setActiveTabId("");
     setDiffLayout("unified");
-  }, [projectId]);
+    setRemoteFilePickerOpen(false);
+  }, [projectId, remoteFileRoot]);
 
   useEffect(() => {
     setTabs((current) =>
@@ -452,10 +469,7 @@ export function WorkspacePanel({
     );
   }
 
-  async function openSystemFile() {
-    if (!adapter.chooseSystemFile) return;
-    const path = await adapter.chooseSystemFile();
-    if (!path) return;
+  function selectSystemFile(path: string) {
     setTabs((current) => {
       const selected = current.find(
         (tab) => tab.id === activeTabId && tab.kind === "file",
@@ -486,13 +500,28 @@ export function WorkspacePanel({
     });
   }
 
+  async function openSystemFile() {
+    if (remoteFileRoot && adapter.listSystemFiles) {
+      setRemoteFilePickerOpen(true);
+      return;
+    }
+    if (!adapter.chooseSystemFile) return;
+    const path = await adapter.chooseSystemFile();
+    if (path) selectSystemFile(path);
+  }
+
+  const canOpenSystemFile = remoteFileRoot
+    ? Boolean(adapter.listSystemFiles)
+    : Boolean(adapter.chooseSystemFile);
+
   return (
-    <aside
-      className="workspace-panel"
-      aria-label={t("rightPanel")}
-      aria-hidden={hidden}
-      hidden={hidden}
-    >
+    <>
+      <aside
+        className="workspace-panel"
+        aria-label={t("rightPanel")}
+        aria-hidden={hidden}
+        hidden={hidden}
+      >
       <div
         className="workspace-split-handle"
         role="separator"
@@ -619,13 +648,234 @@ export function WorkspacePanel({
             line={activeTab.line}
             revealRequest={activeTab.revealRequest}
             onSelectFile={selectFile}
-            onOpenSystemFile={openSystemFile}
+            onOpenSystemFile={
+              canOpenSystemFile ? openSystemFile : undefined
+            }
+            remoteSystemFiles={Boolean(remoteFileRoot)}
           />
         ) : activeTab?.kind === "terminal" ? null : (
           <WorkspacePanelEmpty onAdd={addFileTab} />
         )}
       </div>
-    </aside>
+      </aside>
+      {remoteFilePickerOpen &&
+        remoteFileRoot &&
+        adapter.listSystemFiles && (
+          <RemoteSystemFileDialog
+            initialPath={remoteFileRoot}
+            list={adapter.listSystemFiles}
+            onCancel={() => setRemoteFilePickerOpen(false)}
+            onOpen={(path) => {
+              selectSystemFile(path);
+              setRemoteFilePickerOpen(false);
+            }}
+          />
+        )}
+    </>
+  );
+}
+
+function RemoteSystemFileDialog({
+  initialPath,
+  list,
+  onCancel,
+  onOpen,
+}: {
+  initialPath: string;
+  list(path: string): Promise<SystemFileListing>;
+  onCancel(): void;
+  onOpen(path: string): void;
+}) {
+  const { t } = useI18n();
+  const [path, setPath] = useState(initialPath);
+  const [listing, setListing] = useState<SystemFileListing>();
+  const [selectedPath, setSelectedPath] = useState<string>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  const request = useRef(0);
+
+  const load = useCallback(
+    async (nextPath: string) => {
+      const requestId = ++request.current;
+      setLoading(true);
+      setError(undefined);
+      setSelectedPath(undefined);
+      try {
+        const next = await list(nextPath);
+        if (request.current !== requestId) return;
+        setListing(next);
+        setPath(next.path);
+      } catch (reason) {
+        if (request.current !== requestId) return;
+        setListing(undefined);
+        setError(errorMessage(reason));
+      } finally {
+        if (request.current === requestId) setLoading(false);
+      }
+    },
+    [list],
+  );
+
+  useEffect(() => {
+    void load(initialPath);
+    return () => {
+      request.current += 1;
+    };
+  }, [initialPath, load]);
+
+  useEffect(() => {
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onCancel();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onCancel]);
+
+  const entries = listing?.entries ?? [];
+  return (
+    <div
+      className="dialog-backdrop remote-system-file-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onCancel();
+      }}
+    >
+      <section
+        className="connector-dialog remote-system-file-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remote-system-file-title"
+      >
+        <div className="connector-dialog-heading">
+          <span className="connector-dialog-icon" aria-hidden="true">
+            <FileCode2 size={18} />
+          </span>
+          <div>
+            <h2 id="remote-system-file-title">{t("openRemoteFile")}</h2>
+            <p>{t("remoteFilePickerDescription")}</p>
+          </div>
+        </div>
+        <label className="remote-system-file-path">
+          <span>{t("filePath")}</span>
+          <input
+            value={path}
+            autoFocus
+            spellCheck={false}
+            disabled={loading}
+            onChange={(event) => setPath(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              void load(path);
+            }}
+          />
+        </label>
+        <div
+          className="remote-system-file-list"
+          role="listbox"
+          aria-label={t("remoteFiles")}
+        >
+          {loading ? (
+            <div className="remote-system-file-state" role="status">
+              <LoaderCircle className="spin" size={16} />
+              {t("loadingFolders")}
+            </div>
+          ) : error ? (
+            <div
+              className="remote-system-file-state error"
+              role="alert"
+            >
+              <TriangleAlert size={16} />
+              {error}
+            </div>
+          ) : (
+            <>
+              {listing?.parentPath && (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  className="remote-system-file-row pressable"
+                  onClick={() => void load(listing.parentPath!)}
+                >
+                  <Folder size={16} />
+                  <span>
+                    <strong>..</strong>
+                    <small>{listing.parentPath}</small>
+                  </span>
+                  <ChevronRight size={15} />
+                </button>
+              )}
+              {entries.map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  role="option"
+                  aria-selected={
+                    entry.kind === "file" &&
+                    entry.path === selectedPath
+                  }
+                  className={`remote-system-file-row pressable ${
+                    entry.kind === "file" &&
+                    entry.path === selectedPath
+                      ? "selected"
+                      : ""
+                  }`}
+                  onClick={() => {
+                    if (entry.kind === "directory") {
+                      void load(entry.path);
+                    } else {
+                      setSelectedPath(entry.path);
+                    }
+                  }}
+                  onDoubleClick={() => {
+                    if (entry.kind === "file") onOpen(entry.path);
+                  }}
+                >
+                  {entry.kind === "directory" ? (
+                    <Folder size={16} />
+                  ) : (
+                    <FileCode2 size={16} />
+                  )}
+                  <span>
+                    <strong>{entry.name}</strong>
+                    <small>{entry.path}</small>
+                  </span>
+                  {entry.kind === "directory" && (
+                    <ChevronRight size={15} />
+                  )}
+                </button>
+              ))}
+              {entries.length === 0 && (
+                <div className="remote-system-file-state">
+                  {t("emptyRemoteFolder")}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="connector-dialog-actions">
+          <button
+            type="button"
+            className="dialog-button secondary pressable"
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="button"
+            className="dialog-button primary pressable"
+            disabled={!selectedPath || loading}
+            onClick={() => {
+              if (selectedPath) onOpen(selectedPath);
+            }}
+          >
+            {t("openFile")}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1940,6 +2190,7 @@ export function FileView({
   hidden = false,
   onSelectFile,
   onOpenSystemFile,
+  remoteSystemFiles = false,
 }: {
   adapter: WorkspaceAdapter;
   projectId: string;
@@ -1952,6 +2203,7 @@ export function FileView({
   hidden?: boolean;
   onSelectFile(path: string): void;
   onOpenSystemFile?(): Promise<void>;
+  remoteSystemFiles?: boolean;
 }) {
   const { t } = useI18n();
   const [file, setFile] = useState<WorkspaceFile>();
@@ -2016,7 +2268,9 @@ export function FileView({
 
   const canReveal = Boolean(
     path &&
-      (source === "system" ? adapter.revealSystemFile : adapter.reveal),
+      (source === "system"
+        ? !remoteSystemFiles && adapter.revealSystemFile
+        : adapter.reveal),
   );
 
   async function revealFile() {
@@ -2041,9 +2295,17 @@ export function FileView({
   return (
     <div className="file-view" role="tabpanel" hidden={hidden}>
       <div className="file-view-toolbar">
-        <Breadcrumb projectName={projectName} path={path} source={source} />
+        <Breadcrumb
+          projectName={projectName}
+          path={path}
+          source={source}
+          remoteSystemFiles={remoteSystemFiles}
+        />
         <div className="file-view-actions">
-          {source === "system" && path && adapter.revealSystemFile && (
+          {source === "system" &&
+            path &&
+            !remoteSystemFiles &&
+            adapter.revealSystemFile && (
             <button
               type="button"
               className="panel-icon-button pressable"
@@ -2059,12 +2321,20 @@ export function FileView({
               )}
             </button>
           )}
-          {adapter.chooseSystemFile && (
+          {onOpenSystemFile && (
             <button
               type="button"
               className="panel-icon-button pressable"
-              aria-label={t("openSystemFile")}
-              title={t("openSystemFile")}
+              aria-label={
+                remoteSystemFiles
+                  ? t("openRemoteFile")
+                  : t("openSystemFile")
+              }
+              title={
+                remoteSystemFiles
+                  ? t("openRemoteFile")
+                  : t("openSystemFile")
+              }
               disabled={choosingSystemFile}
               onClick={() => void chooseSystemFile()}
             >
@@ -2101,7 +2371,7 @@ export function FileView({
             <PanelState icon={<FolderOpen size={22} />}>
               <strong>{t("openFile")}</strong>
               <span>{t("selectFile")}</span>
-              {adapter.chooseSystemFile && (
+              {onOpenSystemFile && (
                 <button
                   type="button"
                   className="panel-empty-action pressable"
@@ -2113,7 +2383,9 @@ export function FileView({
                   ) : (
                     <FileCode2 size={14} />
                   )}
-                  {t("openSystemFile")}
+                  {remoteSystemFiles
+                    ? t("openRemoteFile")
+                    : t("openSystemFile")}
                 </button>
               )}
             </PanelState>
@@ -2663,10 +2935,12 @@ function Breadcrumb({
   projectName,
   path,
   source = "workspace",
+  remoteSystemFiles = false,
 }: {
   projectName: string;
   path?: string;
   source?: "workspace" | "system";
+  remoteSystemFiles?: boolean;
 }) {
   const { t } = useI18n();
   const parts = path?.replaceAll("\\", "/").split("/").filter(Boolean) ?? [];
@@ -2676,7 +2950,13 @@ function Breadcrumb({
       aria-label={t("filePath")}
       title={source === "system" ? path : undefined}
     >
-      <span>{source === "system" ? t("systemFiles") : projectName}</span>
+      <span>
+        {source === "system"
+          ? remoteSystemFiles
+            ? t("remoteFiles")
+            : t("systemFiles")
+          : projectName}
+      </span>
       {parts.map((part, index) => (
         <span key={`${part}-${index}`}>
           <ChevronRight size={14} />

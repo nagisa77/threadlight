@@ -34,6 +34,11 @@ import {
   DESKTOP_CONVERSATION_UPDATE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_DIAGNOSTICS_GET_CHANNEL,
+  DESKTOP_HOST_ACTIVATE_CHANNEL,
+  DESKTOP_HOST_DELETE_CHANNEL,
+  DESKTOP_HOST_DIRECTORIES_CHANNEL,
+  DESKTOP_HOST_UPDATE_CHANNEL,
+  DESKTOP_HOSTS_GET_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
   DESKTOP_PROJECT_UPDATE_CHANNEL,
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
@@ -49,6 +54,7 @@ import {
   DESKTOP_SETTINGS_GET_CHANNEL,
   DESKTOP_SETTINGS_UPDATE_CHANNEL,
   DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL,
+  DESKTOP_SYSTEM_FILE_LIST_CHANNEL,
   DESKTOP_SYSTEM_FILE_GET_CHANNEL,
   DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL,
   DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL,
@@ -101,14 +107,29 @@ const api: DesktopApi = {
   getProjects() {
     return ipcRenderer.invoke(DESKTOP_PROJECTS_GET_CHANNEL);
   },
-  openProject() {
-    return ipcRenderer.invoke(DESKTOP_PROJECT_OPEN_CHANNEL);
+  openProject(path) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_OPEN_CHANNEL, path);
+  },
+  getHosts() {
+    return ipcRenderer.invoke(DESKTOP_HOSTS_GET_CHANNEL);
   },
   connectRemoteRuntime(request) {
     return ipcRenderer.invoke(
       DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
       request,
     );
+  },
+  activateHost(hostId) {
+    return ipcRenderer.invoke(DESKTOP_HOST_ACTIVATE_CHANNEL, hostId);
+  },
+  updateHost(request) {
+    return ipcRenderer.invoke(DESKTOP_HOST_UPDATE_CHANNEL, request);
+  },
+  deleteHost(hostId) {
+    return ipcRenderer.invoke(DESKTOP_HOST_DELETE_CHANNEL, hostId);
+  },
+  listRemoteDirectories(path) {
+    return ipcRenderer.invoke(DESKTOP_HOST_DIRECTORIES_CHANNEL, path);
   },
   activateProject(projectId) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_ACTIVATE_CHANNEL, projectId);
@@ -347,6 +368,9 @@ const api: DesktopApi = {
   },
   chooseSystemFile() {
     return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL);
+  },
+  listSystemFiles(path) {
+    return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_LIST_CHANNEL, { path });
   },
   getSystemFile(request) {
     return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_GET_CHANNEL, request);

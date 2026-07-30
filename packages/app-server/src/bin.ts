@@ -10,6 +10,7 @@ import {
   KIMI_DEFAULT_BASE_URL,
   QWEN_DEFAULT_BASE_URL,
   supportsOpenAINativeComputerTool,
+  UnavailableModelProvider,
   type ModelProviderId,
 } from "@threadlight/model-providers";
 import {
@@ -73,20 +74,21 @@ const MENTIONABLE_TOOL_CAPABILITIES = {
 
 const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
 const providerApiKey = apiKeyFor(providerId, process.env);
-if (!providerApiKey && providerId !== "custom") {
-  process.stderr.write(`${apiKeyEnvironmentName(providerId)} is required\n`);
-  process.exit(1);
-}
+const providerConfigured = Boolean(providerApiKey) || providerId === "custom";
 
 const providerBaseUrl = baseUrlFor(providerId, process.env);
 const modelName =
   process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId);
-const provider = createModelProvider({
-  provider: providerId,
-  apiKey: providerApiKey,
-  defaultModel: modelName,
-  ...(providerBaseUrl ? { baseURL: providerBaseUrl } : {}),
-});
+const provider = providerConfigured
+  ? createModelProvider({
+      provider: providerId,
+      apiKey: providerApiKey,
+      defaultModel: modelName,
+      ...(providerBaseUrl ? { baseURL: providerBaseUrl } : {}),
+    })
+  : new UnavailableModelProvider(
+      `${apiKeyEnvironmentName(providerId)} is required. Configure the model provider in this Host's settings.`,
+    );
 
 const loop = new AgentLoop(provider);
 const workspaceRoot = process.cwd();
@@ -114,6 +116,7 @@ const tools = [
   createProcessKillTool({ processManager }),
 ];
 const computerUseEnabled =
+  providerConfigured &&
   providerId === "openai" &&
   supportsOpenAINativeComputerTool(modelName) &&
   process.platform === "darwin" &&
