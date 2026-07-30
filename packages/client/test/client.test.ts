@@ -33,6 +33,28 @@ class ScriptedTransport implements ClientTransport {
 }
 
 describe("ThreadlightClient", () => {
+  it("advertises reusable client capabilities during initialization", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport, {
+      capabilities: { executionApprovals: true },
+    });
+
+    const initialized = client.initialize();
+    expect(transport.sent[0]).toMatchObject({
+      method: "initialize",
+      params: {
+        capabilities: { executionApprovals: true },
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: { name: "threadlight", protocolVersion: "1" },
+    });
+    await initialized;
+    client.dispose();
+  });
+
   it("sends follow-up queue mutations", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

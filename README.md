@@ -219,7 +219,34 @@ npm run host:package
 
 完整用法见 [Threadlight Host 文档](./docs/REMOTE_HOST.zh-CN.md)。远程 Runtime
 Transport 使用浏览器兼容的 HTTP + NDJSON，交互式终端使用经过 Host Token
-鉴权的 WebSocket；`@threadlight/client` 不依赖 Electron，可供后续 Web 端复用。
+鉴权的 WebSocket；`@threadlight/client` 不依赖 Electron，可同时供桌面端与
+Web 端复用。
+
+### 启动与部署 Web 端
+
+Web 端直接复用桌面端的 `@threadlight/ui`，只连接已经运行的远端 Host，不会自行
+启动 Host：
+
+```bash
+# 开发
+VITE_THREADLIGHT_HOST_URL=http://127.0.0.1:7432 npm run web:dev
+
+# Production 静态构建
+VITE_THREADLIGHT_HOST_URL=https://host.example.com npm run web:build
+
+# 部署 apps/web/dist
+docker run -d \
+  --name threadlight-web \
+  --restart unless-stopped \
+  -p 8080:80 \
+  -v "$PWD/apps/web/dist:/usr/share/nginx/html:ro" \
+  nginx:alpine
+```
+
+Host 启动时必须把 Web 地址配置为允许的 Origin，例如
+`--origin https://threadlight.example.com`。HTTPS Web 页面需要 HTTPS/WSS Host；
+Token 只保存在浏览器的当前标签会话中。完整命令、TLS 反向代理与本地联调方式见
+[Web 部署文档](./docs/WEB_DEPLOYMENT.zh-CN.md)。
 
 | 服务 | 必需配置 | 可选配置 |
 | --- | --- | --- |

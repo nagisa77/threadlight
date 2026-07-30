@@ -20,6 +20,12 @@ export interface ClientTransport {
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
 }
 
+export interface ThreadlightClientOptions {
+  capabilities?: {
+    executionApprovals?: boolean;
+  };
+}
+
 interface PendingRequest {
   resolve(value: unknown): void;
   reject(reason: unknown): void;
@@ -52,7 +58,10 @@ export class ThreadlightClient {
   private nextId = 1;
   private closed = false;
 
-  constructor(private readonly transport: ClientTransport) {
+  constructor(
+    private readonly transport: ClientTransport,
+    private readonly options: ThreadlightClientOptions = {},
+  ) {
     this.unsubscribeTransport = transport.onMessage((message) => {
       this.handleMessage(message);
     });
@@ -91,7 +100,11 @@ export class ThreadlightClient {
   }
 
   initialize() {
-    return this.request("initialize", undefined);
+    const capabilities = this.options.capabilities;
+    return this.request(
+      "initialize",
+      capabilities ? { capabilities } : undefined,
+    );
   }
 
   startThread() {

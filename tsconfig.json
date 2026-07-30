@@ -10,6 +10,7 @@
     { "path": "./packages/builtin-tools" },
     { "path": "./packages/app-server" },
     { "path": "./packages/client" },
-    { "path": "./packages/ui" }
+    { "path": "./packages/ui" },
+    { "path": "./packages/web-runtime" }
   ]
 }

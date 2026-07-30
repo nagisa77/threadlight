@@ -1,0 +1,248 @@
+:root {
+  --web-card-shadow:
+    0 1px 2px rgb(36 36 32 / 5%),
+    0 18px 60px rgb(36 36 32 / 9%);
+}
+
+.web-connect-shell {
+  display: grid;
+  min-height: 100%;
+  padding: 28px;
+  place-items: center;
+  overflow-y: auto;
+  background:
+    radial-gradient(
+      circle at 50% -20%,
+      color-mix(in srgb, var(--accent-soft) 72%, transparent),
+      transparent 46%
+    ),
+    var(--surface);
+}
+
+.web-connect-card {
+  width: min(100%, 430px);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: var(--web-card-shadow);
+}
+
+.web-connect-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.web-connect-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 10px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 7%);
+}
+
+.web-connect-copy {
+  margin-top: 34px;
+}
+
+.web-connect-eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.14em;
+}
+
+.web-connect-copy h1 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 27px;
+  font-weight: 720;
+  letter-spacing: -0.035em;
+}
+
+.web-connect-copy > p:last-child {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.web-connect-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.web-connect-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.web-connect-form input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--ink);
+  outline: 0;
+  background: var(--panel);
+  font-size: 13px;
+  transition:
+    border-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+.web-connect-form input:focus {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-soft) 76%, transparent);
+}
+
+.web-token-field {
+  position: relative;
+  display: block;
+}
+
+.web-token-field input {
+  padding-right: 42px;
+}
+
+.web-token-toggle {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.web-connect-submit {
+  height: 42px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
+  font-size: 13px;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.web-connect-error {
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  border-radius: 9px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.web-connect-security {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.web-session-indicator {
+  position: fixed;
+  z-index: 20;
+  top: 11px;
+  left: 18px;
+  display: flex;
+  max-width: 244px;
+  height: 28px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px 0 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+  border-radius: 9px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--sidebar) 92%, transparent);
+  font-size: 11px;
+}
+
+.web-session-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.web-session-name {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-session-disconnect {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .web-token-toggle:hover,
+  .web-session-disconnect:hover {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--line) 46%, transparent);
+  }
+
+  .web-connect-submit:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 92%, #000);
+  }
+}
+
+@media (max-width: 560px) {
+  .web-connect-shell {
+    padding: 14px;
+  }
+
+  .web-connect-card {
+    padding: 19px;
+    border-radius: 15px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-connect-form input {
+    transition: border-color 120ms ease;
+  }
+}

@@ -10,6 +10,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { ProjectStore, SettingsStore } from "@threadlight/host-core";
+import {
+  browserTerminalProtocols,
+} from "@threadlight/client";
+import { createRemoteWebSession } from "@threadlight/web-runtime";
 import type {
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -64,6 +68,7 @@ describe("ThreadlightHostServer", () => {
       projects,
       settings,
       port: 0,
+      allowedOrigin: "https://threadlight.example",
       createPeer: ({ projectId }) => {
         const peer = new ScriptedRuntimePeer((request, emit) => {
           emit({
@@ -81,6 +86,18 @@ describe("ThreadlightHostServer", () => {
     const endpoint = `http://127.0.0.1:${address.port}`;
 
     expect((await fetch(`${endpoint}/v1/health`)).status).toBe(401);
+    const preflight = await fetch(`${endpoint}/v1/health`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "https://threadlight.example",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "authorization",
+      },
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe(
+      "https://threadlight.example",
+    );
     expect(await authenticatedJson(`${endpoint}/v1/health`)).toEqual({
       ok: true,
       protocolVersion: 2,
@@ -170,6 +187,35 @@ describe("ThreadlightHostServer", () => {
     expect(peers.get("project-1")?.requests[0]?.id).toMatch(/^host:/);
     expect(peers.has("project-2")).toBe(true);
 
+    const webSession = await createRemoteWebSession({
+      endpoint,
+      token: "test-token",
+    });
+    const webProjects = await webSession.projects.load();
+    expect(webProjects.projects[0]).toMatchObject({
+      id: "project-1",
+      runtime: {
+        kind: "remote",
+        endpoint,
+        workspacePath: realpathSync(firstWorkspace),
+      },
+    });
+    await expect(
+      webSession.workspace.list("project-1", "src"),
+    ).resolves.toContainEqual({
+      name: "index.ts",
+      path: "src/index.ts",
+      type: "file",
+    });
+    await webSession.client.initialize();
+    expect(peers.get("project-1")?.requests.at(-1)).toMatchObject({
+      method: "initialize",
+      params: {
+        capabilities: { executionApprovals: true },
+      },
+    });
+    webSession.dispose();
+
     const currentSettings = (await authenticatedJson(
       `${endpoint}/v1/host/settings`,
     )) as Record<string, unknown>;
@@ -218,6 +264,7 @@ describe("ThreadlightHostServer", () => {
       projects,
       settings,
       port: 0,
+      allowedOrigin: "https://threadlight.example",
       createPeer: () => peer,
     });
     servers.push(server);
@@ -278,6 +325,7 @@ describe("ThreadlightHostServer", () => {
       projects,
       settings,
       port: 0,
+      allowedOrigin: "https://threadlight.example",
       createPeer: () => new ScriptedRuntimePeer(),
       createTerminalSessions: (send) => {
         const sessions = new ScriptedTerminalSessions(send);
@@ -359,6 +407,25 @@ describe("ThreadlightHostServer", () => {
 
     socket.close();
     await webSocketClosed(socket);
+
+    const browserSocket = new WebSocket(
+      `ws://127.0.0.1:${address.port}/v1/host/terminal`,
+      [...browserTerminalProtocols("test-token")],
+      { origin: "https://threadlight.example" },
+    );
+    await webSocketOpened(browserSocket);
+    browserSocket.close();
+    await webSocketClosed(browserSocket);
+
+    const rejectedBrowserStatus = await rejectedWebSocketStatus(
+      `ws://127.0.0.1:${address.port}/v1/host/terminal`,
+      {
+        protocols: [...browserTerminalProtocols("wrong-token")],
+        origin: "https://threadlight.example",
+      },
+    );
+    expect(rejectedBrowserStatus).toBe(401);
+
     await waitFor(() => terminalSessions[0]?.disposed === true);
     expect(terminalSessions[0]?.disposed).toBe(true);
   });
@@ -526,9 +593,21 @@ function nextWebSocketMessage(socket: WebSocket): Promise<unknown> {
   });
 }
 
-function rejectedWebSocketStatus(url: string): Promise<number | undefined> {
+function rejectedWebSocketStatus(
+  url: string,
+  options: {
+    protocols?: string[];
+    origin?: string;
+  } = {},
+): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(url);
+    const socket = options.protocols
+      ? new WebSocket(url, options.protocols, {
+          ...(options.origin ? { origin: options.origin } : {}),
+        })
+      : new WebSocket(url, {
+          ...(options.origin ? { origin: options.origin } : {}),
+        });
     socket.once("unexpected-response", (_request, response) => {
       response.resume();
       resolve(response.statusCode);

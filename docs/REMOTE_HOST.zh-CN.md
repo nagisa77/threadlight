@@ -131,6 +131,8 @@ Host 协议版本为 2：
 WebSocket 传输：
 
 - WebSocket 路径为 `/v1/host/terminal`。
+- 桌面端使用 `Authorization` Header；浏览器端通过
+  `Sec-WebSocket-Protocol` 携带编码后的 Token，Token 不会进入 URL。
 - 一个连接可以承载多个终端标签。
 - 终端只能从 Host 已登记的项目和服务端记录的任务工作区创建，客户端不能传入任意
   工作目录。

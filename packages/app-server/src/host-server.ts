@@ -42,6 +42,7 @@ import { RemoteWorkspace } from "./remote-workspace.js";
 const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_TERMINAL_MESSAGE_BYTES = 256 * 1024;
 const RPC_TIMEOUT_MS = 120_000;
+const BROWSER_TERMINAL_TOKEN_PREFIX = "threadlight.token.";
 
 export interface ThreadlightHostServerOptions {
   token: string;
@@ -571,10 +572,18 @@ export class ThreadlightHostServer {
     }
   }
 
-  private authorized(request: IncomingMessage): boolean {
-    const value = request.headers.authorization;
-    if (!value?.startsWith("Bearer ")) return false;
-    const supplied = Buffer.from(value.slice(7));
+  private authorized(
+    request: IncomingMessage,
+    allowWebSocketProtocol = false,
+  ): boolean {
+    const authorization = request.headers.authorization;
+    const value = authorization?.startsWith("Bearer ")
+      ? authorization.slice(7)
+      : allowWebSocketProtocol
+        ? browserWebSocketToken(request)
+        : undefined;
+    if (value === undefined) return false;
+    const supplied = Buffer.from(value);
     const expected = Buffer.from(this.options.token);
     return (
       supplied.length === expected.length &&
@@ -596,7 +605,7 @@ export class ThreadlightHostServer {
       rejectUpgrade(socket, 404, "Not Found");
       return;
     }
-    if (!this.authorized(request)) {
+    if (!this.authorized(request, true)) {
       rejectUpgrade(socket, 401, "Unauthorized");
       return;
     }
@@ -655,6 +664,26 @@ function rejectUpgrade(
     `HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
   );
   socket.destroy();
+}
+
+function browserWebSocketToken(
+  request: IncomingMessage,
+): string | undefined {
+  const protocols = request.headers["sec-websocket-protocol"];
+  if (typeof protocols !== "string") return;
+  const encoded = protocols
+    .split(",")
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(BROWSER_TERMINAL_TOKEN_PREFIX))
+    ?.slice(BROWSER_TERMINAL_TOKEN_PREFIX.length);
+  if (!encoded) return;
+  try {
+    const token = Buffer.from(encoded, "base64url");
+    if (token.toString("base64url") !== encoded) return;
+    return token.toString("utf8");
+  } catch {
+    return;
+  }
 }
 
 function runtimeRoute(
