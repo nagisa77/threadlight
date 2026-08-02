@@ -212,6 +212,42 @@ describe("ProjectStore", () => {
     expect(store.snapshotForHost("host-1").projects).toEqual([]);
   });
 
+  it("preserves a Desktop client's remote project selection", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const store = new ProjectStore(join(root, "project-map.json"));
+    const remote = {
+      activeProjectId: "host-active",
+      projects: [
+        {
+          id: "host-active",
+          name: "Host active",
+          basePath: "/workspace/host-active",
+          lastOpenedAt: "2026-08-02T00:00:00.000Z",
+          conversations: [],
+        },
+        {
+          id: "desktop-active",
+          name: "Desktop active",
+          basePath: "/workspace/desktop-active",
+          lastOpenedAt: "2026-08-02T00:00:00.000Z",
+          conversations: [],
+        },
+      ],
+    };
+
+    const snapshot = store.replaceRemoteHostProjects(
+      {
+        hostId: "host-1",
+        endpoint: "http://127.0.0.1:7432",
+        activeProjectId: "desktop-active",
+      },
+      remote,
+    );
+
+    expect(snapshot.activeProjectId).toBe("desktop-active");
+  });
+
   it("requires archiving before permanently removing a task", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);

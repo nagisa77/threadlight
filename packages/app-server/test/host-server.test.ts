@@ -434,6 +434,28 @@ describe("ThreadlightHostServer", () => {
       },
     });
     await webSession.projects.activate("project-1");
+    const parallelWebSession = await createRemoteWebSession({
+      endpoint,
+      token: "test-token",
+    });
+    await parallelWebSession.projects.activate("project-2");
+    expect((await webSession.projects.load()).activeProjectId).toBe(
+      "project-1",
+    );
+    expect((await parallelWebSession.projects.load()).activeProjectId).toBe(
+      "project-2",
+    );
+    expect((await hostClient.projects()).activeProjectId).toBe("project-2");
+    await Promise.all([
+      webSession.client.initialize(),
+      parallelWebSession.client.initialize(),
+    ]);
+    await expect(webSession.client.startThread()).resolves.toEqual({
+      threadId: "project-1-thread",
+    });
+    await expect(parallelWebSession.client.startThread()).resolves.toEqual({
+      threadId: "project-2-thread",
+    });
     await expect(
       webSession.diagnostics.load("project-1"),
     ).resolves.toMatchObject({
@@ -539,6 +561,7 @@ describe("ThreadlightHostServer", () => {
       provider: "custom",
       model: "web-draft-model",
     });
+    parallelWebSession.dispose();
     webSession.dispose();
 
     const currentSettings = (await authenticatedJson(

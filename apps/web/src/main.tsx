@@ -14,6 +14,10 @@ import {
 import "@threadlight/ui/styles.css";
 
 import "./web.css";
+import {
+  taskPath,
+  threadIdFromTaskPath,
+} from "./task-route.js";
 
 const ENDPOINT_STORAGE_KEY = "threadlight:web:host-endpoint";
 const TOKEN_STORAGE_KEY = "threadlight:web:host-token";
@@ -24,6 +28,12 @@ function WebApp() {
   const [session, setSession] = useState<RemoteWebSession>();
   const [credentials, setCredentials] = useState(savedCredentials);
   const activeSession = useRef<RemoteWebSession | undefined>(undefined);
+  const initialThreadId = useRef(
+    threadIdFromTaskPath(
+      window.location.pathname,
+      import.meta.env.BASE_URL,
+    ),
+  ).current;
 
   useEffect(
     () => () => {
@@ -75,6 +85,8 @@ function WebApp() {
     <>
       <ThreadlightApp
         client={session.client}
+        initialThreadId={initialThreadId}
+        onThreadChange={replaceWebTaskPath}
         clipboard={session.clipboard}
         connectorAuthorization={session.connectorAuthorization}
         settings={session.settings}
@@ -107,6 +119,12 @@ function WebApp() {
       </div>
     </>
   );
+}
+
+function replaceWebTaskPath(threadId?: string): void {
+  const url = new URL(window.location.href);
+  url.pathname = taskPath(threadId, import.meta.env.BASE_URL);
+  window.history.replaceState(null, "", url);
 }
 
 function RemoteConnectionPage({

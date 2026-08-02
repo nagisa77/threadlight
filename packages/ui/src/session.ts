@@ -489,6 +489,58 @@ export async function requestTurnStart(
   }
 }
 
+export async function requestNewThreadTurnStart(
+  client: {
+    initialize(): Promise<unknown>;
+    startThread(): Promise<{ threadId: string }>;
+    startTurn(
+      threadId: string,
+      text: string,
+      attachments: readonly AttachmentData[],
+      mode: TurnMode,
+      capabilityRefs: readonly string[],
+      accessMode: ConversationAccessMode,
+    ): Promise<unknown>;
+  },
+  text: string,
+  attachments: readonly AttachmentData[],
+  mode: TurnMode,
+  capabilityRefs: readonly string[],
+  accessMode: ConversationAccessMode,
+  onThreadCreated: (threadId: string) => void,
+): Promise<{
+  threadId: string;
+  started: { ok: true } | { ok: false; error: string };
+}> {
+  await client.initialize();
+  const { threadId } = await client.startThread();
+  onThreadCreated(threadId);
+  return {
+    threadId,
+    started: await requestTurnStart(
+      client,
+      threadId,
+      text,
+      attachments,
+      mode,
+      capabilityRefs,
+      accessMode,
+    ),
+  };
+}
+
+export function newTaskDraftState(
+  state: SessionState,
+  submissionError?: string,
+): SessionState {
+  return {
+    ...initialSessionState,
+    connection: state.connection,
+    connectionError: state.connectionError,
+    submissionError,
+  };
+}
+
 export function useThreadlightSession(
   client: ThreadlightClient,
   options: { autoConnect?: boolean } = {},
@@ -814,6 +866,72 @@ export function useThreadlightSession(
     [client, state.isRunning, state.threadId, updateSession],
   );
 
+  const sendNewThread = useCallback(
+    async (
+      value: string,
+      attachments: readonly AttachmentData[] = [],
+      mode: TurnMode = "default",
+      capabilities: readonly CapabilityDescriptor[] = [],
+      accessMode: ConversationAccessMode = "approval",
+    ) => {
+      const text = value.trim();
+      if (!text && attachments.length === 0) return;
+
+      const optimisticMessageId = crypto.randomUUID();
+      const capabilityRefs = capabilities.map(({ id }) => id);
+      try {
+        const result = await requestNewThreadTurnStart(
+          client,
+          text,
+          attachments,
+          mode,
+          capabilityRefs,
+          accessMode,
+          (threadId) => {
+            activateThread(threadId);
+            updateSession(threadId, {
+              type: "connection.ready",
+              threadId,
+            });
+            updateSession(threadId, {
+              type: "message.sent",
+              id: optimisticMessageId,
+              text,
+              mode,
+              ...(attachments.length > 0 ? { attachments } : {}),
+              ...(capabilities.length > 0
+                ? {
+                    capabilityRefs,
+                    capabilities: capabilities.map(
+                      ({ id, kind, name, source, icon }) => ({
+                        id,
+                        kind,
+                        name,
+                        ...(source ? { source } : {}),
+                        ...(icon ? { icon } : {}),
+                      }),
+                    ),
+                  }
+                : {}),
+            });
+          },
+        );
+        if (!result.started.ok) {
+          updateSession(result.threadId, {
+            type: "message.rejected",
+            id: optimisticMessageId,
+            error: result.started.error,
+          });
+          return { threadId: result.threadId, sent: false as const };
+        }
+        return { threadId: result.threadId, sent: true as const };
+      } catch (error) {
+        return { error: errorMessage(error) };
+      }
+    },
+    [activateThread, client, updateSession],
+  );
+
   const interrupt = useCallback(async () => {
     if (!state.threadId) return;
     try {
@@ -906,6 +1024,7 @@ export function useThreadlightSession(
     newThread,
     deleteThread,
     send,
+    sendNewThread,
     addFollowUp,
     reorderQueuedTurn,
     cancelQueuedTurn,

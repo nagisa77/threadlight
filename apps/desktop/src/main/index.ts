@@ -337,6 +337,7 @@ function currentActiveProject() {
 
 function syncRemoteProjects(
   snapshot: HostProjectsSnapshot,
+  preferredProjectId?: string,
 ): DesktopProjectsSnapshot {
   if (!projectStore || !remoteHost) {
     throw new Error("Remote Host is not connected.");
@@ -345,6 +346,8 @@ function syncRemoteProjects(
     {
       hostId: activeHostId(),
       endpoint: remoteHost.endpoint,
+      activeProjectId:
+        preferredProjectId ?? currentProjectsSnapshot().activeProjectId,
     },
     snapshot,
   ) as DesktopProjectsSnapshot;
@@ -1378,8 +1381,12 @@ async function handleProjectOpen(
     if (typeof value !== "string" || !value.trim()) {
       throw new Error("Enter an absolute project path on the remote host.");
     }
+    const remoteSnapshot = await remoteHost.client.registerProject(
+      value.trim(),
+    );
     const snapshot = syncRemoteProjects(
-      await remoteHost.client.registerProject(value.trim()),
+      remoteSnapshot,
+      remoteSnapshot.activeProjectId,
     );
     const activeProject = currentActiveProject();
     if (activeProject) {
@@ -1418,9 +1425,16 @@ async function handleStandaloneCreate(event: IpcMainInvokeEvent) {
   if (!projectStore || !mainWindow) {
     throw new Error("Projects are not available");
   }
-  const snapshot = isRemoteHost()
-    ? syncRemoteProjects(await remoteHost!.client.createStandaloneTask())
-    : projectStore.activateStandalone();
+  let snapshot: DesktopProjectsSnapshot;
+  if (isRemoteHost()) {
+    const remoteSnapshot = await remoteHost!.client.createStandaloneTask();
+    snapshot = syncRemoteProjects(
+      remoteSnapshot,
+      remoteSnapshot.activeProjectId,
+    );
+  } else {
+    snapshot = projectStore.activateStandalone();
+  }
   const activeProject = currentActiveProject();
   if (activeProject) {
     ensureAppServer(
@@ -1623,9 +1637,7 @@ async function handleProjectActivate(
   if (typeof value !== "string" || !value) throw new Error("Invalid project id");
 
   const snapshot = isRemoteHost()
-    ? syncRemoteProjects(
-        await remoteHost!.client.activateProject(value),
-      )
+    ? syncRemoteProjects(await remoteHost!.client.projects(), value)
     : (projectStore.activate(value) as DesktopProjectsSnapshot);
   const activeProject = currentActiveProject();
   if (activeProject) {

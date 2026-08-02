@@ -15,6 +15,7 @@ import {
   hasUserInput,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
+  projectContainingThread,
   ProjectActionPopover,
   ProjectConversationItem,
   ProjectGroup,
@@ -434,6 +435,40 @@ describe("ProjectGroup", () => {
     expect(hasUserInput([])).toBe(false);
     expect(hasUserInput([{ role: "assistant" }])).toBe(false);
     expect(hasUserInput([{ role: "user" }])).toBe(true);
+  });
+
+  it("resolves a routed thread to its project without shared active state", () => {
+    const target = projectContainingThread(
+      {
+        activeProjectId: "project-1",
+        projects: [
+          {
+            id: "project-1",
+            name: "First",
+            basePath: "/first",
+            lastOpenedAt: "2026-08-02T00:00:00.000Z",
+            conversations: [],
+          },
+          {
+            id: "project-2",
+            name: "Second",
+            basePath: "/second",
+            lastOpenedAt: "2026-08-02T00:00:00.000Z",
+            conversations: [
+              {
+                id: "thread-2",
+                title: "Independent task",
+                createdAt: "2026-08-02T00:00:00.000Z",
+                updatedAt: "2026-08-02T00:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+      "thread-2",
+    );
+
+    expect(target?.id).toBe("project-2");
   });
 
   it("keeps only search and add project in the project heading", () => {

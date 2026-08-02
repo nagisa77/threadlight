@@ -344,6 +344,7 @@ function remoteAttachmentAdapters(
 
 class RemoteWebProjectsAdapter implements ProjectsAdapter {
   private snapshot: HostProjectsSnapshot;
+  private activeProjectId?: string;
 
   constructor(
     private readonly host: HttpHostClient,
@@ -353,7 +354,8 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     initialSnapshot: HostProjectsSnapshot,
   ) {
     this.snapshot = initialSnapshot;
-    this.activateRuntime(initialSnapshot);
+    this.activeProjectId = clientActiveProjectId(initialSnapshot);
+    this.activateRuntime();
   }
 
   async load(): Promise<ProjectsSnapshot> {
@@ -364,11 +366,13 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     if (!path?.trim()) {
       throw new Error("Enter an absolute project path on the remote Host.");
     }
-    return this.sync(await this.host.registerProject(path.trim()));
+    const snapshot = await this.host.registerProject(path.trim());
+    return this.sync(snapshot, snapshot.activeProjectId);
   }
 
   async createStandalone(): Promise<ProjectsSnapshot> {
-    return this.sync(await this.host.createStandaloneTask());
+    const snapshot = await this.host.createStandaloneTask();
+    return this.sync(snapshot, snapshot.activeProjectId);
   }
 
   loadHosts() {
@@ -390,7 +394,11 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
   }
 
   async activate(projectId: string): Promise<ProjectsSnapshot> {
-    return this.sync(await this.host.activateProject(projectId));
+    const snapshot = await this.host.projects();
+    if (!snapshot.projects.some((project) => project.id === projectId)) {
+      throw new Error(`Unknown project: ${projectId}`);
+    }
+    return this.sync(snapshot, projectId);
   }
 
   async updateProject(update: {
@@ -451,15 +459,24 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
 
   activeProject(): HostProjectSummary | undefined {
     return this.snapshot.projects.find(
-      ({ id }) => id === this.snapshot.activeProjectId,
+      ({ id }) => id === this.activeProjectId,
     );
   }
 
-  private sync(snapshot: HostProjectsSnapshot): ProjectsSnapshot {
+  private sync(
+    snapshot: HostProjectsSnapshot,
+    preferredProjectId = this.activeProjectId,
+  ): ProjectsSnapshot {
     this.snapshot = snapshot;
-    this.activateRuntime(snapshot);
+    this.activeProjectId = clientActiveProjectId(
+      snapshot,
+      preferredProjectId,
+    );
+    this.activateRuntime();
     return {
-      activeProjectId: snapshot.activeProjectId,
+      ...(this.activeProjectId
+        ? { activeProjectId: this.activeProjectId }
+        : {}),
       projects: snapshot.projects.map((project) => ({
         ...project,
         runtime: {
@@ -472,11 +489,32 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     };
   }
 
-  private activateRuntime(snapshot: HostProjectsSnapshot): void {
-    if (snapshot.activeProjectId) {
-      this.transport.activateProject(snapshot.activeProjectId);
+  private activateRuntime(): void {
+    if (this.activeProjectId) {
+      this.transport.activateProject(this.activeProjectId);
     }
   }
+}
+
+export function clientActiveProjectId(
+  snapshot: HostProjectsSnapshot,
+  preferredProjectId?: string,
+): string | undefined {
+  if (
+    preferredProjectId &&
+    snapshot.projects.some((project) => project.id === preferredProjectId)
+  ) {
+    return preferredProjectId;
+  }
+  if (
+    snapshot.activeProjectId &&
+    snapshot.projects.some(
+      (project) => project.id === snapshot.activeProjectId,
+    )
+  ) {
+    return snapshot.activeProjectId;
+  }
+  return snapshot.projects[0]?.id;
 }
 
 function remoteWorkspaceAdapter(

@@ -46,8 +46,11 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:80 \
   -v "$PWD/apps/web/dist:/usr/share/nginx/html:ro" \
+  -v "$PWD/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   nginx:alpine
 ```
+
+这里挂载的 Nginx 配置包含 SPA fallback，直接刷新 `/tasks/:threadId` 时仍会加载 Web 应用并恢复对应工作。
 
 如果部署在子路径，可以在构建时设置：
 

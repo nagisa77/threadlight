@@ -2,13 +2,69 @@ import { describe, expect, it } from "vitest";
 
 import {
   initialSessionState,
+  newTaskDraftState,
   reduceThreadSession,
+  requestNewThreadTurnStart,
   requestTurnStart,
   sessionReducer,
   type SessionState,
 } from "../src/session.js";
 
 describe("sessionReducer", () => {
+  it("keeps a new task as a local draft until its first turn is submitted", async () => {
+    const established = {
+      ...initialSessionState,
+      connection: "ready" as const,
+      threadId: "thread-1",
+      messages: [
+        { id: "message-1", role: "user" as const, text: "Existing task" },
+      ],
+    };
+
+    const draft = newTaskDraftState(established, "Could not start task");
+    expect(draft).toMatchObject({
+      connection: "ready",
+      messages: [],
+      isRunning: false,
+      submissionError: "Could not start task",
+    });
+    expect(draft.threadId).toBeUndefined();
+
+    const calls: string[] = [];
+    const created: string[] = [];
+    const client = {
+      initialize: async () => {
+        calls.push("initialize");
+      },
+      startThread: async () => {
+        calls.push("thread/start");
+        return { threadId: "thread-2" };
+      },
+      startTurn: async (threadId: string, text: string) => {
+        calls.push(`turn/start:${threadId}:${text}`);
+      },
+    };
+
+    expect(calls).toEqual([]);
+    const result = await requestNewThreadTurnStart(
+      client,
+      "First question",
+      [],
+      "default",
+      [],
+      "approval",
+      (threadId) => created.push(threadId),
+    );
+
+    expect(calls).toEqual([
+      "initialize",
+      "thread/start",
+      "turn/start:thread-2:First question",
+    ]);
+    expect(created).toEqual(["thread-2"]);
+    expect(result).toEqual({ threadId: "thread-2", started: { ok: true } });
+  });
+
   it("syncs queued follow-ups and appends them only when the server consumes them", () => {
     const queued = {
       id: "follow-up-1",

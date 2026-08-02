@@ -80,6 +80,7 @@ import {
   type ComposerAddAction,
 } from "./capabilities.js";
 import {
+  newTaskDraftState,
   useThreadlightSession,
   type ConversationProgress,
   type ToolActivity,
@@ -170,6 +171,8 @@ import {
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
+  initialThreadId?: string;
+  onThreadChange?(threadId?: string): void;
   clipboard?: ClipboardAdapter;
   settings?: SettingsAdapter;
   diagnostics?: DiagnosticsAdapter;
@@ -356,6 +359,8 @@ function ThreadlightAppContent({
   workspace,
   projectOpener,
   executionPolicy,
+  initialThreadId,
+  onThreadChange,
   onLanguageChange,
   onThemeChange,
   preferredProjectOpener,
@@ -368,12 +373,13 @@ function ThreadlightAppContent({
 }) {
   const { language, t } = useI18n();
   const {
-    state,
+    state: activeState,
     retry,
     openThread,
     newThread,
     deleteThread,
     send,
+    sendNewThread,
     addFollowUp,
     reorderQueuedTurn,
     cancelQueuedTurn,
@@ -381,6 +387,11 @@ function ThreadlightAppContent({
     terminateProcess,
     runningThreadIds,
   } = useThreadlightSession(client, { autoConnect: !projects });
+  const [newTaskDraft, setNewTaskDraft] = useState(false);
+  const [newTaskDraftError, setNewTaskDraftError] = useState<string>();
+  const state = newTaskDraft
+    ? newTaskDraftState(activeState, newTaskDraftError)
+    : activeState;
   const [view, setView] = useState<
     | "thread"
     | "memory"
@@ -501,6 +512,25 @@ function ThreadlightAppContent({
   projectSnapshotRef.current = projectSnapshot;
   activeThreadIdRef.current = state.threadId;
   viewRef.current = view;
+
+  useEffect(() => {
+    if (!onThreadChange || !projectSnapshot) return;
+    const navigableThreadId =
+      !newTaskDraft &&
+      activeState.threadId &&
+      currentProject?.conversations.some(
+        (item) => item.id === activeState.threadId,
+      )
+        ? activeState.threadId
+        : undefined;
+    onThreadChange(navigableThreadId);
+  }, [
+    activeState.threadId,
+    currentProject?.conversations,
+    newTaskDraft,
+    onThreadChange,
+    projectSnapshot,
+  ]);
 
   useEffect(() => {
     return automations?.subscribeOpen?.((target) => {
@@ -1279,8 +1309,21 @@ function ThreadlightAppContent({
       .load()
       .then(async (snapshot) => {
         if (!active) return;
-        setProjectSnapshot(snapshot);
-        await connectProject(snapshot);
+        let nextSnapshot = snapshot;
+        let preferredThreadId: string | undefined;
+        const initialProject = projectContainingThread(
+          snapshot,
+          initialThreadId,
+        );
+        if (initialProject) {
+          preferredThreadId = initialThreadId;
+          if (initialProject.id !== snapshot.activeProjectId) {
+            nextSnapshot = await projects.activate(initialProject.id);
+          }
+        }
+        if (!active) return;
+        setProjectSnapshot(nextSnapshot);
+        await connectProject(nextSnapshot, preferredThreadId);
       })
       .catch((error) => {
         if (active) setProjectError(errorMessage(error));
@@ -1288,7 +1331,7 @@ function ThreadlightAppContent({
     return () => {
       active = false;
     };
-  }, [connectProject, projects]);
+  }, [connectProject, initialThreadId, projects]);
 
   useEffect(() => {
     const element = conversation.current;
@@ -1570,7 +1613,25 @@ function ThreadlightAppContent({
         setPreparingAttachments(false);
       }
     }
-    if (
+    let submittedThreadId: string | undefined;
+    if (newTaskDraft) {
+      const result = await sendNewThread(
+        value,
+        stagedAttachments,
+        composerMode,
+        selectedCapabilities,
+        "approval",
+      );
+      if (result) {
+        if ("error" in result) {
+          setNewTaskDraftError(result.error);
+        } else {
+          setNewTaskDraft(false);
+          setNewTaskDraftError(undefined);
+          if (result.sent) submittedThreadId = result.threadId;
+        }
+      }
+    } else if (
       await send(
         value,
         stagedAttachments,
@@ -1579,6 +1640,9 @@ function ThreadlightAppContent({
         currentConversation?.accessMode ?? "approval",
       )
     ) {
+      submittedThreadId = state.threadId;
+    }
+    if (submittedThreadId) {
       for (const attachment of draftAttachments) {
         if (attachment.previewUrl?.startsWith("blob:")) {
           URL.revokeObjectURL(attachment.previewUrl);
@@ -1592,14 +1656,14 @@ function ThreadlightAppContent({
       pendingAttachmentsRef.current = [];
       setPendingAttachments([]);
       if (textarea.current) textarea.current.style.height = "auto";
-      if (projects && currentProject && state.threadId) {
+      if (projects && currentProject) {
         try {
           const existingTitle = currentProject.conversations.find(
-            (conversation) => conversation.id === state.threadId,
+            (conversation) => conversation.id === submittedThreadId,
           )?.title;
           const snapshot = await projects.upsertConversation({
             projectId: currentProject.id,
-            id: state.threadId,
+            id: submittedThreadId,
             title: existingTitle ?? t("task"),
           });
           setProjectSnapshot(snapshot);
@@ -1626,12 +1690,14 @@ function ThreadlightAppContent({
   async function createThread() {
     if (!currentProject || voiceStatus !== "idle") return;
     setView("thread");
-    if (!hasUserInput(state.messages)) {
+    if (newTaskDraft || !hasUserInput(activeState.messages)) {
       textarea.current?.focus();
       return;
     }
     closeConversationPanels();
-    await newThread();
+    setNewTaskDraftError(undefined);
+    setNewTaskDraft(true);
+    requestAnimationFrame(() => textarea.current?.focus());
   }
 
   async function createProjectThread(projectId: string) {
@@ -1639,11 +1705,22 @@ function ThreadlightAppContent({
       await createThread();
       return;
     }
-    if (!(await selectConversation(projectId))) return;
-    closeConversationPanels();
-    setView("thread");
-    await newThread();
-    requestAnimationFrame(() => textarea.current?.focus());
+    if (!projects || switchingProject || voiceStatus !== "idle") return;
+    setSwitchingProject(true);
+    setProjectError(undefined);
+    try {
+      const snapshot = await projects.activate(projectId);
+      setProjectSnapshot(snapshot);
+      closeConversationPanels();
+      setView("thread");
+      setNewTaskDraftError(undefined);
+      setNewTaskDraft(true);
+      requestAnimationFrame(() => textarea.current?.focus());
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setSwitchingProject(false);
+    }
   }
 
   async function createStandaloneThread() {
@@ -2004,6 +2081,8 @@ function ThreadlightAppContent({
     ) {
       return false;
     }
+    setNewTaskDraftError(undefined);
+    setNewTaskDraft(false);
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
@@ -6732,6 +6811,16 @@ export function hasUserInput(
   messages: readonly { role: "user" | "assistant" }[],
 ): boolean {
   return messages.some((message) => message.role === "user");
+}
+
+export function projectContainingThread(
+  snapshot: ProjectsSnapshot,
+  threadId: string | undefined,
+): ProjectSummary | undefined {
+  if (!threadId) return;
+  return snapshot.projects.find((project) =>
+    project.conversations.some((conversation) => conversation.id === threadId),
+  );
 }
 
 function errorMessage(error: unknown): string {

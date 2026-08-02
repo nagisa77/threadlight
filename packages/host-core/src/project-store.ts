@@ -188,6 +188,7 @@ export class ProjectStore {
     input: {
       hostId: string;
       endpoint: string;
+      activeProjectId?: string;
     },
     snapshot: HostProjectsSnapshot,
   ): DesktopProjectsSnapshot {
@@ -211,7 +212,11 @@ export class ProjectStore {
       }),
     );
     stored.projects = [...otherProjects, ...remoteProjects];
-    stored.activeProjectId = snapshot.activeProjectId;
+    stored.activeProjectId = remoteProjects.some(
+      (project) => project.id === input.activeProjectId,
+    )
+      ? input.activeProjectId
+      : snapshot.activeProjectId;
     this.write(stored);
     return this.snapshotForHost(input.hostId);
   }

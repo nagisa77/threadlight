@@ -240,8 +240,11 @@ docker run -d \
   --restart unless-stopped \
   -p 8080:80 \
   -v "$PWD/apps/web/dist:/usr/share/nginx/html:ro" \
+  -v "$PWD/apps/web/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
   nginx:alpine
 ```
+
+Nginx 配置包含 SPA fallback，因此 `/tasks/:threadId` 地址可以直接刷新并恢复原工作。
 
 Host 启动时必须把 Web 地址配置为允许的 Origin，例如
 `--origin https://threadlight.example.com`。HTTPS Web 页面需要 HTTPS/WSS Host；
