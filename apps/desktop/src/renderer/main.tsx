@@ -59,6 +59,7 @@ const diagnostics: DiagnosticsAdapter = {
 const projects: ProjectsAdapter = {
   load: () => window.threadlightDesktop.getProjects(),
   openFolder: (path) => window.threadlightDesktop.openProject(path),
+  createStandalone: () => window.threadlightDesktop.createStandaloneTask(),
   loadHosts: () => window.threadlightDesktop.getHosts(),
   connectRemote: (request) =>
     window.threadlightDesktop.connectRemoteRuntime(request),

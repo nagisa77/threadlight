@@ -15,6 +15,14 @@ describe("TerminalPanel", () => {
       cols: 80,
       rows: 24,
     });
+    expect(
+      projectTerminalCreateRequest("standalone", "thread-1"),
+    ).toEqual({
+      projectId: "standalone",
+      threadId: "thread-1",
+      cols: 80,
+      rows: 24,
+    });
   });
 
   it("defaults to a terminal and offers terminal or file views from add", () => {

@@ -79,6 +79,7 @@ function WebApp() {
         connectorAuthorization={session.connectorAuthorization}
         settings={session.settings}
         diagnostics={session.diagnostics}
+        automations={session.automations}
         search={session.search}
         projects={session.projects}
         attachmentStage={session.attachmentStage}

@@ -24,6 +24,7 @@ export interface WorkspaceAgentFactoryOptions {
   maxSteps?: number;
   context?: LoadWorkspaceContextOptions;
   promptBlocks?: readonly PromptBlock[];
+  includeWorkspaceContext?: boolean;
 }
 
 export const LOCAL_RESOURCE_LINK_INSTRUCTIONS =
@@ -37,11 +38,14 @@ export function createWorkspaceAgentFactory(
   options: WorkspaceAgentFactoryOptions,
 ): () => Promise<WorkspaceAgent> {
   return async () => {
-    const context = await loadWorkspaceContext(
-      options.workspaceRoot,
-      options.context,
-    );
-    const promptSnapshot = new PromptComposer()
+    const context =
+      options.includeWorkspaceContext === false
+        ? undefined
+        : await loadWorkspaceContext(
+            options.workspaceRoot,
+            options.context,
+          );
+    const composer = new PromptComposer()
       .add({
         id: "host.base",
         version: 1,
@@ -55,14 +59,17 @@ export function createWorkspaceAgentFactory(
         authority: "host",
         source: "workspace-agent",
         content: LOCAL_RESOURCE_LINK_INSTRUCTIONS,
-      })
-      .add({
+      });
+    if (context) {
+      composer.add({
         id: "project.workspace-context",
         version: 1,
         authority: "project",
         source: context.root,
         content: renderWorkspaceContext(context),
-      })
+      });
+    }
+    const promptSnapshot = composer
       .addAll(options.promptBlocks ?? [])
       .compose();
 

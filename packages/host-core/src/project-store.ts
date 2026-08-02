@@ -74,11 +74,13 @@ const EMPTY_PROJECT_MAP: StoredProjectMap = { version: 1, projects: [] };
 export interface ProjectStoreOptions {
   createId?: () => string;
   now?: () => Date;
+  standaloneRoot?: string;
 }
 
 export class ProjectStore {
   private readonly createId: () => string;
   private readonly now: () => Date;
+  private readonly standaloneRoot?: string;
 
   constructor(
     private readonly path: string,
@@ -86,6 +88,7 @@ export class ProjectStore {
   ) {
     this.createId = options.createId ?? randomUUID;
     this.now = options.now ?? (() => new Date());
+    this.standaloneRoot = options.standaloneRoot;
   }
 
   snapshot(): DesktopProjectsSnapshot {
@@ -145,6 +148,37 @@ export class ProjectStore {
       stored.projects.push(project);
     }
 
+    stored.activeProjectId = project.id;
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  activateStandalone(): DesktopProjectsSnapshot {
+    if (!this.standaloneRoot) {
+      throw new Error("Standalone tasks are not configured");
+    }
+    mkdirSync(this.standaloneRoot, { recursive: true, mode: 0o700 });
+    const basePath = canonicalDirectory(this.standaloneRoot);
+    ensureConversationDirectory(basePath);
+    const stored = this.read();
+    const timestamp = this.now().toISOString();
+    let project = stored.projects.find(
+      (candidate) => candidate.scope === "standalone",
+    );
+    if (project) {
+      project.basePath = basePath;
+      project.lastOpenedAt = timestamp;
+    } else {
+      project = {
+        id: "standalone",
+        name: "Standalone",
+        basePath,
+        scope: "standalone",
+        lastOpenedAt: timestamp,
+        conversations: [],
+      };
+      stored.projects.push(project);
+    }
     stored.activeProjectId = project.id;
     this.write(stored);
     return this.snapshot();
@@ -543,6 +577,9 @@ function isProject(value: unknown): boolean {
     typeof project.lastOpenedAt === "string" &&
     (project.pinnedAt === undefined ||
       typeof project.pinnedAt === "string") &&
+    (project.scope === undefined ||
+      project.scope === "project" ||
+      project.scope === "standalone") &&
     (project.runtime === undefined || isProjectRuntime(project.runtime)) &&
     Array.isArray(project.conversations) &&
     project.conversations.every(isConversation)
@@ -647,6 +684,9 @@ function isTaskWorkspace(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const workspace = value as Record<string, unknown>;
   if (workspace.mode === "folder") {
+    return typeof workspace.path === "string" && workspace.path.length > 0;
+  }
+  if (workspace.mode === "standalone") {
     return typeof workspace.path === "string" && workspace.path.length > 0;
   }
   return (

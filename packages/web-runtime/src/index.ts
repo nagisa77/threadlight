@@ -12,6 +12,7 @@ import type {
 import type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
+  AutomationAdapter,
   ClipboardAdapter,
   ConversationChangesSnapshot,
   ConnectorAuthorizationAdapter,
@@ -43,6 +44,7 @@ export interface RemoteWebSession {
   projects: ProjectsAdapter;
   settings: SettingsAdapter;
   diagnostics: DiagnosticsAdapter;
+  automations: AutomationAdapter;
   search: SearchAdapter;
   attachmentStage: AttachmentStageAdapter;
   attachmentPreview: AttachmentPreviewAdapter;
@@ -105,6 +107,14 @@ export async function createRemoteWebSession(
   const diagnostics: DiagnosticsAdapter = {
     load: (projectId) => host.diagnostics(projectId),
   };
+  const automations: AutomationAdapter = {
+    load: (projectId) => host.automations(projectId),
+    create: (request) => host.createAutomation(request),
+    update: (request) => host.updateAutomation(request),
+    delete: (projectId, id) => host.deleteAutomation(projectId, id),
+    run: (projectId, id) => host.runAutomation(projectId, id),
+    subscribe: () => () => undefined,
+  };
   const search: SearchAdapter = {
     search: (projectId, threadId, query, mode) =>
       host.search({
@@ -158,6 +168,7 @@ export async function createRemoteWebSession(
     projects,
     settings,
     diagnostics,
+    automations,
     search,
     attachmentStage: attachments.stage,
     attachmentPreview: attachments.preview,
@@ -356,6 +367,10 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     return this.sync(await this.host.registerProject(path.trim()));
   }
 
+  async createStandalone(): Promise<ProjectsSnapshot> {
+    return this.sync(await this.host.createStandaloneTask());
+  }
+
   loadHosts() {
     return Promise.resolve({
       activeHostId: this.health.hostId,
@@ -420,6 +435,18 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
 
   project(projectId: string): HostProjectSummary | undefined {
     return this.snapshot.projects.find(({ id }) => id === projectId);
+  }
+
+  projectForThread(threadId: string): HostProjectSummary | undefined {
+    return this.snapshot.projects.find((project) =>
+      project.conversations.some(
+        (conversation) => conversation.id === threadId,
+      ),
+    );
+  }
+
+  routeRuntime(projectId: string): void {
+    this.transport.activateProject(projectId);
   }
 
   activeProject(): HostProjectSummary | undefined {
@@ -651,7 +678,7 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
     this.grants = readExecutionGrants(storage);
     this.unsubscribes = [
       client.on("execution/approval-required", (request) => {
-        void this.receive(request);
+        void this.receive(request).catch(() => undefined);
       }),
       client.on("execution/approval-resolved", ({ requestId }) => {
         this.pending.delete(requestId);
@@ -664,6 +691,7 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
     listener: (request: ExecutionApprovalRequest) => void,
   ): () => void {
     this.requests.add(listener);
+    for (const request of this.pending.values()) listener(request);
     return () => this.requests.delete(listener);
   }
 
@@ -681,10 +709,20 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
     if (!request) {
       throw new Error("This approval request is no longer pending.");
     }
+    if (scope === "project" && request.projectScopeAvailable === false) {
+      throw new Error(
+        "Permanent project approval is unavailable outside a project.",
+      );
+    }
+    this.projects.routeRuntime(request.projectId);
+    await this.client.request("execution/approval/respond", {
+      requestId,
+      decision,
+      threadId: request.threadId,
+    });
     if (decision === "allow" && scope === "task") {
       this.taskGrants.add(taskGrantKey(request));
-    }
-    if (decision === "allow" && scope === "project") {
+    } else if (decision === "allow" && scope === "project") {
       this.grants = [
         ...this.grants.filter(
           (grant) =>
@@ -702,10 +740,6 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
       this.save();
     }
     this.pending.delete(requestId);
-    await this.client.request("execution/approval/respond", {
-      requestId,
-      decision,
-    });
   }
 
   load(projectId: string): Promise<ExecutionPolicySnapshot> {
@@ -736,11 +770,14 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
   private async receive(
     input: Omit<ExecutionApprovalRequest, "projectId" | "projectName">,
   ): Promise<void> {
-    const project = this.projects.activeProject();
+    const project =
+      this.projects.projectForThread(input.threadId) ??
+      this.projects.activeProject();
     if (!project) {
       await this.client.request("execution/approval/respond", {
         requestId: input.requestId,
         decision: "deny",
+        threadId: input.threadId,
       });
       return;
     }
@@ -748,6 +785,7 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
       ...input,
       projectId: project.id,
       projectName: project.name,
+      projectScopeAvailable: project.scope !== "standalone",
     };
     if (
       this.taskGrants.has(taskGrantKey(request)) ||
@@ -757,11 +795,18 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
           grant.permissionKey === request.permissionKey,
       )
     ) {
-      await this.client.request("execution/approval/respond", {
-        requestId: request.requestId,
-        decision: "allow",
-      });
-      return;
+      try {
+        this.projects.routeRuntime(request.projectId);
+        await this.client.request("execution/approval/respond", {
+          requestId: request.requestId,
+          decision: "allow",
+          threadId: request.threadId,
+        });
+        return;
+      } catch {
+        // A stale automatic grant must not leave the turn waiting invisibly.
+        // Fall through to an explicit approval that the user can retry.
+      }
     }
     this.pending.set(request.requestId, request);
     for (const listener of this.requests) listener(request);

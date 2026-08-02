@@ -19,6 +19,7 @@ import {
   ProjectConversationItem,
   ProjectGroup,
   ProjectListHeading,
+  RecentTasksGroup,
   RemoteRuntimeDialog,
   RuntimeStatusControl,
   showsProjectLevelActivity,
@@ -260,6 +261,40 @@ describe("ThreadlightApp", () => {
         "thread-1",
       ),
     ).toBe(true);
+  });
+});
+
+describe("RecentTasksGroup", () => {
+  it("renders standalone tasks under an expanded recent heading", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <RecentTasksGroup
+          project={{
+            id: "standalone",
+            name: "Standalone",
+            basePath: "/Users/tim/.threadlight/standalone",
+            scope: "standalone",
+            lastOpenedAt: "2026-07-31T10:00:00.000Z",
+            conversations: [
+              {
+                id: "thread-1",
+                title: "查看最新邮件",
+                createdAt: "2026-07-31T10:00:00.000Z",
+                updatedAt: "2026-07-31T10:00:00.000Z",
+              },
+            ],
+          }}
+          active
+          activeThreadId="thread-1"
+          disabled={false}
+          onSelect={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('aria-label="最近"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain("查看最新邮件");
   });
 });
 

@@ -110,4 +110,42 @@ describe("execution approval", () => {
     expect(html).toContain(">拒绝</button>");
     expect(html).toContain(">允许</button>");
   });
+
+  it("does not offer permanent cross-task grants outside a project", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ExecutionApprovalGate
+          adapter={{
+            subscribe: () => () => undefined,
+            subscribeResolved: () => () => undefined,
+            respond: vi.fn(async () => undefined),
+            load: vi.fn(),
+            revoke: vi.fn(),
+          }}
+          initialRequests={[
+            {
+              requestId: "approval-standalone",
+              projectId: "standalone",
+              projectName: "不在项目中",
+              projectScopeAvailable: false,
+              threadId: "thread-1",
+              runId: "run-1",
+              toolName: "exec_command",
+              permissionKey: "exec:npm",
+              risk: "write",
+              summary: "Run npm install",
+              external: true,
+            },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html.match(/role="radio"/g)).toHaveLength(2);
+    expect(html).toContain("不在项目中的任务不提供跨任务永久授权");
+    expect(html).not.toContain("此项目永久允许");
+    expect(html).toContain(
+      "execution-approval-scope-options two",
+    );
+  });
 });

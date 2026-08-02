@@ -626,6 +626,137 @@ describe("ThreadlightHostServer", () => {
     ]);
   });
 
+  it("stores and runs Host-owned automations for web clients with a scripted runtime", async () => {
+    const root = temporaryDirectory("threadlight-host-automation-");
+    const projectPath = createWorkspace(root, "project", "automation");
+    const homePath = join(root, "home");
+    const projects = new ProjectStore(join(homePath, "project-map.json"), {
+      createId: () => "project-1",
+    });
+    projects.register(projectPath);
+    const settings = new SettingsStore(join(homePath, "settings.json"), {
+      encrypt: (value) => value,
+      decrypt: (value) => value,
+    });
+    const peer = new ScriptedRuntimePeer((request, emit) => {
+      if (request.method === "initialize") {
+        emit({
+          jsonrpc: "2.0",
+          id: request.id ?? null,
+          result: { name: "threadlight", protocolVersion: "0.1" },
+        });
+        return;
+      }
+      if (request.method === "thread/start") {
+        emit({
+          jsonrpc: "2.0",
+          id: request.id ?? null,
+          result: { threadId: "automation-thread" },
+        });
+        return;
+      }
+      if (request.method === "turn/start") {
+        emit({
+          jsonrpc: "2.0",
+          id: request.id ?? null,
+          result: { turnId: "automation-turn" },
+        });
+        queueMicrotask(() => {
+          emit({
+            jsonrpc: "2.0",
+            method: "turn/completed",
+            params: {
+              threadId: "automation-thread",
+              turnId: "automation-turn",
+              output:
+                "All scripted checks passed.\n\nAUTOMATION_STATUS: ok",
+              diagnostics: {
+                toolCalls: [{ name: "exec_command", isError: false }],
+              },
+            },
+          });
+        });
+      }
+    });
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Automation host",
+      homePath,
+      projects,
+      settings,
+      port: 0,
+      createPeer: () => peer,
+    });
+    servers.push(server);
+    const address = await server.start();
+    const endpoint = `http://127.0.0.1:${address.port}`;
+    const webSession = await createRemoteWebSession({
+      endpoint,
+      token: "test-token",
+    });
+
+    await expect(
+      webSession.automations.load("project-1"),
+    ).resolves.toMatchObject({
+      projectId: "project-1",
+      timeZone: expect.any(String),
+      automations: [],
+    });
+    const created = await webSession.automations.create({
+      projectId: "project-1",
+      name: "Nightly scripted checks",
+      kind: "custom",
+      prompt: "Run the scripted offline checks.",
+      enabled: true,
+      schedule: { cadence: "daily", time: "09:00" },
+    });
+    expect(created.automations).toHaveLength(1);
+    const automationId = created.automations[0]!.id;
+
+    await webSession.automations.run("project-1", automationId);
+    let completed = await webSession.automations.load("project-1");
+    const deadline = Date.now() + 1_000;
+    while (completed.automations[0]?.lastRun?.status === "running") {
+      if (Date.now() >= deadline) {
+        throw new Error("Timed out waiting for scripted automation");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      completed = await webSession.automations.load("project-1");
+    }
+
+    expect(completed.automations[0]?.lastRun).toMatchObject({
+      status: "succeeded",
+      threadId: "automation-thread",
+      summary: "All scripted checks passed.",
+    });
+    expect(
+      peer.requests.find(({ method }) => method === "turn/start")?.params,
+    ).toMatchObject({
+      threadId: "automation-thread",
+      input: expect.stringContaining("Run the scripted offline checks."),
+    });
+    expect(
+      peer.requests.find(({ method }) => method === "turn/start")?.params,
+    ).toMatchObject({
+      input: expect.stringContaining("Run read-only checks only."),
+    });
+    expect(
+      (await webSession.projects.load()).projects[0]?.conversations,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: "automation-thread",
+        title: "⏱ Nightly scripted checks",
+        unread: true,
+      }),
+    );
+
+    await expect(
+      webSession.automations.delete("project-1", automationId),
+    ).resolves.toMatchObject({ automations: [] });
+    webSession.dispose();
+  });
+
   it("owns remote task recovery, worktree delivery, push, and draft PR flows", async () => {
     const root = temporaryDirectory("threadlight-host-delivery-");
     const projectPath = createWorkspace(root, "project", "baseline");
@@ -1076,6 +1207,124 @@ describe("ThreadlightHostServer", () => {
 
     await waitFor(() => terminalSessions[0]?.disposed === true);
     expect(terminalSessions[0]?.disposed).toBe(true);
+  });
+
+  it("routes standalone approval responses back to the task workspace runtime", async () => {
+    const root = temporaryDirectory("threadlight-host-standalone-approval-");
+    const homePath = join(root, "home");
+    const projects = new ProjectStore(join(homePath, "project-map.json"), {
+      standaloneRoot: join(homePath, "standalone"),
+    });
+    projects.activateStandalone();
+    const settings = new SettingsStore(join(homePath, "settings.json"), {
+      encrypt: (value) => value,
+      decrypt: (value) => value,
+    });
+    const peers: Array<{ root: string; peer: ScriptedRuntimePeer }> = [];
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Build host",
+      homePath,
+      projects,
+      settings,
+      port: 0,
+      createPeer: ({ projectRoot }) => {
+        const peer = new ScriptedRuntimePeer((request, emit) => {
+          if (request.method === "turn/start") {
+            emit({
+              jsonrpc: "2.0",
+              id: request.id ?? null,
+              result: { turnId: "standalone-turn" },
+            });
+            queueMicrotask(() => {
+              emit({
+                jsonrpc: "2.0",
+                method: "execution/approval-required",
+                params: {
+                  requestId: "approval-1",
+                  threadId: "standalone-thread",
+                  runId: "run-1",
+                  toolName: "exec_command",
+                  permissionKey: "exec:npm",
+                  risk: "write",
+                  summary: "Run npm install",
+                  detail: "npm install",
+                  external: true,
+                },
+              });
+            });
+            return;
+          }
+          emit({
+            jsonrpc: "2.0",
+            id: request.id ?? null,
+            result:
+              request.method === "thread/start"
+                ? { threadId: "standalone-thread" }
+                : request.method === "execution/approval/respond"
+                  ? { accepted: true }
+                  : { name: "threadlight", protocolVersion: "0.1" },
+          });
+        });
+        peers.push({ root: projectRoot, peer });
+        return peer;
+      },
+    });
+    servers.push(server);
+    const address = await server.start();
+    const endpoint = `http://127.0.0.1:${address.port}`;
+    const webSession = await createRemoteWebSession({
+      endpoint,
+      token: "test-token",
+    });
+    await webSession.projects.createStandalone?.();
+    await webSession.client.initialize();
+    const { threadId } = await webSession.client.startThread();
+    const workspace = projects
+      .project("standalone")
+      ?.conversations.find(({ id }) => id === threadId)
+      ?.workspace;
+    expect(workspace).toMatchObject({ mode: "standalone" });
+
+    const approval = Promise.withResolvers<{
+      requestId: string;
+      projectScopeAvailable?: boolean;
+    }>();
+    const unsubscribe = webSession.executionPolicy.subscribe((request) => {
+      approval.resolve(request);
+    });
+    await webSession.client.startTurn(threadId, "Install dependencies");
+    await expect(approval.promise).resolves.toMatchObject({
+      requestId: "approval-1",
+      projectScopeAvailable: false,
+    });
+    unsubscribe();
+    const replayed = Promise.withResolvers<string>();
+    const unsubscribeReplay = webSession.executionPolicy.subscribe(
+      (request) => replayed.resolve(request.requestId),
+    );
+    await expect(replayed.promise).resolves.toBe("approval-1");
+    await webSession.executionPolicy.respond(
+      "approval-1",
+      "allow",
+      "task",
+    );
+
+    expect(
+      peers.find(({ root: peerRoot }) => peerRoot === workspace?.path)
+        ?.peer.requests,
+    ).toContainEqual(
+      expect.objectContaining({
+        method: "execution/approval/respond",
+        params: expect.objectContaining({
+          requestId: "approval-1",
+          threadId,
+        }),
+      }),
+    );
+    unsubscribeReplay();
+    webSession.dispose();
   });
 });
 

@@ -16,6 +16,7 @@ import { AppServer } from "../src/app-server.js";
 import type { AttachmentProvider } from "../src/attachment-runtime.js";
 import { MemoryConversationStore } from "../src/conversation-store.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
+import { MemorySuggestionStore } from "../src/suggestion-store.js";
 
 function richPlanStep(
   step: string,
@@ -767,6 +768,120 @@ describe("AppServer", () => {
     ).toMatchObject({ result: { messages: [] } });
   });
 
+  it("shares hourly suggestions across tasks and falls back to stale questions when refresh fails", async () => {
+    let now = new Date("2026-07-31T08:00:00.000Z");
+    let generation = 0;
+    const requests: ModelRequest[] = [];
+    const suggestionStore = new MemorySuggestionStore();
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        generation += 1;
+        if (generation === 3) {
+          throw new Error("scripted refresh failure");
+        }
+        return {
+          text: JSON.stringify([
+            `Architecture question ${generation}?`,
+            `Testing question ${generation}?`,
+            `Feature question ${generation}?`,
+          ]),
+          toolCalls: [],
+        };
+      },
+    };
+
+    async function createServer() {
+      const messages: JsonRpcOutgoing[] = [];
+      const server = new AppServer({
+        loop: new AgentLoop(provider),
+        agent: defineAgent({
+          name: "scripted",
+          instructions: "Workspace context: the shared project",
+          tools: [],
+        }),
+        suggestionStore,
+        now: () => now,
+        send: (message) => messages.push(message),
+      });
+      await server.receive({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+      });
+      return { server, messages };
+    }
+
+    async function requestSuggestions(
+      server: AppServer,
+      messages: JsonRpcOutgoing[],
+      id: number,
+    ) {
+      await server.receive({
+        jsonrpc: "2.0",
+        id: `start-${id}`,
+        method: "thread/start",
+      });
+      const threadId = (
+        messages.find(
+          (message) =>
+            "id" in message && message.id === `start-${id}`,
+        )?.result as { threadId: string }
+      ).threadId;
+      await server.receive({
+        jsonrpc: "2.0",
+        id,
+        method: "thread/suggestions",
+        params: { threadId, language: "en" },
+      });
+      return (
+        messages.find(
+          (message) => "id" in message && message.id === id,
+        ) as { result: { suggestions: readonly string[] } }
+      ).result.suggestions;
+    }
+
+    const first = await createServer();
+    const initial = await requestSuggestions(
+      first.server,
+      first.messages,
+      10,
+    );
+    expect(
+      await requestSuggestions(first.server, first.messages, 11),
+    ).toEqual(initial);
+
+    now = new Date("2026-07-31T08:30:00.000Z");
+    const reopened = await createServer();
+    expect(
+      await requestSuggestions(reopened.server, reopened.messages, 20),
+    ).toEqual(initial);
+    expect(requests).toHaveLength(1);
+
+    now = new Date("2026-07-31T09:00:00.000Z");
+    const refreshed = await requestSuggestions(
+      reopened.server,
+      reopened.messages,
+      21,
+    );
+    expect(refreshed).toEqual([
+      "Architecture question 2?",
+      "Testing question 2?",
+      "Feature question 2?",
+    ]);
+    expect(requests).toHaveLength(2);
+
+    now = new Date("2026-07-31T10:00:00.000Z");
+    expect(
+      await requestSuggestions(reopened.server, reopened.messages, 22),
+    ).toEqual(refreshed);
+    now = new Date("2026-07-31T10:30:00.000Z");
+    expect(
+      await requestSuggestions(reopened.server, reopened.messages, 23),
+    ).toEqual(refreshed);
+    expect(requests).toHaveLength(3);
+  });
+
   it("cleans up a scripted model run before completing when the model forgets to clear sharing", async () => {
     let generation = 0;
     const shareActions: unknown[] = [];
@@ -1064,6 +1179,82 @@ describe("AppServer", () => {
       method: "turn/completed",
       params: { output: "Hello from Threadlight" },
     });
+  });
+
+  it("resumes a running turn from the host-owned live snapshot", async () => {
+    let finishGeneration!: () => void;
+    const generationPending = new Promise<void>((resolve) => {
+      finishGeneration = resolve;
+    });
+    let receiveDelta!: () => void;
+    const deltaReceived = new Promise<void>((resolve) => {
+      receiveDelta = resolve;
+    });
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        options?.onEvent?.({
+          type: "output_text.delta",
+          delta: "正在检查",
+        });
+        receiveDelta();
+        await generationPending;
+        return { text: "正在检查，随后完成。", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    let completeTurn!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      completeTurn = resolve;
+    });
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "scripted", instructions: "Reply" }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completeTurn();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "检查项目" },
+    });
+    await deltaReceived;
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        threadId,
+        messages: [{ role: "user", text: "检查项目" }],
+        activeTurn: {
+          mode: "default",
+          isThinking: false,
+          streamingText: "正在检查",
+          progress: [],
+        },
+      },
+    });
+
+    finishGeneration();
+    await completed;
   });
 
   it("runs a turn and streams completion notifications", async () => {

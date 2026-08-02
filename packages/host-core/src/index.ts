@@ -59,6 +59,7 @@ export {
 export {
   TaskWorkspaceManager,
   type FolderTaskWorkspace,
+  type StandaloneTaskWorkspace,
   type GitTaskWorkspace,
   type TaskWorkspace,
   type TaskWorkspaceManagerOptions,
@@ -88,3 +89,16 @@ export {
   GitHubCliProvider,
   type GitHubCliProviderOptions,
 } from "./github-cli-provider.js";
+export {
+  AutomationStore,
+  nextAutomationRun,
+  normalizeSchedule,
+  type AutomationStoreOptions,
+} from "./automation-store.js";
+export {
+  AutomationScheduler,
+  classifyAutomationResult,
+  type AutomationAlert,
+  type AutomationExecutionResult,
+  type AutomationSchedulerOptions,
+} from "./automation-scheduler.js";

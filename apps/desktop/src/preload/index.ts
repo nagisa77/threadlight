@@ -46,6 +46,7 @@ import {
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_SEARCH_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
+  DESKTOP_STANDALONE_CREATE_CHANNEL,
   DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
   DESKTOP_PROJECT_OPENERS_GET_CHANNEL,
   DESKTOP_PROJECT_OPEN_WITH_CHANNEL,
@@ -113,6 +114,9 @@ const api: DesktopApi = {
   },
   openProject(path) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_OPEN_CHANNEL, path);
+  },
+  createStandaloneTask() {
+    return ipcRenderer.invoke(DESKTOP_STANDALONE_CREATE_CHANNEL);
   },
   getHosts() {
     return ipcRenderer.invoke(DESKTOP_HOSTS_GET_CHANNEL);

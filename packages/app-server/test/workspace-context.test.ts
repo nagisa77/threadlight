@@ -35,6 +35,60 @@ class RecordingProvider implements ModelProvider {
 }
 
 describe("workspace context", () => {
+  it("keeps standalone tasks free of project instructions and memory", async () => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "threadlight-standalone-context-"),
+    );
+
+    try {
+      await writeFile(join(workspaceRoot, "AGENTS.md"), "Project-only policy.");
+      await mkdir(join(workspaceRoot, ".threadlight"));
+      await writeFile(
+        join(workspaceRoot, ".threadlight", "MEMORY.md"),
+        "# Project memory\n\n- Project-only fact.",
+      );
+      const provider = new RecordingProvider();
+      const messages: JsonRpcOutgoing[] = [];
+      let completeTurn: (() => void) | undefined;
+      const server = new AppServer({
+        loop: new AgentLoop(provider),
+        agentFactory: createWorkspaceAgentFactory({
+          workspaceRoot,
+          baseInstructions: "Standalone task instructions.",
+          includeWorkspaceContext: false,
+        }),
+        send(message) {
+          messages.push(message);
+          if ("method" in message && message.method === "turn/completed") {
+            completeTurn?.();
+            completeTurn = undefined;
+          }
+        },
+      });
+
+      await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+      await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+      await startTurnAndWait(server, responseThreadId(messages, 2), 3, () =>
+        new Promise<void>((resolve) => {
+          completeTurn = resolve;
+        }),
+      );
+
+      expect(provider.requests[0]?.instructions).toContain(
+        "Standalone task instructions.",
+      );
+      expect(provider.requests[0]?.instructions).not.toContain(
+        "Project-only policy.",
+      );
+      expect(provider.requests[0]?.instructions).not.toContain(
+        "Project-only fact.",
+      );
+      expect(provider.requests[0]?.tools).toEqual([]);
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("takes a fresh workspace snapshot for each new thread", async () => {
     const workspaceRoot = await mkdtemp(join(tmpdir(), "threadlight-workspace-"));
 

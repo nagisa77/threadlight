@@ -6,6 +6,7 @@ import {
   projectMessagesProcess,
   projectProgressProcess,
   runningProcessSessionIds,
+  type ActiveTurnData,
   type AttachmentData,
   type AgentPlanData,
   type AgentEventData,
@@ -48,6 +49,7 @@ export interface SessionState {
   connection: "connecting" | "ready" | "error";
   connectionError?: string;
   threadId?: string;
+  revision: number;
   isRunning: boolean;
   isThinking: boolean;
   messages: readonly ConversationMessage[];
@@ -65,6 +67,8 @@ export type SessionAction =
       threadId: string;
       messages?: readonly ConversationMessageData[];
       queuedTurns?: readonly QueuedTurnData[];
+      revision?: number;
+      activeTurn?: ActiveTurnData;
     }
   | { type: "connection.failed"; error: string }
   | {
@@ -77,11 +81,18 @@ export type SessionAction =
       mode?: TurnMode;
     }
   | { type: "message.rejected"; id: string; error: string }
-  | { type: "turn.started"; mode: TurnMode }
+  | {
+      type: "turn.started";
+      mode: TurnMode;
+      revision?: number;
+      activeTurn?: ActiveTurnData;
+    }
   | {
       type: "turn.completed";
       id: string;
       output: string;
+      revision?: number;
+      message?: ConversationMessageData;
       capabilities?: readonly MessageCapabilityData[];
       diagnostics?: TurnDiagnosticsData;
       sources?: readonly MessageSourceData[];
@@ -91,9 +102,16 @@ export type SessionAction =
       type: "turn.failed";
       id: string;
       error: string;
+      revision?: number;
+      message?: ConversationMessageData;
       diagnostics?: TurnDiagnosticsData;
     }
-  | { type: "agent.event"; event: AgentEventData }
+  | {
+      type: "agent.event";
+      event: AgentEventData;
+      revision?: number;
+      activeTurn?: ActiveTurnData;
+    }
   | { type: "process.updated"; process: ProcessSnapshotData }
   | { type: "queue.updated"; queuedTurns: readonly QueuedTurnData[] }
   | {
@@ -106,6 +124,7 @@ export type SessionAction =
 
 export const initialSessionState: SessionState = {
   connection: "connecting",
+  revision: 0,
   isRunning: false,
   isThinking: false,
   messages: [],
@@ -121,14 +140,32 @@ export function sessionReducer(
   switch (action.type) {
     case "connection.connecting":
       return { ...state, connection: "connecting", connectionError: undefined };
-    case "connection.ready":
+    case "connection.ready": {
+      const revision =
+        action.revision ?? action.activeTurn?.revision ?? 0;
+      if (state.revision > revision) {
+        return {
+          ...state,
+          connection: "ready",
+          connectionError: undefined,
+          threadId: action.threadId,
+          messages: mergeMessages(action.messages ?? [], state.messages),
+        };
+      }
       return {
         ...initialSessionState,
         connection: "ready",
         threadId: action.threadId,
+        revision,
         messages: action.messages ?? [],
         queuedTurns: action.queuedTurns ?? [],
+        isRunning: action.activeTurn !== undefined,
+        isThinking: action.activeTurn?.isThinking ?? false,
+        progress: action.activeTurn?.progress ?? [],
+        plan: action.activeTurn?.plan,
+        streamingText: action.activeTurn?.streamingText ?? "",
       };
+    }
     case "connection.failed":
       return {
         ...state,
@@ -180,8 +217,18 @@ export function sessionReducer(
         messages: state.messages.filter((message) => message.id !== action.id),
       };
     case "turn.started":
+      if (
+        action.revision !== undefined &&
+        action.revision < state.revision
+      ) {
+        return state;
+      }
+      if (action.activeTurn) {
+        return hydrateActiveTurn(state, action.activeTurn);
+      }
       return {
         ...state,
+        revision: action.revision ?? state.revision,
         isRunning: true,
         isThinking: true,
         ...(action.mode === "plan" && !state.plan
@@ -198,6 +245,8 @@ export function sessionReducer(
         action.diagnostics,
         action.sources,
         action.citations,
+        action.revision,
+        action.message,
       );
     case "turn.failed":
       return completeTurn(
@@ -207,8 +256,16 @@ export function sessionReducer(
         true,
         [],
         action.diagnostics,
+        [],
+        [],
+        action.revision,
+        action.message,
       );
     case "agent.event":
+      if (action.activeTurn) {
+        if (action.activeTurn.revision <= state.revision) return state;
+        return hydrateActiveTurn(state, action.activeTurn);
+      }
       return reduceAgentEvent(state, action.event);
     case "process.updated":
       return updateSessionProcess(state, action.process);
@@ -327,29 +384,61 @@ function completeTurn(
   diagnostics?: TurnDiagnosticsData,
   sources: readonly MessageSourceData[] = [],
   citations: readonly MessageCitationData[] = [],
+  revision?: number,
+  message?: ConversationMessageData,
 ): SessionState {
+  if (revision !== undefined && revision < state.revision) return state;
+  const assistantMessage: ConversationMessage =
+    message ?? {
+      id,
+      role: "assistant",
+      text,
+      error,
+      ...(state.progress.length > 0 ? { progress: state.progress } : {}),
+      ...(state.plan ? { plan: state.plan } : {}),
+      ...(!error && capabilities.length > 0 ? { capabilities } : {}),
+      ...(diagnostics ? { diagnostics } : {}),
+      ...(sources.length > 0 ? { sources, citations } : {}),
+    };
   return {
     ...state,
+    revision: revision ?? state.revision,
     isRunning: false,
     isThinking: false,
     progress: [],
     plan: undefined,
     streamingText: "",
-    messages: [
-      ...state.messages,
-      {
-        id,
-        role: "assistant",
-        text,
-        error,
-        ...(state.progress.length > 0 ? { progress: state.progress } : {}),
-        ...(state.plan ? { plan: state.plan } : {}),
-        ...(!error && capabilities.length > 0 ? { capabilities } : {}),
-        ...(diagnostics ? { diagnostics } : {}),
-        ...(sources.length > 0 ? { sources, citations } : {}),
-      },
-    ],
+    messages: mergeMessages(state.messages, [assistantMessage]),
   };
+}
+
+function hydrateActiveTurn(
+  state: SessionState,
+  activeTurn: ActiveTurnData,
+): SessionState {
+  return {
+    ...state,
+    revision: activeTurn.revision,
+    isRunning: true,
+    isThinking: activeTurn.isThinking,
+    progress: activeTurn.progress,
+    plan: activeTurn.plan,
+    streamingText: activeTurn.streamingText,
+  };
+}
+
+function mergeMessages(
+  first: readonly ConversationMessage[],
+  second: readonly ConversationMessage[],
+): readonly ConversationMessage[] {
+  const messages = [...first];
+  const ids = new Set(messages.map(({ id }) => id));
+  for (const message of second) {
+    if (ids.has(message.id)) continue;
+    ids.add(message.id);
+    messages.push(message);
+  }
+  return messages;
 }
 
 function updateSessionProcess(
@@ -454,6 +543,8 @@ export function useThreadlightSession(
         threadId: string;
         messages?: readonly ConversationMessageData[];
         queuedTurns?: readonly QueuedTurnData[];
+        revision?: number;
+        activeTurn?: ActiveTurnData;
       };
       if (threadId) {
         try {
@@ -473,6 +564,8 @@ export function useThreadlightSession(
         threadId: opened.threadId,
         messages: opened.messages,
         queuedTurns: opened.queuedTurns,
+        revision: opened.revision,
+        activeTurn: opened.activeTurn,
       });
       return opened.threadId;
     } catch (error) {
@@ -489,11 +582,23 @@ export function useThreadlightSession(
 
   useEffect(() => {
     const subscriptions = [
-      client.on("turn/started", ({ threadId, mode }) => {
-        updateSession(threadId, { type: "turn.started", mode });
+      client.on("turn/started", ({
+        threadId,
+        mode,
+        revision,
+        activeTurn,
+      }) => {
+        updateSession(threadId, {
+          type: "turn.started",
+          mode,
+          revision,
+          activeTurn,
+        });
       }),
       client.on("turn/completed", ({
         threadId,
+        revision,
+        message,
         output,
         capabilities,
         diagnostics,
@@ -504,22 +609,42 @@ export function useThreadlightSession(
           type: "turn.completed",
           id: crypto.randomUUID(),
           output,
+          revision,
+          message,
           capabilities,
           diagnostics,
           sources,
           citations,
         });
       }),
-      client.on("turn/failed", ({ threadId, error, diagnostics }) => {
+      client.on("turn/failed", ({
+        threadId,
+        revision,
+        message,
+        error,
+        diagnostics,
+      }) => {
         updateSession(threadId, {
           type: "turn.failed",
           id: crypto.randomUUID(),
           error,
+          revision,
+          message,
           diagnostics,
         });
       }),
-      client.on("agent/event", ({ threadId, event }) => {
-        updateSession(threadId, { type: "agent.event", event });
+      client.on("agent/event", ({
+        threadId,
+        revision,
+        activeTurn,
+        event,
+      }) => {
+        updateSession(threadId, {
+          type: "agent.event",
+          event,
+          revision,
+          activeTurn,
+        });
       }),
       client.on("turn/queue/updated", ({ threadId, queuedTurns }) => {
         updateSession(threadId, { type: "queue.updated", queuedTurns });

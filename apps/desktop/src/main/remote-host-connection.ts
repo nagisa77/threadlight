@@ -5,6 +5,9 @@ import {
 } from "@threadlight/client";
 import type {
   AttachmentData,
+  HostAutomationCreateRequest,
+  HostAutomationsSnapshot,
+  HostAutomationUpdateRequest,
   HostProviderDiagnostic,
   HostProviderTestRequest,
   HostProjectsSnapshot,
@@ -36,6 +39,36 @@ export class RemoteHostConnection {
 
   diagnostics(projectId: string): Promise<HostProjectDiagnosticsSnapshot> {
     return this.client.diagnostics(projectId);
+  }
+
+  automations(projectId: string): Promise<HostAutomationsSnapshot> {
+    return this.client.automations(projectId);
+  }
+
+  createAutomation(
+    request: HostAutomationCreateRequest,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.client.createAutomation(request);
+  }
+
+  updateAutomation(
+    request: HostAutomationUpdateRequest,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.client.updateAutomation(request);
+  }
+
+  deleteAutomation(
+    projectId: string,
+    id: string,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.client.deleteAutomation(projectId, id);
+  }
+
+  runAutomation(
+    projectId: string,
+    id: string,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.client.runAutomation(projectId, id);
   }
 
   search(request: HostSearchRequest): Promise<readonly HostSearchResult[]> {

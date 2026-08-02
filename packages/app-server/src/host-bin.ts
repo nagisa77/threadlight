@@ -40,7 +40,9 @@ const homePath = resolve(
     process.env.THREADLIGHT_HOME ??
     join(homedir(), ".threadlight"),
 );
-const projects = new ProjectStore(join(homePath, "project-map.json"));
+const projects = new ProjectStore(join(homePath, "project-map.json"), {
+  standaloneRoot: join(homePath, "standalone"),
+});
 const secretCodec = createHostSecretCodec(
   join(homePath, "host-secret.key"),
 );
@@ -89,6 +91,10 @@ server = new ThreadlightHostServer({
       cwd: projectRoot,
       environment: {
         ...runtimeEnvironment(settings.runtimeSettings()),
+        THREADLIGHT_PROJECT_ROOT: projectBasePath,
+        ...(projects.project(projectId)?.scope === "standalone"
+          ? { THREADLIGHT_TASK_SCOPE: "standalone" }
+          : {}),
         THREADLIGHT_CONNECTION_RPC_FD: "3",
         ...(oauthCallbackUrlPrefix
           ? {

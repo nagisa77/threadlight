@@ -416,6 +416,7 @@ Electron 桌面端的 `computer_share` 可以：
 <project>/.threadlight/
 ├── MEMORY.md                     # 用户可读的长期项目记忆
 ├── plugins/                      # 可选的项目级 Plugins
+├── suggestions.json              # 项目级推荐问题缓存（每种语言至多每小时刷新一次）
 └── conversations/
     └── <threadId>.json           # 会话与受限、脱敏的 opaque model state
 ```
@@ -423,6 +424,7 @@ Electron 桌面端的 `computer_share` 可以：
 - 密钥只从运行时环境或系统安全存储注入，不进入源码、fixtures、项目文件或日志。
 - app-server 的协议输出与诊断日志分别写入 stdout 和 stderr。
 - 持久化的 opaque model state 上限为 5 MiB；Computer Use 截图写盘前会替换为占位图。
+- 首页推荐问题按项目和语言缓存；只有距离上次生成尝试超过一小时才会惰性刷新，失败时继续使用旧问题。
 - 每个 Skill 最大 64,000 字符；每个任务最多快照 128 个 Skills、合计 2,000,000 字符，初始 Skill 目录最多占 8,000 字符 Prompt。
 - 附件通过受校验的本地路径引用，wire adapter 不直接内联文件字节。
 - `.threadlight/` 默认应加入版本控制忽略规则。

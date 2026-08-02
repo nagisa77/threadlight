@@ -265,6 +265,115 @@ describe("sessionReducer", () => {
     expect(sessions["thread-2"]?.isRunning).toBe(true);
   });
 
+  it("hydrates an in-flight turn after the display client refreshes", () => {
+    const state = sessionReducer(initialSessionState, {
+      type: "connection.ready",
+      threadId: "thread-1",
+      messages: [
+        {
+          id: "message-1",
+          role: "user",
+          text: "检查项目",
+        },
+      ],
+      activeTurn: {
+        turnId: "turn-1",
+        revision: 4,
+        mode: "default",
+        isThinking: true,
+        streamingText: "已经读取配置，",
+        progress: [
+          {
+            text: "正在检查",
+            activities: [
+              {
+                id: "tool-1",
+                name: "workspace_inspect",
+                status: "completed",
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(state).toMatchObject({
+      connection: "ready",
+      threadId: "thread-1",
+      isRunning: true,
+      isThinking: true,
+      streamingText: "已经读取配置，",
+      messages: [{ role: "user", text: "检查项目" }],
+      progress: [
+        {
+          text: "正在检查",
+          activities: [{ id: "tool-1", status: "completed" }],
+        },
+      ],
+    });
+  });
+
+  it("keeps newer host state when an older resume response arrives", () => {
+    const assistant = {
+      id: "assistant-1",
+      role: "assistant" as const,
+      text: "检查完成",
+    };
+    let state = sessionReducer(
+      {
+        ...initialSessionState,
+        connection: "ready",
+        threadId: "thread-1",
+        revision: 4,
+        isRunning: true,
+        streamingText: "正在检查",
+      },
+      {
+        type: "turn.completed",
+        id: assistant.id,
+        output: assistant.text,
+        revision: 5,
+        message: assistant,
+      },
+    );
+
+    state = sessionReducer(state, {
+      type: "connection.ready",
+      threadId: "thread-1",
+      revision: 4,
+      messages: [
+        { id: "user-1", role: "user", text: "检查项目" },
+      ],
+      activeTurn: {
+        turnId: "turn-1",
+        revision: 4,
+        mode: "default",
+        isThinking: false,
+        streamingText: "正在检查",
+        progress: [],
+      },
+    });
+
+    expect(state).toMatchObject({
+      revision: 5,
+      isRunning: false,
+      streamingText: "",
+    });
+    expect(state.messages).toEqual([
+      { id: "user-1", role: "user", text: "检查项目" },
+      assistant,
+    ]);
+
+    state = sessionReducer(state, {
+      type: "turn.completed",
+      id: assistant.id,
+      output: assistant.text,
+      revision: 5,
+      message: assistant,
+    });
+    expect(state.messages).toHaveLength(2);
+  });
+
   it("rolls back the optimistic message when turn/start is rejected", async () => {
     let state = sessionReducer(
       {

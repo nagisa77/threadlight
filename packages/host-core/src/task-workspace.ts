@@ -25,6 +25,11 @@ export interface FolderTaskWorkspace {
   path: string;
 }
 
+export interface StandaloneTaskWorkspace {
+  mode: "standalone";
+  path: string;
+}
+
 export interface GitTaskWorkspace {
   mode: "worktree";
   path: string;
@@ -35,10 +40,14 @@ export interface GitTaskWorkspace {
   sourceBranch?: string;
 }
 
-export type TaskWorkspace = FolderTaskWorkspace | GitTaskWorkspace;
+export type TaskWorkspace =
+  | FolderTaskWorkspace
+  | StandaloneTaskWorkspace
+  | GitTaskWorkspace;
 
 export interface TaskWorkspaceManagerOptions {
   createId?: () => string;
+  standaloneRoot?: string;
   runGit?: (
     cwd: string,
     args: readonly string[],
@@ -51,6 +60,7 @@ const MAX_GIT_OUTPUT_BYTES = 64 * 1024 * 1024;
 export class TaskWorkspaceManager {
   private readonly createId: () => string;
   private readonly runGit: NonNullable<TaskWorkspaceManagerOptions["runGit"]>;
+  private readonly standaloneRoot?: string;
 
   constructor(
     private readonly root: string,
@@ -58,6 +68,7 @@ export class TaskWorkspaceManager {
   ) {
     this.createId = options.createId ?? randomUUID;
     this.runGit = options.runGit ?? runGit;
+    this.standaloneRoot = options.standaloneRoot;
   }
 
   async prepare(
@@ -117,7 +128,29 @@ export class TaskWorkspaceManager {
     };
   }
 
+  async prepareStandalone(): Promise<StandaloneTaskWorkspace> {
+    if (!this.standaloneRoot) {
+      throw new Error("Standalone task workspaces are not configured");
+    }
+    const path = join(this.standaloneRoot, this.createId());
+    await mkdir(path, { recursive: true, mode: 0o700 });
+    return { mode: "standalone", path };
+  }
+
   async remove(workspace: TaskWorkspace): Promise<void> {
+    if (workspace.mode === "standalone") {
+      if (!this.standaloneRoot) return;
+      const managedRoot = resolve(this.standaloneRoot);
+      const workspacePath = resolve(workspace.path);
+      if (
+        workspacePath === managedRoot ||
+        !isInside(managedRoot, workspacePath)
+      ) {
+        return;
+      }
+      await rm(workspacePath, { recursive: true, force: true });
+      return;
+    }
     if (workspace.mode !== "worktree") return;
     const managedRoot = resolve(this.root);
     const worktreeRoot = resolve(workspace.root);

@@ -23,6 +23,10 @@ export type TaskWorkspace =
       path: string;
     }
   | {
+      mode: "standalone";
+      path: string;
+    }
+  | {
       mode: "worktree";
       path: string;
       root: string;
@@ -37,6 +41,7 @@ export interface ProjectSummary {
   name: string;
   basePath: string;
   lastOpenedAt: string;
+  scope?: "project" | "standalone";
   pinnedAt?: string;
   conversations: readonly ConversationSummary[];
   runtime?: {
@@ -85,6 +90,7 @@ export interface ConversationMetadataUpdate extends ConversationSummaryTarget {
 export interface ProjectsAdapter {
   load(): Promise<ProjectsSnapshot>;
   openFolder(path?: string): Promise<ProjectsSnapshot>;
+  createStandalone?(): Promise<ProjectsSnapshot>;
   loadHosts?(): Promise<HostsSnapshot>;
   connectRemote?(input: {
     endpoint: string;

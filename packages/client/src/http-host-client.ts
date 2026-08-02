@@ -1,5 +1,8 @@
 import type {
   AttachmentData,
+  HostAutomationCreateRequest,
+  HostAutomationsSnapshot,
+  HostAutomationUpdateRequest,
   HostCodeHostCommitPushResult,
   HostCodeHostDeliveryStatus,
   HostConversationChangesRestoreRequest,
@@ -63,6 +66,50 @@ export class HttpHostClient {
     return this.request(
       `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics`,
     );
+  }
+
+  automations(projectId: string): Promise<HostAutomationsSnapshot> {
+    return this.request(
+      `/v1/host/projects/${encodeURIComponent(projectId)}/automations`,
+    );
+  }
+
+  createAutomation(
+    request: HostAutomationCreateRequest,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.request("/v1/host/automations/create", {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  updateAutomation(
+    request: HostAutomationUpdateRequest,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.request("/v1/host/automations/update", {
+      method: "POST",
+      body: request,
+    });
+  }
+
+  deleteAutomation(
+    projectId: string,
+    id: string,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.request("/v1/host/automations/delete", {
+      method: "POST",
+      body: { projectId, id },
+    });
+  }
+
+  runAutomation(
+    projectId: string,
+    id: string,
+  ): Promise<HostAutomationsSnapshot> {
+    return this.request("/v1/host/automations/run", {
+      method: "POST",
+      body: { projectId, id },
+    });
   }
 
   search(
@@ -136,6 +183,12 @@ export class HttpHostClient {
     return this.request("/v1/host/projects/register", {
       method: "POST",
       body: { path },
+    });
+  }
+
+  createStandaloneTask(): Promise<HostProjectsSnapshot> {
+    return this.request("/v1/host/projects/standalone", {
+      method: "POST",
     });
   }
 

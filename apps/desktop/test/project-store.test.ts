@@ -23,6 +23,35 @@ afterEach(() => {
 });
 
 describe("ProjectStore", () => {
+  it("persists standalone tasks in a dedicated non-project scope", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-standalone-"));
+    directories.push(root);
+    const mapPath = join(root, "project-map.json");
+    const standaloneRoot = join(root, "standalone");
+    const store = new ProjectStore(mapPath, { standaloneRoot });
+
+    const snapshot = store.activateStandalone();
+
+    expect(snapshot).toMatchObject({
+      activeProjectId: "standalone",
+      projects: [
+        {
+          id: "standalone",
+          name: "Standalone",
+          scope: "standalone",
+          basePath: realpathSync(standaloneRoot),
+          conversations: [],
+        },
+      ],
+    });
+    expect(
+      existsSync(join(standaloneRoot, ".threadlight", "conversations")),
+    ).toBe(true);
+    expect(
+      new ProjectStore(mapPath, { standaloneRoot }).snapshot(),
+    ).toMatchObject(snapshot);
+  });
+
   it("persists the global project map and prepares project storage", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);

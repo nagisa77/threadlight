@@ -265,6 +265,103 @@ describe("execution safety policy", () => {
     await server.dispose();
   });
 
+  it("replays a pending approval when a display client resumes the task", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const firstApproval = Promise.withResolvers<string>();
+    const replayedApproval = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    let approvalNotifications = 0;
+    let modelStep = 0;
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate() {
+          modelStep += 1;
+          return modelStep === 1
+            ? {
+                text: "",
+                toolCalls: [
+                  {
+                    id: "write-after-refresh",
+                    name: "write_file",
+                    arguments: { path: "README.md" },
+                  },
+                ],
+              }
+            : { text: "Done.", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Use the tool",
+        tools: [
+          defineTool({
+            name: "write_file",
+            mutability: "write",
+            description: "Write a file",
+            parameters: { type: "object" },
+            async execute() {
+              return "ok";
+            },
+          }),
+        ],
+      }),
+      send(message) {
+        messages.push(message);
+        if (
+          "method" in message &&
+          message.method === "execution/approval-required"
+        ) {
+          approvalNotifications += 1;
+          firstApproval.resolve(message.params.requestId);
+          if (approvalNotifications === 2) replayedApproval.resolve();
+        }
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { capabilities: { executionApprovals: true } },
+    });
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "thread/start",
+    });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Write the file" },
+    });
+    const requestId = await firstApproval.promise;
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+    await replayedApproval.promise;
+    expect(approvalNotifications).toBe(2);
+
+    await server.receive({
+      jsonrpc: "2.0",
+      method: "execution/approval/respond",
+      params: { requestId, decision: "allow", threadId },
+    });
+    await completed.promise;
+    await server.dispose();
+  });
+
   it("uses an offline scripted provider and bypasses safe execution for a full-access conversation", async () => {
     const messages: JsonRpcOutgoing[] = [];
     const completed = Promise.withResolvers<void>();

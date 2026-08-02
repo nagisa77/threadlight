@@ -124,4 +124,39 @@ describe("empty state", () => {
     expect(html).toContain("threadlight");
     expect(html).not.toContain("Compute Lab");
   });
+
+  it("adds new-project and standalone actions below the project list", () => {
+    const html = renderToStaticMarkup(
+      <ProjectPickerPopover
+        projects={projects}
+        currentProjectId="threadlight"
+        query=""
+        position={{ top: 80, left: 20, transformOrigin: "top left" }}
+        onQueryChange={vi.fn()}
+        onClose={vi.fn()}
+        onSelect={vi.fn()}
+        onOpenProject={vi.fn()}
+        onCreateStandalone={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("新建项目");
+    expect(html).toContain("不在项目中");
+    expect(html).toContain('class="project-picker-actions"');
+  });
+
+  it("does not expose the standalone storage container as a project", () => {
+    const standalone: ProjectSummary = {
+      id: "standalone",
+      name: "Standalone",
+      basePath: "/Users/tim/.threadlight/standalone",
+      scope: "standalone",
+      lastOpenedAt: "2026-07-31T10:00:00.000Z",
+      conversations: [],
+    };
+
+    expect(filterProjectsForPicker([...projects, standalone], "")).toEqual(
+      projects,
+    );
+  });
 });

@@ -340,6 +340,7 @@ Long-term memory lives in `.threadlight/MEMORY.md`. Agents read before writing t
 <project>/.threadlight/
 ├── MEMORY.md                     # Human-readable long-term project memory
 ├── plugins/                      # Optional project Skills-only Plugins
+├── suggestions.json              # Project suggestion cache (at most one refresh per language per hour)
 └── conversations/
     └── <threadId>.json           # Conversation and bounded, redacted opaque state
 ```
@@ -347,6 +348,7 @@ Long-term memory lives in `.threadlight/MEMORY.md`. Agents read before writing t
 - Secrets are injected only from the runtime environment or OS secure storage, never source, fixtures, project files, or logs.
 - app-server writes protocol output to stdout and diagnostics to stderr.
 - Persisted opaque model state is capped at 5 MiB; Computer Use screenshots become placeholders before disk writes.
+- Opening-screen suggestions are cached by project and language. They refresh lazily only after an hour since the last attempt and fall back to stale questions if a refresh fails.
 - Each Skill is limited to 64,000 characters; a task snapshots at most 128 Skills and 2,000,000 total Skill characters, while the initial Skill catalog uses at most 8,000 prompt characters.
 - Attachments use validated local path references rather than inline bytes in wire adapters.
 - `.threadlight/` should normally be ignored by version control.

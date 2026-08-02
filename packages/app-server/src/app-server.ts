@@ -21,6 +21,7 @@ import {
 } from "@threadlight/protocol";
 
 import type {
+  ActiveTurnData,
   AttachmentData,
   AgentPlanData,
   CapabilityDescriptor,
@@ -47,6 +48,12 @@ import {
   type ConversationStore,
   type StoredConversation,
 } from "./conversation-store.js";
+import {
+  DEFAULT_SUGGESTION_REFRESH_INTERVAL_MS,
+  MemorySuggestionStore,
+  type SuggestedQuestions,
+  type SuggestionStore,
+} from "./suggestion-store.js";
 import {
   composePrompt,
   promptBlocksFromSnapshot,
@@ -83,19 +90,15 @@ interface ThreadState {
   accessMode: ConversationAccessMode;
   promptSnapshot: PromptSnapshot;
   conversation: StoredConversation;
+  revision: number;
   progress: readonly ConversationProgressData[];
   plan?: AgentPlanData;
-  suggestions: Map<
-    SuggestionLanguage,
-    readonly [string, string, string]
-  >;
-  suggestionRequests: Map<
-    SuggestionLanguage,
-    Promise<readonly [string, string, string]>
-  >;
   runtime?: ThreadRuntime;
   activeTurn?: {
     id: string;
+    mode: TurnMode;
+    isThinking: boolean;
+    streamingText: string;
     controller: AbortController;
     sourceCitations?: SourceCitationRunController;
   };
@@ -126,6 +129,8 @@ interface SharedAppServerOptions {
   attachmentProvider?: AttachmentProvider;
   modelStatePersistence?: ModelStatePersistence;
   conversationStore?: ConversationStore;
+  suggestionStore?: SuggestionStore;
+  suggestionRefreshIntervalMs?: number;
   processes?: ProcessController;
   threadRuntimeFactory?: ThreadRuntimeFactory;
   now?: () => Date;
@@ -201,6 +206,8 @@ export class AppServer {
   private readonly agentFactory: AgentFactory;
   private readonly send: SendMessage;
   private readonly conversationStore: ConversationStore;
+  private readonly suggestionStore: SuggestionStore;
+  private readonly suggestionRefreshIntervalMs: number;
   private readonly processes?: ProcessController;
   private readonly threadRuntimeFactory?: ThreadRuntimeFactory;
   private readonly now: () => Date;
@@ -209,6 +216,10 @@ export class AppServer {
   private readonly modelName?: string;
   private readonly generateConversationTitles: boolean;
   private readonly threads = new Map<string, ThreadState>();
+  private readonly suggestionRequests = new Map<
+    SuggestionLanguage,
+    Promise<SuggestedQuestions>
+  >();
   private readonly executionApprovals: ExecutionApprovalRequester = {
     request: (request, signal) =>
       this.requestExecutionApproval(request, signal),
@@ -216,6 +227,7 @@ export class AppServer {
   private readonly pendingExecutionApprovals = new Map<
     string,
     {
+      request: ThreadlightNotificationMap["execution/approval-required"];
       resolve(decision: "allow" | "deny"): void;
       dispose(): void;
     }
@@ -232,6 +244,11 @@ export class AppServer {
     this.send = options.send;
     this.conversationStore =
       options.conversationStore ?? new MemoryConversationStore();
+    this.suggestionStore =
+      options.suggestionStore ?? new MemorySuggestionStore();
+    this.suggestionRefreshIntervalMs =
+      options.suggestionRefreshIntervalMs ??
+      DEFAULT_SUGGESTION_REFRESH_INTERVAL_MS;
     this.processes = options.processes;
     this.threadRuntimeFactory = options.threadRuntimeFactory;
     this.now = options.now ?? (() => new Date());
@@ -344,6 +361,8 @@ export class AppServer {
     threadId: string;
     messages: readonly ConversationMessageData[];
     queuedTurns: readonly QueuedTurnData[];
+    revision: number;
+    activeTurn?: ActiveTurnData;
   }> {
     const { threadId } = objectParams(params);
     requireString(threadId, "threadId");
@@ -367,10 +386,28 @@ export class AppServer {
         void this.startNextQueuedTurn(threadId, thread!);
       }, 0);
     }
+    const pendingApprovals = [...this.pendingExecutionApprovals.values()]
+      .filter((pending) => pending.request.threadId === threadId);
+    if (pendingApprovals.length > 0) {
+      setTimeout(() => {
+        for (const pending of pendingApprovals) {
+          if (
+            this.pendingExecutionApprovals.get(
+              pending.request.requestId,
+            ) === pending
+          ) {
+            this.notify("execution/approval-required", pending.request);
+          }
+        }
+      }, 0);
+    }
+    const activeTurn = this.activeTurnSnapshot(thread);
     return {
       threadId,
       messages: thread.conversation.messages,
       queuedTurns: thread.conversation.queuedTurns ?? [],
+      revision: thread.revision,
+      ...(activeTurn ? { activeTurn } : {}),
     };
   }
 
@@ -401,23 +438,55 @@ export class AppServer {
     const thread = this.threads.get(threadId);
     if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
 
-    const cached = thread.suggestions.get(language);
-    if (cached) return { suggestions: cached };
-
-    let request = thread.suggestionRequests.get(language);
+    let request = this.suggestionRequests.get(language);
     if (!request) {
-      request = this.generateSuggestedQuestions(thread.agent, language);
-      thread.suggestionRequests.set(language, request);
+      request = this.resolveSuggestedQuestions(thread.agent, language);
+      this.suggestionRequests.set(language, request);
     }
 
     try {
       const suggestions = await request;
-      thread.suggestions.set(language, suggestions);
       return { suggestions };
     } finally {
-      if (thread.suggestionRequests.get(language) === request) {
-        thread.suggestionRequests.delete(language);
+      if (this.suggestionRequests.get(language) === request) {
+        this.suggestionRequests.delete(language);
       }
+    }
+  }
+
+  private async resolveSuggestedQuestions(
+    agent: Agent,
+    language: SuggestionLanguage,
+  ): Promise<SuggestedQuestions> {
+    const claim = await this.suggestionStore.claimRefresh(
+      language,
+      this.now(),
+      this.suggestionRefreshIntervalMs,
+    );
+    if (claim.status === "cached") return claim.suggestions;
+    if (claim.status === "throttled") {
+      if (claim.suggestions) return claim.suggestions;
+      throw new RpcError(
+        -32031,
+        "Suggested questions were already refreshed recently",
+      );
+    }
+
+    try {
+      const suggestions = await this.generateSuggestedQuestions(
+        agent,
+        language,
+      );
+      await this.suggestionStore.completeRefresh(
+        language,
+        claim.attemptedAt,
+        this.now(),
+        suggestions,
+      );
+      return suggestions;
+    } catch (error) {
+      if (claim.staleSuggestions) return claim.staleSuggestions;
+      throw error;
     }
   }
 
@@ -624,7 +693,14 @@ export class AppServer {
     const turnId = randomUUID();
     const controller = new AbortController();
     thread.accessMode = accessMode;
-    thread.activeTurn = { id: turnId, controller };
+    thread.revision += 1;
+    thread.activeTurn = {
+      id: turnId,
+      mode,
+      isThinking: true,
+      streamingText: "",
+      controller,
+    };
     thread.progress = [];
     thread.injectedInputPendingModelResponse = false;
     thread.plan =
@@ -869,7 +945,13 @@ export class AppServer {
     thread: ThreadState,
     controller: AbortController,
   ): Promise<void> {
-    this.notify("turn/started", { threadId, turnId, mode });
+    this.notify("turn/started", {
+      threadId,
+      turnId,
+      mode,
+      revision: thread.revision,
+      activeTurn: this.requireActiveTurnSnapshot(thread),
+    });
     const diagnostics = new TurnDiagnosticsRecorder(
       this.now(),
       this.modelName ?? thread.agent.model,
@@ -1017,40 +1099,41 @@ export class AppServer {
         thread.plan = undefined;
       }
 
+      const assistantMessage: ConversationMessageData = {
+        id: randomUUID(),
+        role: "assistant",
+        text: sourcedOutput.text,
+        ...(thread.progress.length > 0
+          ? { progress: thread.progress }
+          : {}),
+        ...(thread.plan ? { plan: thread.plan } : {}),
+        ...(appliedCapabilities.length > 0
+          ? { capabilities: appliedCapabilities }
+          : {}),
+        ...(sourcedOutput.sources.length > 0
+          ? {
+              sources: sourcedOutput.sources,
+              citations: sourcedOutput.citations,
+            }
+          : {}),
+        diagnostics: turnDiagnostics,
+      };
       await this.mutateConversation(
         thread,
         (conversation) =>
           this.updateConversation(
             conversation,
-            [
-              ...conversation.messages,
-              {
-                id: randomUUID(),
-                role: "assistant",
-                text: sourcedOutput.text,
-                ...(thread.progress.length > 0
-                  ? { progress: thread.progress }
-                  : {}),
-                ...(thread.plan ? { plan: thread.plan } : {}),
-                ...(appliedCapabilities.length > 0
-                  ? { capabilities: appliedCapabilities }
-                  : {}),
-                ...(sourcedOutput.sources.length > 0
-                  ? {
-                      sources: sourcedOutput.sources,
-                      citations: sourcedOutput.citations,
-                    }
-                  : {}),
-                diagnostics: turnDiagnostics,
-              },
-            ],
+            [...conversation.messages, assistantMessage],
             { modelState: persistedModelState },
           ),
       );
       await cleanup();
+      thread.revision += 1;
       this.notify("turn/completed", {
         threadId,
         turnId,
+        revision: thread.revision,
+        message: assistantMessage,
         output: sourcedOutput.text,
         usage: result.usage,
         diagnostics: turnDiagnostics,
@@ -1066,23 +1149,25 @@ export class AppServer {
       });
       this.requestConversationTitle(threadId, thread);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const failureText =
+        error instanceof Error ? error.message : String(error);
       const turnDiagnostics = diagnostics.complete("failed", this.now());
+      const assistantMessage: ConversationMessageData = {
+        id: randomUUID(),
+        role: "assistant",
+        text: failureText,
+        error: true,
+        ...(thread.progress.length > 0
+          ? { progress: thread.progress }
+          : {}),
+        ...(thread.plan ? { plan: thread.plan } : {}),
+        diagnostics: turnDiagnostics,
+      };
       try {
         await this.mutateConversation(thread, (conversation) =>
           this.updateConversation(conversation, [
             ...conversation.messages,
-            {
-              id: randomUUID(),
-              role: "assistant",
-              text: message,
-              error: true,
-              ...(thread.progress.length > 0
-                ? { progress: thread.progress }
-                : {}),
-              ...(thread.plan ? { plan: thread.plan } : {}),
-              diagnostics: turnDiagnostics,
-            },
+            assistantMessage,
           ]),
         );
       } catch (persistenceError) {
@@ -1091,10 +1176,13 @@ export class AppServer {
         );
       }
       await cleanup();
+      thread.revision += 1;
       this.notify("turn/failed", {
         threadId,
         turnId,
-        error: message,
+        revision: thread.revision,
+        message: assistantMessage,
+        error: failureText,
         diagnostics: turnDiagnostics,
       });
     } finally {
@@ -1173,6 +1261,9 @@ export class AppServer {
     ) {
       thread.pendingAssistantOutput = undefined;
       thread.progress = [];
+      if (thread.activeTurn?.id === turnId) {
+        thread.activeTurn.streamingText = "";
+      }
     }
     this.notifyQueueUpdated(threadId, thread);
     this.notify("turn/follow-up/consumed", {
@@ -1330,31 +1421,90 @@ export class AppServer {
     thread: ThreadState,
     event: AgentEvent,
   ): void {
+    const activeTurn =
+      thread.activeTurn?.id === turnId ? thread.activeTurn : undefined;
     if (event.type === "model.started") {
       thread.pendingAssistantOutput = undefined;
+      if (activeTurn) {
+        activeTurn.isThinking = true;
+        activeTurn.streamingText = "";
+      }
+    } else if (event.type === "model.output_text.delta") {
+      if (activeTurn) {
+        if (event.outputVisibility === "provisional") {
+          activeTurn.isThinking = true;
+          activeTurn.streamingText = "";
+        } else {
+          activeTurn.isThinking = false;
+          activeTurn.streamingText += event.delta;
+        }
+      }
     } else if (event.type === "model.completed") {
       thread.injectedInputPendingModelResponse = false;
+      if (activeTurn) {
+        activeTurn.isThinking = false;
+        activeTurn.streamingText =
+          event.toolCalls.length > 0 ||
+          event.outputVisibility === "provisional"
+            ? ""
+            : event.text;
+      }
       thread.pendingAssistantOutput =
         event.toolCalls.length === 0 &&
         event.outputVisibility !== "provisional" &&
         event.text.trim()
           ? { text: event.text }
           : undefined;
+    } else if (event.type === "tool.started") {
+      if (activeTurn) activeTurn.isThinking = false;
     } else if (
       event.type === "message.completed" ||
       event.type === "run.completed" ||
       event.type === "run.failed"
     ) {
+      if (activeTurn) activeTurn.isThinking = false;
       thread.injectedInputPendingModelResponse = false;
       thread.pendingAssistantOutput = undefined;
     }
     thread.progress = projectAgentProgress(thread.progress, event);
     thread.plan = projectAgentPlan(thread.plan, event);
+    thread.revision += 1;
+    const snapshot = this.requireActiveTurnSnapshot(thread);
     this.notify("agent/event", {
       threadId,
       turnId,
+      revision: thread.revision,
+      activeTurn: snapshot,
       event: clientSafeAgentEvent(event),
     });
+  }
+
+  private activeTurnSnapshot(thread: ThreadState): ActiveTurnData | undefined {
+    const activeTurn = thread.activeTurn;
+    if (!activeTurn) return;
+    // The assistant message is persisted before the completion notification.
+    // Do not expose the same turn as both completed history and live output in
+    // the small interval between those two operations.
+    if (thread.conversation.messages.at(-1)?.role === "assistant") return;
+    return {
+      turnId: activeTurn.id,
+      revision: thread.revision,
+      mode: activeTurn.mode,
+      isThinking: activeTurn.isThinking,
+      streamingText: activeTurn.streamingText,
+      progress: thread.progress,
+      ...(thread.plan ? { plan: thread.plan } : {}),
+    };
+  }
+
+  private requireActiveTurnSnapshot(thread: ThreadState): ActiveTurnData {
+    const snapshot = this.activeTurnSnapshot(thread);
+    if (!snapshot) {
+      throw new Error(
+        `Thread ${thread.conversation.threadId} has no active turn snapshot`,
+      );
+    }
+    return snapshot;
   }
 
   private updateConversation(
@@ -1398,6 +1548,7 @@ export class AppServer {
   ): Promise<"allow" | "deny"> {
     if (signal?.aborted) return Promise.resolve("deny");
     const requestId = randomUUID();
+    const notification = { requestId, ...request };
     return new Promise<"allow" | "deny">((resolve) => {
       const onAbort = () => settle("deny");
       const settle = (decision: "allow" | "deny") => {
@@ -1412,14 +1563,12 @@ export class AppServer {
         });
       };
       this.pendingExecutionApprovals.set(requestId, {
+        request: notification,
         resolve: settle,
         dispose: () => signal?.removeEventListener("abort", onAbort),
       });
       signal?.addEventListener("abort", onAbort, { once: true });
-      this.notify("execution/approval-required", {
-        requestId,
-        ...request,
-      });
+      this.notify("execution/approval-required", notification);
     });
   }
 
@@ -1478,9 +1627,8 @@ export class AppServer {
         promptSnapshot,
         conversation: snapshottedConversation,
         conversationMutation: Promise.resolve(),
+        revision: 0,
         progress: [],
-        suggestions: new Map(),
-        suggestionRequests: new Map(),
         ...(runtime ? { runtime } : {}),
       };
     } catch (error) {

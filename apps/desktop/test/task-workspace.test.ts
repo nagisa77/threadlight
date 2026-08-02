@@ -28,6 +28,25 @@ afterEach(async () => {
 });
 
 describe("TaskWorkspaceManager", () => {
+  it("creates and removes an isolated standalone task directory", async () => {
+    const root = await temporaryDirectory();
+    const standaloneRoot = join(root, "standalone", "workspaces");
+    const manager = new TaskWorkspaceManager(join(root, "worktrees"), {
+      createId: () => "task-1",
+      standaloneRoot,
+    });
+
+    const workspace = await manager.prepareStandalone();
+
+    expect(workspace).toEqual({
+      mode: "standalone",
+      path: join(standaloneRoot, "task-1"),
+    });
+    await expect(access(workspace.path)).resolves.toBeUndefined();
+    await manager.remove(workspace);
+    await expect(access(workspace.path)).rejects.toThrow();
+  });
+
   it("uses the project folder directly outside Git", async () => {
     const root = await temporaryDirectory();
     const project = join(root, "plain-project");

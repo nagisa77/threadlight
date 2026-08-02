@@ -547,10 +547,15 @@ function ThreadlightAppContent({
   const composerMenuItemCount =
     addActions.length + filteredCapabilities.length;
   const sidebarProjects = filterProjectsForTaskList(
-    projectSnapshot?.projects ?? [],
+    (projectSnapshot?.projects ?? []).filter(
+      (project) => project.scope !== "standalone",
+    ),
     "",
     "all",
     runningThreadIds,
+  );
+  const standaloneProject = projectSnapshot?.projects.find(
+    (project) => project.scope === "standalone",
   );
   const commandPaletteActions: CommandPaletteEntry[] = [
     {
@@ -561,7 +566,7 @@ function ThreadlightAppContent({
       subtitle: t("commandNewTaskDescription"),
       keywords: "new create task thread",
     },
-    ...(memory
+    ...(memory && currentProject?.scope !== "standalone"
       ? [{
           id: "action:memory",
           kind: "action" as const,
@@ -613,7 +618,7 @@ function ThreadlightAppContent({
           keywords: "usage diagnostics tokens",
         }]
       : []),
-    ...(automations
+    ...(automations && currentProject?.scope !== "standalone"
       ? [{
           id: "action:automations",
           kind: "action" as const,
@@ -642,7 +647,11 @@ function ThreadlightAppContent({
         projectId: project.id,
         threadId: item.id,
         title: item.title,
-        subtitle: `${project.name} · ${
+        subtitle: `${
+          project.scope === "standalone"
+            ? t("notInProject")
+            : project.name
+        } · ${
           item.archivedAt
             ? t("archivedTasks")
             : runningThreadIds.includes(item.id)
@@ -652,6 +661,10 @@ function ThreadlightAppContent({
                 : t("completedTasks")
         }`,
         keywords: `${project.name} ${
+          project.scope === "standalone"
+            ? "standalone not in project 不在项目中 不在專案中 プロジェクト外 프로젝트"
+            : ""
+        } ${
           item.archivedAt ? "archived" : item.status
         }`,
       })),
@@ -803,6 +816,10 @@ function ThreadlightAppContent({
 
   useEffect(() => {
     if (!projectOpener) return;
+    if (currentProject?.scope === "standalone") {
+      setProjectOpeners([]);
+      return;
+    }
     let active = true;
     void projectOpener
       .load(currentProject?.id)
@@ -815,7 +832,7 @@ function ThreadlightAppContent({
     return () => {
       active = false;
     };
-  }, [currentProject?.id, projectOpener]);
+  }, [currentProject?.id, currentProject?.scope, projectOpener]);
 
   useEffect(() => {
     const next = planDocumentOpenRequest(
@@ -1629,6 +1646,38 @@ function ThreadlightAppContent({
     requestAnimationFrame(() => textarea.current?.focus());
   }
 
+  async function createStandaloneThread() {
+    if (
+      !projects?.createStandalone ||
+      switchingProject ||
+      voiceStatus !== "idle"
+    ) {
+      return;
+    }
+    setSwitchingProject(true);
+    setProjectError(undefined);
+    try {
+      const snapshot = await projects.createStandalone();
+      const standalone = snapshot.projects.find(
+        (project) => project.scope === "standalone",
+      );
+      setProjectSnapshot(snapshot);
+      closeConversationPanels();
+      setView("thread");
+      await connectProject(snapshot);
+      if (standalone?.conversations.some(
+        (conversation) => !conversation.archivedAt,
+      )) {
+        await newThread();
+      }
+      requestAnimationFrame(() => textarea.current?.focus());
+    } catch (error) {
+      setProjectError(errorMessage(error));
+    } finally {
+      setSwitchingProject(false);
+    }
+  }
+
   async function openProjectView(
     projectId: string,
     nextView: "memory" | "diagnostics" | "security",
@@ -2436,7 +2485,8 @@ function ThreadlightAppContent({
 
   const globalActions = currentProject ? (
     <>
-      {projectOpener && projectOpeners.length > 0 && (
+      {currentProject.scope !== "standalone" &&
+        projectOpener && projectOpeners.length > 0 && (
         <ProjectOpenControl
           adapter={projectOpener}
           projectId={currentProject.id}
@@ -2494,7 +2544,9 @@ function ThreadlightAppContent({
           <SquarePen size={16} />
           <span>{t("newTask")}</span>
         </button>
-        {automations && currentProject && (
+        {automations &&
+          currentProject &&
+          currentProject.scope !== "standalone" && (
           <div className="sidebar-primary-nav">
             <button
               type="button"
@@ -2593,7 +2645,62 @@ function ThreadlightAppContent({
                     }}
                   />
                 ))}
-                {projectSnapshot?.projects.length === 0 ? (
+                {standaloneProject &&
+                  standaloneProject.conversations.some(
+                    (conversation) => !conversation.archivedAt,
+                  ) && (
+                    <RecentTasksGroup
+                      project={standaloneProject}
+                      active={
+                        standaloneProject.id ===
+                        projectSnapshot?.activeProjectId
+                      }
+                      activeThreadId={state.threadId}
+                      runningThreadIds={runningThreadIds}
+                      computerThreadId={computerShareSnapshot?.ownerThreadId}
+                      disabled={
+                        switchingProject || voiceStatus !== "idle"
+                      }
+                      onSelect={(threadId) =>
+                        void selectConversation(
+                          standaloneProject.id,
+                          threadId,
+                        )
+                      }
+                      onRename={(conversation, title) =>
+                        updateConversationMetadata(
+                          standaloneProject.id,
+                          conversation,
+                          { title },
+                        )
+                      }
+                      onTogglePinned={(conversation) =>
+                        updateConversationMetadata(
+                          standaloneProject.id,
+                          conversation,
+                          { pinned: !conversation.pinnedAt },
+                        )
+                      }
+                      onArchive={(conversation, archived) =>
+                        updateConversationMetadata(
+                          standaloneProject.id,
+                          conversation,
+                          { archived },
+                        )
+                      }
+                      onDelete={(conversation) => {
+                        setDeleteError(undefined);
+                        setPendingDelete({
+                          projectId: standaloneProject.id,
+                          conversation,
+                        });
+                      }}
+                    />
+                  )}
+                {sidebarProjects.length === 0 &&
+                !standaloneProject?.conversations.some(
+                  (conversation) => !conversation.archivedAt,
+                ) ? (
                   <div className="thread-placeholder">{t("openFolderToStart")}</div>
                 ) : null}
               </div>
@@ -2681,7 +2788,10 @@ function ThreadlightAppContent({
         onDrop={handleDrop}
       >
         <div className="workspace-primary">
-        {view === "memory" && memory && currentProject ? (
+        {view === "memory" &&
+        memory &&
+        currentProject &&
+        currentProject.scope !== "standalone" ? (
           <ProjectMemoryPage
             adapter={memory}
             projectId={currentProject.id}
@@ -2728,6 +2838,11 @@ function ThreadlightAppContent({
             error={projectError}
             opening={switchingProject}
             onOpen={() => void openProjectFolder()}
+            onCreateStandalone={
+              projects.createStandalone
+                ? () => void createStandaloneThread()
+                : undefined
+            }
             onConnectRemote={
               projects.connectRemote
                 ? () => setRemoteRuntimeOpen(true)
@@ -2740,7 +2855,9 @@ function ThreadlightAppContent({
               <div>
                 <h1>{state.messages[0]?.text || t("task")}</h1>
                 <p>
-                  {currentProject?.runtime?.kind === "remote"
+                  {currentProject?.scope === "standalone"
+                    ? t("notInProject")
+                    : currentProject?.runtime?.kind === "remote"
                     ? `${t("remoteRuntime")} · ${currentProject.runtime.workspacePath}`
                     : (currentProject?.basePath ?? "Agent runtime")} ·{" "}
                   {shortId(state.threadId)}
@@ -2778,7 +2895,9 @@ function ThreadlightAppContent({
                   <EmptyState
                     connecting={state.connection === "connecting"}
                     project={currentProject}
-                    projects={projectSnapshot?.projects ?? []}
+                    projects={(projectSnapshot?.projects ?? []).filter(
+                      (project) => project.scope !== "standalone",
+                    )}
                     suggestions={
                       suggestedQuestions?.key === suggestionKey
                         ? suggestedQuestions.suggestions
@@ -2797,6 +2916,10 @@ function ThreadlightAppContent({
                       setSuggestionRetry((retry) => retry + 1)
                     }
                     onSelectProject={createProjectThread}
+                    onOpenProject={() => void openProjectFolder()}
+                    onCreateStandalone={() =>
+                      void createStandaloneThread()
+                    }
                     onSelect={(value) => {
                       setInput(value);
                       textarea.current?.focus();
@@ -4002,9 +4125,19 @@ export function filterProjectsForTaskList(
   const normalizedQuery = query.trim().toLowerCase();
   const running = new Set(runningThreadIds);
   return projects.flatMap((project) => {
-    const projectMatches = project.name
-      .toLowerCase()
-      .includes(normalizedQuery);
+    const projectMatches = [
+      project.name,
+      ...(project.scope === "standalone"
+        ? [
+            "standalone",
+            "not in project",
+            "不在项目中",
+            "不在專案中",
+            "プロジェクト外",
+            "프로젝트에 속하지 않음",
+          ]
+        : []),
+    ].some((value) => value.toLowerCase().includes(normalizedQuery));
     const conversations = project.conversations.filter((conversation) => {
       const archived = Boolean(conversation.archivedAt);
       if (filter === "archived") {
@@ -4205,8 +4338,16 @@ export function TaskSearchDialog({
             filteredProjects.map((project) => (
               <section className="task-search-project" key={project.id}>
                 <h3>
-                  <Folder size={14} aria-hidden="true" />
-                  <span>{project.name}</span>
+                  {project.scope === "standalone" ? (
+                    <X size={14} aria-hidden="true" />
+                  ) : (
+                    <Folder size={14} aria-hidden="true" />
+                  )}
+                  <span>
+                    {project.scope === "standalone"
+                      ? t("notInProject")
+                      : project.name}
+                  </span>
                   <small>{project.conversations.length}</small>
                 </h3>
                 {project.conversations.map((conversation) => {
@@ -4362,6 +4503,94 @@ export function RuntimeStatusControl({
     >
       {content}
     </div>
+  );
+}
+
+export function RecentTasksGroup({
+  project,
+  active,
+  activeThreadId,
+  runningThreadIds = [],
+  computerThreadId,
+  disabled,
+  onSelect,
+  onRename,
+  onTogglePinned,
+  onArchive,
+  onDelete,
+}: {
+  project: ProjectSummary;
+  active: boolean;
+  activeThreadId?: string;
+  runningThreadIds?: readonly string[];
+  computerThreadId?: string;
+  disabled: boolean;
+  onSelect(threadId: string): void;
+  onRename?(
+    conversation: ConversationSummary,
+    title: string,
+  ): Promise<void>;
+  onTogglePinned?(conversation: ConversationSummary): Promise<void>;
+  onArchive?(
+    conversation: ConversationSummary,
+    archived: boolean,
+  ): Promise<void>;
+  onDelete?(conversation: ConversationSummary): void;
+}) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(true);
+  const conversations = project.conversations.filter(
+    (conversation) => !conversation.archivedAt,
+  );
+
+  return (
+    <section className="recent-tasks-group" aria-label={t("recent")}>
+      <button
+        type="button"
+        className="recent-tasks-heading pressable"
+        aria-expanded={expanded}
+        disabled={disabled}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span>{t("recent")}</span>
+        {expanded ? (
+          <ChevronDown size={14} aria-hidden="true" />
+        ) : (
+          <ChevronRight size={14} aria-hidden="true" />
+        )}
+      </button>
+      {expanded && (
+        <div className="recent-task-list">
+          {conversations.map((conversation) => (
+            <ProjectConversationItem
+              key={conversation.id}
+              conversation={conversation}
+              active={active && conversation.id === activeThreadId}
+              running={runningThreadIds.includes(conversation.id)}
+              computerActive={conversation.id === computerThreadId}
+              disabled={disabled}
+              onSelect={() => onSelect(conversation.id)}
+              onRename={
+                onRename
+                  ? (title) => onRename(conversation, title)
+                  : undefined
+              }
+              onTogglePinned={
+                onTogglePinned
+                  ? () => onTogglePinned(conversation)
+                  : undefined
+              }
+              onArchive={
+                onArchive
+                  ? (archived) => onArchive(conversation, archived)
+                  : undefined
+              }
+              onDelete={onDelete ? () => onDelete(conversation) : undefined}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -5160,11 +5389,13 @@ function ProjectEmptyState({
   error,
   opening,
   onOpen,
+  onCreateStandalone,
   onConnectRemote,
 }: {
   error?: string;
   opening: boolean;
   onOpen(): void;
+  onCreateStandalone?(): void;
   onConnectRemote?(): void;
 }) {
   const { t } = useI18n();
@@ -5189,6 +5420,17 @@ function ProjectEmptyState({
         )}
         {opening ? t("opening") : t("openViaFolder")}
       </button>
+      {onCreateStandalone && (
+        <button
+          type="button"
+          className="project-remote-button pressable"
+          disabled={opening}
+          onClick={onCreateStandalone}
+        >
+          <X size={15} />
+          {t("notInProject")}
+        </button>
+      )}
       {onConnectRemote && (
         <button
           type="button"
@@ -5705,6 +5947,8 @@ export function EmptyState({
   suggestionsFailed,
   onRetrySuggestions,
   onSelectProject,
+  onOpenProject,
+  onCreateStandalone,
   onSelect,
 }: {
   connecting: boolean;
@@ -5715,6 +5959,8 @@ export function EmptyState({
   suggestionsFailed: boolean;
   onRetrySuggestions(): void;
   onSelectProject?(projectId: string): void | Promise<void>;
+  onOpenProject?(): void;
+  onCreateStandalone?(): void;
   onSelect(value: string): void;
 }) {
   const { t } = useI18n();
@@ -5725,11 +5971,15 @@ export function EmptyState({
       </div>
       {connecting ? (
         <h2>{t("connectingRuntime")}</h2>
-      ) : project && onSelectProject ? (
+      ) : project &&
+        project.scope !== "standalone" &&
+        onSelectProject ? (
         <NewTaskProjectPrompt
           project={project}
           projects={projects}
           onSelectProject={onSelectProject}
+          onOpenProject={onOpenProject}
+          onCreateStandalone={onCreateStandalone}
         />
       ) : (
         <h2>{t("whatToDo")}</h2>
@@ -5790,8 +6040,11 @@ export function filterProjectsForPicker(
   query: string,
 ): readonly ProjectSummary[] {
   const normalized = query.trim().toLocaleLowerCase();
-  if (!normalized) return projects;
-  return projects.filter((project) =>
+  const projectScoped = projects.filter(
+    (project) => project.scope !== "standalone",
+  );
+  if (!normalized) return projectScoped;
+  return projectScoped.filter((project) =>
     [project.name, project.basePath, project.runtime?.workspacePath]
       .filter((value): value is string => Boolean(value))
       .some((value) => value.toLocaleLowerCase().includes(normalized)),
@@ -5802,10 +6055,14 @@ export function NewTaskProjectPrompt({
   project,
   projects,
   onSelectProject,
+  onOpenProject,
+  onCreateStandalone,
 }: {
   project: ProjectSummary;
   projects: readonly ProjectSummary[];
   onSelectProject(projectId: string): void | Promise<void>;
+  onOpenProject?(): void;
+  onCreateStandalone?(): void;
 }) {
   const { t } = useI18n();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -5821,7 +6078,12 @@ export function NewTaskProjectPrompt({
     setPickerPosition(
       anchoredPopoverPosition(bounds, {
         width: 320,
-        height: Math.min(390, 72 + projects.length * 40),
+        height: Math.min(
+          470,
+          72 +
+            projects.length * 40 +
+            (onOpenProject || onCreateStandalone ? 84 : 0),
+        ),
         align: "start",
       }),
     );
@@ -5876,6 +6138,8 @@ export function NewTaskProjectPrompt({
           onQueryChange={setQuery}
           onClose={closePicker}
           onSelect={(projectId) => void selectProject(projectId)}
+          onOpenProject={onOpenProject}
+          onCreateStandalone={onCreateStandalone}
         />
       )}
     </>
@@ -5893,6 +6157,8 @@ export function ProjectPickerPopover({
   onQueryChange,
   onClose,
   onSelect,
+  onOpenProject,
+  onCreateStandalone,
 }: {
   projects: readonly ProjectSummary[];
   currentProjectId: string;
@@ -5904,6 +6170,8 @@ export function ProjectPickerPopover({
   onQueryChange(value: string): void;
   onClose(): void;
   onSelect(projectId: string): void;
+  onOpenProject?(): void;
+  onCreateStandalone?(): void;
 }) {
   const { t } = useI18n();
   const visibleProjects = filterProjectsForPicker(projects, query);
@@ -5980,6 +6248,32 @@ export function ProjectPickerPopover({
           })
         )}
       </div>
+      {(onOpenProject || onCreateStandalone) && (
+        <div className="project-picker-actions">
+          {onOpenProject && (
+            <ActionPopoverItem
+              icon={<Plus size={16} />}
+              onSelect={() => {
+                onClose();
+                onOpenProject();
+              }}
+            >
+              {t("newProject")}
+            </ActionPopoverItem>
+          )}
+          {onCreateStandalone && (
+            <ActionPopoverItem
+              icon={<X size={16} />}
+              onSelect={() => {
+                onClose();
+                onCreateStandalone();
+              }}
+            >
+              {t("notInProject")}
+            </ActionPopoverItem>
+          )}
+        </div>
+      )}
     </ActionPopover>
   );
 }

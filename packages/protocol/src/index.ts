@@ -214,6 +214,77 @@ export interface HostProjectDiagnosticsSnapshot {
   turns: readonly HostTurnDiagnostic[];
 }
 
+export type HostAutomationKind =
+  | "custom"
+  | "tests"
+  | "dependencies"
+  | "issue-triage";
+
+export type HostAutomationCadence =
+  | "daily"
+  | "weekdays"
+  | "weekly";
+
+export interface HostAutomationSchedule {
+  cadence: HostAutomationCadence;
+  time: string;
+  weekday?: number;
+}
+
+export type HostAutomationRunStatus =
+  | "running"
+  | "succeeded"
+  | "attention"
+  | "failed";
+
+export interface HostAutomationRun {
+  status: HostAutomationRunStatus;
+  startedAt: string;
+  completedAt?: string;
+  threadId?: string;
+  summary?: string;
+}
+
+export interface HostAutomation {
+  id: string;
+  projectId: string;
+  name: string;
+  kind: HostAutomationKind;
+  prompt: string;
+  enabled: boolean;
+  schedule: HostAutomationSchedule;
+  createdAt: string;
+  updatedAt: string;
+  nextRunAt?: string;
+  lastRun?: HostAutomationRun;
+}
+
+export interface HostAutomationsSnapshot {
+  projectId: string;
+  generatedAt: string;
+  timeZone: string;
+  automations: readonly HostAutomation[];
+}
+
+export interface HostAutomationCreateRequest {
+  projectId: string;
+  name: string;
+  kind: HostAutomationKind;
+  prompt: string;
+  enabled: boolean;
+  schedule: HostAutomationSchedule;
+}
+
+export interface HostAutomationUpdateRequest
+  extends HostAutomationCreateRequest {
+  id: string;
+}
+
+export interface HostAutomationTarget {
+  projectId: string;
+  id: string;
+}
+
 export type HostSearchMode = "all" | "files";
 
 export interface HostSearchRequest {
@@ -246,6 +317,10 @@ export type HostTaskWorkspace =
       path: string;
     }
   | {
+      mode: "standalone";
+      path: string;
+    }
+  | {
       mode: "worktree";
       path: string;
       root: string;
@@ -275,6 +350,7 @@ export interface HostProjectSummary {
   name: string;
   basePath: string;
   lastOpenedAt: string;
+  scope?: "project" | "standalone";
   pinnedAt?: string;
   conversations: readonly HostConversationSummary[];
 }
@@ -609,6 +685,22 @@ export interface ConversationProgressData {
   activities: readonly ConversationActivityData[];
 }
 
+/**
+ * Host-owned projection of a turn that is still running.
+ *
+ * Clients render this snapshot when attaching to an existing thread; they do
+ * not need to have observed every earlier streaming notification.
+ */
+export interface ActiveTurnData {
+  turnId: string;
+  revision: number;
+  mode: TurnMode;
+  isThinking: boolean;
+  streamingText: string;
+  progress: readonly ConversationProgressData[];
+  plan?: AgentPlanData;
+}
+
 export type CapabilityKind = "skill" | "tool";
 export type CapabilityVisibility = "featured" | "search" | "hidden";
 export type CapabilityStatus =
@@ -793,6 +885,8 @@ export interface ThreadlightMethodMap {
       threadId: string;
       messages: readonly ConversationMessageData[];
       queuedTurns: readonly QueuedTurnData[];
+      revision: number;
+      activeTurn?: ActiveTurnData;
     };
   };
   "thread/delete": {
@@ -886,6 +980,8 @@ export interface ThreadlightMethodMap {
     params: {
       requestId: string;
       decision: "allow" | "deny";
+      /** Routes the response back to the task-owned runtime on a Host. */
+      threadId?: string;
     };
     result: { accepted: boolean };
   };
@@ -928,10 +1024,18 @@ export interface ThreadlightNotificationMap {
     threadId: string;
     title: string;
   };
-  "turn/started": { threadId: string; turnId: string; mode: TurnMode };
+  "turn/started": {
+    threadId: string;
+    turnId: string;
+    mode: TurnMode;
+    revision: number;
+    activeTurn: ActiveTurnData;
+  };
   "turn/completed": {
     threadId: string;
     turnId: string;
+    revision: number;
+    message: ConversationMessageData;
     output: string;
     usage: TokenUsageData;
     diagnostics?: TurnDiagnosticsData;
@@ -942,12 +1046,16 @@ export interface ThreadlightNotificationMap {
   "turn/failed": {
     threadId: string;
     turnId: string;
+    revision: number;
+    message: ConversationMessageData;
     error: string;
     diagnostics?: TurnDiagnosticsData;
   };
   "agent/event": {
     threadId: string;
     turnId: string;
+    revision: number;
+    activeTurn: ActiveTurnData;
     event: AgentEventData;
   };
   "turn/queue/updated": {

@@ -35,6 +35,7 @@ import {
   resolveAppServerEntry,
 } from "./app-server-process.js";
 import { RemoteRuntimeConnection } from "./remote-runtime-connection.js";
+import { runtimeConnectionKey } from "./runtime-connection-key.js";
 import { RemoteHostConnection } from "./remote-host-connection.js";
 import { RemoteTerminalClient } from "./remote-terminal-client.js";
 import { HostCredentialStore } from "./host-credential-store.js";
@@ -155,6 +156,7 @@ import {
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_SEARCH_CHANNEL,
   DESKTOP_PROJECT_OPEN_CHANNEL,
+  DESKTOP_STANDALONE_CREATE_CHANNEL,
   DESKTOP_PROJECT_OPENERS_GET_CHANNEL,
   DESKTOP_PROJECT_OPEN_WITH_CHANNEL,
   DESKTOP_PROJECTS_GET_CHANNEL,
@@ -459,19 +461,31 @@ function ensureAppServer(
   projectRoot: string,
   workspace: DesktopTaskWorkspace,
 ): RuntimeProcess {
-  const key = runtimeKey(projectId, workspace.path);
+  const project = projectStore ? currentProject(projectId) : undefined;
+  const key = runtimeKeyForProject(projectId, workspace.path);
   const existing = appServers.get(key);
   if (existing) {
     existing.process.start();
     return existing.process;
   }
   const send = (message: JsonRpcOutgoing) => {
+    const messageWorkspace = workspaceForRuntimeMessage(
+      projectId,
+      workspace,
+      message,
+    );
     rendererMessageQueue = rendererMessageQueue
       .then(async () => {
-        if (handleExecutionApprovalNotification(projectId, workspace, message)) {
+        if (
+          handleExecutionApprovalNotification(
+            projectId,
+            messageWorkspace,
+            message,
+          )
+        ) {
           return;
         }
-        await recordProjectMessage(projectId, workspace, message);
+        await recordProjectMessage(projectId, messageWorkspace, message);
         const rendererWindow = mainWindow ?? window;
         if (rendererWindow && !rendererWindow.isDestroyed()) {
           sendToRenderer(rendererWindow, message);
@@ -484,7 +498,6 @@ function ensureAppServer(
         }
       });
   };
-  const project = projectStore ? currentProject(projectId) : undefined;
   const appServer: RuntimeProcess =
     project?.runtime?.kind === "remote"
       ? new RemoteRuntimeConnection({
@@ -514,6 +527,7 @@ function ensureAppServer(
         customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
         model: DEFAULT_MODEL,
       },
+      project?.scope,
     ),
     send,
     handleComputerRequest: (request) => {
@@ -597,6 +611,29 @@ function stopTerminalSessions(): void {
   terminalService?.dispose();
   remoteTerminalClient?.dispose();
   remoteTerminalClient = null;
+}
+
+function workspaceForRuntimeMessage(
+  projectId: string,
+  fallback: DesktopTaskWorkspace,
+  message: JsonRpcOutgoing,
+): DesktopTaskWorkspace {
+  if ("id" in message) {
+    const pending = pendingThreadStarts.get(message.id);
+    if (pending?.projectId === projectId) return pending.workspace;
+  }
+  if ("method" in message) {
+    const threadId = (
+      message.params as { threadId?: unknown } | undefined
+    )?.threadId;
+    if (typeof threadId === "string") {
+      const workspace = currentProject(projectId)?.conversations.find(
+        (conversation) => conversation.id === threadId,
+      )?.workspace;
+      if (workspace) return workspace;
+    }
+  }
+  return fallback;
 }
 
 async function recordProjectMessage(
@@ -780,7 +817,7 @@ function handleExecutionApprovalNotification(
   const granted =
     taskExecutionGrants.has(key) ||
     executionPolicyStore?.allows(projectId, request.permissionKey) === true;
-  const runtimeId = runtimeKey(projectId, workspace.path);
+  const runtimeId = runtimeKeyForProject(projectId, workspace.path);
   if (granted) {
     appServers.get(runtimeId)?.process.send({
       jsonrpc: "2.0",
@@ -832,6 +869,7 @@ function parseExecutionApprovalRequest(
     summary: input.summary as string,
     ...(typeof input.detail === "string" ? { detail: input.detail } : {}),
     external: input.external === true,
+    projectScopeAvailable: project?.scope !== "standalone",
   };
 }
 
@@ -852,6 +890,14 @@ function handleExecutionApprovalRespond(
   const response = parseExecutionApprovalResponse(value);
   const pending = pendingExecutionApprovals.get(response.requestId);
   if (!pending) throw new Error("This approval request is no longer pending.");
+  if (
+    response.scope === "project" &&
+    !pending.request.projectScopeAvailable
+  ) {
+    throw new Error(
+      "Permanent project approval is unavailable outside a project.",
+    );
+  }
   pendingExecutionApprovals.delete(response.requestId);
   if (response.decision === "allow") {
     if (response.scope === "task") {
@@ -957,10 +1003,14 @@ function workspaceForRequest(
   const sessionId = params?.sessionId;
   if (typeof sessionId === "string") {
     const workspacePath = processWorkspaces.get(sessionId);
-    const runtime = workspacePath
-      ? appServers.get(runtimeKey(project.id, workspacePath))
-      : undefined;
-    if (runtime) return runtime.workspace;
+    if (workspacePath) {
+      return (
+        project.conversations.find(
+          (conversation) =>
+            conversation.workspace?.path === workspacePath,
+        )?.workspace ?? folderWorkspace(workspacePath)
+      );
+    }
   }
   return folderWorkspace(project.basePath);
 }
@@ -1013,10 +1063,13 @@ async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void>
       } else if (!taskWorkspaceManager) {
         throw new Error("Task workspace management is not available");
       } else {
-        workspace = await taskWorkspaceManager.prepare(
-          project.id,
-          project.basePath,
-        );
+        workspace =
+          project.scope === "standalone"
+            ? await taskWorkspaceManager.prepareStandalone()
+            : await taskWorkspaceManager.prepare(
+                project.id,
+                project.basePath,
+              );
         await conversationChangeTracker?.beginPendingSnapshot(
           project.id,
           requestKey(value.id),
@@ -1175,6 +1228,9 @@ async function handleSettingsUpdate(
         runtime.process.restart({
           ...environment,
           THREADLIGHT_PROJECT_ROOT: runtime.projectRoot,
+          ...(currentProject(runtime.projectId)?.scope === "standalone"
+            ? { THREADLIGHT_TASK_SCOPE: "standalone" }
+            : {}),
         });
       }
     }
@@ -1227,11 +1283,12 @@ function handleAutomationsGet(
   value: unknown,
 ) {
   requireTrustedSender(event);
+  const project = requireProject(value);
   if (isRemoteHost()) {
-    throw new Error("Automations are managed by the connected Host.");
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.automations(project.id);
   }
   if (!automationStore) throw new Error("Automations are not available");
-  const project = requireProject(value);
   return automationStore.snapshot(project.id);
 }
 
@@ -1240,12 +1297,13 @@ function handleAutomationCreate(
   value: unknown,
 ) {
   requireTrustedSender(event);
-  if (isRemoteHost()) {
-    throw new Error("Automations are managed by the connected Host.");
-  }
-  if (!automationStore) throw new Error("Automations are not available");
   const request = parseAutomationRequest(value);
   requireProject(request.projectId);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.createAutomation(request);
+  }
+  if (!automationStore) throw new Error("Automations are not available");
   const snapshot = automationStore.create(request);
   sendAutomationSnapshot(request.projectId);
   return snapshot;
@@ -1256,12 +1314,13 @@ function handleAutomationUpdate(
   value: unknown,
 ) {
   requireTrustedSender(event);
-  if (isRemoteHost()) {
-    throw new Error("Automations are managed by the connected Host.");
-  }
-  if (!automationStore) throw new Error("Automations are not available");
   const request = parseAutomationRequest(value, true);
   requireProject(request.projectId);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.updateAutomation(request);
+  }
+  if (!automationStore) throw new Error("Automations are not available");
   const snapshot = automationStore.update(request);
   sendAutomationSnapshot(request.projectId);
   return snapshot;
@@ -1272,12 +1331,13 @@ function handleAutomationDelete(
   value: unknown,
 ) {
   requireTrustedSender(event);
-  if (isRemoteHost()) {
-    throw new Error("Automations are managed by the connected Host.");
-  }
-  if (!automationStore) throw new Error("Automations are not available");
   const target = parseAutomationTarget(value);
   requireProject(target.projectId);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.deleteAutomation(target.projectId, target.id);
+  }
+  if (!automationStore) throw new Error("Automations are not available");
   const snapshot = automationStore.delete(target.projectId, target.id);
   sendAutomationSnapshot(target.projectId);
   return snapshot;
@@ -1288,14 +1348,15 @@ function handleAutomationRun(
   value: unknown,
 ) {
   requireTrustedSender(event);
+  const target = parseAutomationTarget(value);
+  requireProject(target.projectId);
   if (isRemoteHost()) {
-    throw new Error("Automations are managed by the connected Host.");
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.runAutomation(target.projectId, target.id);
   }
   if (!automationStore || !automationScheduler) {
     throw new Error("Automations are not available");
   }
-  const target = parseAutomationTarget(value);
-  requireProject(target.projectId);
   const automation = automationStore.get(target.id);
   if (!automation || automation.projectId !== target.projectId) {
     throw new Error("Unknown automation");
@@ -1340,6 +1401,26 @@ async function handleProjectOpen(
   }
 
   const snapshot = projectStore.register(result.filePaths[0]);
+  const activeProject = currentActiveProject();
+  if (activeProject) {
+    ensureAppServer(
+      mainWindow,
+      activeProject.id,
+      activeProject.basePath,
+      folderWorkspace(activeProject.basePath),
+    );
+  }
+  return snapshot;
+}
+
+async function handleStandaloneCreate(event: IpcMainInvokeEvent) {
+  requireTrustedSender(event);
+  if (!projectStore || !mainWindow) {
+    throw new Error("Projects are not available");
+  }
+  const snapshot = isRemoteHost()
+    ? syncRemoteProjects(await remoteHost!.client.createStandaloneTask())
+    : projectStore.activateStandalone();
   const activeProject = currentActiveProject();
   if (activeProject) {
     ensureAppServer(
@@ -2989,7 +3070,8 @@ function parseAutomationRequest(
     (update && (typeof request.id !== "string" || !request.id)) ||
     typeof request.name !== "string" ||
     request.name.length > 120 ||
-    (request.kind !== "tests" &&
+    (request.kind !== "custom" &&
+      request.kind !== "tests" &&
       request.kind !== "dependencies" &&
       request.kind !== "issue-triage") ||
     typeof request.prompt !== "string" ||
@@ -3351,8 +3433,15 @@ function folderWorkspace(path: string): DesktopTaskWorkspace {
   return { mode: "folder", path };
 }
 
-function runtimeKey(projectId: string, workspacePath: string): string {
-  return `${projectId}\0${workspacePath}`;
+function runtimeKeyForProject(
+  projectId: string,
+  workspacePath: string,
+): string {
+  return runtimeConnectionKey(
+    projectId,
+    workspacePath,
+    currentProject(projectId)?.runtime?.kind === "remote",
+  );
 }
 
 function requireRemoteRuntime(projectId: string): RemoteRuntimeConnection {
@@ -3375,10 +3464,14 @@ function requireRemoteRuntime(projectId: string): RemoteRuntimeConnection {
 function appServerEnvironment(
   projectRoot: string,
   settings: Parameters<typeof runtimeEnvironment>[0],
+  scope?: "project" | "standalone",
 ): NodeJS.ProcessEnv {
   return {
     ...runtimeEnvironment(settings),
     THREADLIGHT_PROJECT_ROOT: projectRoot,
+    ...(scope === "standalone"
+      ? { THREADLIGHT_TASK_SCOPE: "standalone" }
+      : {}),
   };
 }
 
@@ -3450,6 +3543,7 @@ app.whenReady().then(() => {
   projectSearchService = new ProjectSearchService();
   taskWorkspaceManager = new TaskWorkspaceManager(
     join(threadlightHome, "worktrees"),
+    { standaloneRoot: join(threadlightHome, "standalone", "workspaces") },
   );
   settingsStore = new SettingsStore(
     join(threadlightHome, "settings.json"),
@@ -3494,6 +3588,7 @@ app.whenReady().then(() => {
   }
   localProjectStore = new ProjectStore(
     join(threadlightHome, "project-map.json"),
+    { standaloneRoot: join(threadlightHome, "standalone") },
   );
   remoteProjectStore = new ProjectStore(
     join(threadlightHome, "remote-host-cache.json"),
@@ -3646,6 +3741,10 @@ app.whenReady().then(() => {
   ipcMain.handle(DESKTOP_HOST_DELETE_CHANNEL, handleHostDelete);
   ipcMain.handle(DESKTOP_HOST_DIRECTORIES_CHANNEL, handleHostDirectories);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_CHANNEL, handleProjectOpen);
+  ipcMain.handle(
+    DESKTOP_STANDALONE_CREATE_CHANNEL,
+    handleStandaloneCreate,
+  );
   ipcMain.handle(
     DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
     handleRemoteRuntimeConnect,

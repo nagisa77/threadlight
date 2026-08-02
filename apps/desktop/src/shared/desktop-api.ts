@@ -21,6 +21,8 @@ export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
 export const DESKTOP_EXTERNAL_OPEN_CHANNEL = "threadlight:external:open";
 export const DESKTOP_PROJECTS_GET_CHANNEL = "threadlight:projects:get";
 export const DESKTOP_PROJECT_OPEN_CHANNEL = "threadlight:project:open";
+export const DESKTOP_STANDALONE_CREATE_CHANNEL =
+  "threadlight:standalone:create";
 export const DESKTOP_PROJECT_ACTIVATE_CHANNEL = "threadlight:project:activate";
 export const DESKTOP_PROJECT_UPDATE_CHANNEL = "threadlight:project:update";
 export const DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL =
@@ -290,6 +292,10 @@ export type DesktopTaskWorkspace =
       path: string;
     }
   | {
+      mode: "standalone";
+      path: string;
+    }
+  | {
       mode: "worktree";
       path: string;
       root: string;
@@ -304,6 +310,7 @@ export interface DesktopProject {
   name: string;
   basePath: string;
   lastOpenedAt: string;
+  scope?: "project" | "standalone";
   pinnedAt?: string;
   conversations: readonly DesktopConversationSummary[];
   runtime?: DesktopProjectRuntime;
@@ -641,6 +648,7 @@ export interface DesktopSearchResult {
 }
 
 export type DesktopAutomationKind =
+  | "custom"
   | "tests"
   | "dependencies"
   | "issue-triage";
@@ -687,6 +695,7 @@ export interface DesktopAutomation {
 export interface DesktopAutomationsSnapshot {
   projectId: string;
   generatedAt: string;
+  timeZone: string;
   automations: readonly DesktopAutomation[];
 }
 
@@ -721,6 +730,7 @@ export interface DesktopExecutionApprovalRequest {
   summary: string;
   detail?: string;
   external: boolean;
+  projectScopeAvailable: boolean;
 }
 
 export type DesktopExecutionApprovalScope = "once" | "task" | "project";
@@ -768,6 +778,7 @@ export interface DesktopApi {
   ): Promise<DesktopProviderDiagnostic>;
   getProjects(): Promise<DesktopProjectsSnapshot>;
   openProject(path?: string): Promise<DesktopProjectsSnapshot>;
+  createStandaloneTask(): Promise<DesktopProjectsSnapshot>;
   getHosts(): Promise<DesktopHostsSnapshot>;
   connectRemoteRuntime(
     request: DesktopRemoteRuntimeConnectRequest,

@@ -37,6 +37,8 @@ export interface ExecutionApprovalRequest {
   summary: string;
   detail?: string;
   external: boolean;
+  /** Standalone tasks have no durable project boundary for permanent grants. */
+  projectScopeAvailable?: boolean;
 }
 
 export type ExecutionApprovalScope = "once" | "task" | "project";
@@ -89,6 +91,7 @@ const copy = {
     forever: "此项目永久允许",
     foreverBody: "此项目后续的同类操作",
     hint: "只会授权同类操作；破坏性操作始终禁止。",
+    standaloneHint: "不在项目中的任务不提供跨任务永久授权。",
     safety: "安全执行",
     subtitle: "控制 Agent 在这个项目中可以执行的操作。",
     readTitle: "只读操作",
@@ -107,6 +110,7 @@ const copy = {
     fullAccess: "完全访问",
     fullAccessBody: "当前对话绕过安全执行，可不受限制地使用工具。",
     accessUpdateError: "无法更新当前对话的访问权限",
+    respondError: "无法提交审批，请检查 Host 连接后重试。",
   },
   "zh-TW": {
     title: "需要寫入權限",
@@ -123,6 +127,7 @@ const copy = {
     forever: "此專案永久允許",
     foreverBody: "此專案後續的同類操作",
     hint: "只會授權同類操作；破壞性操作始終禁止。",
+    standaloneHint: "不在專案中的工作不提供跨工作永久授權。",
     safety: "安全執行",
     subtitle: "控制 Agent 在這個專案中可以執行的操作。",
     readTitle: "唯讀操作",
@@ -141,6 +146,7 @@ const copy = {
     fullAccess: "完整存取",
     fullAccessBody: "目前對話略過安全執行，可不受限制地使用工具。",
     accessUpdateError: "無法更新目前對話的存取權限",
+    respondError: "無法提交核准，請檢查 Host 連線後再試。",
   },
   en: {
     title: "Write access required",
@@ -157,6 +163,7 @@ const copy = {
     forever: "Always allow in project",
     foreverBody: "Similar operations in this project",
     hint: "Only similar operations are granted. Destructive actions stay blocked.",
+    standaloneHint: "Tasks outside a project do not offer permanent cross-task grants.",
     safety: "Safe execution",
     subtitle: "Control what the agent may do in this project.",
     readTitle: "Read-only actions",
@@ -175,6 +182,7 @@ const copy = {
     fullAccess: "Full access",
     fullAccessBody: "Bypass safe execution for this conversation and use tools without restrictions.",
     accessUpdateError: "Could not update this conversation's access",
+    respondError: "Could not submit approval. Check the Host connection and retry.",
   },
   ja: {
     title: "書き込み権限が必要です",
@@ -191,6 +199,7 @@ const copy = {
     forever: "このプロジェクトで常に許可",
     foreverBody: "このプロジェクト内の同種の操作",
     hint: "同種の操作だけを許可します。破壊的操作は常に禁止されます。",
+    standaloneHint: "プロジェクト外のタスクでは、タスクをまたぐ恒久的な許可は利用できません。",
     safety: "安全な実行",
     subtitle: "このプロジェクトで Agent が実行できる操作を管理します。",
     readTitle: "読み取り専用",
@@ -209,6 +218,7 @@ const copy = {
     fullAccess: "フルアクセス",
     fullAccessBody: "この会話では安全な実行を迂回し、制限なくツールを使用します。",
     accessUpdateError: "この会話のアクセス権限を更新できませんでした",
+    respondError: "承認を送信できません。Host 接続を確認して再試行してください。",
   },
   ko: {
     title: "쓰기 권한 필요",
@@ -225,6 +235,7 @@ const copy = {
     forever: "이 프로젝트에서 항상 허용",
     foreverBody: "이 프로젝트의 유사한 작업",
     hint: "같은 종류의 작업만 허용하며 파괴적 작업은 계속 차단됩니다.",
+    standaloneHint: "프로젝트 외부 작업에서는 작업 간 영구 권한을 제공하지 않습니다.",
     safety: "안전한 실행",
     subtitle: "이 프로젝트에서 Agent가 수행할 수 있는 작업을 관리합니다.",
     readTitle: "읽기 전용 작업",
@@ -243,6 +254,7 @@ const copy = {
     fullAccess: "전체 접근",
     fullAccessBody: "이 대화에서는 안전 실행을 우회하고 제한 없이 도구를 사용합니다.",
     accessUpdateError: "이 대화의 접근 권한을 업데이트할 수 없습니다",
+    respondError: "승인을 제출할 수 없습니다. Host 연결을 확인한 후 다시 시도하세요.",
   },
 } satisfies Record<Language, Record<string, string>>;
 
@@ -436,6 +448,7 @@ export function ExecutionApprovalGate({
     useState<readonly ExecutionApprovalRequest[]>(initialRequests);
   const [busy, setBusy] = useState(false);
   const [scope, setScope] = useState<ExecutionApprovalScope>("once");
+  const [error, setError] = useState<string>();
   const allowButton = useRef<HTMLButtonElement>(null);
   const request = queue[0];
 
@@ -463,11 +476,23 @@ export function ExecutionApprovalGate({
   useEffect(() => {
     if (request) {
       setScope("once");
+      setError(undefined);
       allowButton.current?.focus();
     }
   }, [request?.requestId]);
 
   if (!request) return null;
+  const availableScopes: readonly ExecutionApprovalScope[] =
+    request.projectScopeAvailable === false
+      ? ["once", "task"]
+      : ["once", "task", "project"];
+  const scopeOptions = [
+    ["once", labels.once, labels.onceBody],
+    ["task", labels.task, labels.taskBody],
+    ...(request.projectScopeAvailable === false
+      ? []
+      : [["project", labels.forever, labels.foreverBody] as const]),
+  ] as const;
 
   const respond = async (
     decision: "allow" | "deny",
@@ -475,11 +500,14 @@ export function ExecutionApprovalGate({
   ) => {
     if (busy) return;
     setBusy(true);
+    setError(undefined);
     try {
       await adapter.respond(request.requestId, decision, scope);
       setQueue((current) =>
         current.filter((item) => item.requestId !== request.requestId),
       );
+    } catch {
+      setError(labels.respondError);
     } finally {
       setBusy(false);
     }
@@ -505,13 +533,12 @@ export function ExecutionApprovalGate({
     if (!direction) return;
     event.preventDefault();
     event.stopPropagation();
-    const scopes: readonly ExecutionApprovalScope[] = [
-      "once",
-      "task",
-      "project",
-    ];
-    const index = scopes.indexOf(current);
-    const next = scopes[(index + direction + scopes.length) % scopes.length]!;
+    const index = availableScopes.indexOf(current);
+    const next =
+      availableScopes[
+        (index + direction + availableScopes.length) %
+          availableScopes.length
+      ]!;
     setScope(next);
     const option = event.currentTarget.parentElement?.querySelector(
       `[data-scope="${next}"]`,
@@ -567,18 +594,20 @@ export function ExecutionApprovalGate({
         <div className="execution-approval-scope-picker">
           <div className="execution-approval-scope-heading">
             <span>{labels.scope}</span>
-            <p className="execution-approval-hint">{labels.hint}</p>
+            <p className="execution-approval-hint">
+              {request.projectScopeAvailable === false
+                ? labels.standaloneHint
+                : labels.hint}
+            </p>
           </div>
           <div
-            className="execution-approval-scope-options"
+            className={`execution-approval-scope-options ${
+              scopeOptions.length === 2 ? "two" : ""
+            }`}
             role="radiogroup"
             aria-label={labels.scope}
           >
-            {([
-              ["once", labels.once, labels.onceBody],
-              ["task", labels.task, labels.taskBody],
-              ["project", labels.forever, labels.foreverBody],
-            ] as const).map(([value, title, body]) => (
+            {scopeOptions.map(([value, title, body]) => (
               <button
                 key={value}
                 type="button"
@@ -611,6 +640,11 @@ export function ExecutionApprovalGate({
         </div>
 
         <div className="execution-approval-actions">
+          {error ? (
+            <p className="execution-approval-error" role="alert">
+              {error}
+            </p>
+          ) : null}
           <button
             type="button"
             className="dialog-button secondary pressable"

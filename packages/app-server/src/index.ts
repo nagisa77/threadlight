@@ -7,6 +7,11 @@ export {
   FileConversationStore,
   MemoryConversationStore,
 } from "./conversation-store.js";
+export {
+  DEFAULT_SUGGESTION_REFRESH_INTERVAL_MS,
+  FileSuggestionStore,
+  MemorySuggestionStore,
+} from "./suggestion-store.js";
 export { jsonLineSender, serveJsonLines } from "./stdio.js";
 export {
   ThreadlightHostServer,
@@ -100,6 +105,11 @@ export type {
   StoredAgentSnapshot,
   StoredConversation,
 } from "./conversation-store.js";
+export type {
+  SuggestedQuestions,
+  SuggestionRefreshClaim,
+  SuggestionStore,
+} from "./suggestion-store.js";
 export type {
   WorkspaceAgent,
   WorkspaceAgentFactoryOptions,

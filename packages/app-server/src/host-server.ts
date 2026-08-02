@@ -22,9 +22,12 @@ import {
 import type { Duplex } from "node:stream";
 
 import {
+  AutomationScheduler,
+  AutomationStore,
   CodeHostDeliveryManager,
   ConversationChangeTracker,
   GitHubCliProvider,
+  type AutomationExecutionResult,
   type AudioTranscriptionOptions,
   type AudioTranscriptionRequest,
   MAX_TRANSCRIPTION_BYTES,
@@ -45,6 +48,10 @@ import type {
 } from "@threadlight/terminal-core";
 import type {
   AttachmentData,
+  HostAutomation,
+  HostAutomationCreateRequest,
+  HostAutomationSchedule,
+  HostAutomationUpdateRequest,
   HostDirectoryListing,
   HostProjectSummary,
   HostProviderDiagnostic,
@@ -145,6 +152,8 @@ export class ThreadlightHostServer {
   private readonly terminalGateway?: HostTerminalGateway;
   private readonly terminalWebSockets?: WebSocketServer;
   private readonly projectSearch = new ProjectSearchService();
+  private readonly automationStore: AutomationStore;
+  private readonly automationScheduler: AutomationScheduler;
   private readonly taskWorkspaces: TaskWorkspaceManager;
   private readonly conversationChanges: ConversationChangeTracker;
   private readonly worktreeDelivery: WorktreeDeliveryManager;
@@ -154,6 +163,10 @@ export class ThreadlightHostServer {
     string,
     Record<string, unknown> | undefined
   >();
+  private readonly automationTurnWaiters = new Map<
+    string,
+    { resolve(result: AutomationExecutionResult): void }
+  >();
   private server?: Server;
 
   constructor(private readonly options: ThreadlightHostServerOptions) {
@@ -162,9 +175,21 @@ export class ThreadlightHostServer {
     }
     this.listenHost = options.host ?? "127.0.0.1";
     this.port = options.port ?? 7432;
+    this.automationStore = new AutomationStore(
+      join(options.homePath, "automations.json"),
+    );
+    this.automationScheduler = new AutomationScheduler(
+      this.automationStore,
+      {
+        execute: (automation) => this.executeAutomation(automation),
+        notify: () => undefined,
+      },
+    );
     this.taskWorkspaces =
       options.taskWorkspaces ??
-      new TaskWorkspaceManager(join(options.homePath, "worktrees"));
+      new TaskWorkspaceManager(join(options.homePath, "worktrees"), {
+        standaloneRoot: join(options.homePath, "standalone", "workspaces"),
+      });
     this.conversationChanges =
       options.conversationChanges ??
       new ConversationChangeTracker(
@@ -214,10 +239,19 @@ export class ThreadlightHostServer {
     if (!address || typeof address === "string") {
       throw new Error("Threadlight Host did not receive a TCP address.");
     }
+    this.automationScheduler.start();
     return { host: this.listenHost, port: address.port };
   }
 
   async stop(): Promise<void> {
+    this.automationScheduler.stop();
+    for (const [threadId, waiter] of this.automationTurnWaiters) {
+      waiter.resolve({
+        threadId,
+        error: "Threadlight Host stopped before the automation finished.",
+      });
+    }
+    this.automationTurnWaiters.clear();
     const pendingResponses = [...this.pending.values()];
     for (const pending of pendingResponses) {
       clearTimeout(pending.timeout);
@@ -351,6 +385,68 @@ export class ThreadlightHostServer {
       this.writeJson(response, 200, projectDiagnostics(project));
       return true;
     }
+    const automationsProjectId = hostAutomationsProjectId(url.pathname);
+    if (request.method === "GET" && automationsProjectId) {
+      this.requireProject(automationsProjectId);
+      this.writeJson(
+        response,
+        200,
+        this.automationStore.snapshot(automationsProjectId),
+      );
+      return true;
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/automations/create"
+    ) {
+      const automation = parseAutomationRequest(await jsonBody(request));
+      this.requireProject(automation.projectId);
+      this.writeJson(response, 200, this.automationStore.create(automation));
+      return true;
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/automations/update"
+    ) {
+      const automation = parseAutomationRequest(
+        await jsonBody(request),
+        true,
+      );
+      this.requireProject(automation.projectId);
+      this.writeJson(response, 200, this.automationStore.update(automation));
+      return true;
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/automations/delete"
+    ) {
+      const target = parseAutomationTarget(await jsonBody(request));
+      this.requireProject(target.projectId);
+      this.writeJson(
+        response,
+        200,
+        this.automationStore.delete(target.projectId, target.id),
+      );
+      return true;
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/automations/run"
+    ) {
+      const target = parseAutomationTarget(await jsonBody(request));
+      this.requireProject(target.projectId);
+      const automation = this.automationStore.get(target.id);
+      if (!automation || automation.projectId !== target.projectId) {
+        throw new Error("Unknown automation");
+      }
+      this.automationScheduler.runNow(target.id);
+      this.writeJson(
+        response,
+        200,
+        this.automationStore.snapshot(target.projectId),
+      );
+      return true;
+    }
     if (request.method === "GET" && url.pathname === "/v1/host/projects") {
       this.writeJson(response, 200, this.options.projects.snapshot());
       return true;
@@ -401,6 +497,17 @@ export class ThreadlightHostServer {
         response,
         200,
         this.options.projects.register(requiredString(body.path, "path")),
+      );
+      return true;
+    }
+    if (
+      request.method === "POST" &&
+      url.pathname === "/v1/host/projects/standalone"
+    ) {
+      this.writeJson(
+        response,
+        200,
+        this.options.projects.activateStandalone(),
       );
       return true;
     }
@@ -907,7 +1014,10 @@ export class ThreadlightHostServer {
     let workspace: TaskWorkspace = { mode: "folder", path: projectRoot };
     let pendingSnapshotId: string | undefined;
     if (message.method === "thread/start") {
-      workspace = await this.taskWorkspaces.prepare(projectId, projectRoot);
+      workspace =
+        this.options.projects.project(projectId)?.scope === "standalone"
+          ? await this.taskWorkspaces.prepareStandalone()
+          : await this.taskWorkspaces.prepare(projectId, projectRoot);
       pendingSnapshotId = `host:${randomUUID()}`;
       try {
         await this.conversationChanges.beginPendingSnapshot(
@@ -1047,6 +1157,7 @@ export class ThreadlightHostServer {
         return;
       }
     }
+    this.resolveAutomationTurn(projectId, message);
     this.recordNotification(projectId, message);
     const line = `${JSON.stringify(message)}\n`;
     for (const client of this.projectEventClients(projectId)) {
@@ -1084,6 +1195,122 @@ export class ThreadlightHostServer {
     } catch {
       // Late notifications may arrive after a task is deleted.
     }
+  }
+
+  private async executeAutomation(
+    automation: HostAutomation,
+  ): Promise<AutomationExecutionResult> {
+    const project = this.requireProject(automation.projectId);
+    if (!this.initializationParams.has(project.id)) {
+      this.initializationParams.set(project.id, {
+        capabilities: { executionApprovals: false },
+      });
+    }
+    const context = await this.runtime(
+      project.id,
+      project.basePath,
+      this.options.oauthCallbackUrlPrefix
+        ? normalizeOAuthCallbackUrlPrefix(
+            this.options.oauthCallbackUrlPrefix,
+          )
+        : undefined,
+    );
+    const started = await requestRuntimePeer(context.peer, "thread/start");
+    const threadId =
+      started &&
+      typeof started === "object" &&
+      !Array.isArray(started) &&
+      typeof (started as Record<string, unknown>).threadId === "string"
+        ? (started as { threadId: string }).threadId
+        : undefined;
+    if (!threadId) {
+      throw new Error("Automation task did not return a thread id");
+    }
+
+    this.options.projects.upsertConversation({
+      projectId: project.id,
+      id: threadId,
+      title: `⏱ ${automation.name}`,
+    });
+    this.options.projects.setConversationWorkspace(
+      { projectId: project.id, id: threadId },
+      { mode: "folder", path: project.basePath },
+    );
+    await this.conversationChanges.ensureSnapshot(
+      project.id,
+      threadId,
+      project.basePath,
+    );
+
+    const completed = new Promise<AutomationExecutionResult>((resolve) => {
+      this.automationTurnWaiters.set(threadId, { resolve });
+    });
+    try {
+      await requestRuntimePeer(context.peer, "turn/start", {
+        threadId,
+        input: [
+          `Scheduled automation: ${automation.name}`,
+          automation.prompt,
+          "Run read-only checks only. Do not modify files, create commits, or change external state.",
+          "End the final response with exactly one status marker: AUTOMATION_STATUS: ok when no action is needed, or AUTOMATION_STATUS: attention when the user should investigate.",
+        ].join("\n\n"),
+      });
+      return await completed;
+    } catch (error) {
+      this.automationTurnWaiters.delete(threadId);
+      throw error;
+    }
+  }
+
+  private resolveAutomationTurn(
+    projectId: string,
+    message: JsonRpcOutgoing,
+  ): void {
+    if (
+      !("method" in message) ||
+      (message.method !== "turn/completed" &&
+        message.method !== "turn/failed")
+    ) {
+      return;
+    }
+    const params = message.params as Record<string, unknown> | undefined;
+    const threadId = params?.threadId;
+    if (typeof threadId !== "string") return;
+    const waiter = this.automationTurnWaiters.get(threadId);
+    if (!waiter) return;
+    this.automationTurnWaiters.delete(threadId);
+    try {
+      this.options.projects.markConversationUnread({
+        projectId,
+        id: threadId,
+      });
+    } catch {
+      // A task can be removed while a late automation result is queued.
+    }
+    const diagnostics = params?.diagnostics as
+      | { toolCalls?: readonly { isError?: boolean }[] }
+      | undefined;
+    waiter.resolve(
+      message.method === "turn/failed"
+        ? {
+            threadId,
+            error:
+              typeof params?.error === "string"
+                ? params.error
+                : "Automation failed",
+          }
+        : {
+            threadId,
+            output: typeof params?.output === "string" ? params.output : "",
+            toolError: diagnostics?.toolCalls?.some((tool) => tool.isError),
+          },
+    );
+  }
+
+  private requireProject(projectId: string) {
+    const project = this.options.projects.project(projectId);
+    if (!project) throw new Error(`Unknown project: ${projectId}`);
+    return project;
   }
 
   publishConnectorAuthorization(projectId: string, url: string): void {
@@ -1225,7 +1452,7 @@ export class ThreadlightHostServer {
     await this.conversationChanges
       .deleteSnapshot(target.projectId, target.id)
       .catch(() => undefined);
-    if (workspace?.mode !== "worktree") return;
+    if (!workspace || workspace.mode === "folder") return;
     const key = runtimeKey(target.projectId, workspace.path);
     const runtime = this.runtimes.get(key);
     if (runtime) {
@@ -1452,6 +1679,48 @@ async function initializeRuntimePeer(
         method: "initialize",
         ...(params ? { params } : {}),
       } as JsonRpcRequest)).catch((error) => {
+        clearTimeout(timeout);
+        unsubscribe();
+        reject(error);
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      unsubscribe();
+      reject(error);
+    }
+  });
+}
+
+function requestRuntimePeer(
+  peer: RuntimePeer,
+  method: string,
+  params?: unknown,
+): Promise<unknown> {
+  const id = `host:automation:${randomUUID()}`;
+  return new Promise<unknown>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      unsubscribe();
+      reject(new Error(`Host automation request timed out: ${method}`));
+    }, RPC_TIMEOUT_MS);
+    const unsubscribe = peer.onMessage((message) => {
+      if (!("id" in message) || message.id !== id) return;
+      clearTimeout(timeout);
+      unsubscribe();
+      if ("error" in message && message.error) {
+        reject(new Error(message.error.message));
+      } else {
+        resolve(message.result);
+      }
+    });
+    try {
+      void Promise.resolve(
+        peer.send({
+          jsonrpc: "2.0",
+          id,
+          method,
+          ...(params === undefined ? {} : { params }),
+        }),
+      ).catch((error) => {
         clearTimeout(timeout);
         unsubscribe();
         reject(error);
@@ -1754,6 +2023,89 @@ function parseHostSearchRequest(value: unknown): HostSearchRequest {
   };
 }
 
+function parseAutomationRequest(
+  value: unknown,
+  update?: false,
+): HostAutomationCreateRequest;
+function parseAutomationRequest(
+  value: unknown,
+  update: true,
+): HostAutomationUpdateRequest;
+function parseAutomationRequest(
+  value: unknown,
+  update = false,
+): HostAutomationCreateRequest | HostAutomationUpdateRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid automation request");
+  }
+  const request = value as Record<string, unknown>;
+  const schedule = request.schedule as Record<string, unknown> | undefined;
+  if (
+    typeof request.projectId !== "string" ||
+    !request.projectId.trim() ||
+    typeof request.name !== "string" ||
+    !request.name.trim() ||
+    request.name.length > 120 ||
+    (request.kind !== "custom" &&
+      request.kind !== "tests" &&
+      request.kind !== "dependencies" &&
+      request.kind !== "issue-triage") ||
+    typeof request.prompt !== "string" ||
+    !request.prompt.trim() ||
+    request.prompt.length > 12_000 ||
+    typeof request.enabled !== "boolean" ||
+    !schedule ||
+    Array.isArray(schedule) ||
+    (schedule.cadence !== "daily" &&
+      schedule.cadence !== "weekdays" &&
+      schedule.cadence !== "weekly") ||
+    typeof schedule.time !== "string" ||
+    (schedule.weekday !== undefined &&
+      (!Number.isInteger(schedule.weekday) ||
+        Number(schedule.weekday) < 0 ||
+        Number(schedule.weekday) > 6)) ||
+    (update && (typeof request.id !== "string" || !request.id.trim()))
+  ) {
+    throw new Error("Invalid automation request");
+  }
+  const normalizedSchedule: HostAutomationSchedule = {
+    cadence: schedule.cadence,
+    time: schedule.time,
+    ...(schedule.cadence === "weekly"
+      ? { weekday: Number(schedule.weekday) }
+      : {}),
+  };
+  const base: HostAutomationCreateRequest = {
+    projectId: request.projectId,
+    name: request.name,
+    kind: request.kind,
+    prompt: request.prompt,
+    enabled: request.enabled,
+    schedule: normalizedSchedule,
+  };
+  return update
+    ? { ...base, id: request.id as string }
+    : base;
+}
+
+function parseAutomationTarget(
+  value: unknown,
+): { projectId: string; id: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid automation target");
+  }
+  const target = value as Record<string, unknown>;
+  if (
+    typeof target.projectId !== "string" ||
+    !target.projectId.trim() ||
+    typeof target.id !== "string" ||
+    !target.id.trim()
+  ) {
+    throw new Error("Invalid automation target");
+  }
+  return { projectId: target.projectId, id: target.id };
+}
+
 function hostOAuthCallbackRoute(
   pathname: string,
 ): { connectorId: string } | undefined {
@@ -1767,6 +2119,17 @@ function hostOAuthCallbackRoute(
 function hostDiagnosticsProjectId(pathname: string): string | undefined {
   const match =
     /^\/v1\/host\/projects\/([^/]+)\/diagnostics$/.exec(pathname);
+  if (!match?.[1]) return;
+  const projectId = decodeURIComponent(match[1]);
+  if (!projectId || projectId.length > 256) {
+    throw new Error("Invalid project id");
+  }
+  return projectId;
+}
+
+function hostAutomationsProjectId(pathname: string): string | undefined {
+  const match =
+    /^\/v1\/host\/projects\/([^/]+)\/automations$/.exec(pathname);
   if (!match?.[1]) return;
   const projectId = decodeURIComponent(match[1]);
   if (!projectId || projectId.length > 256) {
