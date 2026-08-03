@@ -2855,6 +2855,13 @@ html[data-platform="desktop"][data-os="macos"]
       height: var(--web-viewport-height, 100dvh);
     }
 
+    html[data-platform="web"] body {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+    }
+
     html[data-platform="web"] :is(input, textarea, select) {
       font-size: max(16px, 1em) !important;
     }

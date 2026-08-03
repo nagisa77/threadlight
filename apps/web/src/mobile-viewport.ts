@@ -44,7 +44,9 @@ export function installMobileViewportHeight(
     if (frame !== undefined) viewportWindow.cancelAnimationFrame(frame);
     frame = viewportWindow.requestAnimationFrame(measure);
   };
-  const recoverAfterFocus: EventListener = () => {
+  const stabilizeAfterFocusChange: EventListener = () => {
+    for (const timer of recoveryTimers) viewportWindow.clearTimeout(timer);
+    recoveryTimers.clear();
     for (const delay of [0, 120, 300, 500]) {
       const timer = viewportWindow.setTimeout(() => {
         recoveryTimers.delete(timer);
@@ -60,7 +62,8 @@ export function installMobileViewportHeight(
   viewportWindow.addEventListener("orientationchange", scheduleMeasure);
   visualViewport?.addEventListener("resize", scheduleMeasure);
   visualViewport?.addEventListener("scroll", scheduleMeasure);
-  viewportDocument.addEventListener("focusout", recoverAfterFocus);
+  viewportDocument.addEventListener("focusin", stabilizeAfterFocusChange);
+  viewportDocument.addEventListener("focusout", stabilizeAfterFocusChange);
 
   return () => {
     if (frame !== undefined) viewportWindow.cancelAnimationFrame(frame);
@@ -69,7 +72,8 @@ export function installMobileViewportHeight(
     viewportWindow.removeEventListener("orientationchange", scheduleMeasure);
     visualViewport?.removeEventListener("resize", scheduleMeasure);
     visualViewport?.removeEventListener("scroll", scheduleMeasure);
-    viewportDocument.removeEventListener("focusout", recoverAfterFocus);
+    viewportDocument.removeEventListener("focusin", stabilizeAfterFocusChange);
+    viewportDocument.removeEventListener("focusout", stabilizeAfterFocusChange);
     root.style.removeProperty("--web-viewport-height");
   };
 }

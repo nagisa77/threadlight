@@ -44,6 +44,9 @@ describe("mobile viewport height", () => {
     expect(uiStyles).toMatch(
       /html\[data-platform="web"\],\s*html\[data-platform="web"\] body,\s*html\[data-platform="web"\] #root\s*\{[^}]*height:\s*var\(--web-viewport-height, 100dvh\);/s,
     );
+    expect(uiStyles).toMatch(
+      /html\[data-platform="web"\] body\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0;[^}]*left:\s*0;[^}]*width:\s*100%;/s,
+    );
   });
 
   it("tracks visual viewport changes when the software keyboard closes", () => {
@@ -139,6 +142,47 @@ describe("mobile viewport height", () => {
     for (const callback of timers) callback();
 
     expect(properties.get("--web-viewport-height")).toBe("720px");
+    expect(scrollPositions).toEqual([
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]);
+    dispose();
+  });
+
+  it("keeps Safari from panning the app shell while the keyboard opens", () => {
+    const visualViewport = new TestViewport(720);
+    const properties = new Map<string, string>();
+    const viewportDocument = createTestDocument(properties);
+    const timers: Array<() => void> = [];
+    const scrollPositions: Array<[number, number]> = [];
+    const viewportWindow = Object.assign(new EventTarget(), {
+      innerHeight: 720,
+      visualViewport,
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout(callback: () => void) {
+        timers.push(callback);
+        return timers.length;
+      },
+      clearTimeout() {},
+      scrollTo(x: number, y: number) {
+        scrollPositions.push([x, y]);
+      },
+    });
+
+    const dispose = installMobileViewportHeight(
+      viewportWindow,
+      viewportDocument,
+    );
+    visualViewport.height = 420;
+    viewportDocument.dispatchEvent(new Event("focusin"));
+    for (const callback of timers) callback();
+
+    expect(properties.get("--web-viewport-height")).toBe("420px");
     expect(scrollPositions).toEqual([
       [0, 0],
       [0, 0],
