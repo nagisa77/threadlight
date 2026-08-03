@@ -415,13 +415,17 @@ button:disabled {
   min-height: 27px;
   flex: 1;
   align-items: center;
-  padding: 4px 30px 4px 8px;
+  padding: 4px 8px;
   border: 0;
   border-radius: inherit;
   color: inherit;
   background: transparent;
   text-align: left;
   cursor: pointer;
+}
+
+.thread-item:has(> .thread-actions) > .thread-item-select {
+  padding-right: 30px;
 }
 
 .thread-actions {
