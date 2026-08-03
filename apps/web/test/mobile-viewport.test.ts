@@ -21,6 +21,23 @@ class TestViewport extends EventTarget {
   }
 }
 
+function createTestDocument(properties: Map<string, string>) {
+  return Object.assign(new EventTarget(), {
+    documentElement: {
+      style: {
+        setProperty(name: string, value: string) {
+          properties.set(name, value);
+        },
+        removeProperty(name: string) {
+          const value = properties.get(name) ?? "";
+          properties.delete(name);
+          return value;
+        },
+      },
+    },
+  });
+}
+
 describe("mobile viewport height", () => {
   it("binds the iOS web root to the measured visual viewport", () => {
     expect(appSource).toContain("installMobileViewportHeight()");
@@ -32,18 +49,7 @@ describe("mobile viewport height", () => {
   it("tracks visual viewport changes when the software keyboard closes", () => {
     const visualViewport = new TestViewport(420);
     const properties = new Map<string, string>();
-    const root = {
-      style: {
-        setProperty(name: string, value: string) {
-          properties.set(name, value);
-        },
-        removeProperty(name: string) {
-          const value = properties.get(name) ?? "";
-          properties.delete(name);
-          return value;
-        },
-      },
-    };
+    const viewportDocument = createTestDocument(properties);
     let nextFrame: FrameRequestCallback | undefined;
     const viewportWindow = Object.assign(new EventTarget(), {
       innerHeight: 720,
@@ -55,11 +61,15 @@ describe("mobile viewport height", () => {
       cancelAnimationFrame() {
         nextFrame = undefined;
       },
+      setTimeout,
+      clearTimeout,
+      scrollTo() {},
     });
 
-    const dispose = installMobileViewportHeight(viewportWindow, {
-      documentElement: root,
-    });
+    const dispose = installMobileViewportHeight(
+      viewportWindow,
+      viewportDocument,
+    );
     expect(properties.get("--web-viewport-height")).toBe("420px");
 
     visualViewport.height = 720;
@@ -74,18 +84,7 @@ describe("mobile viewport height", () => {
 
   it("falls back to the window height without Visual Viewport support", () => {
     const properties = new Map<string, string>();
-    const root = {
-      style: {
-        setProperty(name: string, value: string) {
-          properties.set(name, value);
-        },
-        removeProperty(name: string) {
-          const value = properties.get(name) ?? "";
-          properties.delete(name);
-          return value;
-        },
-      },
-    };
+    const viewportDocument = createTestDocument(properties);
     const viewportWindow = Object.assign(new EventTarget(), {
       innerHeight: 640,
       visualViewport: null,
@@ -94,13 +93,58 @@ describe("mobile viewport height", () => {
         return 1;
       },
       cancelAnimationFrame() {},
+      setTimeout,
+      clearTimeout,
+      scrollTo() {},
     });
 
-    const dispose = installMobileViewportHeight(viewportWindow, {
-      documentElement: root,
-    });
+    const dispose = installMobileViewportHeight(
+      viewportWindow,
+      viewportDocument,
+    );
 
     expect(properties.get("--web-viewport-height")).toBe("640px");
+    dispose();
+  });
+
+  it("remeasures and clears Safari's root scroll offset after input blur", () => {
+    const visualViewport = new TestViewport(420);
+    const properties = new Map<string, string>();
+    const viewportDocument = createTestDocument(properties);
+    const timers: Array<() => void> = [];
+    const scrollPositions: Array<[number, number]> = [];
+    const viewportWindow = Object.assign(new EventTarget(), {
+      innerHeight: 720,
+      visualViewport,
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout(callback: () => void) {
+        timers.push(callback);
+        return timers.length;
+      },
+      clearTimeout() {},
+      scrollTo(x: number, y: number) {
+        scrollPositions.push([x, y]);
+      },
+    });
+
+    const dispose = installMobileViewportHeight(
+      viewportWindow,
+      viewportDocument,
+    );
+    visualViewport.height = 720;
+    viewportDocument.dispatchEvent(new Event("focusout"));
+    for (const callback of timers) callback();
+
+    expect(properties.get("--web-viewport-height")).toBe("720px");
+    expect(scrollPositions).toEqual([
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ]);
     dispose();
   });
 });
