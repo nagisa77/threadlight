@@ -37,6 +37,7 @@ import {
 import DiffViewer from "react-diff-viewer-continued";
 import { refractor } from "refractor";
 import tsx from "refractor/tsx";
+import { createBrowserUuid } from "@threadlight/client";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
 import { MarkdownContent } from "./markdown.js";
@@ -57,6 +58,7 @@ export interface ConversationFileChange {
   additions: number;
   deletions: number;
   binary: boolean;
+  localOnly?: boolean;
   oldContent?: string;
   newContent?: string;
 }
@@ -87,6 +89,7 @@ export interface WorktreeDeliveryPreflight {
   files: number;
   pendingFiles: number;
   alreadyAppliedFiles: number;
+  localOnlyFiles?: number;
   conflicts: readonly WorktreeDeliveryConflict[];
 }
 
@@ -1159,6 +1162,9 @@ export function ReviewView({
   const canDeliverChanges = Boolean(
     changes?.files.length && onPreflightDelivery,
   );
+  const localDataFiles =
+    changes?.files.filter((file) => file.localOnly).length ?? 0;
+  const gitFiles = (changes?.files.length ?? 0) - localDataFiles;
 
   return (
     <div className="review-view">
@@ -1166,10 +1172,20 @@ export function ReviewView({
         <div className="review-summary">
           <strong>{t("thisConversation")}</strong>
           {changes && (
-            <ChangeCounts
-              additions={changes.additions}
-              deletions={changes.deletions}
-            />
+            <>
+              <ChangeCounts
+                additions={changes.additions}
+                deletions={changes.deletions}
+              />
+              {localDataFiles > 0 && (
+                <span
+                  className="review-local-data-summary"
+                  title={t("localDataDescription")}
+                >
+                  {t("localDataCount", { count: localDataFiles })}
+                </span>
+              )}
+            </>
           )}
         </div>
         <div className="review-actions">
@@ -1207,9 +1223,14 @@ export function ReviewView({
                   deliveryBusy ||
                   deliveryDisabled ||
                   !canDeliverChanges ||
+                  gitFiles === 0 ||
                   !onCommitDelivery
                 }
-                title={t("stageAndCommitDescription")}
+                title={
+                  gitFiles === 0
+                    ? t("commitRequiresGitChanges")
+                    : t("stageAndCommitDescription")
+                }
                 onClick={() => void beginDelivery("commit")}
               >
                 <GitCommitHorizontal size={14} />
@@ -1342,7 +1363,7 @@ export function ReviewView({
           disabled={deliveryDisabled}
           onRefresh={() => void refreshCodeHostStatus()}
           onCommitPush={
-            onCommitAndPush && changes?.files.length
+            onCommitAndPush && gitFiles > 0
               ? () =>
                   setPendingCodeHostAction({
                     action: "push",
@@ -1493,6 +1514,14 @@ function ReviewFile({
         <FileCode2 size={14} />
         <span title={file.path}>{file.path}</span>
         <ChangeCounts additions={file.additions} deletions={file.deletions} />
+        {file.localOnly && (
+          <span
+            className="review-file-local-data"
+            title={t("localDataDescription")}
+          >
+            {t("localData")}
+          </span>
+        )}
         <button
           type="button"
           className="review-file-restore pressable"
@@ -2063,6 +2092,13 @@ function WorktreeDeliveryDialog({
               branch: preflight.targetBranch,
             })}
           </p>
+          {(preflight.localOnlyFiles ?? 0) > 0 && (
+            <p className="delivery-dialog-notice">
+              {t("deliveryLocalDataSummary", {
+                count: preflight.localOnlyFiles ?? 0,
+              })}
+            </p>
+          )}
           <div className="delivery-branch-route">
             <code>{preflight.taskBranch}</code>
             <GitMerge size={14} aria-hidden="true" />
@@ -3014,7 +3050,7 @@ function WorkspacePanelEmpty({ onAdd }: { onAdd(): void }) {
 
 function createReviewTab(t: Translate): WorkspaceTab {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserUuid(),
     kind: "review",
     title: t("review"),
   };
@@ -3022,7 +3058,7 @@ function createReviewTab(t: Translate): WorkspaceTab {
 
 function createFileTab(t: Translate): WorkspaceTab {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserUuid(),
     kind: "file",
     title: t("openFile"),
   };
@@ -3030,7 +3066,7 @@ function createFileTab(t: Translate): WorkspaceTab {
 
 function createTerminalTab(t: Translate): WorkspaceTab {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserUuid(),
     kind: "terminal",
     title: t("terminal"),
   };

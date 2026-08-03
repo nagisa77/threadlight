@@ -24,7 +24,7 @@
     "desktop:dev": "npm run build:packages && npm run dev --workspace @threadlight/desktop",
     "desktop:package": "npm run build:packages && npm run package --workspace @threadlight/desktop",
     "desktop:preview": "npm run build:packages && npm run preview --workspace @threadlight/desktop",
-    "web:dev": "npm run build:packages && npm run dev --workspace @threadlight/web",
+    "web:dev": "npm run build:packages && npm run dev --workspace @threadlight/web --",
     "web:build": "npm run build:packages && npm run build --workspace @threadlight/web",
     "web:preview": "npm run web:build && npm run preview --workspace @threadlight/web",
     "test": "npm run build && vitest run",

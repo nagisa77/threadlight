@@ -100,6 +100,42 @@ describe("ReviewView", () => {
     );
   });
 
+  it("labels local data and keeps Git commit unavailable for local-only changes", () => {
+    const html = renderToStaticMarkup(
+      <ReviewView
+        changes={{
+          threadId: "thread-1",
+          additions: 0,
+          deletions: 0,
+          revision: "revision-local",
+          files: [
+            {
+              ...change("data/library.db", "modified"),
+              binary: true,
+              localOnly: true,
+            },
+          ],
+        }}
+        loading={false}
+        layout="unified"
+        projectId="project-1"
+        threadId="thread-1"
+        deliveryEnabled
+        onPreflightDelivery={vi.fn()}
+        onApplyDelivery={vi.fn()}
+        onCommitDelivery={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("本地数据");
+    expect(html).toContain("1 个本地数据文件");
+    expect(html).toContain("只有本地数据变更；请使用");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*暂存并提交/s);
+    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>.*应用到原分支/s);
+  });
+
   it("shows Draft PR, CI, checks, and review comments in GitHub delivery", () => {
     const html = renderToStaticMarkup(
       <GitHubDeliveryCard

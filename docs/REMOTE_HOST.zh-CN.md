@@ -59,7 +59,7 @@ npm run host:dev -- \
 - `--name`：桌面端显示的主机名。
 - `--project`：启动时登记一个项目路径，可选。
 - `--token`：访问令牌；也可使用 `THREADLIGHT_HOST_TOKEN`。
-- `--origin`：允许访问的单一 Web Origin，可选。
+- `--origin`：允许访问的 Web Origin，可选；可重复传入以允许多个 Origin。
 
 ## 打包和部署
 

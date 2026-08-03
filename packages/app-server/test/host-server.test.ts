@@ -185,7 +185,10 @@ describe("ThreadlightHostServer", () => {
         return input.state === "expected-state";
       },
       port: 0,
-      allowedOrigin: "https://threadlight.example",
+      allowedOrigins: [
+        "https://threadlight.example",
+        "http://192.168.50.186:5173",
+      ],
       createPeer: ({ projectId, projectRoot, oauthCallbackUrlPrefix }) => {
         oauthCallbackPrefixes.set(projectId, oauthCallbackUrlPrefix);
         const peer = new ScriptedRuntimePeer((request, emit) => {
@@ -315,6 +318,17 @@ describe("ThreadlightHostServer", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBe(
       "https://threadlight.example",
     );
+    const lanPreflight = await fetch(`${endpoint}/v1/health`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://192.168.50.186:5173",
+        "Access-Control-Request-Method": "GET",
+      },
+    });
+    expect(lanPreflight.status).toBe(204);
+    expect(lanPreflight.headers.get("access-control-allow-origin")).toBe(
+      "http://192.168.50.186:5173",
+    );
     expect(await authenticatedJson(`${endpoint}/v1/health`)).toEqual({
       ok: true,
       protocolVersion: 2,
@@ -432,6 +446,19 @@ describe("ThreadlightHostServer", () => {
         endpoint,
         workspacePath: realpathSync(firstWorkspace),
       },
+    });
+    const listRemoteDirectories =
+      webSession.projects.listRemoteDirectories;
+    await expect(
+      listRemoteDirectories?.(join(root, "f")),
+    ).resolves.toEqual({
+      path: root,
+      directories: [
+        {
+          name: "first",
+          path: firstWorkspace,
+        },
+      ],
     });
     await webSession.projects.activate("project-1");
     const parallelWebSession = await createRemoteWebSession({
@@ -783,6 +810,18 @@ describe("ThreadlightHostServer", () => {
   it("owns remote task recovery, worktree delivery, push, and draft PR flows", async () => {
     const root = temporaryDirectory("threadlight-host-delivery-");
     const projectPath = createWorkspace(root, "project", "baseline");
+    writeFileSync(
+      join(projectPath, ".gitignore"),
+      ".venv/\ndata/library.db\n",
+    );
+    mkdirSync(join(projectPath, ".venv", "bin"), { recursive: true });
+    writeFileSync(join(projectPath, ".venv", "bin", "python"), "runtime\n");
+    mkdirSync(join(projectPath, "data"), { recursive: true });
+    writeFileSync(join(projectPath, "data", "library.db"), "baseline data\n");
+    execFileSync("git", ["add", ".gitignore"], { cwd: projectPath });
+    execFileSync("git", ["commit", "-qm", "ignore local runtime"], {
+      cwd: projectPath,
+    });
     const homePath = join(root, "home");
     const projects = new ProjectStore(join(homePath, "project-map.json"), {
       createId: () => "project-1",
@@ -822,9 +861,16 @@ describe("ThreadlightHostServer", () => {
             return;
           }
           if (request.method === "thread/start") {
+            expect(
+              readFileSync(join(projectRoot, ".venv", "bin", "python"), "utf8"),
+            ).toBe("runtime\n");
             writeFileSync(
               join(projectRoot, "src", "index.ts"),
               "export const value = 'task change';\n",
+            );
+            writeFileSync(
+              join(projectRoot, "data", "library.db"),
+              "task data\n",
             );
             emit({
               jsonrpc: "2.0",
@@ -904,6 +950,14 @@ describe("ThreadlightHostServer", () => {
         newContent: "export const value = 'task change';\n",
       }),
     );
+    expect(firstChanges.files).toContainEqual(
+      expect.objectContaining({
+        path: "data/library.db",
+        localOnly: true,
+        oldContent: "baseline data\n",
+        newContent: "task data\n",
+      }),
+    );
     await expect(
       host.conversationWorkspaceFile(
         "project-1",
@@ -925,7 +979,9 @@ describe("ThreadlightHostServer", () => {
         firstChanges.revision,
         ["src/index.ts"],
       ),
-    ).resolves.toMatchObject({ files: [] });
+    ).resolves.toMatchObject({
+      files: [expect.objectContaining({ path: "data/library.db", localOnly: true })],
+    });
     restoreWebSession.dispose();
     expect(readFileSync(join(taskPath, "src", "index.ts"), "utf8")).toBe(
       "export const value = 'baseline';\n",
@@ -957,8 +1013,9 @@ describe("ThreadlightHostServer", () => {
         reviewed.revision,
       ),
     ).resolves.toMatchObject({
-      files: 1,
-      pendingFiles: 1,
+      files: 2,
+      pendingFiles: 2,
+      localOnlyFiles: 1,
       conflicts: [],
     });
     await expect(
@@ -967,9 +1024,12 @@ describe("ThreadlightHostServer", () => {
         "thread-1",
         reviewed.revision,
       ),
-    ).resolves.toMatchObject({ appliedFiles: 1 });
+    ).resolves.toMatchObject({ appliedFiles: 2 });
     expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
       "export const value = 'delivered';\n",
+    );
+    expect(readFileSync(join(projectPath, "data", "library.db"), "utf8")).toBe(
+      "task data\n",
     );
     await expect(
       webSession.workspace.commitDelivery?.(
@@ -980,7 +1040,8 @@ describe("ThreadlightHostServer", () => {
       ),
     ).resolves.toMatchObject({
       appliedFiles: 0,
-      alreadyAppliedFiles: 1,
+      alreadyAppliedFiles: 2,
+      localOnlyFiles: 1,
       commit: expect.stringMatching(/^[a-f0-9]{40}$/),
     });
     await expect(
@@ -1066,7 +1127,7 @@ describe("ThreadlightHostServer", () => {
       projects,
       settings,
       port: 0,
-      allowedOrigin: "https://threadlight.example",
+      allowedOrigins: ["https://threadlight.example"],
       createPeer: () => peer,
     });
     servers.push(server);
@@ -1127,7 +1188,10 @@ describe("ThreadlightHostServer", () => {
       projects,
       settings,
       port: 0,
-      allowedOrigin: "https://threadlight.example",
+      allowedOrigins: [
+        "https://threadlight.example",
+        "http://192.168.50.186:5173",
+      ],
       createPeer: () => new ScriptedRuntimePeer(),
       createTerminalSessions: (send) => {
         const sessions = new ScriptedTerminalSessions(send);
@@ -1218,6 +1282,15 @@ describe("ThreadlightHostServer", () => {
     await webSocketOpened(browserSocket);
     browserSocket.close();
     await webSocketClosed(browserSocket);
+
+    const lanBrowserSocket = new WebSocket(
+      `ws://127.0.0.1:${address.port}/v1/host/terminal`,
+      [...browserTerminalProtocols("test-token")],
+      { origin: "http://192.168.50.186:5173" },
+    );
+    await webSocketOpened(lanBrowserSocket);
+    lanBrowserSocket.close();
+    await webSocketClosed(lanBrowserSocket);
 
     const rejectedBrowserStatus = await rejectedWebSocketStatus(
       `ws://127.0.0.1:${address.port}/v1/host/terminal`,

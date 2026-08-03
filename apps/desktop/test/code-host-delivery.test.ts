@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -101,6 +102,26 @@ describe("CodeHostDeliveryManager", () => {
       },
     ]);
     expect(status.pullRequest?.draft).toBe(true);
+  });
+
+  it("does not publish Git-ignored local data to a branch", async () => {
+    const fixture = await createFixture(false, true);
+    writeFileSync(join(fixture.workspace.path, "data", "library.db"), "task data\n");
+    const revision = (
+      await fixture.tracker.changes(
+        "project-1",
+        "thread-1",
+        fixture.workspace.path,
+      )
+    ).revision;
+
+    await expect(
+      fixture.manager.commitAndPush(
+        requestFor(fixture, revision),
+        "Publish local data",
+      ),
+    ).rejects.toThrow("only changed local data");
+    expect(fixture.provider.pushed).toEqual([]);
   });
 });
 
@@ -311,7 +332,10 @@ class ScriptedProvider implements CodeHostProvider {
   }
 }
 
-async function createFixture(stageUnrelatedBeforeSnapshot = false) {
+async function createFixture(
+  stageUnrelatedBeforeSnapshot = false,
+  withLocalData = false,
+) {
   const root = mkdtempSync(join(tmpdir(), "threadlight-code-host-"));
   directories.push(root);
   const repository = join(root, "repository");
@@ -320,6 +344,11 @@ async function createFixture(stageUnrelatedBeforeSnapshot = false) {
   git(repository, "config", "user.name", "Threadlight Test");
   writeFileSync(join(repository, "notes.txt"), "base\n");
   writeFileSync(join(repository, "unrelated.txt"), "base unrelated\n");
+  if (withLocalData) {
+    writeFileSync(join(repository, ".gitignore"), "data/library.db\n");
+    mkdirSync(join(repository, "data"), { recursive: true });
+    writeFileSync(join(repository, "data", "library.db"), "original data\n");
+  }
   git(repository, "add", ".");
   git(repository, "commit", "-m", "Initial");
   const workspaceManager = new TaskWorkspaceManager(join(root, "worktrees"), {

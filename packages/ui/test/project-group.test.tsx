@@ -164,8 +164,12 @@ describe("ThreadlightApp", () => {
       <ThreadlightApp client={client} projects={projects} />,
     );
 
+    expect(html).toContain('<div class="window-drag-region"></div>');
     expect(html).toContain(
-      '<div class="window-drag-region"></div><button class="new-thread-button project-row pressable"',
+      'class="sidebar-collapse-button pressable" aria-label="隐藏侧边栏"',
+    );
+    expect(html).toContain(
+      'class="new-thread-button project-row pressable"',
     );
     expect(html).not.toContain('class="brand"');
     client.dispose();
@@ -752,6 +756,7 @@ describe("ProjectGroup", () => {
           updatedAt: "2026-07-21T00:00:00.000Z",
         }}
         discard
+        localDataFiles={2}
         deleting={false}
         onCancel={vi.fn()}
         onConfirm={vi.fn()}
@@ -762,6 +767,8 @@ describe("ProjectGroup", () => {
     expect(html).toContain("独立 worktree");
     expect(html).toContain("任务分支");
     expect(html).toContain("对话记录");
+    expect(html).toContain("仍包含 2 个本地数据文件");
+    expect(html).toContain("先应用到原分支");
   });
 
   it("filters task search by lifecycle while keeping running state live", () => {

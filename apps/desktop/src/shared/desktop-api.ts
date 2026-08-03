@@ -505,6 +505,7 @@ export interface DesktopWorktreeDeliveryPreflight {
   files: number;
   pendingFiles: number;
   alreadyAppliedFiles: number;
+  localOnlyFiles?: number;
   conflicts: readonly DesktopWorktreeDeliveryConflict[];
 }
 
@@ -764,6 +765,7 @@ export interface DesktopExecutionPolicyRevokeRequest {
 }
 
 export interface DesktopApi {
+  readonly isMacOS: boolean;
   send(message: JsonRpcRequest): void;
   onMessage(listener: (message: JsonRpcOutgoing) => void): () => void;
   writeClipboardText(text: string): Promise<void>;

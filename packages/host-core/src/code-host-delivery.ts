@@ -133,7 +133,14 @@ export class CodeHostDeliveryManager {
     if (files.length === 0) {
       throw new Error("This task has no reviewed changes to publish");
     }
-    const paths = files.map((file) => safeGitPath(file.path));
+    const paths = files
+      .filter((file) => !file.localOnly)
+      .map((file) => safeGitPath(file.path));
+    if (paths.length === 0) {
+      throw new Error(
+        "This task only changed local data ignored by Git. Apply it to the original workspace instead of publishing a branch.",
+      );
+    }
     const status = await this.run(
       "git",
       ["status", "--porcelain", "--", ...paths],

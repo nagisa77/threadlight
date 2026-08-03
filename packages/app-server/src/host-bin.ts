@@ -14,6 +14,7 @@ import {
 import { TerminalSessionManager } from "@threadlight/terminal-core";
 
 import { createHostSecretCodec } from "./host-secret-codec.js";
+import { parseHostArgs } from "./host-cli-options.js";
 import {
   HostConnectionService,
   HostConnectionStore,
@@ -22,7 +23,7 @@ import { ThreadlightHostServer } from "./host-server.js";
 import { hostTerminalEnvironment } from "./host-terminal-environment.js";
 import { JsonLineRuntimePeer } from "./remote-runtime-peer.js";
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseHostArgs(process.argv.slice(2));
 const publicUrl =
   args.publicUrl ?? process.env.THREADLIGHT_HOST_PUBLIC_URL;
 const token =
@@ -67,7 +68,7 @@ server = new ThreadlightHostServer({
   settings,
   host: args.host,
   port: args.port,
-  allowedOrigin: args.origin,
+  allowedOrigins: args.origins,
   ...(publicUrl
     ? {
         oauthCallbackUrlPrefix:
@@ -135,54 +136,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     void server.stop().finally(() => process.exit(0));
   });
-}
-
-interface HostArgs {
-  host?: string;
-  port?: number;
-  home?: string;
-  project?: string;
-  token?: string;
-  origin?: string;
-  name?: string;
-  publicUrl?: string;
-}
-
-function parseArgs(values: string[]): HostArgs {
-  const result: HostArgs = {};
-  for (let index = 0; index < values.length; index += 1) {
-    const flag = values[index];
-    const value = values[index + 1];
-    if (
-      flag !== "--host" &&
-      flag !== "--port" &&
-      flag !== "--home" &&
-      flag !== "--project" &&
-      flag !== "--token" &&
-      flag !== "--origin" &&
-      flag !== "--name" &&
-      flag !== "--public-url"
-    ) {
-      throw new Error(`Unknown Threadlight Host option: ${flag}`);
-    }
-    if (!value) throw new Error(`Missing value for ${flag}`);
-    index += 1;
-    if (flag === "--host") result.host = value;
-    if (flag === "--home") result.home = value;
-    if (flag === "--project") result.project = value;
-    if (flag === "--token") result.token = value;
-    if (flag === "--origin") result.origin = value;
-    if (flag === "--name") result.name = value;
-    if (flag === "--public-url") result.publicUrl = value;
-    if (flag === "--port") {
-      const port = Number.parseInt(value, 10);
-      if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-        throw new Error(`Invalid port: ${value}`);
-      }
-      result.port = port;
-    }
-  }
-  return result;
 }
 
 function normalizePublicUrl(value: string): string {

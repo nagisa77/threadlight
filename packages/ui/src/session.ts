@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { RpcResponseError, type ThreadlightClient } from "@threadlight/client";
+import {
+  createBrowserUuid,
+  RpcResponseError,
+  type ThreadlightClient,
+} from "@threadlight/client";
 import {
   projectAgentProgress,
   projectAgentPlan,
@@ -659,7 +663,7 @@ export function useThreadlightSession(
       }) => {
         updateSession(threadId, {
           type: "turn.completed",
-          id: crypto.randomUUID(),
+          id: createBrowserUuid(),
           output,
           revision,
           message,
@@ -678,7 +682,7 @@ export function useThreadlightSession(
       }) => {
         updateSession(threadId, {
           type: "turn.failed",
-          id: crypto.randomUUID(),
+          id: createBrowserUuid(),
           error,
           revision,
           message,
@@ -821,7 +825,7 @@ export function useThreadlightSession(
         return false;
       }
 
-      const optimisticMessageId = crypto.randomUUID();
+      const optimisticMessageId = createBrowserUuid();
       const threadId = state.threadId;
       updateSession(threadId, {
         type: "message.sent",
@@ -877,7 +881,7 @@ export function useThreadlightSession(
       const text = value.trim();
       if (!text && attachments.length === 0) return;
 
-      const optimisticMessageId = crypto.randomUUID();
+      const optimisticMessageId = createBrowserUuid();
       const capabilityRefs = capabilities.map(({ id }) => id);
       try {
         const result = await requestNewThreadTurnStart(

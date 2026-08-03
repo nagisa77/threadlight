@@ -115,7 +115,7 @@ export interface ThreadlightHostServerOptions {
   codeHostDelivery?: CodeHostDeliveryManager;
   host?: string;
   port?: number;
-  allowedOrigin?: string;
+  allowedOrigins?: readonly string[];
   oauthCallbackUrlPrefix?: string;
 }
 
@@ -1544,10 +1544,7 @@ export class ThreadlightHostServer {
       return;
     }
     const origin = request.headers.origin;
-    if (
-      origin &&
-      (!this.options.allowedOrigin || origin !== this.options.allowedOrigin)
-    ) {
+    if (origin && !this.isAllowedOrigin(origin)) {
       rejectUpgrade(socket, 403, "Forbidden");
       return;
     }
@@ -1564,7 +1561,7 @@ export class ThreadlightHostServer {
     response: ServerResponse,
   ): void {
     const origin = request.headers.origin;
-    if (origin && origin === this.options.allowedOrigin) {
+    if (origin && this.isAllowedOrigin(origin)) {
       response.setHeader("Access-Control-Allow-Origin", origin);
       response.setHeader("Vary", "Origin");
       response.setHeader(
@@ -1573,6 +1570,10 @@ export class ThreadlightHostServer {
       );
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
     }
+  }
+
+  private isAllowedOrigin(origin: string): boolean {
+    return this.options.allowedOrigins?.includes(origin) ?? false;
   }
 
   private writeJson(

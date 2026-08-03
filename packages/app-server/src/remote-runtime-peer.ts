@@ -1,4 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { existsSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import {
   createInterface,
   type Interface as ReadlineInterface,
@@ -44,11 +46,14 @@ export class JsonLineRuntimePeer implements RuntimePeer {
     if (this.child) return;
     this.exitError = undefined;
 
+    const environment = workspaceRuntimeEnvironment(this.options.cwd, {
+      ...process.env,
+      ...this.options.environment,
+    });
     const child = spawn(process.execPath, [this.options.entry], {
       cwd: this.options.cwd,
       env: {
-        ...process.env,
-        ...this.options.environment,
+        ...environment,
         THREADLIGHT_COMPUTER_USE: "0",
         THREADLIGHT_PROJECT_ROOT:
           this.options.environment?.THREADLIGHT_PROJECT_ROOT ??
@@ -212,6 +217,24 @@ export class JsonLineRuntimePeer implements RuntimePeer {
     this.connectionPipe?.destroy();
     this.connectionPipe = undefined;
   }
+}
+
+export function workspaceRuntimeEnvironment(
+  workspacePath: string,
+  environment: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const virtualEnvironmentBin =
+    process.platform === "win32" ? "Scripts" : "bin";
+  const candidates = [
+    join(workspacePath, ".venv", virtualEnvironmentBin),
+    join(workspacePath, "venv", virtualEnvironmentBin),
+    join(workspacePath, "node_modules", ".bin"),
+  ].filter((path) => existsSync(path));
+  if (candidates.length === 0) return { ...environment };
+  return {
+    ...environment,
+    PATH: [...candidates, environment.PATH].filter(Boolean).join(delimiter),
+  };
 }
 
 function isDesktopConnectionRequest(

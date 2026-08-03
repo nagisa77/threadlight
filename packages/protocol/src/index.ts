@@ -396,6 +396,7 @@ export interface HostConversationFileChange {
   additions: number;
   deletions: number;
   binary: boolean;
+  localOnly?: boolean;
   oldContent?: string;
   newContent?: string;
 }
@@ -431,6 +432,7 @@ export interface HostWorktreeDeliveryPreflight {
   files: number;
   pendingFiles: number;
   alreadyAppliedFiles: number;
+  localOnlyFiles?: number;
   conflicts: readonly HostWorktreeDeliveryConflict[];
 }
 

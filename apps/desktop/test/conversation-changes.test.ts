@@ -170,7 +170,7 @@ describe("ConversationChangeTracker", () => {
     expect(snapshot.files.map((file) => file.path)).toEqual(["app.py"]);
   });
 
-  it("honors project gitignore rules without requiring a Git repository", async () => {
+  it("reports project-ignored outputs as local data without requiring Git", async () => {
     const root = await temporaryDirectory();
     const workspace = join(root, "workspace");
     await mkdir(workspace);
@@ -189,7 +189,34 @@ describe("ConversationChangeTracker", () => {
       "thread-1",
       workspace,
     );
-    expect(snapshot.files.map((file) => file.path)).toEqual(["important.tmp"]);
+    expect(
+      snapshot.files.map((file) => [file.path, !!file.localOnly]),
+    ).toEqual([
+      ["generated/asset.js", true],
+      ["ignored.tmp", true],
+      ["important.tmp", false],
+    ]);
+  });
+
+  it("never captures ignored environment secrets as reviewable changes", async () => {
+    const root = await temporaryDirectory();
+    const workspace = join(root, "workspace");
+    await mkdir(workspace);
+    await writeFile(join(workspace, ".gitignore"), ".env\n*.pem\n");
+    await writeFile(join(workspace, ".env"), "API_KEY=before\n");
+    await writeFile(join(workspace, "signing.pem"), "before\n");
+    const tracker = new ConversationChangeTracker(join(root, "snapshots"));
+
+    await tracker.ensureSnapshot("project-1", "thread-1", workspace);
+    await writeFile(join(workspace, ".env"), "API_KEY=after\n");
+    await writeFile(join(workspace, "signing.pem"), "after\n");
+
+    const snapshot = await tracker.changes(
+      "project-1",
+      "thread-1",
+      workspace,
+    );
+    expect(snapshot.files).toEqual([]);
   });
 
   it("does not report baseline files as deleted when they become ignored", async () => {

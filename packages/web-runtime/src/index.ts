@@ -389,9 +389,8 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     });
   }
 
-  listRemoteDirectories(path: string) {
-    return this.host.directories(path);
-  }
+  listRemoteDirectories = (path: string) =>
+    this.host.directories(path);
 
   async activate(projectId: string): Promise<ProjectsSnapshot> {
     const snapshot = await this.host.projects();

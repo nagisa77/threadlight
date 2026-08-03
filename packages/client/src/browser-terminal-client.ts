@@ -5,6 +5,8 @@ import type {
   TerminalSessionInfo,
 } from "@threadlight/protocol";
 
+import { createBrowserUuid } from "./browser-uuid.js";
+
 export interface BrowserSocketEvent {
   data?: unknown;
 }
@@ -66,7 +68,7 @@ export class BrowserTerminalClient {
     rows: number;
   }): Promise<TerminalSessionInfo> {
     const socket = await this.connect();
-    const requestId = globalThis.crypto.randomUUID();
+    const requestId = createBrowserUuid();
     return new Promise<TerminalSessionInfo>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingOpens.delete(requestId);

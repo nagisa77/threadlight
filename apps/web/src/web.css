@@ -186,6 +186,10 @@
   font-size: 11px;
 }
 
+.app-shell.sidebar-hidden + .web-session-indicator {
+  display: none;
+}
+
 .web-session-dot {
   width: 6px;
   height: 6px;

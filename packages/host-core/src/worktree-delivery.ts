@@ -58,6 +58,7 @@ export interface WorktreeDeliveryPreflight {
   files: number;
   pendingFiles: number;
   alreadyAppliedFiles: number;
+  localOnlyFiles: number;
   conflicts: readonly WorktreeDeliveryConflict[];
 }
 
@@ -73,6 +74,7 @@ interface DeliveryOperation {
   content?: Buffer;
   mode?: number;
   alreadyApplied: boolean;
+  localOnly: boolean;
   conflict?: WorktreeDeliveryConflict;
 }
 
@@ -126,6 +128,14 @@ export class WorktreeDeliveryManager {
 
     const plan = await this.plan(request);
     assertReady(plan.preflight);
+    const committable = plan.operations.filter(
+      (operation) => !operation.localOnly,
+    );
+    if (committable.length === 0) {
+      throw new Error(
+        "This task only changed local data ignored by Git. Apply it to the original workspace without creating a commit.",
+      );
+    }
     const pending = plan.operations.filter(
       (operation) => !operation.alreadyApplied,
     );
@@ -133,7 +143,7 @@ export class WorktreeDeliveryManager {
 
     const paths = [
       ...new Set(
-        plan.operations.map(({ targetPath }) =>
+        committable.map(({ targetPath }) =>
           gitPath(request.workspace.repositoryRoot, targetPath),
         ),
       ),
@@ -211,6 +221,7 @@ export class WorktreeDeliveryManager {
         files: operations.length,
         pendingFiles: operations.length - alreadyAppliedFiles,
         alreadyAppliedFiles,
+        localOnlyFiles: operations.filter(({ localOnly }) => localOnly).length,
         conflicts,
       },
     };
@@ -222,10 +233,11 @@ async function planFile(
   projectPath: string,
   mergeText: TextMerger,
 ): Promise<DeliveryOperation> {
+  const localOnly = !!file.localOnly;
   const targetPath = safeTargetPath(projectPath, file.path);
   const target = await readTarget(projectPath, targetPath);
   if (target.unsafe) {
-    return conflict(file.path, targetPath, "unsafe_target");
+    return conflict(file.path, targetPath, "unsafe_target", localOnly);
   }
   const baseline = file.baselineContent;
   const task = file.taskContent;
@@ -238,10 +250,13 @@ async function planFile(
       content: task,
       mode: file.taskMode,
       alreadyApplied: true,
+      localOnly,
     };
   }
   if (!baseline) {
-    if (target.content) return conflict(file.path, targetPath, "both_added");
+    if (target.content) {
+      return conflict(file.path, targetPath, "both_added", localOnly);
+    }
     return {
       path: file.path,
       targetPath,
@@ -249,6 +264,7 @@ async function planFile(
       content: task,
       mode: file.taskMode,
       alreadyApplied: false,
+      localOnly,
     };
   }
   if (!task) {
@@ -258,20 +274,22 @@ async function planFile(
         targetPath,
         expectedContent: target.content,
         alreadyApplied: true,
+        localOnly,
       };
     }
     if (!target.content.equals(baseline)) {
-      return conflict(file.path, targetPath, "target_modified");
+      return conflict(file.path, targetPath, "target_modified", localOnly);
     }
     return {
       path: file.path,
       targetPath,
       expectedContent: target.content,
       alreadyApplied: false,
+      localOnly,
     };
   }
   if (!target.content) {
-    return conflict(file.path, targetPath, "target_deleted");
+    return conflict(file.path, targetPath, "target_deleted", localOnly);
   }
   if (target.content.equals(baseline)) {
     return {
@@ -281,6 +299,7 @@ async function planFile(
       content: task,
       mode: file.taskMode,
       alreadyApplied: false,
+      localOnly,
     };
   }
   if (
@@ -289,12 +308,12 @@ async function planFile(
     isBinaryFileContent(baseline) ||
     isBinaryFileContent(task)
   ) {
-    return conflict(file.path, targetPath, "target_modified");
+    return conflict(file.path, targetPath, "target_modified", localOnly);
   }
 
   const merged = await mergeText(target.content, baseline, task);
   if (merged.conflict) {
-    return conflict(file.path, targetPath, "merge_conflict");
+    return conflict(file.path, targetPath, "merge_conflict", localOnly);
   }
   return {
     path: file.path,
@@ -303,6 +322,7 @@ async function planFile(
     content: merged.content,
     mode: file.taskMode,
     alreadyApplied: merged.content.equals(target.content),
+    localOnly,
   };
 }
 
@@ -548,12 +568,14 @@ function conflict(
   path: string,
   targetPath: string,
   reason: WorktreeDeliveryConflict["reason"],
+  localOnly: boolean,
 ): DeliveryOperation {
   return {
     path,
     targetPath,
     expectedContent: undefined,
     alreadyApplied: false,
+    localOnly,
     conflict: { path, reason },
   };
 }

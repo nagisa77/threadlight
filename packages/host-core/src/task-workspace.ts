@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { constants } from "node:fs";
 import {
+  cp,
   copyFile,
   lstat,
   mkdir,
@@ -19,6 +21,11 @@ import {
 } from "node:path";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+
+import {
+  workspaceEphemeralMatcher,
+  workspaceRuntimeLinkMatcher,
+} from "./workspace-state-policy.js";
 
 export interface FolderTaskWorkspace {
   mode: "folder";
@@ -102,6 +109,7 @@ export class TaskWorkspaceManager {
         repository.baseCommit,
       ]);
       await this.copyWorkingState(repository.root, worktreeRoot);
+      await this.copyIgnoredWorkingState(repository.root, worktreeRoot);
     } catch (error) {
       await this.cleanupFailedWorktree(
         repository.root,
@@ -266,6 +274,58 @@ export class TaskWorkspaceManager {
         await symlink(await readlink(source), destination);
       } else if (metadata.isFile()) {
         await copyFile(source, destination);
+      }
+    }
+  }
+
+  private async copyIgnoredWorkingState(
+    repositoryRoot: string,
+    worktreeRoot: string,
+  ): Promise<void> {
+    const { stdout } = await this.runGit(repositoryRoot, [
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+      "-z",
+    ]);
+    const ephemeral = workspaceEphemeralMatcher();
+    const runtimeLinks = workspaceRuntimeLinkMatcher();
+
+    for (const reportedPath of stdout.split("\0").filter(Boolean)) {
+      const directory = reportedPath.endsWith("/");
+      const normalized = normalizeGitPath(
+        directory ? reportedPath.slice(0, -1) : reportedPath,
+      );
+      const matchPath = directory ? reportedPath : normalized.split(sep).join("/");
+      const source = resolve(repositoryRoot, normalized);
+      const destination = resolve(worktreeRoot, normalized);
+      if (
+        !isInside(repositoryRoot, source) ||
+        !isInside(worktreeRoot, destination)
+      ) {
+        throw new Error("Git reported an unsafe ignored path");
+      }
+
+      const metadata = await lstat(source);
+      await mkdir(dirname(destination), { recursive: true, mode: 0o700 });
+      if (directory && runtimeLinks.ignores(matchPath)) {
+        await symlink(source, destination, "dir");
+        continue;
+      }
+      if (ephemeral.ignores(matchPath) || metadata.isSymbolicLink()) {
+        continue;
+      }
+      if (metadata.isDirectory()) {
+        await cp(source, destination, {
+          recursive: true,
+          force: false,
+          errorOnExist: true,
+          mode: constants.COPYFILE_FICLONE,
+        });
+      } else if (metadata.isFile()) {
+        await copyFile(source, destination, constants.COPYFILE_FICLONE);
       }
     }
   }

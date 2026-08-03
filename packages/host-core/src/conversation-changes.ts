@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
 import {
   chmod,
   cp,
@@ -13,6 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 
 import { diffLines } from "diff";
 import ignore from "ignore";
@@ -21,26 +23,13 @@ import {
   isBinaryFileContent,
   MAX_FILE_PREVIEW_BYTES,
 } from "./file-preview.js";
+import {
+  workspaceEphemeralMatcher,
+  workspaceSensitiveMatcher,
+} from "./workspace-state-policy.js";
 
 const SNAPSHOT_VERSION = 1;
-const DEFAULT_IGNORE_PATTERNS = [
-  ".git/",
-  ".threadlight/",
-  ".next/",
-  ".turbo/",
-  ".mypy_cache/",
-  ".pytest_cache/",
-  ".ruff_cache/",
-  ".tox/",
-  ".venv/",
-  "__pycache__/",
-  "build/",
-  "coverage/",
-  "dist/",
-  "node_modules/",
-  "out/",
-  "venv/",
-];
+const execFileAsync = promisify(execFile);
 
 interface SnapshotEntry {
   path: string;
@@ -49,6 +38,7 @@ interface SnapshotEntry {
   mode?: number;
   binary: boolean;
   reviewable: boolean;
+  localOnly?: boolean;
 }
 
 interface SnapshotManifest {
@@ -65,6 +55,7 @@ export interface ConversationFileChange {
   additions: number;
   deletions: number;
   binary: boolean;
+  localOnly?: boolean;
   oldContent?: string;
   newContent?: string;
 }
@@ -81,6 +72,7 @@ export interface ConversationDeliveryFile {
   path: string;
   status: ConversationFileChange["status"];
   binary: boolean;
+  localOnly?: boolean;
   baselineContent?: Buffer;
   taskContent?: Buffer;
   taskMode?: number;
@@ -196,10 +188,10 @@ export class ConversationChangeTracker {
     const snapshotPath = this.threadPath(projectId, threadId);
     const manifest = await readManifest(snapshotPath);
     const current = await scanWorkspace(workspacePath);
-    const matcher = await workspaceIgnoreMatcher(workspacePath);
+    const matcher = await workspaceMatchers(workspacePath);
     const baselineByPath = new Map(
       manifest.entries
-        .filter((entry) => !matcher.ignores(entry.path))
+        .filter((entry) => !matcher.excludes(entry.path))
         .map((entry) => [entry.path, entry]),
     );
     const currentByPath = new Map(current.map((entry) => [entry.path, entry]));
@@ -214,6 +206,7 @@ export class ConversationChangeTracker {
       if (before?.hash === after?.hash) continue;
 
       const binary = !!before?.binary || !!after?.binary;
+      const localOnly = !!before?.localOnly || !!after?.localOnly;
       const oldContent =
         before?.reviewable && !binary
           ? await readFile(join(snapshotPath, "files", path), "utf8")
@@ -232,11 +225,12 @@ export class ConversationChangeTracker {
         additions: counts.additions,
         deletions: counts.deletions,
         binary,
+        ...(localOnly ? { localOnly: true } : {}),
         ...(oldContent !== undefined ? { oldContent } : {}),
         ...(newContent !== undefined ? { newContent } : {}),
       });
       revisionParts.push(
-        `${!before ? "added" : !after ? "deleted" : "modified"}:${path}:${before?.hash ?? ""}:${after?.hash ?? ""}`,
+        `${!before ? "added" : !after ? "deleted" : "modified"}:${localOnly ? "local" : "git"}:${path}:${before?.hash ?? ""}:${after?.hash ?? ""}`,
       );
     }
 
@@ -339,6 +333,7 @@ export class ConversationChangeTracker {
           path: change.path,
           status: change.status,
           binary: change.binary,
+          ...(change.localOnly ? { localOnly: true } : {}),
           ...(baselineContent !== undefined ? { baselineContent } : {}),
           ...(taskContent !== undefined
             ? { taskContent, taskMode: task?.mode }
@@ -466,7 +461,7 @@ export class ConversationChangeTracker {
 async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
   const root = await realpath(workspacePath);
   const entries: SnapshotEntry[] = [];
-  const matcher = await workspaceIgnoreMatcher(root);
+  const matcher = await workspaceMatchers(root);
 
   async function visit(directory: string, relativeDirectory: string) {
     const children = await readdir(directory, { withFileTypes: true });
@@ -475,13 +470,13 @@ async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
         join(relativeDirectory, child.name),
       );
       if (child.isDirectory()) {
-        if (!matcher.ignores(`${childRelative}/`)) {
+        if (!matcher.excludes(`${childRelative}/`)) {
           await visit(join(directory, child.name), childRelative);
         }
         continue;
       }
       if (!child.isFile()) continue;
-      if (matcher.ignores(childRelative)) continue;
+      if (matcher.excludes(childRelative)) continue;
       const absolutePath = join(root, childRelative);
       const content = await readFile(absolutePath);
       const metadata = await stat(absolutePath);
@@ -493,6 +488,9 @@ async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
         mode: metadata.mode,
         binary,
         reviewable: !binary && content.byteLength <= MAX_FILE_PREVIEW_BYTES,
+        ...(matcher.projectIgnores(childRelative)
+          ? { localOnly: true }
+          : {}),
       });
     }
   }
@@ -501,15 +499,56 @@ async function scanWorkspace(workspacePath: string): Promise<SnapshotEntry[]> {
   return entries.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-async function workspaceIgnoreMatcher(workspacePath: string) {
+async function workspaceMatchers(workspacePath: string) {
   const root = await realpath(workspacePath);
-  const matcher = ignore().add(DEFAULT_IGNORE_PATTERNS);
+  const ephemeral = workspaceEphemeralMatcher();
+  const project = ignore();
+  const sensitive = workspaceSensitiveMatcher();
+  const gitIgnored = await gitIgnoredPaths(root);
   try {
-    matcher.add(await readFile(join(root, ".gitignore"), "utf8"));
+    project.add(await readFile(join(root, ".gitignore"), "utf8"));
   } catch {
     // A workspace does not need to be a Git repository.
   }
-  return matcher;
+  const projectIgnores = (path: string) =>
+    gitIgnored.has(path.replace(/\/$/, "")) || project.ignores(path);
+  return {
+    projectIgnores,
+    excludes(path: string) {
+      return (
+        ephemeral.ignores(path) ||
+        (projectIgnores(path) && sensitive.ignores(path))
+      );
+    },
+  };
+}
+
+async function gitIgnoredPaths(workspacePath: string): Promise<Set<string>> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      [
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "-z",
+      ],
+      {
+        cwd: workspacePath,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: "0",
+          LC_ALL: "C",
+        },
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    return new Set(stdout.split("\0").filter(Boolean));
+  } catch {
+    return new Set();
+  }
 }
 
 function resolveWorkspacePath(workspacePath: string, relativePath: string) {

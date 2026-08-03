@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import {
   access,
+  lstat,
   mkdtemp,
   mkdir,
   readFile,
@@ -72,10 +73,18 @@ describe("TaskWorkspaceManager", () => {
       "threadlight@example.invalid",
     ]);
     await writeFile(join(project, "tracked.txt"), "committed\n");
+    await writeFile(
+      join(repository, ".gitignore"),
+      ".venv/\ndata/library.db\n",
+    );
     await git(repository, ["add", "."]);
     await git(repository, ["commit", "-m", "Initial"]);
     await writeFile(join(project, "tracked.txt"), "current dirty state\n");
     await writeFile(join(project, "untracked.txt"), "local context\n");
+    await mkdir(join(repository, ".venv", "bin"), { recursive: true });
+    await writeFile(join(repository, ".venv", "bin", "python"), "runtime\n");
+    await mkdir(join(repository, "data"), { recursive: true });
+    await writeFile(join(repository, "data", "library.db"), "original data\n");
 
     const manager = new TaskWorkspaceManager(join(root, "worktrees"), {
       createId: () => "task-1",
@@ -96,6 +105,19 @@ describe("TaskWorkspaceManager", () => {
     await expect(
       readFile(join(workspace.path, "untracked.txt"), "utf8"),
     ).resolves.toBe("local context\n");
+    expect((await lstat(join(workspace.root, ".venv"))).isSymbolicLink()).toBe(
+      true,
+    );
+    await expect(
+      readFile(join(workspace.root, ".venv", "bin", "python"), "utf8"),
+    ).resolves.toBe("runtime\n");
+    await expect(
+      readFile(join(workspace.root, "data", "library.db"), "utf8"),
+    ).resolves.toBe("original data\n");
+    await writeFile(join(workspace.root, "data", "library.db"), "task data\n");
+    await expect(
+      readFile(join(repository, "data", "library.db"), "utf8"),
+    ).resolves.toBe("original data\n");
     expect(await git(workspace.root, ["status", "--short"])).toContain(
       "M packages/app/tracked.txt",
     );

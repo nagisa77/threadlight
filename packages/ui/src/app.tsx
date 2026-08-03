@@ -10,7 +10,10 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
-import type { ThreadlightClient } from "@threadlight/client";
+import {
+  createBrowserUuid,
+  type ThreadlightClient,
+} from "@threadlight/client";
 import type {
   AgentPlanData,
   AttachmentData,
@@ -44,6 +47,8 @@ import {
   Monitor,
   NotebookText,
   Paperclip,
+  PanelLeftClose,
+  PanelLeftOpen,
   PanelRight,
   PencilLine,
   Pin,
@@ -219,6 +224,32 @@ const workspaceChangeRefreshTools = new Set<string>(
 const COMPUTER_PERMISSION_RESUME_KEY =
   "threadlight:computer-permission-resume";
 const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
+const SIDEBAR_VISIBILITY_KEY = "threadlight:sidebar-visible";
+const MOBILE_SIDEBAR_QUERY = "(max-width: 720px)";
+
+export function sidebarStartsOpen(
+  mobile: boolean,
+  storedVisibility?: string | null,
+): boolean {
+  return !mobile && storedVisibility !== "false";
+}
+
+function isMobileSidebarViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia(MOBILE_SIDEBAR_QUERY).matches
+  );
+}
+
+function storedSidebarVisibility(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(SIDEBAR_VISIBILITY_KEY);
+  } catch {
+    return null;
+  }
+}
 
 export interface AttachmentStageAdapter {
   stage(file: File): Promise<AttachmentData>;
@@ -372,6 +403,13 @@ function ThreadlightAppContent({
   onPreferredProjectOpenerChange(opener: ProjectOpenerId): void;
 }) {
   const { language, t } = useI18n();
+  const initialMobileSidebar = isMobileSidebarViewport();
+  const [mobileSidebar, setMobileSidebar] = useState(initialMobileSidebar);
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    sidebarStartsOpen(initialMobileSidebar, storedSidebarVisibility()),
+  );
+  const sidebarCloseButton = useRef<HTMLButtonElement>(null);
+  const sidebarOpenButton = useRef<HTMLButtonElement>(null);
   const {
     state: activeState,
     retry,
@@ -512,6 +550,47 @@ function ThreadlightAppContent({
   projectSnapshotRef.current = projectSnapshot;
   activeThreadIdRef.current = state.threadId;
   viewRef.current = view;
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const media = window.matchMedia(MOBILE_SIDEBAR_QUERY);
+    const handleChange = (event: MediaQueryListEvent) => {
+      setMobileSidebar(event.matches);
+      setSidebarOpen(
+        sidebarStartsOpen(event.matches, storedSidebarVisibility()),
+      );
+    };
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    if (mobileSidebar || typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        SIDEBAR_VISIBILITY_KEY,
+        String(sidebarOpen),
+      );
+    } catch {
+      // Storage may be unavailable in privacy-restricted browser contexts.
+    }
+  }, [mobileSidebar, sidebarOpen]);
+
+  useEffect(() => {
+    if (!mobileSidebar || !sidebarOpen) return;
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setSidebarOpen(false);
+      requestAnimationFrame(() => sidebarOpenButton.current?.focus());
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [mobileSidebar, sidebarOpen]);
 
   useEffect(() => {
     if (!onThreadChange || !projectSnapshot) return;
@@ -1518,7 +1597,7 @@ function ThreadlightAppContent({
     const additions = files.slice(0, available).map(
       (file) =>
         ({
-          id: crypto.randomUUID(),
+          id: createBrowserUuid(),
           file,
           ...(file.type.startsWith("image/")
             ? { previewUrl: URL.createObjectURL(file) }
@@ -1687,8 +1766,25 @@ function ThreadlightAppContent({
     });
   }
 
+  function showSidebar() {
+    setSidebarOpen(true);
+    requestAnimationFrame(() => sidebarCloseButton.current?.focus());
+  }
+
+  function hideSidebar(restoreFocus = false) {
+    setSidebarOpen(false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => sidebarOpenButton.current?.focus());
+    }
+  }
+
+  function closeSidebarForNavigation() {
+    if (mobileSidebar) hideSidebar();
+  }
+
   async function createThread() {
     if (!currentProject || voiceStatus !== "idle") return;
+    closeSidebarForNavigation();
     setView("thread");
     if (newTaskDraft || !hasUserInput(activeState.messages)) {
       textarea.current?.focus();
@@ -1706,6 +1802,7 @@ function ThreadlightAppContent({
       return;
     }
     if (!projects || switchingProject || voiceStatus !== "idle") return;
+    closeSidebarForNavigation();
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
@@ -1731,6 +1828,7 @@ function ThreadlightAppContent({
     ) {
       return;
     }
+    closeSidebarForNavigation();
     setSwitchingProject(true);
     setProjectError(undefined);
     try {
@@ -1764,6 +1862,7 @@ function ThreadlightAppContent({
       if (!(await selectConversation(projectId))) return;
     }
     setView(nextView);
+    closeSidebarForNavigation();
   }
 
   async function toggleProjectPinned(project: ProjectSummary) {
@@ -2081,6 +2180,7 @@ function ThreadlightAppContent({
     ) {
       return false;
     }
+    closeSidebarForNavigation();
     setNewTaskDraftError(undefined);
     setNewTaskDraft(false);
     setSwitchingProject(true);
@@ -2607,9 +2707,33 @@ function ThreadlightAppContent({
   );
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div
+      className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-hidden"}`}
+    >
+      {mobileSidebar && sidebarOpen && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label={t("hideSidebar")}
+          onClick={() => hideSidebar(true)}
+        />
+      )}
+      <aside
+        id="app-sidebar"
+        className="sidebar"
+        aria-hidden={!sidebarOpen}
+      >
         <div className="window-drag-region" />
+        <button
+          ref={sidebarCloseButton}
+          type="button"
+          className="sidebar-collapse-button pressable"
+          aria-label={t("hideSidebar")}
+          title={t("hideSidebar")}
+          onClick={() => hideSidebar(true)}
+        >
+          <PanelLeftClose size={16} />
+        </button>
         <button
           className="new-thread-button project-row pressable"
           onClick={() => void createThread()}
@@ -2635,6 +2759,7 @@ function ThreadlightAppContent({
               onClick={() => {
                 cancelVoiceInput();
                 setView("automations");
+                closeSidebarForNavigation();
               }}
             >
               <CalendarClock size={16} />
@@ -2810,6 +2935,7 @@ function ThreadlightAppContent({
               onClick={() => {
                 cancelVoiceInput();
                 setView("settings");
+                closeSidebarForNavigation();
               }}
             >
               <Settings size={15} />
@@ -2866,6 +2992,20 @@ function ThreadlightAppContent({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
+        {!sidebarOpen && (
+          <button
+            ref={sidebarOpenButton}
+            type="button"
+            className="sidebar-reveal-button pressable"
+            aria-label={t("showSidebar")}
+            title={t("showSidebar")}
+            aria-controls="app-sidebar"
+            aria-expanded={false}
+            onClick={showSidebar}
+          >
+            <PanelLeftOpen size={17} />
+          </button>
+        )}
         <div className="workspace-primary">
         {view === "memory" &&
         memory &&
@@ -2931,7 +3071,11 @@ function ThreadlightAppContent({
         ) : (
           <>
             <header className="workspace-header">
-              <div>
+              <div
+                className="workspace-header-drag-region"
+                aria-hidden="true"
+              />
+              <div className="workspace-header-title">
                 <h1>{state.messages[0]?.text || t("task")}</h1>
                 <p>
                   {currentProject?.scope === "standalone"
@@ -3583,6 +3727,13 @@ function ThreadlightAppContent({
         <DeleteConversationDialog
           conversation={pendingDelete.conversation}
           discard={pendingDelete.mode === "discard"}
+          localDataFiles={
+            pendingDelete.mode === "discard" &&
+            pendingDelete.conversation.id === state.threadId
+              ? (conversationChanges?.files.filter((file) => file.localOnly)
+                  .length ?? 0)
+              : 0
+          }
           deleting={deletingConversation}
           error={deleteError}
           onCancel={() => {
@@ -5379,6 +5530,7 @@ function ComputerUseIndicator({ label }: { label: string }) {
 export function DeleteConversationDialog({
   conversation,
   discard = false,
+  localDataFiles = 0,
   deleting,
   error,
   onCancel,
@@ -5386,6 +5538,7 @@ export function DeleteConversationDialog({
 }: {
   conversation: ConversationSummary;
   discard?: boolean;
+  localDataFiles?: number;
   deleting: boolean;
   error?: string;
   onCancel(): void;
@@ -5431,6 +5584,11 @@ export function DeleteConversationDialog({
                 })
               : t("deleteTaskDescription", { title: conversation.title })}
           </p>
+          {discard && localDataFiles > 0 && (
+            <p className="delete-dialog-warning">
+              {t("discardLocalDataWarning", { count: localDataFiles })}
+            </p>
+          )}
           {error && <p className="delete-dialog-error">{error}</p>}
         </div>
         <div className="delete-dialog-actions">
@@ -5848,7 +6006,8 @@ function RemoteProjectPathDialog({
       );
       setDirectoryLoading(true);
       setDirectoryError(undefined);
-      void onBrowse(path)
+      void Promise.resolve()
+        .then(() => onBrowse(path))
         .then((listing) => {
           if (browseRequest.current !== request) return;
           setDirectories(listing.directories);
@@ -6050,9 +6209,7 @@ export function EmptyState({
       </div>
       {connecting ? (
         <h2>{t("connectingRuntime")}</h2>
-      ) : project &&
-        project.scope !== "standalone" &&
-        onSelectProject ? (
+      ) : project && onSelectProject ? (
         <NewTaskProjectPrompt
           project={project}
           projects={projects}
@@ -6198,7 +6355,9 @@ export function NewTaskProjectPrompt({
             pickerPosition ? closePicker() : openPicker()
           }
         >
-          <span>{project.name}</span>
+          <span>
+            {project.scope === "standalone" ? t("noProject") : project.name}
+          </span>
           {selectingProjectId ? (
             <LoaderCircle className="spin" size={16} />
           ) : null}

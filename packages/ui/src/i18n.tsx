@@ -144,7 +144,10 @@ const zh = {
   projects: "项目",
   recent: "最近",
   newProject: "新建项目",
+  noProject: "无项目",
   notInProject: "不在项目中",
+  showSidebar: "显示侧边栏",
+  hideSidebar: "隐藏侧边栏",
   searchTasks: "搜索任务…",
   commandPalette: "全文搜索与命令",
   searchEverything: "搜索消息、文件、命令输出、工具和 Memory…",
@@ -466,6 +469,10 @@ const zh = {
   applyToOriginalBranch: "预检并应用到任务开始时的原分支",
   applyToOriginal: "应用到原分支",
   stageAndCommit: "暂存并提交",
+  localData: "本地数据",
+  localDataDescription: "此文件被 Git 忽略；可应用到原工作区，但不会进入提交或 PR",
+  localDataCount: "{count} 个本地数据文件",
+  commitRequiresGitChanges: "只有本地数据变更；请使用“应用到原分支”",
   githubDelivery: "GitHub 交付",
   loadingGitHubStatus: "正在读取 GitHub 状态…",
   githubCliRequired: "需要安装并登录 GitHub CLI",
@@ -499,6 +506,8 @@ const zh = {
   discardTaskQuestion: "丢弃这个任务？",
   discardTaskConfirmDescription:
     "“{title}”的独立 worktree、任务分支和对话记录将被永久删除，此操作无法撤销。",
+  discardLocalDataWarning:
+    "此任务仍包含 {count} 个本地数据文件。若还需要这些数据，请先应用到原分支。",
   discardingTask: "正在丢弃…",
   defaultCommitMessage: "交付 Threadlight 任务修改",
   deliveryUnavailable: "当前环境不支持 Worktree 交付",
@@ -510,6 +519,8 @@ const zh = {
   commitDeliveryQuestion: "应用、暂存并提交？",
   deliveryPreflightSummary:
     "三方预检覆盖 {count} 个文件，目标是原工作区分支 {branch}。",
+  deliveryLocalDataSummary:
+    "其中 {count} 个本地数据文件会写回原工作区，但不会加入 Git 提交。",
   deliveryBranchChanged:
     "原工作区已从 {source} 切换到 {target}。请切回原分支后重新预检。",
   deliveryConflicts: "发现 {count} 个冲突",
@@ -708,7 +719,10 @@ const en: Messages = {
   projects: "Projects",
   recent: "Recent",
   newProject: "New project",
+  noProject: "No project",
   notInProject: "Not in a project",
+  showSidebar: "Show sidebar",
+  hideSidebar: "Hide sidebar",
   searchTasks: "Search tasks…",
   commandPalette: "Search & commands",
   searchEverything: "Search messages, files, command output, tools, and Memory…",
@@ -1031,6 +1045,10 @@ const en: Messages = {
   applyToOriginalBranch: "Preflight and apply to the branch where this task started",
   applyToOriginal: "Apply to original",
   stageAndCommit: "Stage & commit",
+  localData: "Local data",
+  localDataDescription: "Git ignores this file. It can be applied to the original workspace but will not enter a commit or PR.",
+  localDataCount: "{count} local data files",
+  commitRequiresGitChanges: "Only local data changed; use Apply to original",
   githubDelivery: "GitHub delivery",
   loadingGitHubStatus: "Loading GitHub status…",
   githubCliRequired: "Install and sign in to GitHub CLI",
@@ -1065,6 +1083,8 @@ const en: Messages = {
   discardTaskQuestion: "Discard this task?",
   discardTaskConfirmDescription:
     "The isolated worktree, task branch, and conversation for “{title}” will be permanently deleted. This cannot be undone.",
+  discardLocalDataWarning:
+    "This task still contains {count} local data files. Apply them to the original workspace first if you need to keep them.",
   discardingTask: "Discarding…",
   defaultCommitMessage: "Deliver Threadlight task changes",
   deliveryUnavailable: "Worktree delivery is not available",
@@ -1076,6 +1096,8 @@ const en: Messages = {
   commitDeliveryQuestion: "Apply, stage, and commit?",
   deliveryPreflightSummary:
     "The three-way preflight checked {count} files against original branch {branch}.",
+  deliveryLocalDataSummary:
+    "{count} local data files will be written to the original workspace but excluded from the Git commit.",
   deliveryBranchChanged:
     "The original worktree switched from {source} to {target}. Switch back before preflighting again.",
   deliveryConflicts: "{count} conflicts found",
@@ -1271,7 +1293,10 @@ const ja: Messages = {
   projects: "プロジェクト",
   recent: "最近",
   newProject: "新しいプロジェクト",
+  noProject: "プロジェクトなし",
   notInProject: "プロジェクト外",
+  showSidebar: "サイドバーを表示",
+  hideSidebar: "サイドバーを非表示",
   searchTasks: "タスクを検索…",
   commandPalette: "全文検索とコマンド",
   searchEverything: "メッセージ、ファイル、コマンド出力、ツール、Memory を検索…",
@@ -1594,6 +1619,10 @@ const ja: Messages = {
   applyToOriginalBranch: "事前確認してタスク開始時の元ブランチに適用",
   applyToOriginal: "元ブランチに適用",
   stageAndCommit: "ステージしてコミット",
+  localData: "ローカルデータ",
+  localDataDescription: "Git で無視されるファイルです。元のワークスペースには適用できますが、コミットや PR には含まれません。",
+  localDataCount: "ローカルデータ {count} ファイル",
+  commitRequiresGitChanges: "ローカルデータの変更のみです。元ブランチへの適用を使用してください",
   githubDelivery: "GitHub 配信",
   loadingGitHubStatus: "GitHub の状態を読み込み中…",
   githubCliRequired: "GitHub CLI のインストールとログインが必要です",
@@ -1628,6 +1657,8 @@ const ja: Messages = {
   discardTaskQuestion: "このタスクを破棄しますか？",
   discardTaskConfirmDescription:
     "「{title}」の分離 worktree、タスクブランチ、会話は完全に削除されます。元に戻せません。",
+  discardLocalDataWarning:
+    "このタスクにはローカルデータが {count} ファイル残っています。必要な場合は先に元ブランチへ適用してください。",
   discardingTask: "破棄中…",
   defaultCommitMessage: "Threadlight タスクの変更を反映",
   deliveryUnavailable: "Worktree の反映は利用できません",
@@ -1639,6 +1670,8 @@ const ja: Messages = {
   commitDeliveryQuestion: "適用、ステージ、コミットしますか？",
   deliveryPreflightSummary:
     "{count} ファイルを三者比較し、元ワークスペースの {branch} への適用を確認しました。",
+  deliveryLocalDataSummary:
+    "{count} 個のローカルデータファイルは元のワークスペースに書き戻されますが、Git コミットには含まれません。",
   deliveryBranchChanged:
     "元ワークスペースが {source} から {target} に切り替わりました。元のブランチに戻してください。",
   deliveryConflicts: "{count} 件の競合があります",
@@ -1844,7 +1877,10 @@ const zhTW: Messages = {
   projects: "專案",
   recent: "最近",
   newProject: "新增專案",
+  noProject: "無專案",
   notInProject: "不在專案中",
+  showSidebar: "顯示側邊欄",
+  hideSidebar: "隱藏側邊欄",
   searchTasks: "搜尋工作…",
   commandPalette: "全文搜尋與指令",
   searchEverything: "搜尋訊息、檔案、指令輸出、工具與 Memory…",
@@ -2168,6 +2204,10 @@ const zhTW: Messages = {
   applyToOriginalBranch: "預檢並套用到任務開始時的原分支",
   applyToOriginal: "套用到原分支",
   stageAndCommit: "暫存並提交",
+  localData: "本機資料",
+  localDataDescription: "此檔案被 Git 忽略；可套用到原工作區，但不會進入提交或 PR",
+  localDataCount: "{count} 個本機資料檔案",
+  commitRequiresGitChanges: "只有本機資料變更；請使用「套用到原分支」",
   githubDelivery: "GitHub 交付",
   loadingGitHubStatus: "正在讀取 GitHub 狀態…",
   githubCliRequired: "需要安裝並登入 GitHub CLI",
@@ -2201,6 +2241,8 @@ const zhTW: Messages = {
   discardTaskQuestion: "捨棄這個任務？",
   discardTaskConfirmDescription:
     "「{title}」的獨立 worktree、任務分支與對話記錄將被永久刪除，無法復原。",
+  discardLocalDataWarning:
+    "此任務仍包含 {count} 個本機資料檔案。如需保留，請先套用到原分支。",
   discardingTask: "正在捨棄…",
   defaultCommitMessage: "交付 Threadlight 任務變更",
   deliveryUnavailable: "目前無法使用 Worktree 交付",
@@ -2212,6 +2254,8 @@ const zhTW: Messages = {
   commitDeliveryQuestion: "套用、暫存並提交？",
   deliveryPreflightSummary:
     "三方預檢已檢查 {count} 個檔案，目標為原工作區分支 {branch}。",
+  deliveryLocalDataSummary:
+    "其中 {count} 個本機資料檔案會寫回原工作區，但不會加入 Git 提交。",
   deliveryBranchChanged:
     "原工作區已從 {source} 切換到 {target}。請切回原分支後再預檢。",
   deliveryConflicts: "發現 {count} 個衝突",
@@ -2407,7 +2451,10 @@ const ko: Messages = {
   projects: "프로젝트",
   recent: "최근",
   newProject: "새 프로젝트",
+  noProject: "프로젝트 없음",
   notInProject: "프로젝트에 속하지 않음",
+  showSidebar: "사이드바 표시",
+  hideSidebar: "사이드바 숨기기",
   searchTasks: "작업 검색…",
   commandPalette: "전체 검색 및 명령",
   searchEverything: "메시지, 파일, 명령 출력, 도구 및 Memory 검색…",
@@ -2729,6 +2776,10 @@ const ko: Messages = {
   applyToOriginalBranch: "사전 검사 후 작업 시작 시 원래 브랜치에 적용",
   applyToOriginal: "원래 브랜치에 적용",
   stageAndCommit: "스테이징 및 커밋",
+  localData: "로컬 데이터",
+  localDataDescription: "Git이 무시하는 파일입니다. 원래 워크스페이스에는 적용할 수 있지만 커밋이나 PR에는 포함되지 않습니다.",
+  localDataCount: "로컬 데이터 파일 {count}개",
+  commitRequiresGitChanges: "로컬 데이터만 변경되었습니다. 원래 브랜치에 적용을 사용하세요",
   githubDelivery: "GitHub 전달",
   loadingGitHubStatus: "GitHub 상태 불러오는 중…",
   githubCliRequired: "GitHub CLI 설치 및 로그인이 필요합니다",
@@ -2763,6 +2814,8 @@ const ko: Messages = {
   discardTaskQuestion: "이 작업을 폐기할까요?",
   discardTaskConfirmDescription:
     "“{title}”의 격리 worktree, 작업 브랜치 및 대화가 영구 삭제됩니다. 되돌릴 수 없습니다.",
+  discardLocalDataWarning:
+    "이 작업에 로컬 데이터 파일 {count}개가 남아 있습니다. 필요하면 먼저 원래 브랜치에 적용하세요.",
   discardingTask: "폐기 중…",
   defaultCommitMessage: "Threadlight 작업 변경 사항 전달",
   deliveryUnavailable: "Worktree 전달을 사용할 수 없습니다",
@@ -2774,6 +2827,8 @@ const ko: Messages = {
   commitDeliveryQuestion: "적용, 스테이징 및 커밋할까요?",
   deliveryPreflightSummary:
     "3-way 사전 검사로 {count}개 파일을 확인했습니다. 대상은 원래 워크스페이스의 {branch} 브랜치입니다.",
+  deliveryLocalDataSummary:
+    "로컬 데이터 파일 {count}개는 원래 워크스페이스에 기록되지만 Git 커밋에는 포함되지 않습니다.",
   deliveryBranchChanged:
     "원래 워크스페이스가 {source}에서 {target}(으)로 전환되었습니다. 원래 브랜치로 돌아가세요.",
   deliveryConflicts: "충돌 {count}개 발견",

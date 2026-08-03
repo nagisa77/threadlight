@@ -7,6 +7,7 @@ import {
 } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XtermTerminal } from "@xterm/xterm";
+import { createBrowserUuid } from "@threadlight/client";
 import type {
   TerminalSessionEvent,
   TerminalSessionInfo,
@@ -485,7 +486,7 @@ function terminalTheme(theme: ResolvedTheme) {
 
 function createTerminalTab(number: number, t: Translate): BottomPanelTab {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserUuid(),
     kind: "terminal",
     title: t("terminalNumber", { number }),
   };
@@ -493,7 +494,7 @@ function createTerminalTab(number: number, t: Translate): BottomPanelTab {
 
 function createBottomFileTab(t: Translate): BottomPanelTab {
   return {
-    id: crypto.randomUUID(),
+    id: createBrowserUuid(),
     kind: "file",
     title: t("openFile"),
   };

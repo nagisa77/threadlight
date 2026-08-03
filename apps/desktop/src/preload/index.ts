@@ -81,6 +81,7 @@ import {
 } from "../shared/desktop-api.js";
 
 const api: DesktopApi = {
+  isMacOS: process.platform === "darwin",
   send(message) {
     ipcRenderer.send(DESKTOP_REQUEST_CHANNEL, message);
   },

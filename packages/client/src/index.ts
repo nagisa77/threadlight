@@ -32,3 +32,4 @@ export {
   type BrowserSocketEvent,
   type BrowserTerminalClientOptions,
 } from "./browser-terminal-client.js";
+export { createBrowserUuid } from "./browser-uuid.js";

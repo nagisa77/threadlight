@@ -25,6 +25,11 @@ import "@threadlight/ui/styles.css";
 import { ElectronTransport } from "./electron-transport.js";
 import { attachmentPreviewUrl } from "./attachment-preview.js";
 
+document.documentElement.dataset.platform = "desktop";
+if (window.threadlightDesktop.isMacOS) {
+  document.documentElement.dataset.os = "macos";
+}
+
 const client = new ThreadlightClient(new ElectronTransport());
 const clipboard: ClipboardAdapter = {
   writeText: (text) => window.threadlightDesktop.writeClipboardText(text),

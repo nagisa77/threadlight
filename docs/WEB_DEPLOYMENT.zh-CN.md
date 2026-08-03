@@ -12,19 +12,22 @@ Threadlight Web 与桌面端复用同一个 `@threadlight/ui`，浏览器侧只�
 export THREADLIGHT_HOST_TOKEN="$(openssl rand -hex 32)"
 
 npm run host:dev -- \
-  --host 127.0.0.1 \
+  --host 0.0.0.0 \
   --port 7432 \
   --origin http://localhost:5173 \
+  --origin http://192.168.50.186:5173 \
   --project /absolute/path/to/project
 ```
 
 另开一个终端启动 Web：
 
 ```bash
-VITE_THREADLIGHT_HOST_URL=http://127.0.0.1:7432 npm run web:dev
+VITE_THREADLIGHT_HOST_URL=http://192.168.50.186:7432 npm run web:dev -- --host 0.0.0.0
 ```
 
-打开 `http://localhost:5173`，输入上面的 `THREADLIGHT_HOST_TOKEN`。Host 地址会
+电脑打开 `http://localhost:5173`，同一局域网设备打开
+`http://192.168.50.186:5173`，输入上面的 `THREADLIGHT_HOST_TOKEN`。请把示例中的
+局域网 IP 替换为 Host 机器的实际地址。Host 地址会
 保存在 `localStorage`；Token 只保存在当前标签会话的 `sessionStorage`，不会写进
 源码或 production bundle。
 
@@ -75,7 +78,8 @@ npm run host:dev -- \
 ```
 
 使用已打包的 Host 时，把 `npm run host:dev --` 替换为 `threadlight-host`。
-`--origin` 必须与浏览器地址完全一致，包括 scheme 和端口。
+每个 `--origin` 都必须与对应浏览器地址完全一致，包括 scheme 和端口；需要允许
+多个地址时可重复传入该参数。
 
 例如使用 Caddy 终止 TLS：
 

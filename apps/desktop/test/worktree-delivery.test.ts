@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -112,6 +113,28 @@ describe("WorktreeDeliveryManager", () => {
     );
   });
 
+  it("applies Git-ignored local data without pretending it can be committed", async () => {
+    const fixture = await createFixture(true);
+    writeFileSync(join(fixture.workspace.path, "data", "library.db"), "task data\n");
+    const revision = await revisionFor(fixture);
+
+    await expect(
+      fixture.delivery.preflight(requestFor(fixture, revision)),
+    ).resolves.toMatchObject({
+      files: 1,
+      localOnlyFiles: 1,
+      conflicts: [],
+    });
+    await expect(
+      fixture.delivery.commit(requestFor(fixture, revision), "Commit data"),
+    ).rejects.toThrow("only changed local data");
+
+    const result = await fixture.delivery.apply(requestFor(fixture, revision));
+    expect(result.appliedFiles).toBe(1);
+    expect(readFileSync(join(fixture.repository, "data", "library.db"), "utf8"))
+      .toBe("task data\n");
+  });
+
   it("blocks delivery after the original worktree switches branches", async () => {
     const fixture = await createFixture();
     writeFileSync(
@@ -155,7 +178,7 @@ describe("WorktreeDeliveryManager", () => {
   });
 });
 
-async function createFixture() {
+async function createFixture(withLocalData = false) {
   const root = mkdtempSync(join(tmpdir(), "threadlight-delivery-"));
   directories.push(root);
   const repository = join(root, "repository");
@@ -166,7 +189,12 @@ async function createFixture() {
     join(repository, "notes.txt"),
     "base start\nmiddle\nbase end\n",
   );
-  git(repository, "add", "notes.txt");
+  if (withLocalData) {
+    writeFileSync(join(repository, ".gitignore"), "data/library.db\n");
+    mkdirSync(join(repository, "data"), { recursive: true });
+    writeFileSync(join(repository, "data", "library.db"), "original data\n");
+  }
+  git(repository, "add", "notes.txt", ...(withLocalData ? [".gitignore"] : []));
   git(repository, "commit", "-m", "Initial");
 
   const workspaceManager = new TaskWorkspaceManager(join(root, "worktrees"), {
