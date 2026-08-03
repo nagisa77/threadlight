@@ -8584,6 +8584,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .review-view {
   grid-template-rows: auto auto auto minmax(0, 1fr);
+  container-name: review-panel;
+  container-type: inline-size;
 }
 
 .file-view {
@@ -8602,8 +8604,12 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 .review-toolbar {
-  min-height: 48px;
-  gap: 8px 12px;
+  display: grid;
+  min-height: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  gap: 0;
+  padding: 0;
 }
 
 .file-view-actions {
@@ -8613,22 +8619,38 @@ body.is-resizing-workspace .workspace-split-handle::after {
   gap: 3px;
 }
 
+.review-toolbar-main,
 .review-summary,
-.review-actions,
+.review-view-controls,
+.review-operation-bar,
+.review-delivery-actions,
+.review-recovery-actions,
 .change-counts,
 .diff-layout-toggle {
   display: flex;
   align-items: center;
 }
 
+.review-toolbar-main {
+  min-width: 0;
+  min-height: 52px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px 9px 16px;
+}
+
 .review-summary {
   min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
   gap: 10px;
   font-size: 12px;
 }
 
 .review-summary strong {
+  flex: 0 0 auto;
   font-weight: 640;
+  white-space: nowrap;
 }
 
 .review-local-data-summary,
@@ -8654,10 +8676,39 @@ body.is-resizing-workspace .workspace-split-handle::after {
   font-size: 11px;
 }
 
-.review-actions {
+.review-view-controls {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.review-operation-bar {
+  min-width: 0;
+  min-height: 45px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px 8px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: color-mix(in srgb, var(--panel) 96%, var(--ink) 2%);
+}
+
+.review-delivery-actions,
+.review-recovery-actions {
+  min-width: 0;
   flex-wrap: wrap;
+  gap: 6px;
+}
+
+.review-recovery-actions {
+  flex: 0 0 auto;
   justify-content: flex-end;
-  gap: 5px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.review-recovery-actions:only-child {
+  margin-left: auto;
+  padding-left: 0;
+  border-left: 0;
 }
 
 .review-delivery-button,
@@ -8673,6 +8724,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   background: var(--panel);
   font-size: 10px;
   font-weight: 620;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     color 140ms ease,
@@ -8688,16 +8741,9 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 .review-discard-button {
-  border-color: transparent;
+  border-color: var(--line);
   color: var(--danger);
-  background: transparent;
-}
-
-.review-action-divider {
-  width: 1px;
-  height: 20px;
-  margin-inline: 2px;
-  background: var(--line);
+  background: var(--panel);
 }
 
 .review-restore-all {
@@ -8712,6 +8758,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   background: color-mix(in srgb, var(--warning) 9%, var(--panel));
   font-size: 10px;
   font-weight: 620;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     color 140ms ease,
@@ -8764,10 +8812,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
 .github-delivery-card {
   display: grid;
   grid-row: 3;
-  gap: 10px;
-  padding: 11px 16px 12px;
+  gap: 7px;
+  padding: 10px 12px 10px 14px;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel) 94%, #6e5494 6%);
+  border-left: 2px solid color-mix(in srgb, #6e5494 48%, var(--line));
+  background: color-mix(in srgb, var(--panel) 98%, #6e5494 2%);
   font-size: 10px;
 }
 
@@ -8780,8 +8829,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .github-delivery-icon {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   place-items: center;
   border: 1px solid color-mix(in srgb, #6e5494 24%, var(--line));
   border-radius: 8px;
@@ -8813,6 +8862,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   min-width: 0;
   align-items: center;
   gap: 7px;
+  margin-left: 35px;
 }
 
 .github-branch-route code {
@@ -8849,7 +8899,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   display: flex;
   align-items: flex-start;
   gap: 7px;
-  margin: 0;
+  margin: 0 0 0 35px;
   color: var(--danger);
   line-height: 1.5;
 }
@@ -8863,6 +8913,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 7px;
+  margin-left: 35px;
 }
 
 .github-delivery-button {
@@ -9365,6 +9416,78 @@ body.is-resizing-workspace .workspace-split-handle::after {
   color: var(--muted);
   font-size: 11px;
   text-align: center;
+}
+
+@container review-panel (max-width: 720px) {
+  .review-operation-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .review-recovery-actions {
+    width: 100%;
+    justify-content: flex-start;
+    padding-top: 7px;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .review-recovery-actions:only-child {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .review-view-body.has-tree {
+    grid-template-columns: minmax(0, 1fr) 210px;
+  }
+}
+
+@container review-panel (max-width: 540px) {
+  .review-toolbar-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .review-summary {
+    row-gap: 7px;
+  }
+
+  .review-view-body.has-tree {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .github-branch-route,
+  .github-delivery-error,
+  .github-delivery-actions {
+    margin-left: 0;
+  }
+}
+
+@container review-panel (max-width: 400px) {
+  .review-toolbar-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .review-view-controls {
+    justify-content: flex-start;
+  }
+
+  .review-delivery-actions > button,
+  .review-recovery-actions > button {
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .github-branch-route {
+    flex-wrap: wrap;
+  }
+
+  .github-branch-route .github-push-state {
+    margin-left: 0;
+  }
 }
 
 .workspace-panel-state {
@@ -10803,7 +10926,7 @@ html[data-theme="dark"] .review-delivery-button.primary {
 }
 
 html[data-theme="dark"] .github-delivery-card {
-  background: color-mix(in srgb, var(--panel) 92%, #6e5494 8%);
+  background: color-mix(in srgb, var(--panel) 96%, #6e5494 4%);
 }
 
 html[data-theme="dark"] .github-delivery-icon {

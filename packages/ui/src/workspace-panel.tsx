@@ -1169,154 +1169,162 @@ export function ReviewView({
   return (
     <div className="review-view">
       <div className="review-toolbar">
-        <div className="review-summary">
-          <strong>{t("thisConversation")}</strong>
-          {changes && (
-            <>
-              <ChangeCounts
-                additions={changes.additions}
-                deletions={changes.deletions}
-              />
-              {localDataFiles > 0 && (
-                <span
-                  className="review-local-data-summary"
-                  title={t("localDataDescription")}
-                >
-                  {t("localDataCount", { count: localDataFiles })}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        <div className="review-actions">
-          {showDeliveryCenter && (
-            <>
-              <button
-                type="button"
-                className="review-delivery-button primary pressable"
-                disabled={
-                  loading ||
-                  deliveryBusy ||
-                  deliveryDisabled ||
-                  !canDeliverChanges ||
-                  !onApplyDelivery
-                }
-                title={
-                  deliveryDisabled
-                    ? t("deliveryUnavailableWhileRunning")
-                    : t("applyToOriginalBranch")
-                }
-                onClick={() => void beginDelivery("apply")}
-              >
-                {deliveryBusy ? (
-                  <LoaderCircle className="spin" size={14} />
-                ) : (
-                  <GitMerge size={14} />
+        <div className="review-toolbar-main">
+          <div className="review-summary">
+            <strong>{t("thisConversation")}</strong>
+            {changes && (
+              <>
+                <ChangeCounts
+                  additions={changes.additions}
+                  deletions={changes.deletions}
+                />
+                {localDataFiles > 0 && (
+                  <span
+                    className="review-local-data-summary"
+                    title={t("localDataDescription")}
+                  >
+                    {t("localDataCount", { count: localDataFiles })}
+                  </span>
                 )}
-                {t("applyToOriginal")}
+              </>
+            )}
+          </div>
+          <div className="review-view-controls">
+            <button
+              type="button"
+              className="panel-icon-button pressable"
+              aria-label={t("refreshChanges")}
+              title={t("refresh")}
+              onClick={onRefresh}
+              disabled={loading}
+            >
+              <RefreshCw className={loading ? "spin" : undefined} size={15} />
+            </button>
+            <div className="diff-layout-toggle" aria-label={t("diffLayout")}>
+              <button
+                type="button"
+                className={`pressable ${layout === "unified" ? "active" : ""}`}
+                aria-label={t("unifiedDiff")}
+                aria-pressed={layout === "unified"}
+                title={t("unifiedDiff")}
+                onClick={() => onLayoutChange("unified")}
+              >
+                <Rows3 size={15} />
               </button>
               <button
                 type="button"
-                className="review-delivery-button pressable"
-                disabled={
-                  loading ||
-                  deliveryBusy ||
-                  deliveryDisabled ||
-                  !canDeliverChanges ||
-                  gitFiles === 0 ||
-                  !onCommitDelivery
-                }
-                title={
-                  gitFiles === 0
-                    ? t("commitRequiresGitChanges")
-                    : t("stageAndCommitDescription")
-                }
-                onClick={() => void beginDelivery("commit")}
+                className={`pressable ${layout === "split" ? "active" : ""}`}
+                aria-label={t("splitDiff")}
+                aria-pressed={layout === "split"}
+                title={t("splitDiff")}
+                onClick={() => onLayoutChange("split")}
               >
-                <GitCommitHorizontal size={14} />
-                {t("stageAndCommit")}
+                <Columns2 size={15} />
               </button>
-              {onDiscardTask && (
-                <button
-                  type="button"
-                  className="review-discard-button pressable"
-                  disabled={deliveryBusy || deliveryDisabled}
-                  title={t("discardTaskDescription")}
-                  onClick={onDiscardTask}
-                >
-                  <Trash2 size={14} />
-                  {t("discardTask")}
-                </button>
-              )}
-              <span className="review-action-divider" aria-hidden="true" />
-            </>
-          )}
-          {changes && changes.files.length > 0 && onRestore && (
+            </div>
             <button
               type="button"
-              className="review-restore-all pressable"
-              disabled={loading || restoring || restoreDisabled}
-              title={
-                restoreDisabled
-                  ? t("restoreUnavailableWhileRunning")
-                  : t("restoreAllChanges")
-              }
-              onClick={() => {
-                setRestoreError(undefined);
-                setPendingRestore({
-                  label: t("allChangedFiles", {
-                    count: changes.files.length,
-                  }),
-                });
-              }}
+              className={`panel-icon-button pressable ${treeVisible ? "active" : ""}`}
+              aria-label={treeVisible ? t("hideChangesTree") : t("showChangesTree")}
+              aria-pressed={treeVisible}
+              title={treeVisible ? t("hideChangesTree") : t("showChangesTree")}
+              onClick={() => setTreeVisible((visible) => !visible)}
             >
-              <RotateCcw size={14} />
-              {t("restoreAll")}
-            </button>
-          )}
-          <button
-            type="button"
-            className="panel-icon-button pressable"
-            aria-label={t("refreshChanges")}
-            title={t("refresh")}
-            onClick={onRefresh}
-            disabled={loading}
-          >
-            <RefreshCw className={loading ? "spin" : undefined} size={15} />
-          </button>
-          <div className="diff-layout-toggle" aria-label={t("diffLayout")}>
-            <button
-              type="button"
-              className={`pressable ${layout === "unified" ? "active" : ""}`}
-              aria-label={t("unifiedDiff")}
-              aria-pressed={layout === "unified"}
-              title={t("unifiedDiff")}
-              onClick={() => onLayoutChange("unified")}
-            >
-              <Rows3 size={15} />
-            </button>
-            <button
-              type="button"
-              className={`pressable ${layout === "split" ? "active" : ""}`}
-              aria-label={t("splitDiff")}
-              aria-pressed={layout === "split"}
-              title={t("splitDiff")}
-              onClick={() => onLayoutChange("split")}
-            >
-              <Columns2 size={15} />
+              <FolderTree size={16} />
             </button>
           </div>
-          <button
-            type="button"
-            className={`panel-icon-button pressable ${treeVisible ? "active" : ""}`}
-            aria-label={treeVisible ? t("hideChangesTree") : t("showChangesTree")}
-            aria-pressed={treeVisible}
-            title={treeVisible ? t("hideChangesTree") : t("showChangesTree")}
-            onClick={() => setTreeVisible((visible) => !visible)}
-          >
-            <FolderTree size={16} />
-          </button>
         </div>
+        {(showDeliveryCenter ||
+          Boolean(changes && changes.files.length > 0 && onRestore)) && (
+          <div className="review-operation-bar">
+            {showDeliveryCenter && (
+              <div className="review-delivery-actions">
+                <button
+                  type="button"
+                  className="review-delivery-button primary pressable"
+                  disabled={
+                    loading ||
+                    deliveryBusy ||
+                    deliveryDisabled ||
+                    !canDeliverChanges ||
+                    !onApplyDelivery
+                  }
+                  title={
+                    deliveryDisabled
+                      ? t("deliveryUnavailableWhileRunning")
+                      : t("applyToOriginalBranch")
+                  }
+                  onClick={() => void beginDelivery("apply")}
+                >
+                  {deliveryBusy ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <GitMerge size={14} />
+                  )}
+                  {t("applyToOriginal")}
+                </button>
+                <button
+                  type="button"
+                  className="review-delivery-button pressable"
+                  disabled={
+                    loading ||
+                    deliveryBusy ||
+                    deliveryDisabled ||
+                    !canDeliverChanges ||
+                    gitFiles === 0 ||
+                    !onCommitDelivery
+                  }
+                  title={
+                    gitFiles === 0
+                      ? t("commitRequiresGitChanges")
+                      : t("stageAndCommitDescription")
+                  }
+                  onClick={() => void beginDelivery("commit")}
+                >
+                  <GitCommitHorizontal size={14} />
+                  {t("stageAndCommit")}
+                </button>
+                {onDiscardTask && (
+                  <button
+                    type="button"
+                    className="review-discard-button pressable"
+                    disabled={deliveryBusy || deliveryDisabled}
+                    title={t("discardTaskDescription")}
+                    onClick={onDiscardTask}
+                  >
+                    <Trash2 size={14} />
+                    {t("discardTask")}
+                  </button>
+                )}
+              </div>
+            )}
+            {changes && changes.files.length > 0 && onRestore && (
+              <div className="review-recovery-actions">
+                <button
+                  type="button"
+                  className="review-restore-all pressable"
+                  disabled={loading || restoring || restoreDisabled}
+                  title={
+                    restoreDisabled
+                      ? t("restoreUnavailableWhileRunning")
+                      : t("restoreAllChanges")
+                  }
+                  onClick={() => {
+                    setRestoreError(undefined);
+                    setPendingRestore({
+                      label: t("allChangedFiles", {
+                        count: changes.files.length,
+                      }),
+                    });
+                  }}
+                >
+                  <RotateCcw size={14} />
+                  {t("restoreAll")}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {(deliveryError || deliveryResult) && !pendingDelivery && (

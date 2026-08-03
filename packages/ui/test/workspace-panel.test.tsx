@@ -47,6 +47,10 @@ describe("ReviewView", () => {
 
     expect(html).toContain("本次对话");
     expect(html).toContain("src/index.ts");
+    expect(html).toContain('class="review-toolbar-main"');
+    expect(html).toContain('class="review-view-controls"');
+    expect(html).toContain('class="review-operation-bar"');
+    expect(html).toContain('class="review-recovery-actions"');
     expect(html).toContain('aria-label="单边 Diff"');
     expect(html).toContain('aria-label="双边 Diff"');
     expect(html).toContain('aria-label="显示变更文件树"');
