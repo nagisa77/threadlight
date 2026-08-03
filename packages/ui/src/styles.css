@@ -319,10 +319,11 @@ button:disabled {
 
 .project-row-actions {
   display: flex;
+  width: 0;
   flex: 0 0 auto;
   align-items: center;
   gap: 1px;
-  padding-right: 3px;
+  overflow: hidden;
   opacity: 0;
 }
 
@@ -339,8 +340,10 @@ button:disabled {
   cursor: pointer;
 }
 
-.project-group:focus-within .project-row-actions,
+.project-row-actions:focus-within,
 .project-row-actions.open {
+  width: 56px;
+  padding-right: 3px;
   opacity: 1;
 }
 
@@ -9989,6 +9992,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .project-group:hover .project-row-actions {
+    width: 56px;
+    padding-right: 3px;
     opacity: 1;
   }
 
@@ -10973,6 +10978,8 @@ html[data-theme="dark"] :is(
 
 @media (hover: none) {
   .project-row-actions {
+    width: 56px;
+    padding-right: 3px;
     opacity: 1;
   }
 }
