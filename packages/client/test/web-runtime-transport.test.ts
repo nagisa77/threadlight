@@ -2,11 +2,68 @@ import { describe, expect, it } from "vitest";
 
 import {
   BrowserTerminalClient,
+  HttpRuntimeTransport,
   SwitchableHttpRuntimeTransport,
   browserTerminalProtocols,
   type BrowserSocket,
   type BrowserSocketEvent,
 } from "../src/index.js";
+
+describe("HttpRuntimeTransport", () => {
+  it("parses standard SSE data frames and ignores heartbeat comments", async () => {
+    const encoder = new TextEncoder();
+    let streamController!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+      },
+    });
+    const transport = new HttpRuntimeTransport({
+      endpoint: "https://host.example.test",
+      token: "secret-token",
+      fetch: (async () =>
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        })) as typeof globalThis.fetch,
+    });
+    const messages: unknown[] = [];
+    const received = Promise.withResolvers<void>();
+    transport.onMessage((message) => {
+      messages.push(message);
+      if (messages.length === 2) received.resolve();
+    });
+
+    streamController.enqueue(
+      encoder.encode(
+        ': ping\r\n\r\ndata: {"jsonrpc":"2.0","method":"turn/started",',
+      ),
+    );
+    streamController.enqueue(
+      encoder.encode(
+        '"params":{"threadId":"thread-1"}}\r\n\r\n' +
+          'data:{"jsonrpc":"2.0","method":"turn/completed",' +
+          '"params":{"threadId":"thread-1","output":"done"}}\n\n',
+      ),
+    );
+
+    await received.promise;
+    expect(messages).toEqual([
+      {
+        jsonrpc: "2.0",
+        method: "turn/started",
+        params: { threadId: "thread-1" },
+      },
+      {
+        jsonrpc: "2.0",
+        method: "turn/completed",
+        params: { threadId: "thread-1", output: "done" },
+      },
+    ]);
+    streamController.close();
+    transport.close();
+  });
+});
 
 describe("SwitchableHttpRuntimeTransport", () => {
   it("routes reusable workspace calls to the selected remote project", async () => {

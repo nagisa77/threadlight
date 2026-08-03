@@ -77,6 +77,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
 const MAX_TERMINAL_MESSAGE_BYTES = 256 * 1024;
 const RPC_TIMEOUT_MS = 120_000;
+const EVENT_HEARTBEAT_INTERVAL_MS = 20_000;
 const BROWSER_TERMINAL_TOKEN_PREFIX = "threadlight.token.";
 
 export interface ThreadlightHostServerOptions {
@@ -117,6 +118,7 @@ export interface ThreadlightHostServerOptions {
   port?: number;
   allowedOrigins?: readonly string[];
   oauthCallbackUrlPrefix?: string;
+  eventHeartbeatIntervalMs?: number;
 }
 
 export interface ThreadlightHostAddress {
@@ -159,6 +161,7 @@ export class ThreadlightHostServer {
   private readonly worktreeDelivery: WorktreeDeliveryManager;
   private readonly codeHostDelivery: CodeHostDeliveryManager;
   private readonly eventClients = new Map<string, Set<ServerResponse>>();
+  private readonly eventHeartbeatIntervalMs: number;
   private readonly initializationParams = new Map<
     string,
     Record<string, unknown> | undefined
@@ -175,6 +178,14 @@ export class ThreadlightHostServer {
     }
     this.listenHost = options.host ?? "127.0.0.1";
     this.port = options.port ?? 7432;
+    this.eventHeartbeatIntervalMs =
+      options.eventHeartbeatIntervalMs ?? EVENT_HEARTBEAT_INTERVAL_MS;
+    if (
+      !Number.isFinite(this.eventHeartbeatIntervalMs) ||
+      this.eventHeartbeatIntervalMs <= 0
+    ) {
+      throw new Error("Host event heartbeat interval must be positive.");
+    }
     this.automationStore = new AutomationStore(
       join(options.homePath, "automations.json"),
     );
@@ -895,15 +906,21 @@ export class ThreadlightHostServer {
     if (!project) throw new Error(`Unknown project: ${route.projectId}`);
     if (request.method === "GET" && route.action === "/events") {
       response.writeHead(200, {
-        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no",
       });
-      response.write("\n");
+      response.write(": ping\n\n");
       const clients = this.projectEventClients(project.id);
       clients.add(response);
-      response.once("close", () => clients.delete(response));
+      const heartbeat = setInterval(() => {
+        if (!response.writableEnded) response.write(": ping\n\n");
+      }, this.eventHeartbeatIntervalMs);
+      response.once("close", () => {
+        clearInterval(heartbeat);
+        clients.delete(response);
+      });
       return;
     }
     if (request.method === "POST" && route.action === "/rpc") {
@@ -1159,9 +1176,9 @@ export class ThreadlightHostServer {
     }
     this.resolveAutomationTurn(projectId, message);
     this.recordNotification(projectId, message);
-    const line = `${JSON.stringify(message)}\n`;
+    const event = serverSentEvent(message);
     for (const client of this.projectEventClients(projectId)) {
-      client.write(line);
+      client.write(event);
     }
   }
 
@@ -1319,9 +1336,9 @@ export class ThreadlightHostServer {
       method: "connector/authorization-requested",
       params: { url },
     } satisfies JsonRpcOutgoing;
-    const line = `${JSON.stringify(notification)}\n`;
+    const event = serverSentEvent(notification);
     for (const client of this.projectEventClients(projectId)) {
-      client.write(line);
+      client.write(event);
     }
   }
 
@@ -1599,6 +1616,10 @@ function rejectUpgrade(
     `HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
   );
   socket.destroy();
+}
+
+function serverSentEvent(message: JsonRpcOutgoing): string {
+  return `data: ${JSON.stringify(message)}\n\n`;
 }
 
 function browserWebSocketToken(

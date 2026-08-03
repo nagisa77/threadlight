@@ -1,7 +1,7 @@
 # Threadlight Web 部署
 
 Threadlight Web 与桌面端复用同一个 `@threadlight/ui`，浏览器侧只实现远端 Host
-连接、项目切换、HTTP/NDJSON Runtime、远端文件和 WebSocket 终端适配。Web
+连接、项目切换、HTTP/SSE Runtime、远端文件和 WebSocket 终端适配。Web
 进程不会启动 Host，也不会访问部署服务器的本地项目。
 
 ## 本地联调
@@ -126,7 +126,7 @@ caddy reverse-proxy \
 ```
 
 反向代理必须支持 WebSocket upgrade，并且不能缓冲
-`application/x-ndjson` Runtime 事件流。不要把 Host 的 7432 明文端口直接暴露在
+`text/event-stream` Runtime 事件流。不要把 Host 的 7432 明文端口直接暴露在
 不可信网络。
 
 ## 可用能力

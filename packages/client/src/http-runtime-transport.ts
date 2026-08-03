@@ -86,7 +86,7 @@ export class HttpRuntimeTransport implements ClientTransport {
   private async consumeEvents(abort: AbortController): Promise<void> {
     try {
       const response = await this.fetcher(this.url("/events"), {
-        headers: this.headers(),
+        headers: this.headers({ Accept: "text/event-stream" }),
         signal: abort.signal,
       });
       if (!response.ok || !response.body) {
@@ -96,15 +96,33 @@ export class HttpRuntimeTransport implements ClientTransport {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let eventData: string[] = [];
       while (!this.closed && !abort.signal.aborted) {
         const chunk = await reader.read();
         if (chunk.done) break;
         buffer += decoder.decode(chunk.value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          this.emit(JSON.parse(line) as JsonRpcOutgoing);
+        for (const rawLine of lines) {
+          const line = rawLine.endsWith("\r")
+            ? rawLine.slice(0, -1)
+            : rawLine;
+          if (!line) {
+            if (eventData.length > 0) {
+              const data = eventData.join("\n");
+              eventData = [];
+              if (data) {
+                this.emit(JSON.parse(data) as JsonRpcOutgoing);
+              }
+            }
+            continue;
+          }
+          if (line.startsWith(":")) continue;
+          const separator = line.indexOf(":");
+          const field = separator === -1 ? line : line.slice(0, separator);
+          if (field !== "data") continue;
+          const value = separator === -1 ? "" : line.slice(separator + 1);
+          eventData.push(value.startsWith(" ") ? value.slice(1) : value);
         }
       }
     } catch (error) {

@@ -49,6 +49,79 @@ afterEach(async () => {
 });
 
 describe("ThreadlightHostServer", () => {
+  it("streams runtime notifications as SSE with periodic heartbeats", async () => {
+    const root = temporaryDirectory("threadlight-host-sse-");
+    const workspace = createWorkspace(root, "project", "sse");
+    const projects = new ProjectStore(join(root, "home", "project-map.json"), {
+      createId: () => "project-1",
+    });
+    projects.register(workspace);
+    const settings = new SettingsStore(
+      join(root, "home", "settings.json"),
+      {
+        encrypt: (value) => value,
+        decrypt: (value) => value,
+      },
+    );
+    const peer = new ScriptedRuntimePeer((request, emit) => {
+      emit({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { name: "threadlight", protocolVersion: "0.1" },
+      });
+    });
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "SSE host",
+      homePath: join(root, "home"),
+      projects,
+      settings,
+      port: 0,
+      eventHeartbeatIntervalMs: 10,
+      createPeer: () => peer,
+    });
+    servers.push(server);
+    const address = await server.start();
+    const endpoint = `http://127.0.0.1:${address.port}`;
+    const response = await fetch(
+      `${endpoint}/v1/projects/project-1/runtime/events`,
+      { headers: { Authorization: "Bearer test-token" } },
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "text/event-stream; charset=utf-8",
+    );
+    expect(response.headers.get("cache-control")).toBe(
+      "no-cache, no-transform",
+    );
+    const events = new TestSseReader(response.body!);
+    await expect(events.nextFrame()).resolves.toBe(": ping");
+    await expect(events.nextFrame()).resolves.toBe(": ping");
+
+    await authenticatedJson(
+      `${endpoint}/v1/projects/project-1/runtime/rpc`,
+      {
+        method: "POST",
+        body: {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+        },
+      },
+    );
+    const notification = {
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: { threadId: "thread-1", output: "done" },
+    } satisfies JsonRpcOutgoing;
+    peer.emit(notification);
+    await expect(events.nextData()).resolves.toBe(
+      JSON.stringify(notification),
+    );
+    await events.cancel();
+  });
+
   it("serves multiple projects and host-owned settings with scripted peers", async () => {
     const root = temporaryDirectory("threadlight-host-");
     const firstWorkspace = createWorkspace(root, "first", "first");
@@ -1552,6 +1625,41 @@ class ScriptedRuntimePeer implements RuntimePeer {
   }
 
   async stop(): Promise<void> {}
+}
+
+class TestSseReader {
+  private readonly reader: ReadableStreamDefaultReader<Uint8Array>;
+  private readonly decoder = new TextDecoder();
+  private buffer = "";
+
+  constructor(stream: ReadableStream<Uint8Array>) {
+    this.reader = stream.getReader();
+  }
+
+  async nextFrame(): Promise<string> {
+    while (true) {
+      const boundary = this.buffer.indexOf("\n\n");
+      if (boundary >= 0) {
+        const frame = this.buffer.slice(0, boundary);
+        this.buffer = this.buffer.slice(boundary + 2);
+        return frame;
+      }
+      const chunk = await this.reader.read();
+      if (chunk.done) throw new Error("SSE stream ended before the next frame");
+      this.buffer += this.decoder.decode(chunk.value, { stream: true });
+    }
+  }
+
+  async nextData(): Promise<string> {
+    while (true) {
+      const frame = await this.nextFrame();
+      if (frame.startsWith("data: ")) return frame.slice("data: ".length);
+    }
+  }
+
+  cancel(): Promise<void> {
+    return this.reader.cancel();
+  }
 }
 
 function temporaryDirectory(prefix: string): string {
