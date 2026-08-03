@@ -18,11 +18,16 @@ import {
   taskPath,
   threadIdFromTaskPath,
 } from "./task-route.js";
+import { installMobileViewportHeight } from "./mobile-viewport.js";
 
 const ENDPOINT_STORAGE_KEY = "threadlight:web:host-endpoint";
 const TOKEN_STORAGE_KEY = "threadlight:web:host-token";
 
 document.documentElement.dataset.platform = "web";
+const disposeMobileViewportHeight = installMobileViewportHeight();
+if (import.meta.hot) {
+  import.meta.hot.dispose(disposeMobileViewportHeight);
+}
 
 function WebApp() {
   const [session, setSession] = useState<RemoteWebSession>();

@@ -2846,6 +2846,21 @@ html[data-platform="desktop"][data-os="macos"]
   }
 }
 
+/* iOS zooms focused form controls whose computed text size is below 16px. */
+@supports (-webkit-touch-callout: none) {
+  @media (hover: none) and (pointer: coarse) {
+    html[data-platform="web"],
+    html[data-platform="web"] body,
+    html[data-platform="web"] #root {
+      height: var(--web-viewport-height, 100dvh);
+    }
+
+    html[data-platform="web"] :is(input, textarea, select) {
+      font-size: max(16px, 1em) !important;
+    }
+  }
+}
+
 .automations-header p {
   font-family: inherit;
   font-size: 10px;
