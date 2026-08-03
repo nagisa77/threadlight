@@ -61,6 +61,42 @@ docker run -d \
 THREADLIGHT_WEB_BASE_PATH=/threadlight/ npm run web:build
 ```
 
+### GitHub Pages + Tailscale Serve
+
+仓库的 `Deploy Web to GitHub Pages` workflow 会在 `main` 更新后把 Web 客户端部署到
+GitHub Pages。构建不会预填 Host 地址；手机需要登录与 Host 机器相同的 Tailscale
+tailnet，再手动输入该机器的 Tailscale HTTPS 地址。
+
+由于 GitHub Pages 使用 HTTPS，浏览器不能从该页面连接明文 HTTP Host。让 Host
+只监听本机回环地址，并允许 GitHub Pages 的 Origin：
+
+```bash
+export THREADLIGHT_HOST_TOKEN="$(openssl rand -hex 32)"
+printf 'Threadlight token: %s\n' "$THREADLIGHT_HOST_TOKEN"
+
+npm run host:dev -- \
+  --host 127.0.0.1 \
+  --port 7432 \
+  --origin https://nagisa77.github.io \
+  --public-url https://your-mac.example-tailnet.ts.net \
+  --project /absolute/path/to/project \
+  --name "Tailscale Host"
+```
+
+另开终端，用 Tailscale Serve 提供 tailnet 内可访问的 HTTPS/WSS 入口：
+
+```bash
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 7432
+```
+
+然后在手机上打开 GitHub Pages 地址并输入上面打印的 Token。可用下面的命令检查或
+撤销代理配置：
+
+```bash
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve status
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve reset
+```
+
 ## Host 的 Production 命令
 
 HTTPS Web 页面只能连接 HTTPS/WSS Host。建议让 Host 监听回环地址，再由 TLS
