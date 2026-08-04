@@ -57,6 +57,41 @@ export interface ProjectsSnapshot {
   projects: readonly ProjectSummary[];
 }
 
+export function projectsWithDeliveryStatus(
+  snapshot: ProjectsSnapshot | undefined,
+  projectId: string,
+  threadId: string,
+  status: "syncing" | "synced" | "conflict" | "failed",
+): ProjectsSnapshot | undefined {
+  if (!snapshot) return snapshot;
+  return {
+    ...snapshot,
+    projects: snapshot.projects.map((project) =>
+      project.id !== projectId
+        ? project
+        : {
+            ...project,
+            conversations: project.conversations.map((conversation) =>
+              conversation.id !== threadId
+                ? conversation
+                : {
+                    ...conversation,
+                    status:
+                      status === "syncing"
+                        ? "pending"
+                        : status === "synced"
+                          ? "completed"
+                          : "attention",
+                    ...(status === "conflict" || status === "failed"
+                      ? { unread: true }
+                      : {}),
+                  },
+            ),
+          },
+    ),
+  };
+}
+
 export interface HostSummary {
   id: string;
   name: string;

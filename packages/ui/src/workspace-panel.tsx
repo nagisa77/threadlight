@@ -350,6 +350,7 @@ export function WorkspacePanel({
   changesLoading,
   changesError,
   reviewRequest,
+  deliveryRequest = 0,
   fileOpenRequest,
   hidden,
   onResizeStart,
@@ -380,6 +381,7 @@ export function WorkspacePanel({
   changesLoading: boolean;
   changesError?: string;
   reviewRequest: number;
+  deliveryRequest?: number;
   fileOpenRequest?: WorkspaceFileOpenRequest;
   hidden: boolean;
   onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void;
@@ -502,6 +504,11 @@ export function WorkspacePanel({
     setDiffLayout("unified");
     setRemoteFilePickerOpen(false);
   }, [projectId, remoteFileRoot, threadId]);
+
+  useEffect(() => {
+    if (deliveryRequest === 0) return;
+    openDeliveryCenter();
+  }, [deliveryRequest]);
 
   useEffect(() => {
     setTabs((current) =>

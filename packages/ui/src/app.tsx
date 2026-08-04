@@ -159,6 +159,7 @@ import {
 } from "./voice-input.js";
 import {
   activeProject,
+  projectsWithDeliveryStatus,
   type ConversationSummary,
   type HostSummary,
   type HostsSnapshot,
@@ -166,6 +167,10 @@ import {
   type ProjectsAdapter,
   type ProjectsSnapshot,
 } from "./projects.js";
+import {
+  automaticDeliveryFromHistory,
+  DeliveryTurnStatus,
+} from "./delivery-turn-status.js";
 import {
   ProjectOpenControl,
   type ProjectOpenerAdapter,
@@ -611,6 +616,7 @@ function ThreadlightAppContent({
   if (workspacePanelOpen) workspacePanelMounted.current = true;
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState<number>();
   const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
+  const [workspaceDeliveryRequest, setWorkspaceDeliveryRequest] = useState(0);
   const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] =
     useState<WorkspaceFileOpenRequest>();
   const [conversationChanges, setConversationChanges] =
@@ -631,6 +637,7 @@ function ThreadlightAppContent({
   const conversationChangesRequest = useRef(0);
   const conversationChangesScope = useRef("");
   const activePlanDocument = useRef<string | undefined>(undefined);
+  const deliveryAwaitingScopes = useRef(new Set<string>());
   const composerRoot = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const commandPaletteTrigger = useRef<HTMLButtonElement>(null);
@@ -769,6 +776,7 @@ function ThreadlightAppContent({
       status: "syncing" | "synced" | "conflict" | "failed",
     ) => {
       const scope = `${delivery.projectId}\u0000${delivery.threadId}`;
+      deliveryAwaitingScopes.current.delete(scope);
       setAutomaticDeliveries((current) => ({
         ...current,
         [scope]: {
@@ -780,6 +788,14 @@ function ThreadlightAppContent({
           ...(delivery.error ? { error: delivery.error } : {}),
         },
       }));
+      setProjectSnapshot((snapshot) =>
+        projectsWithDeliveryStatus(
+          snapshot,
+          delivery.projectId,
+          delivery.threadId,
+          status,
+        ),
+      );
       if (status !== "syncing" && projects) {
         void projects
           .load()
@@ -805,6 +821,60 @@ function ThreadlightAppContent({
       unsubscribes.forEach((unsubscribe) => unsubscribe());
     };
   }, [client, projects]);
+
+  useEffect(() => {
+    if (!state.isRunning || !automaticDeliveryScope) return;
+    deliveryAwaitingScopes.current.add(automaticDeliveryScope);
+    setAutomaticDeliveries((current) => {
+      if (!current[automaticDeliveryScope]) return current;
+      const next = { ...current };
+      delete next[automaticDeliveryScope];
+      return next;
+    });
+  }, [automaticDeliveryScope, state.isRunning]);
+
+  useEffect(() => {
+    if (
+      state.isRunning ||
+      !automaticDeliveryScope ||
+      automaticDelivery ||
+      deliveryAwaitingScopes.current.has(automaticDeliveryScope) ||
+      !workspace?.getDeliveryHistory ||
+      !currentProject ||
+      !state.threadId ||
+      currentConversation?.workspace?.mode !== "worktree"
+    ) {
+      return;
+    }
+    let active = true;
+    void workspace
+      .getDeliveryHistory(currentProject.id, state.threadId)
+      .then((history) => {
+        if (!active) return;
+        const restored = automaticDeliveryFromHistory(
+          automaticDeliveryScope,
+          history,
+        );
+        if (!restored) return;
+        setAutomaticDeliveries((current) =>
+          current[automaticDeliveryScope]
+            ? current
+            : { ...current, [automaticDeliveryScope]: restored },
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [
+    automaticDelivery,
+    automaticDeliveryScope,
+    currentConversation?.workspace?.mode,
+    currentProject,
+    state.isRunning,
+    state.threadId,
+    workspace,
+  ]);
 
   useEffect(() => {
     if (
@@ -2659,6 +2729,11 @@ function ThreadlightAppContent({
     void refreshConversationChanges();
   }
 
+  function openDeliveryCenter() {
+    setWorkspacePanelOpen(true);
+    setWorkspaceDeliveryRequest((request) => request + 1);
+  }
+
   function openLocalFile(reference: LocalFileReference) {
     if (!workspace || !currentProject || !currentWorkspacePath) return;
     const file = fileReaderReference(reference, currentWorkspacePath);
@@ -3658,6 +3733,27 @@ function ThreadlightAppContent({
                       </div>
                     )}
 
+                    {automaticDelivery && !state.isRunning && (
+                      <DeliveryTurnStatus
+                        delivery={automaticDelivery}
+                        disabled={
+                          automaticDelivery.status === "syncing" ||
+                          automaticDelivery.status === "undoing"
+                        }
+                        onOpen={openDeliveryCenter}
+                        onRetry={
+                          workspace?.applyDelivery
+                            ? () => void retryAutomaticDelivery()
+                            : undefined
+                        }
+                        onUndo={
+                          workspace?.undoDelivery
+                            ? () => void undoAutomaticDelivery()
+                            : undefined
+                        }
+                      />
+                    )}
+
                   </div>
                 )}
               </div>
@@ -4086,6 +4182,7 @@ function ThreadlightAppContent({
               changesLoading={conversationChangesLoading}
               changesError={conversationChangesError}
               reviewRequest={workspaceReviewRequest}
+              deliveryRequest={workspaceDeliveryRequest}
               fileOpenRequest={workspaceFileOpenRequest}
               hidden={!workspacePanelOpen}
               onResizeStart={beginWorkspacePanelResize}
