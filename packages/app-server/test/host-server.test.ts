@@ -17,6 +17,7 @@ import {
   ConversationChangeTracker,
   ProjectStore,
   SettingsStore,
+  WorktreeDeliveryManager,
   type CodeHostPullRequest,
   type CodeHostProvider,
 } from "@threadlight/host-core";
@@ -50,6 +51,88 @@ afterEach(async () => {
 });
 
 describe("ThreadlightHostServer", () => {
+  it("repairs legacy no-change attention without hiding real delivery failures", async () => {
+    const root = temporaryDirectory("threadlight-host-delivery-repair-");
+    const workspace = createWorkspace(root, "project", "delivery repair");
+    const taskWorkspace = join(root, "task-workspace");
+    mkdirSync(taskWorkspace);
+    const projects = new ProjectStore(join(root, "home", "project-map.json"), {
+      createId: () => "project-1",
+    });
+    projects.register(workspace);
+    const gitWorkspace = {
+      mode: "worktree" as const,
+      path: taskWorkspace,
+      root: taskWorkspace,
+      repositoryRoot: workspace,
+      branch: "threadlight/project-repair",
+      baseCommit: execFileSync("git", ["rev-parse", "HEAD"], {
+        cwd: workspace,
+        encoding: "utf8",
+      }).trim(),
+      sourceBranch: "main",
+    };
+    for (const id of ["no-changes", "real-failure"]) {
+      projects.upsertConversation({ projectId: "project-1", id, title: id });
+      projects.setConversationWorkspace(
+        { projectId: "project-1", id },
+        gitWorkspace,
+      );
+      projects.markConversationAttention({ projectId: "project-1", id });
+    }
+    const changes = new ConversationChangeTracker(
+      join(root, "home", "review-snapshots"),
+    );
+    const delivery = new WorktreeDeliveryManager(changes);
+    await delivery.recordFailure(
+      {
+        projectId: "project-1",
+        threadId: "no-changes",
+        revision: "empty-revision",
+        projectPath: workspace,
+        workspace: gitWorkspace,
+      },
+      "This task has no changes to deliver",
+    );
+    await delivery.recordFailure(
+      {
+        projectId: "project-1",
+        threadId: "real-failure",
+        revision: "failed-revision",
+        projectPath: workspace,
+        workspace: gitWorkspace,
+      },
+      "Target file changed after review",
+    );
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Repair host",
+      homePath: join(root, "home"),
+      projects,
+      settings: new SettingsStore(join(root, "home", "settings.json"), {
+        encrypt: (value) => value,
+        decrypt: (value) => value,
+      }),
+      worktreeDelivery: delivery,
+      port: 0,
+      createPeer: () => new ScriptedRuntimePeer(),
+    });
+    servers.push(server);
+
+    await server.start();
+
+    const conversations = projects.snapshot().projects[0]?.conversations;
+    expect(
+      conversations?.find((conversation) => conversation.id === "no-changes")
+        ?.status,
+    ).toBe("completed");
+    expect(
+      conversations?.find((conversation) => conversation.id === "real-failure")
+        ?.status,
+    ).toBe("attention");
+  });
+
   it("streams runtime notifications as SSE with periodic heartbeats", async () => {
     const root = temporaryDirectory("threadlight-host-sse-");
     const workspace = createWorkspace(root, "project", "sse");
@@ -1137,6 +1220,24 @@ describe("ThreadlightHostServer", () => {
         reviewed.revision,
       ),
     ).resolves.toMatchObject({ appliedFiles: 2 });
+    await expect(
+      webSession.workspace.getDeliveryHistory?.(
+        "project-1",
+        "thread-1",
+      ),
+    ).resolves.toMatchObject({
+      synchronizedFiles: 2,
+      undoPoint: {
+        revision: reviewed.revision,
+        files: expect.arrayContaining(["src/index.ts", "data/library.db"]),
+      },
+      entries: [
+        expect.objectContaining({
+          status: "synced",
+          revision: reviewed.revision,
+        }),
+      ],
+    });
     expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
       "export const value = 'delivered';\n",
     );

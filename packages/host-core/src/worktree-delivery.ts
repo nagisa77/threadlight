@@ -26,6 +26,7 @@ const execFileAsync = promisify(execFile);
 const MAX_GIT_OUTPUT_BYTES = 16 * 1024 * 1024;
 const DELIVERY_JOURNAL_VERSION = 1;
 const MAX_DELIVERY_JOURNAL_BYTES = 256 * 1024 * 1024;
+const MAX_DELIVERY_HISTORY_ENTRIES = 100;
 
 type GitRunner = (
   cwd: string,
@@ -82,6 +83,37 @@ export interface WorktreeDeliveryUndoResult {
   targetBranch: string;
   revertedFiles: number;
   revision: string;
+}
+
+export interface WorktreeDeliveryHistoryEntry {
+  id: string;
+  createdAt: string;
+  revision: string;
+  status: "synced" | "conflict" | "failed" | "undone";
+  taskBranch?: string;
+  targetBranch?: string;
+  files?: number;
+  appliedFiles?: number;
+  revertedFiles?: number;
+  commit?: string;
+  undoAvailable?: boolean;
+  conflicts?: readonly WorktreeDeliveryConflict[];
+  error?: string;
+}
+
+export interface WorktreeDeliveryHistorySnapshot {
+  projectId: string;
+  threadId: string;
+  targetBranch?: string;
+  currentRevision?: string;
+  synchronizedFiles: number;
+  undoPoint?: {
+    revision: string;
+    previousRevision?: string;
+    files: readonly string[];
+    createdAt?: string;
+  };
+  entries: readonly WorktreeDeliveryHistoryEntry[];
 }
 
 export interface AutomaticWorktreeDeliveryState {
@@ -187,6 +219,7 @@ interface DeliveryJournal {
     next?: SerializedSynchronizationState;
     operations: readonly SerializedTransitionOperation[];
   };
+  history?: readonly WorktreeDeliveryHistoryEntry[];
 }
 
 export interface WorktreeDeliveryManagerOptions {
@@ -219,7 +252,11 @@ export class WorktreeDeliveryManager {
   async apply(
     request: WorktreeDeliveryRequest,
   ): Promise<WorktreeDeliveryResult> {
-    return this.exclusive(request, () => this.applyLocked(request));
+    return this.exclusive(request, async () => {
+      const result = await this.applyLocked(request);
+      await appendHistory(request, historyFromResult(request.revision, result));
+      return result;
+    });
   }
 
   private async applyLocked(
@@ -340,11 +377,108 @@ export class WorktreeDeliveryManager {
       throw error;
     }
     await finalizeJournal(request, previousState);
-    return {
+    const result = {
       targetBranch,
       revertedFiles: state.undo.operations.length,
       revision: request.revision,
     };
+    await appendHistory(request, {
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      revision: request.revision,
+      status: "undone",
+      targetBranch,
+      revertedFiles: result.revertedFiles,
+    });
+    return result;
+  }
+
+  async history(
+    request: WorktreeDeliveryJournalTarget,
+  ): Promise<WorktreeDeliveryHistorySnapshot> {
+    return this.exclusive(request, async () => {
+      await loadSynchronizationState(request);
+      const journal = await readJournal(request);
+      const state = journal?.committed
+        ? deserializeSynchronizationState(request, journal.committed)
+        : undefined;
+      const entries = journal?.history ?? [];
+      const latestWithTarget = [...entries]
+        .reverse()
+        .find((entry) => entry.targetBranch);
+      const latestForRevision = state
+        ? [...entries]
+            .reverse()
+            .find(
+              (entry) =>
+                entry.status === "synced" &&
+                entry.revision === state.revision,
+            )
+        : undefined;
+      return {
+        projectId: request.projectId,
+        threadId: request.threadId,
+        ...(latestWithTarget?.targetBranch
+          ? { targetBranch: latestWithTarget.targetBranch }
+          : {}),
+        ...(state ? { currentRevision: state.revision } : {}),
+        synchronizedFiles: state?.files.size ?? 0,
+        ...(state?.undo
+          ? {
+              undoPoint: {
+                revision: state.revision,
+                ...(state.undo.previousRevision
+                  ? { previousRevision: state.undo.previousRevision }
+                  : {}),
+                files: state.undo.operations.map((operation) =>
+                  journalRelativePath(request.projectPath, operation.path),
+                ),
+                ...(latestForRevision
+                  ? { createdAt: latestForRevision.createdAt }
+                  : {}),
+              },
+            }
+          : {}),
+        entries,
+      };
+    });
+  }
+
+  async hasLegacyNoChangesFailure(
+    target: WorktreeDeliveryJournalTarget,
+  ): Promise<boolean> {
+    return this.exclusive(target, async () => {
+      const journal = await readJournal(target);
+      const latest = journal?.history?.at(-1);
+      return (
+        latest?.status === "failed" &&
+        latest.error === "This task has no changes to deliver"
+      );
+    });
+  }
+
+  async recordFailure(
+    request: WorktreeDeliveryRequest,
+    error: string,
+    preflight?: WorktreeDeliveryPreflight,
+  ): Promise<void> {
+    await this.exclusive(request, () =>
+      appendHistory(request, {
+        id: randomUUID(),
+        createdAt: new Date().toISOString(),
+        revision: request.revision,
+        status: preflight?.conflicts.length ? "conflict" : "failed",
+        ...(preflight?.taskBranch ? { taskBranch: preflight.taskBranch } : {}),
+        ...(preflight?.targetBranch
+          ? { targetBranch: preflight.targetBranch }
+          : {}),
+        ...(preflight ? { files: preflight.files } : {}),
+        ...(preflight?.conflicts.length
+          ? { conflicts: preflight.conflicts }
+          : {}),
+        error: error.slice(0, 32_768),
+      }),
+    );
   }
 
   async commit(
@@ -374,7 +508,9 @@ export class WorktreeDeliveryManager {
     );
     if (committable.length === 0) {
       throw new Error(
-        "This task only changed local data ignored by Git. Apply it to the original workspace without creating a commit.",
+        plan.preflight.files === 0
+          ? "This task has no changes to commit."
+          : "This task only changed local data ignored by Git. Apply it to the original workspace without creating a commit.",
       );
     }
     const newlyAppliedFiles = plan.operations.filter(
@@ -413,11 +549,13 @@ export class WorktreeDeliveryManager {
       "rev-parse",
       "HEAD",
     ]);
-    return {
+    const result = {
       ...applied,
       appliedFiles: newlyAppliedFiles,
       commit: stdout.trim(),
     };
+    await appendHistory(request, historyFromResult(request.revision, result));
+    return result;
   }
 
   private async plan(request: WorktreeDeliveryRequest): Promise<{
@@ -434,10 +572,6 @@ export class WorktreeDeliveryManager {
       request.revision,
     );
     const previous = await loadSynchronizationState(request);
-    if (currentFiles.length === 0 && !previous?.files.size) {
-      throw new Error("This task has no changes to deliver");
-    }
-
     const { files, nextFiles } = incrementalDeliveryFiles(
       currentFiles,
       previous?.files,
@@ -528,14 +662,38 @@ export async function applyAutomaticWorktreeDelivery(
       // Preserve the original delivery error when preflight cannot be refreshed.
     }
     const conflict = Boolean(preflight?.conflicts.length);
+    const message = errorMessage(error);
+    await manager.recordFailure(request, message, preflight).catch(() => {
+      // Persisting diagnostics must not replace the original delivery error.
+    });
     reportAutomaticDeliveryState(onState, {
       revision: request.revision,
       status: conflict ? "conflict" : "failed",
       ...(preflight ? { preflight } : {}),
-      error: errorMessage(error),
+      error: message,
     });
     throw error;
   }
+}
+
+function historyFromResult(
+  revision: string,
+  result: WorktreeDeliveryResult,
+): WorktreeDeliveryHistoryEntry {
+  return {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    revision,
+    status: "synced",
+    taskBranch: result.taskBranch,
+    targetBranch: result.targetBranch,
+    files: result.files,
+    appliedFiles: result.appliedFiles,
+    ...(result.commit ? { commit: result.commit } : {}),
+    ...(result.undoAvailable !== undefined
+      ? { undoAvailable: result.undoAvailable }
+      : {}),
+  };
 }
 
 function reportAutomaticDeliveryState(
@@ -563,7 +721,7 @@ function previousSynchronizationState(
 }
 
 async function loadSynchronizationState(
-  request: WorktreeDeliveryRequest,
+  request: WorktreeDeliveryJournalTarget,
 ): Promise<SynchronizationState | undefined> {
   const journal = await readJournal(request);
   if (!journal) return;
@@ -631,6 +789,7 @@ async function prepareJournal(
   next: SynchronizationState | undefined,
   operations: readonly DeliveryTransitionOperation[],
 ): Promise<void> {
+  const history = (await readJournal(request))?.history;
   await writeJournal(request, {
     version: DELIVERY_JOURNAL_VERSION,
     projectId: request.projectId,
@@ -644,15 +803,26 @@ async function prepareJournal(
         : {}),
       operations: operations.map(serializeTransitionOperation),
     },
+    ...(history?.length ? { history } : {}),
   });
 }
 
 async function finalizeJournal(
-  request: WorktreeDeliveryRequest,
+  request: WorktreeDeliveryJournalTarget,
   state: SynchronizationState | undefined,
 ): Promise<void> {
+  const history = (await readJournal(request))?.history;
   if (!state) {
-    await removeJournal(request);
+    if (history?.length) {
+      await writeJournal(request, {
+        version: DELIVERY_JOURNAL_VERSION,
+        projectId: request.projectId,
+        threadId: request.threadId,
+        history,
+      });
+    } else {
+      await removeJournal(request);
+    }
     return;
   }
   await writeJournal(request, {
@@ -660,11 +830,30 @@ async function finalizeJournal(
     projectId: request.projectId,
     threadId: request.threadId,
     committed: serializeSynchronizationState(request, state),
+    ...(history?.length ? { history } : {}),
+  });
+}
+
+async function appendHistory(
+  request: WorktreeDeliveryJournalTarget,
+  entry: WorktreeDeliveryHistoryEntry,
+): Promise<void> {
+  const journal = await readJournal(request);
+  const history = [...(journal?.history ?? []), entry].slice(
+    -MAX_DELIVERY_HISTORY_ENTRIES,
+  );
+  await writeJournal(request, {
+    version: DELIVERY_JOURNAL_VERSION,
+    projectId: request.projectId,
+    threadId: request.threadId,
+    ...(journal?.committed ? { committed: journal.committed } : {}),
+    ...(journal?.pending ? { pending: journal.pending } : {}),
+    history,
   });
 }
 
 function serializeSynchronizationState(
-  request: WorktreeDeliveryRequest,
+  request: WorktreeDeliveryJournalTarget,
   state: SynchronizationState,
 ): SerializedSynchronizationState {
   return {
@@ -699,7 +888,7 @@ function serializeSynchronizationState(
 }
 
 function deserializeSynchronizationState(
-  request: WorktreeDeliveryRequest,
+  request: WorktreeDeliveryJournalTarget,
   state: SerializedSynchronizationState,
 ): SynchronizationState {
   const files = state.files.map(deserializeSynchronizedFile);
@@ -794,7 +983,7 @@ function serializeTransitionOperation(
 }
 
 function deserializeTransitionOperation(
-  request: WorktreeDeliveryRequest,
+  request: WorktreeDeliveryJournalTarget,
   operation: SerializedTransitionOperation,
 ): DeliveryTransitionOperation {
   const path = normalizeJournalPath(operation.path);
@@ -972,10 +1161,63 @@ function validateJournal(
     value.projectId !== request.projectId ||
     value.threadId !== request.threadId ||
     (value.committed !== undefined && !validSerializedState(value.committed)) ||
-    (value.pending !== undefined && !validPendingJournal(value.pending))
+    (value.pending !== undefined && !validPendingJournal(value.pending)) ||
+    (value.history !== undefined && !validHistory(value.history))
   ) {
     throw new Error("The automatic delivery journal is invalid.");
   }
+}
+
+function validHistory(value: unknown): boolean {
+  return Array.isArray(value) &&
+    value.length <= MAX_DELIVERY_HISTORY_ENTRIES &&
+    value.every(validHistoryEntry);
+}
+
+function validHistoryEntry(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.id !== "string" || value.id.length > 128 ||
+    typeof value.createdAt !== "string" || value.createdAt.length > 64 ||
+    typeof value.revision !== "string" || value.revision.length > 512 ||
+    !["synced", "conflict", "failed", "undone"].includes(
+      value.status as string,
+    )
+  ) {
+    return false;
+  }
+  const shortString = (candidate: unknown, max = 8_192) =>
+    candidate === undefined ||
+    (typeof candidate === "string" && candidate.length <= max);
+  const count = (candidate: unknown) =>
+    candidate === undefined ||
+    (typeof candidate === "number" &&
+      Number.isInteger(candidate) &&
+      candidate >= 0);
+  return shortString(value.taskBranch, 512) &&
+    shortString(value.targetBranch, 512) &&
+    count(value.files) &&
+    count(value.appliedFiles) &&
+    count(value.revertedFiles) &&
+    shortString(value.commit, 512) &&
+    (value.undoAvailable === undefined ||
+      typeof value.undoAvailable === "boolean") &&
+    (value.conflicts === undefined ||
+      (Array.isArray(value.conflicts) &&
+        value.conflicts.every(validDeliveryConflict))) &&
+    shortString(value.error, 32_768);
+}
+
+function validDeliveryConflict(value: unknown): boolean {
+  return isRecord(value) &&
+    validPath(value.path) &&
+    [
+      "both_added",
+      "target_deleted",
+      "target_modified",
+      "merge_conflict",
+      "unsafe_target",
+    ].includes(value.reason as string);
 }
 
 function validPendingJournal(value: unknown): boolean {
@@ -1313,6 +1555,7 @@ function deliveredResult(
 }
 
 function assertReady(preflight: WorktreeDeliveryPreflight): void {
+  if (preflight.files === 0) return;
   if (preflight.branchChanged) {
     throw new Error(
       `The original worktree is now on ${preflight.targetBranch}, but this task started from ${preflight.sourceBranch}. Switch back before delivering.`,

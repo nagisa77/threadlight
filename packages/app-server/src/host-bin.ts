@@ -7,135 +7,200 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  ProjectStore,
-  SettingsStore,
-  runtimeEnvironment,
-} from "@threadlight/host-core";
-import { TerminalSessionManager } from "@threadlight/terminal-core";
+  HostCliUsageError,
+  hostCliUsage,
+  parseHostCli,
+  type HostArgs,
+  type HostCliCommand,
+} from "./host-cli-options.js";
 
-import { createHostSecretCodec } from "./host-secret-codec.js";
-import { parseHostArgs } from "./host-cli-options.js";
-import {
-  HostConnectionService,
-  HostConnectionStore,
-} from "./host-connection-service.js";
-import { ThreadlightHostServer } from "./host-server.js";
-import { hostTerminalEnvironment } from "./host-terminal-environment.js";
-import { JsonLineRuntimePeer } from "./remote-runtime-peer.js";
-
-const args = parseHostArgs(process.argv.slice(2));
-const publicUrl =
-  args.publicUrl ?? process.env.THREADLIGHT_HOST_PUBLIC_URL;
-const token =
-  args.token ??
-  process.env.THREADLIGHT_HOST_TOKEN;
-if (!token) {
-  process.stderr.write(
-    "THREADLIGHT_HOST_TOKEN or --token is required. The token is never printed.\n",
-  );
-  process.exit(1);
+const command = readCliCommand(process.argv.slice(2));
+if (command.action === "help") {
+  process.stdout.write(hostCliUsage());
+  process.exit(0);
+}
+if (command.action === "version") {
+  try {
+    process.stdout.write(`threadlight-host ${installedHostVersion()}\n`);
+    process.exit(0);
+  } catch (error) {
+    process.stderr.write(`Error: ${errorMessage(error)}\n`);
+    process.exit(1);
+  }
 }
 
-const homePath = resolve(
-  args.home ??
-    process.env.THREADLIGHT_HOME ??
-    join(homedir(), ".threadlight"),
-);
-const projects = new ProjectStore(join(homePath, "project-map.json"), {
-  standaloneRoot: join(homePath, "standalone"),
-});
-const secretCodec = createHostSecretCodec(
-  join(homePath, "host-secret.key"),
-);
-const settings = new SettingsStore(
-  join(homePath, "settings.json"),
-  secretCodec,
-);
-const connections = new HostConnectionStore(
-  join(homePath, "connection-store.json"),
-  secretCodec,
-);
-if (args.project) projects.register(resolve(args.project));
+try {
+  await startHost(command.args);
+} catch (error) {
+  process.stderr.write(`Error: ${errorMessage(error)}\n`);
+  process.exitCode = 1;
+}
 
-const entry = fileURLToPath(new URL("./bin.js", import.meta.url));
-let server: ThreadlightHostServer;
-server = new ThreadlightHostServer({
-  token,
-  hostId: readOrCreateHostId(join(homePath, "host-id")),
-  name: args.name?.trim() || hostname(),
-  homePath,
-  projects,
-  settings,
-  host: args.host,
-  port: args.port,
-  allowedOrigins: args.origins,
-  ...(publicUrl
-    ? {
-        oauthCallbackUrlPrefix:
-          `${normalizePublicUrl(publicUrl)}/v1/host/oauth/callback`,
-      }
-    : {}),
-  acceptOAuthCallback: (input) =>
-    connections.acceptAuthorizationCallback(input),
-  createPeer: ({
-    projectId,
-    projectRoot,
-    projectBasePath,
-    oauthCallbackUrlPrefix,
-  }) => {
-    const connectionService = new HostConnectionService(
-      connections,
-      (url) => server.publishConnectorAuthorization(projectId, url),
+async function startHost(args: HostArgs): Promise<void> {
+  const publicUrl =
+    args.publicUrl ?? process.env.THREADLIGHT_HOST_PUBLIC_URL;
+  const oauthCallbackUrlPrefix = publicUrl
+    ? `${normalizePublicUrl(publicUrl)}/v1/host/oauth/callback`
+    : undefined;
+  const token = args.token ?? process.env.THREADLIGHT_HOST_TOKEN;
+  if (!token) {
+    throw new Error(
+      "An access token is required. Set THREADLIGHT_HOST_TOKEN or pass --token.",
     );
-    return new JsonLineRuntimePeer({
-      entry,
-      cwd: projectRoot,
-      environment: {
-        ...runtimeEnvironment(settings.runtimeSettings()),
-        THREADLIGHT_PROJECT_ROOT: projectBasePath,
-        ...(projects.project(projectId)?.scope === "standalone"
-          ? { THREADLIGHT_TASK_SCOPE: "standalone" }
-          : {}),
-        THREADLIGHT_CONNECTION_RPC_FD: "3",
-        ...(oauthCallbackUrlPrefix
-          ? {
-              THREADLIGHT_OAUTH_CALLBACK_URL_PREFIX:
-                oauthCallbackUrlPrefix,
-            }
-          : {}),
-        THREADLIGHT_ATTACHMENT_ROOT: join(
-          projectBasePath,
-          ".threadlight",
-          "uploads",
-        ),
-      },
-      onLog: (message) => process.stderr.write(`[app-server] ${message}\n`),
-      handleConnectionRequest: (request) =>
-        connectionService.handle(request),
-    });
-  },
-  createTerminalSessions: (send) =>
-    new TerminalSessionManager(send, {
-      environment: hostTerminalEnvironment(process.env),
-      maxSessions: 16,
-    }),
-});
-const address = await server.start();
+  }
 
-process.stderr.write(
-  `Threadlight Host listening on http://${address.host}:${address.port}\n`,
-);
-process.stderr.write(`Data: ${homePath}\n`);
-if (address.host !== "127.0.0.1" && address.host !== "::1") {
-  process.stderr.write(
-    "Warning: HTTP is not encrypted. Use an SSH tunnel, VPN, or TLS reverse proxy on untrusted networks.\n",
+  const [
+    { ProjectStore, SettingsStore, runtimeEnvironment },
+    { TerminalSessionManager },
+    { createHostSecretCodec },
+    { HostConnectionService, HostConnectionStore },
+    { ThreadlightHostServer },
+    { hostTerminalEnvironment },
+    { JsonLineRuntimePeer },
+  ] = await Promise.all([
+    import("@threadlight/host-core"),
+    import("@threadlight/terminal-core"),
+    import("./host-secret-codec.js"),
+    import("./host-connection-service.js"),
+    import("./host-server.js"),
+    import("./host-terminal-environment.js"),
+    import("./remote-runtime-peer.js"),
+  ]);
+
+  const homePath = resolve(
+    args.home ??
+      process.env.THREADLIGHT_HOME ??
+      join(homedir(), ".threadlight"),
   );
+  const projects = new ProjectStore(join(homePath, "project-map.json"), {
+    standaloneRoot: join(homePath, "standalone"),
+  });
+  const secretCodec = createHostSecretCodec(
+    join(homePath, "host-secret.key"),
+  );
+  const settings = new SettingsStore(
+    join(homePath, "settings.json"),
+    secretCodec,
+  );
+  const connections = new HostConnectionStore(
+    join(homePath, "connection-store.json"),
+    secretCodec,
+  );
+  if (args.project) projects.register(resolve(args.project));
+
+  const entry = fileURLToPath(new URL("./bin.js", import.meta.url));
+  let server: InstanceType<typeof ThreadlightHostServer>;
+  server = new ThreadlightHostServer({
+    token,
+    hostId: readOrCreateHostId(join(homePath, "host-id")),
+    name: args.name?.trim() || hostname(),
+    homePath,
+    projects,
+    settings,
+    host: args.host,
+    port: args.port,
+    allowedOrigins: args.origins,
+    ...(oauthCallbackUrlPrefix
+      ? { oauthCallbackUrlPrefix }
+      : {}),
+    acceptOAuthCallback: (input) =>
+      connections.acceptAuthorizationCallback(input),
+    createPeer: ({
+      projectId,
+      projectRoot,
+      projectBasePath,
+      oauthCallbackUrlPrefix,
+    }) => {
+      const connectionService = new HostConnectionService(
+        connections,
+        (url) => server.publishConnectorAuthorization(projectId, url),
+      );
+      return new JsonLineRuntimePeer({
+        entry,
+        cwd: projectRoot,
+        environment: {
+          ...runtimeEnvironment(settings.runtimeSettings()),
+          THREADLIGHT_PROJECT_ROOT: projectBasePath,
+          ...(projects.project(projectId)?.scope === "standalone"
+            ? { THREADLIGHT_TASK_SCOPE: "standalone" }
+            : {}),
+          THREADLIGHT_CONNECTION_RPC_FD: "3",
+          ...(oauthCallbackUrlPrefix
+            ? {
+                THREADLIGHT_OAUTH_CALLBACK_URL_PREFIX:
+                  oauthCallbackUrlPrefix,
+              }
+            : {}),
+          THREADLIGHT_ATTACHMENT_ROOT: join(
+            projectBasePath,
+            ".threadlight",
+            "uploads",
+          ),
+        },
+        onLog: (message) =>
+          process.stderr.write(`[app-server] ${message}\n`),
+        handleConnectionRequest: (request) =>
+          connectionService.handle(request),
+      });
+    },
+    createTerminalSessions: (send) =>
+      new TerminalSessionManager(send, {
+        environment: hostTerminalEnvironment(process.env),
+        maxSessions: 16,
+      }),
+  });
+  const address = await server.start();
+
+  process.stderr.write(
+    `Threadlight Host listening on http://${address.host}:${address.port}\n`,
+  );
+  process.stderr.write(`Data: ${homePath}\n`);
+  if (address.host !== "127.0.0.1" && address.host !== "::1") {
+    process.stderr.write(
+      "Warning: HTTP is not encrypted. Use an SSH tunnel, VPN, or TLS reverse proxy on untrusted networks.\n",
+    );
+  }
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      void server.stop().finally(() => process.exit(0));
+    });
+  }
 }
 
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    void server.stop().finally(() => process.exit(0));
-  });
+function readCliCommand(values: string[]): HostCliCommand {
+  try {
+    return parseHostCli(values);
+  } catch (error) {
+    if (!(error instanceof HostCliUsageError)) throw error;
+    process.stderr.write(
+      `Error: ${error.message}\n\nUsage: threadlight-host [options]\nRun 'threadlight-host --help' for details.\n`,
+    );
+    process.exit(2);
+  }
+}
+
+function installedHostVersion(): string {
+  for (const url of [
+    new URL("../package.json", import.meta.url),
+    new URL("./package.json", import.meta.url),
+  ]) {
+    try {
+      const value = JSON.parse(readFileSync(url, "utf8")) as {
+        version?: unknown;
+      };
+      if (typeof value.version === "string" && value.version.trim()) {
+        return value.version;
+      }
+    } catch {
+      // The bundled and workspace layouts keep package.json in different places.
+    }
+  }
+  throw new Error("Unable to read the installed Host version.");
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function normalizePublicUrl(value: string): string {

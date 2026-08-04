@@ -96,6 +96,8 @@ export const DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL =
   "threadlight:conversation-changes:restore";
 export const DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL =
   "threadlight:worktree-delivery:preflight";
+export const DESKTOP_WORKTREE_DELIVERY_HISTORY_CHANNEL =
+  "threadlight:worktree-delivery:history";
 export const DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL =
   "threadlight:worktree-delivery:apply";
 export const DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL =
@@ -526,6 +528,37 @@ export interface DesktopWorktreeDeliveryUndoResult {
   revision: string;
 }
 
+export interface DesktopWorktreeDeliveryHistoryEntry {
+  id: string;
+  createdAt: string;
+  revision: string;
+  status: "synced" | "conflict" | "failed" | "undone";
+  taskBranch?: string;
+  targetBranch?: string;
+  files?: number;
+  appliedFiles?: number;
+  revertedFiles?: number;
+  commit?: string;
+  undoAvailable?: boolean;
+  conflicts?: readonly DesktopWorktreeDeliveryConflict[];
+  error?: string;
+}
+
+export interface DesktopWorktreeDeliveryHistorySnapshot {
+  projectId: string;
+  threadId: string;
+  targetBranch?: string;
+  currentRevision?: string;
+  synchronizedFiles: number;
+  undoPoint?: {
+    revision: string;
+    previousRevision?: string;
+    files: readonly string[];
+    createdAt?: string;
+  };
+  entries: readonly DesktopWorktreeDeliveryHistoryEntry[];
+}
+
 export interface DesktopCodeHostCheck {
   name: string;
   status: "queued" | "running" | "success" | "failure" | "skipped";
@@ -900,6 +933,9 @@ export interface DesktopApi {
   preflightWorktreeDelivery(
     request: DesktopWorktreeDeliveryRequest,
   ): Promise<DesktopWorktreeDeliveryPreflight>;
+  getWorktreeDeliveryHistory(
+    request: DesktopConversationChangesRequest,
+  ): Promise<DesktopWorktreeDeliveryHistorySnapshot>;
   applyWorktreeDelivery(
     request: DesktopWorktreeDeliveryRequest,
   ): Promise<DesktopWorktreeDeliveryResult>;

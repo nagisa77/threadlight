@@ -1,15 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { Files, Plus, Terminal } from "lucide-react";
+import { Files, PackageCheck, Plus, Terminal } from "lucide-react";
 import { useI18n } from "./i18n.js";
 
-export type PanelViewKind = "terminal" | "original-terminal" | "file";
+export type PanelViewKind =
+  | "terminal"
+  | "original-terminal"
+  | "delivery"
+  | "file";
 
 export function PanelAddMenu({
   available,
   onSelect,
+  taskTerminalLabel,
+  originalTerminalLabel,
 }: {
   available: readonly PanelViewKind[];
   onSelect(kind: PanelViewKind): void;
+  taskTerminalLabel?: string;
+  originalTerminalLabel?: string;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -50,13 +58,15 @@ export function PanelAddMenu({
             type="button"
             className="panel-add-option pressable"
             role="menuitem"
+            aria-label={taskTerminalLabel ?? t("taskTerminal")}
+            title={taskTerminalLabel ?? t("taskTerminal")}
             onClick={() => {
               onSelect("terminal");
               setOpen(false);
             }}
           >
             <Terminal size={16} />
-            <span>{t("taskTerminal")}</span>
+            <span>{taskTerminalLabel ?? t("taskTerminal")}</span>
           </button>
         )}
         {available.includes("original-terminal") && (
@@ -64,13 +74,17 @@ export function PanelAddMenu({
             type="button"
             className="panel-add-option pressable"
             role="menuitem"
+            aria-label={originalTerminalLabel ?? t("originalWorkspaceTerminal")}
+            title={originalTerminalLabel ?? t("originalWorkspaceTerminal")}
             onClick={() => {
               onSelect("original-terminal");
               setOpen(false);
             }}
           >
             <Terminal size={16} />
-            <span>{t("originalWorkspaceTerminal")}</span>
+            <span>
+              {originalTerminalLabel ?? t("originalWorkspaceTerminal")}
+            </span>
           </button>
         )}
         {available.includes("file") && (
@@ -85,6 +99,20 @@ export function PanelAddMenu({
           >
             <Files size={16} />
             <span>{t("file")}</span>
+          </button>
+        )}
+        {available.includes("delivery") && (
+          <button
+            type="button"
+            className="panel-add-option pressable"
+            role="menuitem"
+            onClick={() => {
+              onSelect("delivery");
+              setOpen(false);
+            }}
+          >
+            <PackageCheck size={16} />
+            <span>{t("deliveryCenter")}</span>
           </button>
         )}
       </div>

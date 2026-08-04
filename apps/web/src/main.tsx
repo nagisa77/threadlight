@@ -1,7 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
-import { LogOut } from "lucide-react";
-import { ThreadlightApp } from "@threadlight/ui";
+import { LoaderCircle, LogOut } from "lucide-react";
 import {
   createRemoteWebSession,
   type RemoteWebSession,
@@ -18,6 +23,12 @@ import { RemoteConnectionPage } from "./connection-page.js";
 
 const ENDPOINT_STORAGE_KEY = "threadlight:web:host-endpoint";
 const TOKEN_STORAGE_KEY = "threadlight:web:host-token";
+const loadThreadlightApp = () => import("@threadlight/ui/app");
+const LazyThreadlightApp = lazy(() =>
+  loadThreadlightApp().then(({ ThreadlightApp }) => ({
+    default: ThreadlightApp,
+  })),
+);
 
 document.documentElement.dataset.platform = "web";
 const disposeMobileViewportHeight = installMobileViewportHeight();
@@ -44,7 +55,10 @@ function WebApp() {
   );
 
   async function connect(endpoint: string, token: string) {
-    const next = await createRemoteWebSession({ endpoint, token });
+    const [next] = await Promise.all([
+      createRemoteWebSession({ endpoint, token }),
+      loadThreadlightApp(),
+    ]);
     activeSession.current?.dispose();
     activeSession.current = next;
     setCredentials({ endpoint: endpoint.trim(), token });
@@ -84,25 +98,34 @@ function WebApp() {
 
   return (
     <>
-      <ThreadlightApp
-        client={session.client}
-        initialThreadId={initialThreadId}
-        onThreadChange={replaceWebTaskPath}
-        clipboard={session.clipboard}
-        connectorAuthorization={session.connectorAuthorization}
-        settings={session.settings}
-        diagnostics={session.diagnostics}
-        automations={session.automations}
-        search={session.search}
-        projects={session.projects}
-        attachmentStage={session.attachmentStage}
-        attachmentPreview={session.attachmentPreview}
-        voiceInput={session.voiceInput}
-        memory={session.memory}
-        terminal={session.terminal}
-        workspace={session.workspace}
-        executionPolicy={session.executionPolicy}
-      />
+      <Suspense
+        fallback={
+          <main className="web-app-loading" role="status">
+            <LoaderCircle className="spin" size={18} aria-hidden="true" />
+            <span>Loading Threadlight…</span>
+          </main>
+        }
+      >
+        <LazyThreadlightApp
+          client={session.client}
+          initialThreadId={initialThreadId}
+          onThreadChange={replaceWebTaskPath}
+          clipboard={session.clipboard}
+          connectorAuthorization={session.connectorAuthorization}
+          settings={session.settings}
+          diagnostics={session.diagnostics}
+          automations={session.automations}
+          search={session.search}
+          projects={session.projects}
+          attachmentStage={session.attachmentStage}
+          attachmentPreview={session.attachmentPreview}
+          voiceInput={session.voiceInput}
+          memory={session.memory}
+          terminal={session.terminal}
+          workspace={session.workspace}
+          executionPolicy={session.executionPolicy}
+        />
+      </Suspense>
       <div className="web-session-indicator">
         <span className="web-session-dot" aria-hidden="true" />
         <span className="web-session-name" title={session.health.name}>

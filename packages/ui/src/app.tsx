@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -41,6 +43,7 @@ import {
   FolderPlus,
   FileDiff,
   FileText,
+  KeyRound,
   LoaderCircle,
   MoreHorizontal,
   Mic,
@@ -111,7 +114,11 @@ import {
   isFileSearchShortcut,
   isTogglePanelShortcut,
 } from "./keyboard-shortcuts.js";
-import { SettingsPage, type SettingsAdapter } from "./settings.js";
+import type {
+  SettingsAdapter,
+  SettingsSnapshot,
+} from "./settings.js";
+import { providerIsConfigured } from "./settings-readiness.js";
 import {
   ConversationAccessControl,
   ExecutionApprovalGate,
@@ -122,10 +129,7 @@ import {
   DiagnosticsPage,
   type DiagnosticsAdapter,
 } from "./diagnostics.js";
-import {
-  AutomationsPage,
-  type AutomationAdapter,
-} from "./automations.js";
+import type { AutomationAdapter } from "./automations.js";
 import {
   I18nProvider,
   isLanguage,
@@ -138,13 +142,13 @@ import {
   isThemePreference,
   type ThemePreference,
 } from "./theme.js";
-import { TerminalPanel, type TerminalAdapter } from "./terminal.js";
-import {
-  WorkspacePanel,
-  type AutomaticDeliveryState,
-  type ConversationChangesSnapshot,
-  type WorkspaceAdapter,
-  type WorkspaceFileOpenRequest,
+import type { TerminalAdapter } from "./terminal.js";
+import { terminalWorkspaceContextLabel } from "./terminal-context.js";
+import type {
+  AutomaticDeliveryState,
+  ConversationChangesSnapshot,
+  WorkspaceAdapter,
+  WorkspaceFileOpenRequest,
 } from "./workspace-panel.js";
 import {
   MAX_VOICE_AUDIO_BYTES,
@@ -174,6 +178,63 @@ import {
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
+
+const LazyFirstRunGuide = lazy(() =>
+  import("./first-run.js").then(({ FirstRunGuide }) => ({
+    default: FirstRunGuide,
+  })),
+);
+const LazySettingsPage = lazy(() =>
+  import("./settings.js").then(({ SettingsPage }) => ({
+    default: SettingsPage,
+  })),
+);
+const LazyAutomationsPage = lazy(() =>
+  import("./automations.js").then(({ AutomationsPage }) => ({
+    default: AutomationsPage,
+  })),
+);
+const LazyWorkspacePanel = lazy(() =>
+  import("./workspace-panel.js").then(({ WorkspacePanel }) => ({
+    default: WorkspacePanel,
+  })),
+);
+const LazyTerminalPanel = lazy(() =>
+  import("./terminal.js").then(({ TerminalPanel }) => ({
+    default: TerminalPanel,
+  })),
+);
+
+function DeferredView({ label }: { label: string }) {
+  return (
+    <div className="deferred-view" role="status">
+      <LoaderCircle className="spin" size={17} aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function DeferredWorkspacePanel({
+  hidden,
+  label,
+}: {
+  hidden: boolean;
+  label: string;
+}) {
+  return (
+    <aside className="workspace-panel deferred-panel" hidden={hidden}>
+      <DeferredView label={label} />
+    </aside>
+  );
+}
+
+function DeferredTerminalPanel({ label }: { label: string }) {
+  return (
+    <section className="terminal-panel panel-container deferred-panel">
+      <DeferredView label={label} />
+    </section>
+  );
+}
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
@@ -226,6 +287,7 @@ const COMPUTER_PERMISSION_RESUME_KEY =
   "threadlight:computer-permission-resume";
 const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
 const SIDEBAR_VISIBILITY_KEY = "threadlight:sidebar-visible";
+const FIRST_RUN_COMPLETE_KEY = "threadlight:first-run-complete:v1";
 const MOBILE_SIDEBAR_QUERY = "(max-width: 720px)";
 
 export function sidebarStartsOpen(
@@ -250,6 +312,39 @@ function storedSidebarVisibility(): string | null {
   } catch {
     return null;
   }
+}
+
+export function firstRunIsComplete(stored?: string | null): boolean {
+  return stored === "true";
+}
+
+export function composerProviderIsReady(
+  settingsAvailable: boolean,
+  runtimeSettings?: SettingsSnapshot,
+): boolean {
+  return settingsAvailable
+    ? Boolean(runtimeSettings && providerIsConfigured(runtimeSettings))
+    : true;
+}
+
+function storedFirstRunComplete(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return firstRunIsComplete(
+      window.localStorage.getItem(FIRST_RUN_COMPLETE_KEY),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function completeFirstRun(setCompleted: (completed: boolean) => void): void {
+  try {
+    window.localStorage.setItem(FIRST_RUN_COMPLETE_KEY, "true");
+  } catch {
+    // Persisted project history still prevents established users from looping.
+  }
+  setCompleted(true);
 }
 
 export interface AttachmentStageAdapter {
@@ -460,6 +555,14 @@ function ThreadlightAppContent({
   const [connectorBusy, setConnectorBusy] = useState(false);
   const [connectorError, setConnectorError] = useState<string>();
   const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
+  const [runtimeSettings, setRuntimeSettings] = useState<SettingsSnapshot>();
+  const [firstRunCompleted, setFirstRunCompleted] = useState(
+    storedFirstRunComplete,
+  );
+  const [firstRunDemoThreadId, setFirstRunDemoThreadId] =
+    useState<string>();
+  const [firstRunRetryDemo, setFirstRunRetryDemo] = useState(false);
+  const observedInitialProjects = useRef(false);
   const [hostSnapshot, setHostSnapshot] = useState<HostsSnapshot>();
   const [projectError, setProjectError] = useState<string>();
   const [switchingProject, setSwitchingProject] = useState(false);
@@ -504,6 +607,8 @@ function ThreadlightAppContent({
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const workspacePanelMounted = useRef(false);
+  if (workspacePanelOpen) workspacePanelMounted.current = true;
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState<number>();
   const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
   const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] =
@@ -558,9 +663,98 @@ function ThreadlightAppContent({
     : undefined;
   const currentWorkspacePath =
     currentConversation?.workspace?.path ?? currentProject?.basePath;
+  const taskTerminalBranch =
+    currentConversation?.workspace?.mode === "worktree"
+      ? currentConversation.workspace.branch
+      : undefined;
+  const originalTerminalBranch =
+    automaticDelivery?.result?.targetBranch ??
+    automaticDelivery?.preflight?.targetBranch ??
+    (currentConversation?.workspace?.mode === "worktree"
+      ? currentConversation.workspace.sourceBranch
+      : undefined);
+  const defaultTerminalWorkspace =
+    currentConversation?.workspace?.mode === "worktree" ? "task" : "original";
+  const defaultTerminalContext = terminalWorkspaceContextLabel(
+    defaultTerminalWorkspace,
+    defaultTerminalWorkspace === "task"
+      ? taskTerminalBranch
+      : originalTerminalBranch,
+    t,
+  );
   projectSnapshotRef.current = projectSnapshot;
   activeThreadIdRef.current = state.threadId;
   viewRef.current = view;
+  const providerReady = composerProviderIsReady(
+    Boolean(settings),
+    runtimeSettings,
+  );
+  const firstRunReady = Boolean(
+    settings && projects && runtimeSettings && projectSnapshot,
+  );
+  const firstRunRequired = firstRunReady && !firstRunCompleted;
+  const showFirstRunGuide = Boolean(
+    firstRunRequired && !firstRunDemoThreadId && view === "thread",
+  );
+
+  useEffect(() => {
+    if (!settings) return;
+    let active = true;
+    void settings
+      .load()
+      .then((snapshot) => {
+        if (active) setRuntimeSettings(snapshot);
+      })
+      .catch(() => {
+        // The settings page and Composer gate provide the actionable retry.
+      });
+    return () => {
+      active = false;
+    };
+  }, [settings]);
+
+  useEffect(() => {
+    if (!projectSnapshot || observedInitialProjects.current) return;
+    observedInitialProjects.current = true;
+    const existingUser = projectSnapshot.projects.some((project) =>
+      project.conversations.some(
+        (conversation) =>
+          conversation.status === "completed" ||
+          conversation.status === undefined,
+      ),
+    );
+    if (existingUser) completeFirstRun(setFirstRunCompleted);
+  }, [projectSnapshot]);
+
+  useEffect(() => {
+    if (!firstRunDemoThreadId) return;
+    const completed = client.on("turn/completed", ({ threadId }) => {
+      if (threadId !== firstRunDemoThreadId) return;
+      completeFirstRun(setFirstRunCompleted);
+      setFirstRunDemoThreadId(undefined);
+      setFirstRunRetryDemo(false);
+    });
+    const failed = client.on("turn/failed", ({ threadId }) => {
+      if (threadId !== firstRunDemoThreadId) return;
+      setFirstRunDemoThreadId(undefined);
+      setFirstRunRetryDemo(true);
+    });
+    return () => {
+      completed();
+      failed();
+    };
+  }, [client, firstRunDemoThreadId]);
+
+  useEffect(() => {
+    if (!firstRunDemoThreadId || !projectSnapshot) return;
+    const demo = projectSnapshot.projects
+      .flatMap((project) => project.conversations)
+      .find(({ id }) => id === firstRunDemoThreadId);
+    if (demo?.status !== "completed") return;
+    completeFirstRun(setFirstRunCompleted);
+    setFirstRunDemoThreadId(undefined);
+    setFirstRunRetryDemo(false);
+  }, [firstRunDemoThreadId, projectSnapshot]);
 
   useEffect(() => {
     const storeDelivery = (
@@ -1804,6 +1998,10 @@ function ThreadlightAppContent({
     followUpDelivery: "inject" | "queued" = "inject",
   ) {
     if (voiceStatus !== "idle" || preparingAttachments) return;
+    if (!providerReady) {
+      setView(firstRunRequired ? "thread" : "settings");
+      return;
+    }
     followOutput.current = true;
     if (state.isRunning) {
       if (await addFollowUp(value, followUpDelivery)) {
@@ -2141,6 +2339,35 @@ function ThreadlightAppContent({
     }
   }
 
+  async function runFirstDemoTask(accessMode: ConversationAccessMode) {
+    if (!projects || !currentProject || !providerReady) {
+      throw new Error(t("waitingForRuntime"));
+    }
+    const result = await sendNewThread(
+      t("firstRunDemoPrompt"),
+      [],
+      "default",
+      [],
+      accessMode,
+    );
+    if (!result) throw new Error(t("demoTaskStartFailed"));
+    if ("error" in result) throw new Error(result.error);
+    if (!result.sent) throw new Error(t("demoTaskStartFailed"));
+
+    setFirstRunRetryDemo(false);
+    setFirstRunDemoThreadId(result.threadId);
+    setNewTaskDraft(false);
+    setNewTaskDraftError(undefined);
+    setView("thread");
+    setProjectSnapshot(
+      await projects.upsertConversation({
+        projectId: currentProject.id,
+        id: result.threadId,
+        title: t("demoTask"),
+      }),
+    );
+  }
+
   async function connectRemoteRuntime(input: {
     endpoint: string;
     token: string;
@@ -2245,6 +2472,7 @@ function ThreadlightAppContent({
   async function refreshHostSettings() {
     if (!settings) return;
     const snapshot = await settings.load();
+    setRuntimeSettings(snapshot);
     if (isLanguage(snapshot.language)) onLanguageChange(snapshot.language);
     if (isThemePreference(snapshot.theme)) onThemeChange(snapshot.theme);
     onPreferredProjectOpenerChange(snapshot.preferredProjectOpener);
@@ -2818,9 +3046,9 @@ function ThreadlightAppContent({
         <button
           type="button"
           className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
-          aria-label={terminalOpen ? t("closeTerminal") : t("openTerminal")}
+          aria-label={`${terminalOpen ? t("closeTerminal") : t("openTerminal")} — ${defaultTerminalContext}`}
           aria-pressed={terminalOpen}
-          title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")}（⌘J）`}
+          title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")} — ${defaultTerminalContext}（⌘J）`}
           onClick={() => setTerminalOpen((open) => !open)}
         >
           <Terminal size={16} />
@@ -3147,7 +3375,22 @@ function ThreadlightAppContent({
           </button>
         )}
         <div className="workspace-primary">
-        {view === "memory" &&
+        {showFirstRunGuide && settings && runtimeSettings ? (
+          <Suspense fallback={<DeferredView label={t("loading")} />}>
+            <LazyFirstRunGuide
+              key={firstRunRetryDemo ? "demo-retry" : "first-run"}
+              adapter={settings}
+              settings={runtimeSettings}
+              project={currentProject}
+              connectionReady={state.connection === "ready"}
+              initialStep={firstRunRetryDemo ? "demo" : undefined}
+              onSettingsSaved={setRuntimeSettings}
+              onRuntimeRestart={reconnectRuntime}
+              onOpenProject={() => openProjectFolder()}
+              onRunDemo={runFirstDemoTask}
+            />
+          </Suspense>
+        ) : view === "memory" &&
         memory &&
         currentProject &&
         currentProject.scope !== "standalone" ? (
@@ -3167,23 +3410,31 @@ function ThreadlightAppContent({
         ) : view === "automations" &&
           automations &&
           currentProject ? (
-          <AutomationsPage
-            adapter={automations}
-            projectId={currentProject.id}
-            projectName={currentProject.name}
-            onOpenThread={(threadId) =>
-              void selectConversation(currentProject.id, threadId)
-            }
-          />
+          <Suspense fallback={<DeferredView label={t("loading")} />}>
+            <LazyAutomationsPage
+              adapter={automations}
+              projectId={currentProject.id}
+              projectName={currentProject.name}
+              onOpenThread={(threadId) =>
+                void selectConversation(currentProject.id, threadId)
+              }
+            />
+          </Suspense>
         ) : view === "settings" && settings ? (
-          <SettingsPage
-            adapter={settings}
-            onRuntimeRestart={reconnectRuntime}
-            onLanguageChange={onLanguageChange}
-            onThemeChange={onThemeChange}
-            projectOpeners={projectOpeners}
-            onPreferredProjectOpenerChange={onPreferredProjectOpenerChange}
-          />
+          <Suspense fallback={<DeferredView label={t("loading")} />}>
+            <LazySettingsPage
+              adapter={settings}
+              secretStorageBoundary={
+                currentHost?.kind === "remote" ? "host-file" : "system"
+              }
+              onRuntimeRestart={reconnectRuntime}
+              onLanguageChange={onLanguageChange}
+              onThemeChange={onThemeChange}
+              projectOpeners={projectOpeners}
+              onPreferredProjectOpenerChange={onPreferredProjectOpenerChange}
+              onSettingsChange={setRuntimeSettings}
+            />
+          </Suspense>
         ) : view === "security" &&
           executionPolicy &&
           currentProject ? (
@@ -3423,6 +3674,22 @@ function ThreadlightAppContent({
                   onOpenChanges={openReviewPanel}
                 />
               )}
+              {!providerReady && (
+                <button
+                  type="button"
+                  className="composer-provider-gate pressable"
+                  onClick={() =>
+                    setView(firstRunRequired ? "thread" : "settings")
+                  }
+                >
+                  <KeyRound size={14} />
+                  <span>
+                    <strong>{t("providerRequired")}</strong>
+                    <small>{t("providerRequiredDescription")}</small>
+                  </span>
+                  <span>{t("configureProvider")}</span>
+                </button>
+              )}
               <div
                 ref={composerRoot}
                 className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
@@ -3578,9 +3845,11 @@ function ThreadlightAppContent({
                   placeholder={
                     voiceStatus === "recording"
                       ? t("listening")
-                      : t("askThreadlight")
+                      : providerReady
+                        ? t("askThreadlight")
+                        : t("configureProviderToStart")
                   }
-                  disabled={state.connection !== "ready"}
+                  disabled={state.connection !== "ready" || !providerReady}
                   onChange={(event) => {
                     const value = event.target.value;
                     setInput(value);
@@ -3634,6 +3903,7 @@ function ThreadlightAppContent({
                       }}
                       disabled={
                         state.connection !== "ready" ||
+                        !providerReady ||
                         state.isRunning ||
                         preparingAttachments
                       }
@@ -3679,6 +3949,7 @@ function ThreadlightAppContent({
                         }}
                         disabled={
                           state.connection !== "ready" ||
+                          !providerReady ||
                           voiceStatus === "requesting" ||
                           voiceStatus === "transcribing"
                         }
@@ -3743,6 +4014,7 @@ function ThreadlightAppContent({
                           (!input.trim() &&
                             pendingAttachments.length === 0) ||
                           state.connection !== "ready" ||
+                          !providerReady ||
                           voiceStatus !== "idle" ||
                           preparingAttachments
                         }
@@ -3790,67 +4062,85 @@ function ThreadlightAppContent({
             {globalActions}
           </div>
         )}
-        {workspace && currentProject && (
-          <WorkspacePanel
-            adapter={workspace}
-            terminal={terminal}
-            projectId={currentProject.id}
-            threadId={state.threadId}
-            projectName={currentProject.name}
-            remoteFileRoot={
-              currentProject.runtime?.kind === "remote"
-                ? currentProject.runtime.workspacePath
-                : undefined
+        {workspace && currentProject && workspacePanelMounted.current && (
+          <Suspense
+            fallback={
+              <DeferredWorkspacePanel
+                hidden={!workspacePanelOpen}
+                label={t("loading")}
+              />
             }
-            changes={conversationChanges}
-            changesLoading={conversationChangesLoading}
-            changesError={conversationChangesError}
-            reviewRequest={workspaceReviewRequest}
-            fileOpenRequest={workspaceFileOpenRequest}
-            hidden={!workspacePanelOpen}
-            onResizeStart={beginWorkspacePanelResize}
-            onResizeBy={resizeWorkspacePanelBy}
-            onResetSize={() => setWorkspacePanelWidth(undefined)}
-            onRefreshChanges={() => void refreshConversationChanges()}
-            onRestoreChanges={
-              workspace.restoreChanges
-                ? restoreConversationChanges
-                : undefined
-            }
-            restoreDisabled={state.isRunning}
-            deliveryEnabled={
-              currentConversation?.workspace?.mode === "worktree"
-            }
-            deliveryDisabled={state.isRunning}
-            automaticDelivery={automaticDelivery}
-            onRetryAutomaticDelivery={() => void retryAutomaticDelivery()}
-            onUndoAutomaticDelivery={() => void undoAutomaticDelivery()}
-            taskTitle={currentConversation?.title}
-            onDiscardTask={
-              currentConversation?.workspace?.mode === "worktree"
-                ? () =>
-                    setPendingDelete({
-                      projectId: currentProject.id,
-                      conversation: currentConversation,
-                      mode: "discard",
-                    })
-                : undefined
-            }
-            toolbarActions={
-              globalActionsInPanel ? globalActions : undefined
-            }
-          />
+          >
+            <LazyWorkspacePanel
+              adapter={workspace}
+              terminal={terminal}
+              projectId={currentProject.id}
+              threadId={state.threadId}
+              projectName={currentProject.name}
+              remoteFileRoot={
+                currentProject.runtime?.kind === "remote"
+                  ? currentProject.runtime.workspacePath
+                  : undefined
+              }
+              changes={conversationChanges}
+              changesLoading={conversationChangesLoading}
+              changesError={conversationChangesError}
+              reviewRequest={workspaceReviewRequest}
+              fileOpenRequest={workspaceFileOpenRequest}
+              hidden={!workspacePanelOpen}
+              onResizeStart={beginWorkspacePanelResize}
+              onResizeBy={resizeWorkspacePanelBy}
+              onResetSize={() => setWorkspacePanelWidth(undefined)}
+              onRefreshChanges={() => void refreshConversationChanges()}
+              onRestoreChanges={
+                workspace.restoreChanges
+                  ? restoreConversationChanges
+                  : undefined
+              }
+              restoreDisabled={state.isRunning}
+              deliveryEnabled={
+                currentConversation?.workspace?.mode === "worktree"
+              }
+              deliveryDisabled={state.isRunning}
+              automaticDelivery={automaticDelivery}
+              taskBranch={taskTerminalBranch}
+              originalBranch={originalTerminalBranch}
+              taskWorkspaceAvailable={defaultTerminalWorkspace === "task"}
+              onRetryAutomaticDelivery={() => void retryAutomaticDelivery()}
+              onUndoAutomaticDelivery={undoAutomaticDelivery}
+              taskTitle={currentConversation?.title}
+              onDiscardTask={
+                currentConversation?.workspace?.mode === "worktree"
+                  ? () =>
+                      setPendingDelete({
+                        projectId: currentProject.id,
+                        conversation: currentConversation,
+                        mode: "discard",
+                      })
+                  : undefined
+              }
+              toolbarActions={
+                globalActionsInPanel ? globalActions : undefined
+              }
+            />
+          </Suspense>
         )}
         {terminalOpen && terminal && currentProject && (
-          <TerminalPanel
-            key={currentProject.id}
-            adapter={terminal}
-            workspace={workspace}
-            projectId={currentProject.id}
-            threadId={state.threadId}
-            projectName={currentProject.name}
-            onClose={() => setTerminalOpen(false)}
-          />
+          <Suspense fallback={<DeferredTerminalPanel label={t("loading")} />}>
+            <LazyTerminalPanel
+              key={`${currentProject.id}:${state.threadId ?? ""}`}
+              adapter={terminal}
+              workspace={workspace}
+              projectId={currentProject.id}
+              threadId={state.threadId}
+              projectName={currentProject.name}
+              taskBranch={taskTerminalBranch}
+              originalBranch={originalTerminalBranch}
+              defaultWorkspace={defaultTerminalWorkspace}
+              taskWorkspaceAvailable={defaultTerminalWorkspace === "task"}
+              onClose={() => setTerminalOpen(false)}
+            />
+          </Suspense>
         )}
       </main>
       {commandPaletteOpen && search && currentProject && (

@@ -1,5 +1,6 @@
 export {
   clampWorkspacePanelWidth,
+  composerProviderIsReady,
   ComputerPermissionCard,
   ConversationChangesButton,
   currentPlanStep,
@@ -58,7 +59,16 @@ export {
   SettingsPage,
   ThemePicker,
   createSettingsUpdate,
+  providerIsConfigured,
+  providerIsConfiguredFor,
 } from "./settings.js";
+export {
+  FirstRunGuide,
+  firstRunInitialStep,
+  firstRunProviderBaseUrl,
+  firstRunSettingsUpdate,
+} from "./first-run.js";
+export type { FirstRunStep } from "./first-run.js";
 export {
   ConversationAccessControl,
   ConversationAccessPopover,
@@ -168,6 +178,7 @@ export type {
   ProviderDiagnosticCode,
   ProviderSecretDrafts,
   ProviderTestRequest,
+  SecretStorageBoundary,
   SettingsAdapter,
   SecretDraft,
   SettingsSnapshot,
@@ -193,6 +204,8 @@ export type {
   CodeHostDeliveryStatus,
   CodeHostPullRequest,
   CodeHostReviewComment,
+  WorktreeDeliveryHistoryEntry,
+  WorktreeDeliveryHistorySnapshot,
   WorktreeDeliveryConflict,
   WorktreeDeliveryPreflight,
   WorktreeDeliveryResult,

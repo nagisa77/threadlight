@@ -16,11 +16,13 @@ import {
 import {
   I18nProvider,
   isLanguage,
-  isThemePreference,
   LANGUAGE_OPTIONS,
-  ThemeProvider,
   type Language,
-} from "@threadlight/ui";
+} from "@threadlight/ui/i18n";
+import {
+  isThemePreference,
+  ThemeProvider,
+} from "@threadlight/ui/theme";
 
 type ThemePreference = "system" | "light" | "dark";
 

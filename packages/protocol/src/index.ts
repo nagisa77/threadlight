@@ -449,6 +449,37 @@ export interface HostWorktreeDeliveryUndoResult {
   revision: string;
 }
 
+export interface HostWorktreeDeliveryHistoryEntry {
+  id: string;
+  createdAt: string;
+  revision: string;
+  status: "synced" | "conflict" | "failed" | "undone";
+  taskBranch?: string;
+  targetBranch?: string;
+  files?: number;
+  appliedFiles?: number;
+  revertedFiles?: number;
+  commit?: string;
+  undoAvailable?: boolean;
+  conflicts?: readonly HostWorktreeDeliveryConflict[];
+  error?: string;
+}
+
+export interface HostWorktreeDeliveryHistorySnapshot {
+  projectId: string;
+  threadId: string;
+  targetBranch?: string;
+  currentRevision?: string;
+  synchronizedFiles: number;
+  undoPoint?: {
+    revision: string;
+    previousRevision?: string;
+    files: readonly string[];
+    createdAt?: string;
+  };
+  entries: readonly HostWorktreeDeliveryHistoryEntry[];
+}
+
 export type HostDeliverySource = "lifecycle" | "retry";
 
 export interface HostDeliveryEvent {

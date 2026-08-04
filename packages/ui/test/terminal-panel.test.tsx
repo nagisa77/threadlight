@@ -59,6 +59,8 @@ describe("TerminalPanel", () => {
         workspace={workspace}
         projectId="project-1"
         projectName="threadlight"
+        taskBranch="threadlight/task-1"
+        originalBranch="main"
         onClose={vi.fn()}
       />,
     );
@@ -66,12 +68,36 @@ describe("TerminalPanel", () => {
     expect(html).toContain('aria-label="底部面板"');
     expect(html).toContain('class="lucide lucide-terminal"');
     expect(html).not.toContain("lucide-square-terminal");
-    expect(html).toContain("任务终端 1");
+    expect(html).toContain("任务 worktree · threadlight/task-1 · 1");
     expect(html).toContain('aria-label="新建面板标签"');
-    expect(html).toContain(">任务终端</span>");
-    expect(html).toContain(">原工作区终端</span>");
+    expect(html).toContain(">任务 worktree · threadlight/task-1</span>");
+    expect(html).toContain(">原工作区 · main</span>");
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="关闭底部面板"');
     expect(html).toContain("正在启动终端");
+  });
+
+  it("labels a non-worktree default terminal as the original workspace", () => {
+    const adapter: TerminalAdapter = {
+      create: vi.fn(),
+      write: vi.fn(),
+      resize: vi.fn(),
+      close: vi.fn(),
+      subscribe: vi.fn(() => vi.fn()),
+    };
+
+    const html = renderToStaticMarkup(
+      <TerminalPanel
+        adapter={adapter}
+        projectId="project-1"
+        defaultWorkspace="original"
+        taskWorkspaceAvailable={false}
+        originalBranch="main"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("原工作区 · main · 1");
+    expect(html).not.toContain("任务 worktree");
   });
 });

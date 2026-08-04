@@ -19,6 +19,7 @@ import type {
   HostSettingsUpdate,
   HostSystemFile,
   HostWorktreeDeliveryPreflight,
+  HostWorktreeDeliveryHistorySnapshot,
   HostWorktreeDeliveryResult,
   HostWorktreeDeliveryUndoResult,
   ThreadlightHostHealth,
@@ -315,6 +316,15 @@ export class HttpHostClient {
     return this.request(
       this.conversationAction(projectId, threadId, "delivery/preflight"),
       { method: "POST", body: { revision } },
+    );
+  }
+
+  worktreeDeliveryHistory(
+    projectId: string,
+    threadId: string,
+  ): Promise<HostWorktreeDeliveryHistorySnapshot> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "delivery/history"),
     );
   }
 

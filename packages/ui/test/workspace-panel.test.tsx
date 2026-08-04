@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   buildChangeTree,
+  DeliveryCenterView,
   FileView,
   FileSource,
   GitHubDeliveryCard,
@@ -15,6 +16,7 @@ import {
   type WorkspaceAdapter,
 } from "../src/workspace-panel.js";
 import type { TerminalAdapter } from "../src/terminal.js";
+import { highlightedFileLines } from "../src/syntax-highlighter.js";
 
 describe("ReviewView", () => {
   it("shows task-scoped changes with unified/split and file controls", () => {
@@ -49,8 +51,8 @@ describe("ReviewView", () => {
     expect(html).toContain("src/index.ts");
     expect(html).toContain('class="review-toolbar-main"');
     expect(html).toContain('class="review-view-controls"');
-    expect(html).toContain('class="review-operation-bar"');
-    expect(html).toContain('class="review-recovery-actions"');
+    expect(html).toContain('class="review-toolbar-action restore pressable"');
+    expect(html).not.toContain('class="review-operation-bar"');
     expect(html).toContain('aria-label="单边 Diff"');
     expect(html).toContain('aria-label="双边 Diff"');
     expect(html).toContain('aria-label="显示变更文件树"');
@@ -70,7 +72,7 @@ describe("ReviewView", () => {
     });
   });
 
-  it("shows automatic original-branch sync only for an isolated task", () => {
+  it("keeps automatic sync and recovery actions in one compact toolbar", () => {
     const html = renderToStaticMarkup(
       <ReviewView
         changes={{
@@ -106,25 +108,27 @@ describe("ReviewView", () => {
             undoAvailable: true,
           },
         }}
-        onUndoAutomaticDelivery={vi.fn()}
         onDiscardTask={vi.fn()}
+        onOpenDeliveryCenter={vi.fn()}
         onLayoutChange={vi.fn()}
         onRefresh={vi.fn()}
         onRestore={vi.fn()}
       />,
     );
 
-    expect(html).toContain("自动同步到原分支");
+    expect(html).toContain("已同步");
     expect(html).toContain("已同步 1 个文件到 main");
-    expect(html).toContain(">撤回<");
+    expect(html).toContain('class="review-delivery-indicator synced pressable"');
+    expect(html).toContain('aria-label="查看交付中心: 已同步"');
+    expect(html).not.toContain(">撤回<");
     expect(html).not.toContain("暂存并提交");
     expect(html).toContain("丢弃任务");
-    expect(html.indexOf("自动同步到原分支")).toBeLessThan(
-      html.indexOf("全部恢复"),
-    );
+    expect(html).toContain("全部恢复");
+    expect(html).not.toContain('class="github-delivery-card"');
+    expect(html).not.toContain('class="review-operation-bar"');
   });
 
-  it("shows lifecycle-reported automatic delivery conflicts with retry", () => {
+  it("summarizes delivery conflicts and routes details to delivery center", () => {
     const html = renderToStaticMarkup(
       <ReviewView
         changes={{
@@ -157,15 +161,60 @@ describe("ReviewView", () => {
             ],
           },
         }}
-        onRetryAutomaticDelivery={vi.fn()}
+        onOpenDeliveryCenter={vi.fn()}
         onLayoutChange={vi.fn()}
         onRefresh={vi.fn()}
       />,
     );
 
     expect(html).toContain("src/index.ts");
-    expect(html).toContain("原工作区包含冲突修改");
-    expect(html).toContain(">重试<");
+    expect(html).toContain("存在冲突");
+    expect(html).toContain('class="review-delivery-indicator error pressable"');
+    expect(html).toContain("Worktree delivery is blocked by 1 conflict");
+    expect(html).not.toContain("原工作区包含冲突修改");
+    expect(html).not.toContain(">重试<");
+  });
+
+  it("presents an automatic delivery with no changes as completed, not failed", () => {
+    const html = renderToStaticMarkup(
+      <ReviewView
+        changes={{
+          threadId: "thread-1",
+          additions: 0,
+          deletions: 0,
+          revision: "empty-revision",
+          files: [],
+        }}
+        loading={false}
+        layout="unified"
+        projectId="project-1"
+        threadId="thread-1"
+        deliveryEnabled
+        automaticDelivery={{
+          scope: "project-1\u0000thread-1",
+          revision: "empty-revision",
+          status: "synced",
+          result: {
+            taskBranch: "threadlight/task",
+            targetBranch: "main",
+            sourceBranch: "main",
+            branchChanged: false,
+            files: 0,
+            pendingFiles: 0,
+            alreadyAppliedFiles: 0,
+            conflicts: [],
+            appliedFiles: 0,
+            undoAvailable: false,
+          },
+        }}
+        onLayoutChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("检查完成，没有需要同步的变更");
+    expect(html).not.toContain("同步失败");
+    expect(html).not.toContain(">重试<");
   });
 
   it("labels local data while automatic sync remains available", () => {
@@ -199,8 +248,9 @@ describe("ReviewView", () => {
 
     expect(html).toContain("本地数据");
     expect(html).toContain("1 个本地数据文件");
-    expect(html).toContain("自动同步到原分支");
+    expect(html).toContain("等待首次同步");
     expect(html).toContain("任务完成后，修改会自动应用到原工作区");
+    expect(html).toContain('class="review-delivery-indicator ready pressable"');
     expect(html).not.toContain("暂存并提交");
   });
 
@@ -276,6 +326,8 @@ describe("ReviewView", () => {
     expect(html).toContain("仓库尚未配置 Git 远端");
     expect(html).toContain("git remote add origin &lt;repository-url&gt;");
     expect(html).toContain("错误详情：No Git remotes found");
+    expect(html).toContain('class="github-delivery-error setup"');
+    expect(html).toContain('role="note"');
     expect(html).not.toContain("当前 Host 未安装 GitHub CLI");
   });
 
@@ -392,7 +444,7 @@ describe("FileSource", () => {
     expect(html).toContain(">3</span>");
   });
 
-  it("syntax-highlights supported source files", () => {
+  it("keeps the initial source render readable before Refractor loads", () => {
     const html = renderToStaticMarkup(
       <FileSource
         name="example.ts"
@@ -400,8 +452,19 @@ describe("FileSource", () => {
       />,
     );
 
-    expect(html).toContain("token keyword");
-    expect(html).toContain("token number");
+    expect(html).toContain("export const answer: number = 42;");
+    expect(html).not.toContain("token keyword");
+  });
+
+  it("syntax-highlights supported source files after the deferred module loads", () => {
+    const lines = highlightedFileLines(
+      "example.ts",
+      "export const answer: number = 42;\n",
+    );
+    const classes = lines.flat().map((segment) => segment.className);
+
+    expect(classes).toContain("token keyword");
+    expect(classes).toContain("token number");
   });
 
   it("marks a requested source line for direct file-link previews", () => {
@@ -443,6 +506,8 @@ describe("WorkspacePanel", () => {
         terminal={terminal}
         projectId="project-1"
         projectName="threadlight"
+        taskBranch="threadlight/task-1"
+        originalBranch="main"
         changesLoading={false}
         reviewRequest={0}
         hidden={false}
@@ -459,8 +524,8 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="打开系统文件…"');
     expect(html).toContain('aria-label="新建面板标签"');
     expect(html).toContain('role="menuitem"');
-    expect(html).toContain(">任务终端</span>");
-    expect(html).toContain(">原工作区终端</span>");
+    expect(html).toContain(">任务 worktree · threadlight/task-1</span>");
+    expect(html).toContain(">原工作区 · main</span>");
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="调整聊天与右侧面板宽度"');
     expect(html).toContain('aria-orientation="vertical"');
@@ -533,6 +598,46 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="打开远端文件…"');
     expect(html).not.toContain('aria-label="打开系统文件…"');
     expect(html).not.toContain('aria-label="在 Finder 中显示"');
+  });
+
+  it("offers a dedicated delivery center for isolated tasks", () => {
+    const adapter: WorkspaceAdapter = {
+      getChanges: vi.fn(),
+      getDeliveryHistory: vi.fn(),
+      list: vi.fn(async () => []),
+      read: vi.fn(),
+    };
+    const panel = renderToStaticMarkup(
+      <WorkspacePanel
+        adapter={adapter}
+        projectId="project-1"
+        threadId="thread-1"
+        projectName="threadlight"
+        deliveryEnabled
+        changesLoading={false}
+        reviewRequest={0}
+        hidden={false}
+        onResizeStart={vi.fn()}
+        onResizeBy={vi.fn()}
+        onResetSize={vi.fn()}
+        onRefreshChanges={vi.fn()}
+      />,
+    );
+    const center = renderToStaticMarkup(
+      <DeliveryCenterView
+        adapter={adapter}
+        projectId="project-1"
+        threadId="thread-1"
+        revision="revision-1"
+        disabled={false}
+      />,
+    );
+
+    expect(panel).toContain(">交付中心</span>");
+    expect(center).toContain("追踪原工作区同步、恢复点与 GitHub 发布状态");
+    expect(center).toContain("目标分支");
+    expect(center).toContain("同步历史");
+    expect(center).toContain("撤回点");
   });
 });
 

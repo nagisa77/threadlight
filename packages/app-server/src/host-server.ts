@@ -232,6 +232,7 @@ export class ThreadlightHostServer {
 
   async start(): Promise<ThreadlightHostAddress> {
     if (this.server) throw new Error("Threadlight Host is already listening.");
+    await this.reconcileLegacyNoChangesAttention();
     const server = createServer((request, response) => {
       void this.handleRequest(request, response);
     });
@@ -254,6 +255,36 @@ export class ThreadlightHostServer {
     }
     this.automationScheduler.start();
     return { host: this.listenHost, port: address.port };
+  }
+
+  private async reconcileLegacyNoChangesAttention(): Promise<void> {
+    const snapshot = this.options.projects.snapshot();
+    for (const project of snapshot.projects) {
+      for (const conversation of project.conversations) {
+        if (
+          conversation.status !== "attention" ||
+          conversation.workspace?.mode !== "worktree"
+        ) {
+          continue;
+        }
+        try {
+          if (
+            await this.worktreeDelivery.hasLegacyNoChangesFailure({
+              projectId: project.id,
+              threadId: conversation.id,
+              projectPath: project.basePath,
+            })
+          ) {
+            this.options.projects.markConversationCompleted({
+              projectId: project.id,
+              id: conversation.id,
+            });
+          }
+        } catch {
+          // A malformed legacy journal must not prevent the Host from starting.
+        }
+      }
+    }
   }
 
   async stop(): Promise<void> {
@@ -693,6 +724,19 @@ export class ThreadlightHostServer {
           workspace.path,
           requiredQuery(url, "path"),
         ),
+      );
+      return;
+    }
+    if (request.method === "GET" && route.action === "delivery/history") {
+      this.requireWorktreeWorkspace(context);
+      this.writeJson(
+        response,
+        200,
+        await this.worktreeDelivery.history({
+          projectId: project.id,
+          threadId: route.threadId,
+          projectPath: project.basePath,
+        }),
       );
       return;
     }

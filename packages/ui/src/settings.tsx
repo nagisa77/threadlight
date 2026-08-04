@@ -32,6 +32,10 @@ import {
   type ProjectOpenerId,
   type ProjectOpenerOption,
 } from "./project-opener.js";
+export {
+  providerIsConfigured,
+  providerIsConfiguredFor,
+} from "./settings-readiness.js";
 
 export type ModelProviderId =
   | "openai"
@@ -43,14 +47,14 @@ export type ModelProviderId =
   | "grok"
   | "custom";
 
-interface ModelOption {
+export interface ModelOption {
   value: string;
   label: string;
   qualifier: string;
   description: string;
 }
 
-interface ProviderOption {
+export interface ProviderOption {
   value: ModelProviderId;
   label: string;
   description: string;
@@ -352,6 +356,8 @@ export interface SettingsAdapter {
   ): Promise<ProviderDiagnostic>;
 }
 
+export type SecretStorageBoundary = "system" | "host-file";
+
 export interface ProviderTestRequest {
   provider: ModelProviderId;
   model: string;
@@ -404,18 +410,22 @@ const EMPTY_PROVIDER_SECRETS: ProviderSecretDrafts = {
 
 export function SettingsPage({
   adapter,
+  secretStorageBoundary = "system",
   onRuntimeRestart,
   onLanguageChange,
   onThemeChange,
   projectOpeners = [],
   onPreferredProjectOpenerChange,
+  onSettingsChange,
 }: {
   adapter: SettingsAdapter;
+  secretStorageBoundary?: SecretStorageBoundary;
   onRuntimeRestart(): Promise<void>;
   onLanguageChange?(language: Language): void;
   onThemeChange?(theme: ThemePreference): void;
   projectOpeners?: readonly ProjectOpenerOption[];
   onPreferredProjectOpenerChange?(opener: ProjectOpenerId): void;
+  onSettingsChange?(settings: SettingsSnapshot): void;
 }) {
   const { t } = useI18n();
   const [settings, setSettings] = useState<SettingsSnapshot>();
@@ -438,10 +448,26 @@ export function SettingsPage({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedWithRestart, setSavedWithRestart] = useState(false);
+  const [appearanceSaveStatus, setAppearanceSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [appearanceSaveError, setAppearanceSaveError] = useState<string>();
   const [error, setError] = useState<string>();
   const [testingProvider, setTestingProvider] = useState(false);
   const [providerDiagnostic, setProviderDiagnostic] =
     useState<ProviderDiagnostic>();
+  const settingsRef = useRef<SettingsSnapshot | undefined>(undefined);
+  const persistedSettingsRef = useRef<SettingsSnapshot | undefined>(undefined);
+  const appearanceSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const appearanceRevisionRef = useRef(0);
+  const appearancePendingRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -449,7 +475,10 @@ export function SettingsPage({
       .load()
       .then((snapshot) => {
         if (!active) return;
+        settingsRef.current = snapshot;
+        persistedSettingsRef.current = snapshot;
         setSettings(snapshot);
+        onSettingsChange?.(snapshot);
         setLanguage(snapshot.language);
         onLanguageChange?.(snapshot.language);
         setTheme(snapshot.theme);
@@ -502,8 +531,6 @@ export function SettingsPage({
       grokBaseUrl.trim() !== settings.grokBaseUrl ||
       customBaseUrl.trim() !== settings.customBaseUrl ||
       model !== settings.model ||
-      language !== settings.language ||
-      theme !== settings.theme ||
       preferredProjectOpener !== settings.preferredProjectOpener
     : false;
   const runtimeDirty = settings
@@ -548,8 +575,69 @@ export function SettingsPage({
     markEdited();
   }
 
+  function saveAppearance(
+    update: Partial<Pick<SettingsSnapshot, "language" | "theme">>,
+  ) {
+    const current = settingsRef.current;
+    if (!current) return;
+
+    const next = { ...current, ...update };
+    const revision = ++appearanceRevisionRef.current;
+    settingsRef.current = next;
+    setSettings(next);
+    setAppearanceSaveStatus("saving");
+    setAppearanceSaveError(undefined);
+    appearancePendingRef.current += 1;
+
+    appearanceSaveQueueRef.current = appearanceSaveQueueRef.current.then(
+      async () => {
+        try {
+          const snapshot = await adapter.save(
+            createAppearanceSettingsUpdate(next),
+          );
+          persistedSettingsRef.current = snapshot;
+          if (!mountedRef.current || revision !== appearanceRevisionRef.current) {
+            return;
+          }
+          settingsRef.current = snapshot;
+          setSettings(snapshot);
+          setLanguage(snapshot.language);
+          setTheme(snapshot.theme);
+          onLanguageChange?.(snapshot.language);
+          onThemeChange?.(snapshot.theme);
+          onSettingsChange?.(snapshot);
+          setAppearanceSaveStatus("saved");
+        } catch (reason) {
+          if (!mountedRef.current || revision !== appearanceRevisionRef.current) {
+            return;
+          }
+          const persisted = persistedSettingsRef.current;
+          if (persisted) {
+            settingsRef.current = persisted;
+            setSettings(persisted);
+            setLanguage(persisted.language);
+            setTheme(persisted.theme);
+            onLanguageChange?.(persisted.language);
+            onThemeChange?.(persisted.theme);
+          }
+          setAppearanceSaveError(errorMessage(reason));
+          setAppearanceSaveStatus("error");
+        } finally {
+          appearancePendingRef.current -= 1;
+        }
+      },
+    );
+  }
+
   async function save() {
-    if (!settings || !dirty || saving) return;
+    if (
+      !settings ||
+      !dirty ||
+      saving ||
+      appearancePendingRef.current > 0
+    ) {
+      return;
+    }
     setSaving(true);
     setSaved(false);
     setError(undefined);
@@ -573,7 +661,10 @@ export function SettingsPage({
           preferredProjectOpener,
         ),
       );
+      settingsRef.current = snapshot;
+      persistedSettingsRef.current = snapshot;
       setSettings(snapshot);
+      onSettingsChange?.(snapshot);
       setProviderKeys(EMPTY_PROVIDER_SECRETS);
       setSearchKey(EMPTY_SECRET);
       setSaved(true);
@@ -641,7 +732,13 @@ export function SettingsPage({
         <div className="settings-page">
           <div className="settings-intro">
             <h2>{t("preferences")}</h2>
-            <p>{t("secretsNotice")}</p>
+            <p>
+              {t(
+                secretStorageBoundary === "host-file"
+                  ? "secretsNoticeHost"
+                  : "secretsNoticeSystem",
+              )}
+            </p>
           </div>
 
           {!settings && !error ? (
@@ -658,10 +755,29 @@ export function SettingsPage({
                   <span className="settings-section-icon">
                     <Palette size={16} />
                   </span>
-                  <div>
+                  <div className="settings-section-heading-copy">
                     <h3 id="language-title">{t("interface")}</h3>
                     <p>{t("interfaceDescription")}</p>
                   </div>
+                  {appearanceSaveStatus !== "idle" && (
+                    <span
+                      className={`settings-appearance-status ${appearanceSaveStatus}`}
+                      role="status"
+                    >
+                      {appearanceSaveStatus === "saving" ? (
+                        <LoaderCircle className="spin" size={13} />
+                      ) : appearanceSaveStatus === "saved" ? (
+                        <Check size={13} />
+                      ) : (
+                        <CircleAlert size={13} />
+                      )}
+                      {appearanceSaveStatus === "saving"
+                        ? t("saving")
+                        : appearanceSaveStatus === "saved"
+                          ? t("saved")
+                          : `${t("appearanceSaveFailed")}${appearanceSaveError ? ` · ${appearanceSaveError}` : ""}`}
+                    </span>
+                  )}
                 </div>
                 <div className="settings-fields">
                   <ThemePicker
@@ -669,7 +785,7 @@ export function SettingsPage({
                     onChange={(nextTheme) => {
                       setTheme(nextTheme);
                       onThemeChange?.(nextTheme);
-                      markEdited();
+                      saveAppearance({ theme: nextTheme });
                     }}
                   />
                   <SettingsSelectField
@@ -681,7 +797,7 @@ export function SettingsPage({
                       const nextLanguage = value as Language;
                       setLanguage(nextLanguage);
                       onLanguageChange?.(nextLanguage);
-                      markEdited();
+                      saveAppearance({ language: nextLanguage });
                     }}
                     options={LANGUAGE_OPTIONS}
                   />
@@ -992,7 +1108,12 @@ export function SettingsPage({
             <button
               type="button"
               className="settings-save-button pressable"
-              disabled={!dirty || saving || !settings}
+              disabled={
+                !dirty ||
+                saving ||
+                appearanceSaveStatus === "saving" ||
+                !settings
+              }
               onClick={() => void save()}
             >
               {saving && <LoaderCircle className="spin" size={14} />}
@@ -1393,6 +1514,26 @@ export function createSettingsUpdate(
     ...secretUpdate("customApiKey", providerKeys.custom),
     ...secretUpdate("searchApiKey", searchKey),
   };
+}
+
+export function createAppearanceSettingsUpdate(
+  settings: SettingsSnapshot,
+): SettingsUpdate {
+  return createSettingsUpdate(
+    EMPTY_PROVIDER_SECRETS,
+    EMPTY_SECRET,
+    settings.provider,
+    settings.qwenBaseUrl,
+    settings.kimiBaseUrl,
+    settings.doubaoBaseUrl,
+    settings.geminiBaseUrl,
+    settings.grokBaseUrl,
+    settings.customBaseUrl,
+    settings.model,
+    settings.language,
+    settings.theme,
+    settings.preferredProjectOpener,
+  );
 }
 
 function providerDetails(provider: ModelProviderId): ProviderOption {

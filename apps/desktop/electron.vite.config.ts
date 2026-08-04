@@ -26,6 +26,13 @@ export default defineConfig({
     resolve: {
       alias: [
         {
+          find: "@threadlight/ui/app",
+          replacement: resolve(
+            import.meta.dirname,
+            "../../packages/ui/src/app.tsx",
+          ),
+        },
+        {
           find: "@threadlight/ui/styles.css",
           replacement: resolve(
             import.meta.dirname,

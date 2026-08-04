@@ -73,6 +73,8 @@ export {
   WorktreeDeliveryManager,
   type AutomaticWorktreeDeliveryState,
   type WorktreeDeliveryConflict,
+  type WorktreeDeliveryHistoryEntry,
+  type WorktreeDeliveryHistorySnapshot,
   type WorktreeDeliveryJournalTarget,
   type WorktreeDeliveryManagerOptions,
   type WorktreeDeliveryPreflight,

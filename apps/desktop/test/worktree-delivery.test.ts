@@ -58,6 +58,75 @@ afterEach(() => {
 });
 
 describe("WorktreeDeliveryManager", () => {
+  it("treats a completed task without file changes as a successful no-op", async () => {
+    const fixture = await createFixture();
+    const revision = await revisionFor(fixture);
+    const states: string[] = [];
+
+    await expect(
+      applyAutomaticWorktreeDelivery(
+        fixture.delivery,
+        requestFor(fixture, revision),
+        (state) => states.push(state.status),
+      ),
+    ).resolves.toMatchObject({
+      targetBranch: "main",
+      files: 0,
+      pendingFiles: 0,
+      appliedFiles: 0,
+      undoAvailable: false,
+    });
+
+    expect(states).toEqual(["syncing", "synced"]);
+    await expect(
+      fixture.delivery.history(requestFor(fixture, revision)),
+    ).resolves.toMatchObject({
+      currentRevision: revision,
+      synchronizedFiles: 0,
+      entries: [
+        expect.objectContaining({
+          status: "synced",
+          files: 0,
+          appliedFiles: 0,
+        }),
+      ],
+    });
+  });
+
+  it("does not require the original branch for a no-change task", async () => {
+    const fixture = await createFixture();
+    git(fixture.repository, "switch", "-c", "other");
+    const revision = await revisionFor(fixture);
+
+    await expect(
+      applyAutomaticWorktreeDelivery(
+        fixture.delivery,
+        requestFor(fixture, revision),
+        () => undefined,
+      ),
+    ).resolves.toMatchObject({
+      targetBranch: "other",
+      branchChanged: true,
+      files: 0,
+      appliedFiles: 0,
+    });
+  });
+
+  it("recognizes legacy no-change failures for status repair", async () => {
+    const fixture = await createFixture();
+    const revision = await revisionFor(fixture);
+    const request = requestFor(fixture, revision);
+
+    await fixture.delivery.recordFailure(
+      request,
+      "This task has no changes to deliver",
+    );
+
+    await expect(
+      fixture.delivery.hasLegacyNoChangesFailure(request),
+    ).resolves.toBe(true);
+  });
+
   it("reports lifecycle-owned automatic delivery status and conflict details", async () => {
     const fixture = await createFixture();
     const taskFile = join(fixture.workspace.path, "notes.txt");
@@ -290,6 +359,88 @@ describe("WorktreeDeliveryManager", () => {
       "base start\nmiddle\nbase end\n",
     );
     expect(statSync(originalFile).mode & 0o777).toBe(0o644);
+  });
+
+  it("persists delivery history and recovery points across Host restarts", async () => {
+    const fixture = await createFixture();
+    writeFileSync(
+      join(fixture.workspace.path, "notes.txt"),
+      "base start\nmiddle\npersisted history\n",
+    );
+    const revision = await revisionFor(fixture);
+    await fixture.delivery.apply(requestFor(fixture, revision));
+
+    const restarted = new WorktreeDeliveryManager(fixture.tracker);
+    await expect(
+      restarted.history({
+        projectId: "project-1",
+        threadId: "thread-1",
+        projectPath: fixture.repository,
+      }),
+    ).resolves.toMatchObject({
+      targetBranch: "main",
+      currentRevision: revision,
+      synchronizedFiles: 1,
+      undoPoint: {
+        revision,
+        files: ["notes.txt"],
+      },
+      entries: [
+        {
+          revision,
+          status: "synced",
+          targetBranch: "main",
+          appliedFiles: 1,
+        },
+      ],
+    });
+
+    await restarted.undo(requestFor(fixture, revision));
+    const afterUndo = await restarted.history({
+      projectId: "project-1",
+      threadId: "thread-1",
+      projectPath: fixture.repository,
+    });
+    expect(afterUndo.undoPoint).toBeUndefined();
+    expect(afterUndo.entries.map(({ status }) => status)).toEqual([
+      "synced",
+      "undone",
+    ]);
+  });
+
+  it("persists conflict diagnostics for the delivery center", async () => {
+    const fixture = await createFixture();
+    writeFileSync(
+      join(fixture.repository, "notes.txt"),
+      "original conflict\nmiddle\nbase end\n",
+    );
+    writeFileSync(
+      join(fixture.workspace.path, "notes.txt"),
+      "task conflict\nmiddle\nbase end\n",
+    );
+    const revision = await revisionFor(fixture);
+
+    await expect(
+      applyAutomaticWorktreeDelivery(
+        fixture.delivery,
+        requestFor(fixture, revision),
+        () => undefined,
+      ),
+    ).rejects.toThrow("conflict");
+
+    const restarted = new WorktreeDeliveryManager(fixture.tracker);
+    const history = await restarted.history({
+      projectId: "project-1",
+      threadId: "thread-1",
+      projectPath: fixture.repository,
+    });
+    expect(history.entries).toMatchObject([
+      {
+        status: "conflict",
+        revision,
+        conflicts: [{ path: "notes.txt", reason: "merge_conflict" }],
+      },
+    ]);
   });
 
   it("does not overwrite original-workspace edits while undoing", async () => {

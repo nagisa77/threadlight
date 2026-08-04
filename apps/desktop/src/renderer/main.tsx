@@ -1,7 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { ThreadlightClient } from "@threadlight/client";
+import { ThreadlightApp } from "@threadlight/ui/app";
 import {
-  ThreadlightApp,
   type AttachmentPreviewAdapter,
   type AttachmentStageAdapter,
   type AutomationAdapter,
@@ -205,6 +205,11 @@ const workspace: WorkspaceAdapter = {
       projectId,
       threadId,
       revision,
+    }),
+  getDeliveryHistory: (projectId, threadId) =>
+    window.threadlightDesktop.getWorktreeDeliveryHistory({
+      projectId,
+      threadId,
     }),
   applyDelivery: (projectId, threadId, revision) =>
     window.threadlightDesktop.applyWorktreeDelivery({

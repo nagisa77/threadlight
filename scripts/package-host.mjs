@@ -24,7 +24,7 @@ await mkdir(packageRoot, { recursive: true });
 
 const common = {
   bundle: true,
-  external: ["node-pty"],
+  external: ["node-pty", "ws"],
   format: "esm",
   platform: "node",
   target: "node22",
@@ -75,6 +75,7 @@ await writeFile(
       },
       dependencies: {
         "node-pty": "^1.1.0",
+        ws: "^8.18.0",
       },
       files: [
         "host.mjs",

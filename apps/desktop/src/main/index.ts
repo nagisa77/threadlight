@@ -143,6 +143,7 @@ import {
   DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,
   DESKTOP_WORKTREE_DELIVERY_COMMIT_CHANNEL,
   DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL,
+  DESKTOP_WORKTREE_DELIVERY_HISTORY_CHANNEL,
   DESKTOP_CODE_HOST_DELIVERY_STATUS_CHANNEL,
   DESKTOP_CODE_HOST_DELIVERY_COMMIT_PUSH_CHANNEL,
   DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL,
@@ -2014,6 +2015,33 @@ async function handleWorktreeDeliveryPreflight(
   return delivery.manager.preflight(delivery.request);
 }
 
+async function handleWorktreeDeliveryHistory(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseConversationChangesRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.worktreeDeliveryHistory(
+      request.projectId,
+      request.threadId,
+    );
+  }
+  if (!worktreeDeliveryManager) {
+    throw new Error("Worktree delivery is not available");
+  }
+  const project = requireProject(request.projectId);
+  const workspace = workspaceForThread(project, request.threadId);
+  if (workspace.mode !== "worktree") {
+    throw new Error("Only isolated worktree tasks have delivery history");
+  }
+  return worktreeDeliveryManager.history({
+    ...request,
+    projectPath: project.basePath,
+  });
+}
+
 async function handleWorktreeDeliveryApply(
   event: IpcMainInvokeEvent,
   value: unknown,
@@ -3868,7 +3896,39 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-app.whenReady().then(() => {
+async function reconcileLegacyNoChangesAttention(
+  projects: ProjectStore,
+  delivery: WorktreeDeliveryManager,
+): Promise<void> {
+  for (const project of projects.snapshot().projects) {
+    for (const conversation of project.conversations) {
+      if (
+        conversation.status !== "attention" ||
+        conversation.workspace?.mode !== "worktree"
+      ) {
+        continue;
+      }
+      try {
+        if (
+          await delivery.hasLegacyNoChangesFailure({
+            projectId: project.id,
+            threadId: conversation.id,
+            projectPath: project.basePath,
+          })
+        ) {
+          projects.markConversationCompleted({
+            projectId: project.id,
+            id: conversation.id,
+          });
+        }
+      } catch {
+        // A malformed legacy journal must not delay Desktop startup.
+      }
+    }
+  }
+}
+
+app.whenReady().then(async () => {
   if (process.platform === "darwin") app.dock?.setIcon(appIconPath);
 
   const threadlightHome =
@@ -3937,6 +3997,10 @@ app.whenReady().then(() => {
     join(threadlightHome, "remote-host-cache.json"),
   );
   projectStore = localProjectStore;
+  await reconcileLegacyNoChangesAttention(
+    localProjectStore,
+    worktreeDeliveryManager,
+  );
   const savedHostId = hostStore.snapshot().activeHostId;
   if (savedHostId !== LOCAL_HOST_ID) {
     const savedHost = hostStore.remote(savedHostId);
@@ -4161,6 +4225,10 @@ app.whenReady().then(() => {
   ipcMain.handle(
     DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL,
     handleWorktreeDeliveryPreflight,
+  );
+  ipcMain.handle(
+    DESKTOP_WORKTREE_DELIVERY_HISTORY_CHANNEL,
+    handleWorktreeDeliveryHistory,
   );
   ipcMain.handle(
     DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,

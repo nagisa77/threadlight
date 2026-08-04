@@ -5,8 +5,32 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   base: process.env.THREADLIGHT_WEB_BASE_PATH ?? "/",
+  build: {
+    manifest: true,
+  },
   resolve: {
     alias: [
+      {
+        find: "@threadlight/ui/app",
+        replacement: resolve(
+          import.meta.dirname,
+          "../../packages/ui/src/app.tsx",
+        ),
+      },
+      {
+        find: "@threadlight/ui/i18n",
+        replacement: resolve(
+          import.meta.dirname,
+          "../../packages/ui/src/i18n.tsx",
+        ),
+      },
+      {
+        find: "@threadlight/ui/theme",
+        replacement: resolve(
+          import.meta.dirname,
+          "../../packages/ui/src/theme.tsx",
+        ),
+      },
       {
         find: "@threadlight/ui/styles.css",
         replacement: resolve(

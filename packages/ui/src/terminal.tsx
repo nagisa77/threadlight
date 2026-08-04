@@ -1,12 +1,12 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal as XtermTerminal } from "@xterm/xterm";
 import { createBrowserUuid } from "@threadlight/client";
 import type {
   TerminalSessionEvent,
@@ -17,13 +17,21 @@ import { File, Terminal, X } from "lucide-react";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
 import { useI18n, type Translate } from "./i18n.js";
-import { useTheme, type ResolvedTheme } from "./theme.js";
+import { useTheme } from "./theme.js";
+import {
+  terminalTabLabel,
+  terminalWorkspaceContextLabel,
+} from "./terminal-context.js";
 import {
   FileView,
   type WorkspaceAdapter,
 } from "./workspace-panel.js";
 
-import "@xterm/xterm/css/xterm.css";
+const LazyTerminalViewport = lazy(() =>
+  import("./terminal-viewport.js").then(({ TerminalViewport }) => ({
+    default: TerminalViewport,
+  })),
+);
 
 export type TerminalEvent = TerminalSessionEvent;
 export type { TerminalSessionInfo };
@@ -51,6 +59,8 @@ interface BottomPanelTab {
   kind: PanelViewKind;
   title: string;
   path?: string;
+  branch?: string;
+  terminalNumber?: number;
 }
 
 const DEFAULT_COLUMNS = 80;
@@ -64,6 +74,10 @@ export function TerminalPanel({
   projectId,
   threadId,
   projectName = "",
+  taskBranch,
+  originalBranch,
+  defaultWorkspace = "task",
+  taskWorkspaceAvailable = true,
   onClose,
 }: {
   adapter: TerminalAdapter;
@@ -71,12 +85,21 @@ export function TerminalPanel({
   projectId: string;
   threadId?: string;
   projectName?: string;
+  taskBranch?: string;
+  originalBranch?: string;
+  defaultWorkspace?: TerminalWorkspaceScope;
+  taskWorkspaceAvailable?: boolean;
   onClose(): void;
 }) {
   const { t } = useI18n();
   const nextTerminalNumber = useRef(1);
   const [tabs, setTabs] = useState<BottomPanelTab[]>(() => [
-    createTerminalTab(1, "task", t),
+    createTerminalTab(
+      1,
+      defaultWorkspace,
+      defaultWorkspace === "original" ? originalBranch : taskBranch,
+      t,
+    ),
   ]);
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const [panelHeight, setPanelHeight] = useState(260);
@@ -88,6 +111,7 @@ export function TerminalPanel({
         ? createTerminalTab(
             ++nextTerminalNumber.current,
             kind === "original-terminal" ? "original" : "task",
+            kind === "original-terminal" ? originalBranch : taskBranch,
             t,
           )
         : createBottomFileTab(t);
@@ -111,6 +135,31 @@ export function TerminalPanel({
     setTabs((current) =>
       current.map((tab) =>
         tab.id === tabId ? { ...tab, path, title: fileName(path) } : tab,
+      ),
+    );
+  }
+
+  function updateTerminalContext(
+    tabId: string,
+    workspace: TerminalWorkspaceScope,
+    session: TerminalSessionInfo,
+  ) {
+    const branch =
+      session.branch ?? (workspace === "original" ? originalBranch : taskBranch);
+    setTabs((current) =>
+      current.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              branch,
+              title: terminalTabLabel(
+                workspace,
+                branch,
+                tab.terminalNumber,
+                t,
+              ),
+            }
+          : tab,
       ),
     );
   }
@@ -166,6 +215,7 @@ export function TerminalPanel({
                   className="terminal-tab-select pressable"
                   role="tab"
                   aria-selected={tab.id === activeTab?.id}
+                  title={tab.title}
                   onClick={() => setActiveTabId(tab.id)}
                 >
                   {isTerminalKind(tab.kind) ? (
@@ -190,9 +240,26 @@ export function TerminalPanel({
           <PanelAddMenu
             available={
               workspace
-                ? ["terminal", "original-terminal", "file"]
-                : ["terminal", "original-terminal"]
+                ? [
+                    ...(taskWorkspaceAvailable ? (["terminal"] as const) : []),
+                    "original-terminal",
+                    "file",
+                  ]
+                : [
+                    ...(taskWorkspaceAvailable ? (["terminal"] as const) : []),
+                    "original-terminal",
+                  ]
             }
+            taskTerminalLabel={terminalWorkspaceContextLabel(
+              "task",
+              taskBranch,
+              t,
+            )}
+            originalTerminalLabel={terminalWorkspaceContextLabel(
+              "original",
+              originalBranch,
+              t,
+            )}
             onSelect={addTab}
           />
         </div>
@@ -220,6 +287,13 @@ export function TerminalPanel({
               }
               hidden={tab.id !== activeTab?.id}
               label={tab.title}
+              onSessionChange={(session) =>
+                updateTerminalContext(
+                  tab.id,
+                  tab.kind === "original-terminal" ? "original" : "task",
+                  session,
+                )
+              }
             />
           ) : workspace ? (
             <FileView
@@ -246,6 +320,7 @@ export function TerminalView({
   workspace = "task",
   hidden = false,
   label,
+  onSessionChange,
 }: {
   adapter: TerminalAdapter;
   projectId: string;
@@ -253,6 +328,7 @@ export function TerminalView({
   workspace?: TerminalWorkspaceScope;
   hidden?: boolean;
   label?: string;
+  onSessionChange?(session: TerminalSessionInfo): void;
 }) {
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
@@ -287,6 +363,7 @@ export function TerminalView({
         if (mounted) {
           sessionId.current = created.id;
           setSession(created);
+          onSessionChange?.(created);
         } else {
           void adapter.close(created.id);
         }
@@ -324,13 +401,21 @@ export function TerminalView({
     >
       {session ? (
         <>
-          <TerminalViewport
-            adapter={adapter}
-            session={session}
-            active={!hidden}
-            theme={resolvedTheme}
-            registerOutputWriter={registerOutputWriter}
-          />
+          <Suspense
+            fallback={
+              <div className="terminal-empty" role="status">
+                {t("startingTerminal")}
+              </div>
+            }
+          >
+            <LazyTerminalViewport
+              adapter={adapter}
+              session={session}
+              active={!hidden}
+              theme={resolvedTheme}
+              registerOutputWriter={registerOutputWriter}
+            />
+          </Suspense>
           <div className="terminal-session-context">
             <span
               className="terminal-session-context-item cwd"
@@ -376,159 +461,18 @@ export function projectTerminalCreateRequest(
   };
 }
 
-function TerminalViewport({
-  adapter,
-  session,
-  active,
-  theme,
-  registerOutputWriter,
-}: {
-  adapter: TerminalAdapter;
-  session: TerminalSessionInfo;
-  active: boolean;
-  theme: ResolvedTheme;
-  registerOutputWriter(writer: ((data: string) => void) | undefined): void;
-}) {
-  const container = useRef<HTMLDivElement>(null);
-  const terminal = useRef<XtermTerminal | null>(null);
-  const fitAddon = useRef<FitAddon | null>(null);
-
-  useEffect(() => {
-    const element = container.current;
-    if (!element) return;
-    const instance = new XtermTerminal({
-      cursorBlink: true,
-      cursorStyle: "bar",
-      cursorInactiveStyle: "outline",
-      fontFamily:
-        '"SFMono-Regular", "SF Mono", "Cascadia Code", Menlo, Consolas, monospace',
-      fontSize: 12,
-      lineHeight: 1.35,
-      scrollback: 5_000,
-      theme: terminalTheme(theme),
-    });
-    const fit = new FitAddon();
-    instance.loadAddon(fit);
-    instance.open(element);
-    const dataSubscription = instance.onData((data) => {
-      adapter.write({ sessionId: session.id, data });
-    });
-    terminal.current = instance;
-    fitAddon.current = fit;
-    registerOutputWriter((data) => instance.write(data));
-
-    const fitAndResize = () => {
-      if (element.offsetWidth === 0 || element.offsetHeight === 0) return;
-      fit.fit();
-      adapter.resize({
-        sessionId: session.id,
-        cols: instance.cols,
-        rows: instance.rows,
-      });
-    };
-    const resizeObserver = new ResizeObserver(fitAndResize);
-    resizeObserver.observe(element);
-    requestAnimationFrame(() => {
-      fitAndResize();
-      if (active) instance.focus();
-    });
-
-    return () => {
-      resizeObserver.disconnect();
-      registerOutputWriter(undefined);
-      dataSubscription.dispose();
-      fit.dispose();
-      instance.dispose();
-      terminal.current = null;
-      fitAddon.current = null;
-    };
-  }, [adapter, registerOutputWriter, session.id]);
-
-  useEffect(() => {
-    if (terminal.current) terminal.current.options.theme = terminalTheme(theme);
-  }, [theme]);
-
-  useEffect(() => {
-    if (!active || !terminal.current || !fitAddon.current) return;
-    requestAnimationFrame(() => {
-      fitAddon.current?.fit();
-      const instance = terminal.current;
-      if (!instance) return;
-      adapter.resize({
-        sessionId: session.id,
-        cols: instance.cols,
-        rows: instance.rows,
-      });
-      instance.focus();
-    });
-  }, [active, adapter, session.id]);
-
-  return <div ref={container} className="terminal-viewport" />;
-}
-
-function terminalTheme(theme: ResolvedTheme) {
-  if (theme === "dark") {
-    return {
-      background: "#1f2022",
-      foreground: "#dededa",
-      cursor: "#aaa9a4",
-      cursorAccent: "#1f2022",
-      selectionBackground: "#41444a",
-      black: "#17181a",
-      red: "#e2746d",
-      green: "#72ab84",
-      yellow: "#c39a5b",
-      blue: "#69a4c1",
-      magenta: "#b38abe",
-      cyan: "#65aaa8",
-      white: "#d5d5d0",
-      brightBlack: "#858581",
-      brightRed: "#ef8d86",
-      brightGreen: "#8ac49a",
-      brightYellow: "#d6ad6b",
-      brightBlue: "#82b8d1",
-      brightMagenta: "#c59bcf",
-      brightCyan: "#7dbfbd",
-      brightWhite: "#f2f2ef",
-    };
-  }
-  return {
-    background: "#fbfbfa",
-    foreground: "#383832",
-    cursor: "#65655f",
-    cursorAccent: "#fbfbfa",
-    selectionBackground: "#dfe6ea",
-    black: "#242420",
-    red: "#b84a42",
-    green: "#47765a",
-    yellow: "#9a6a32",
-    blue: "#3d7290",
-    magenta: "#815f8b",
-    cyan: "#3d7d7c",
-    white: "#d9d8d2",
-    brightBlack: "#77766f",
-    brightRed: "#d0645b",
-    brightGreen: "#5f9270",
-    brightYellow: "#b5864a",
-    brightBlue: "#5c8faa",
-    brightMagenta: "#9873a3",
-    brightCyan: "#5c9998",
-    brightWhite: "#f7f6f2",
-  };
-}
-
 function createTerminalTab(
   number: number,
   workspace: TerminalWorkspaceScope,
+  branch: string | undefined,
   t: Translate,
 ): BottomPanelTab {
   return {
     id: createBrowserUuid(),
     kind: workspace === "original" ? "original-terminal" : "terminal",
-    title:
-      workspace === "original"
-        ? t("originalWorkspaceTerminalNumber", { number })
-        : t("taskTerminalNumber", { number }),
+    title: terminalTabLabel(workspace, branch, number, t),
+    branch,
+    terminalNumber: number,
   };
 }
 

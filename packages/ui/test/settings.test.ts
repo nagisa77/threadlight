@@ -10,12 +10,59 @@ import {
   DEFAULT_KIMI_BASE_URL,
   DEFAULT_QWEN_BASE_URL,
   PROVIDER_OPTIONS,
+  SettingsPage,
   SettingsSelectField,
   ThemePicker,
+  createAppearanceSettingsUpdate,
   createSettingsUpdate,
+  type SettingsSnapshot,
 } from "../src/settings.js";
+import { I18nProvider } from "../src/i18n.js";
 
 describe("settings", () => {
+  it.each([
+    {
+      boundary: "system" as const,
+      expected: "this device&#x27;s secure system storage",
+      excluded: "AES-256-GCM",
+    },
+    {
+      boundary: "host-file" as const,
+      expected: "AES-256-GCM",
+      excluded: "this device&#x27;s secure system storage",
+    },
+  ])(
+    "describes the $boundary secret protection boundary",
+    ({ boundary, expected, excluded }) => {
+      const adapter = {
+        load: async () => {
+          throw new Error("not used during server render");
+        },
+        save: async () => {
+          throw new Error("not used during server render");
+        },
+      };
+      const html = renderToStaticMarkup(
+        createElement(
+          I18nProvider,
+          { language: "en" },
+          createElement(SettingsPage, {
+            adapter,
+            secretStorageBoundary: boundary,
+            onRuntimeRestart: async () => {},
+          }),
+        ),
+      );
+
+      expect(html).toContain(expected);
+      expect(html).not.toContain(excluded);
+      if (boundary === "host-file") {
+        expect(html).toContain("0600");
+        expect(html).toContain("same OS account");
+      }
+    },
+  );
+
   it("renders Codex-style system, light, and dark theme previews", () => {
     const html = renderToStaticMarkup(
       createElement(ThemePicker, {
@@ -274,6 +321,44 @@ describe("settings", () => {
         "dark",
       ).theme,
     ).toBe("dark");
+  });
+
+  it("auto-saves appearance from the persisted snapshot without submitting secret drafts", () => {
+    const snapshot: SettingsSnapshot = {
+      language: "en",
+      theme: "dark",
+      preferredProjectOpener: "cursor",
+      provider: "kimi",
+      openAIApiKeyConfigured: true,
+      deepSeekApiKeyConfigured: false,
+      qwenApiKeyConfigured: false,
+      kimiApiKeyConfigured: true,
+      doubaoApiKeyConfigured: false,
+      geminiApiKeyConfigured: false,
+      grokApiKeyConfigured: false,
+      customApiKeyConfigured: false,
+      searchApiKeyConfigured: true,
+      qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+      kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
+      doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
+      geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
+      grokBaseUrl: DEFAULT_GROK_BASE_URL,
+      customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
+      model: "kimi-k3",
+    };
+
+    const update = createAppearanceSettingsUpdate(snapshot);
+
+    expect(update).toMatchObject({
+      language: "en",
+      theme: "dark",
+      preferredProjectOpener: "cursor",
+      provider: "kimi",
+      model: "kimi-k3",
+    });
+    expect(update).not.toHaveProperty("openAIApiKey");
+    expect(update).not.toHaveProperty("kimiApiKey");
+    expect(update).not.toHaveProperty("searchApiKey");
   });
 
   it("includes the selected preferred project opener", () => {

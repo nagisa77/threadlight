@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -23,8 +25,10 @@ import {
   GitBranch,
   GitMerge,
   GitPullRequestDraft,
+  Info,
   LoaderCircle,
   MessageSquareText,
+  PackageCheck,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -35,23 +39,29 @@ import {
   UploadCloud,
   X,
 } from "lucide-react";
-import DiffViewer from "react-diff-viewer-continued";
-import { refractor } from "refractor";
-import tsx from "refractor/tsx";
 import { createBrowserUuid } from "@threadlight/client";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
 import { MarkdownContent } from "./markdown.js";
 import { useI18n, type Translate } from "./i18n.js";
 import { useTheme } from "./theme.js";
+import { languageForPath } from "./source-language.js";
+import type { HighlightSegment } from "./syntax-highlighter.js";
 import {
   TerminalView,
   type TerminalAdapter,
 } from "./terminal.js";
-
-refractor.register(tsx);
+import {
+  terminalTabLabel,
+  terminalWorkspaceContextLabel,
+} from "./terminal-context.js";
 
 const MAX_SIMULTANEOUS_REVIEW_FILES = 50;
+const LazyReviewDiffViewer = lazy(() =>
+  import("./diff-viewer.js").then(({ ReviewDiffViewer }) => ({
+    default: ReviewDiffViewer,
+  })),
+);
 
 export interface ConversationFileChange {
   path: string;
@@ -104,6 +114,37 @@ export interface WorktreeDeliveryUndoResult {
   targetBranch: string;
   revertedFiles: number;
   revision: string;
+}
+
+export interface WorktreeDeliveryHistoryEntry {
+  id: string;
+  createdAt: string;
+  revision: string;
+  status: "synced" | "conflict" | "failed" | "undone";
+  taskBranch?: string;
+  targetBranch?: string;
+  files?: number;
+  appliedFiles?: number;
+  revertedFiles?: number;
+  commit?: string;
+  undoAvailable?: boolean;
+  conflicts?: readonly WorktreeDeliveryConflict[];
+  error?: string;
+}
+
+export interface WorktreeDeliveryHistorySnapshot {
+  projectId: string;
+  threadId: string;
+  targetBranch?: string;
+  currentRevision?: string;
+  synchronizedFiles: number;
+  undoPoint?: {
+    revision: string;
+    previousRevision?: string;
+    files: readonly string[];
+    createdAt?: string;
+  };
+  entries: readonly WorktreeDeliveryHistoryEntry[];
 }
 
 export interface AutomaticDeliveryState {
@@ -222,6 +263,10 @@ export interface WorkspaceAdapter {
     threadId: string,
     revision: string,
   ): Promise<WorktreeDeliveryPreflight>;
+  getDeliveryHistory?(
+    projectId: string,
+    threadId: string,
+  ): Promise<WorktreeDeliveryHistorySnapshot>;
   applyDelivery?(
     projectId: string,
     threadId: string,
@@ -291,6 +336,7 @@ interface WorkspaceTab {
   line?: number;
   column?: number;
   revealRequest?: number;
+  branch?: string;
 }
 
 export function WorkspacePanel({
@@ -318,6 +364,9 @@ export function WorkspacePanel({
   onRetryAutomaticDelivery,
   onUndoAutomaticDelivery,
   taskTitle,
+  taskBranch,
+  originalBranch,
+  taskWorkspaceAvailable = true,
   onDiscardTask,
   toolbarActions,
 }: {
@@ -346,8 +395,11 @@ export function WorkspacePanel({
   deliveryDisabled?: boolean;
   automaticDelivery?: AutomaticDeliveryState;
   onRetryAutomaticDelivery?(): void;
-  onUndoAutomaticDelivery?(): void;
+  onUndoAutomaticDelivery?(): void | Promise<void>;
   taskTitle?: string;
+  taskBranch?: string;
+  originalBranch?: string;
+  taskWorkspaceAvailable?: boolean;
   onDiscardTask?(): void;
   toolbarActions?: ReactNode;
 }) {
@@ -449,7 +501,7 @@ export function WorkspacePanel({
     setActiveTabId("");
     setDiffLayout("unified");
     setRemoteFilePickerOpen(false);
-  }, [projectId, remoteFileRoot]);
+  }, [projectId, remoteFileRoot, threadId]);
 
   useEffect(() => {
     setTabs((current) =>
@@ -458,16 +510,23 @@ export function WorkspacePanel({
         title:
           tab.kind === "review"
             ? t("review")
+            : tab.kind === "delivery"
+              ? t("deliveryCenter")
             : tab.kind === "terminal"
-              ? t("taskTerminal")
+              ? terminalTabLabel("task", tab.branch ?? taskBranch, undefined, t)
               : tab.kind === "original-terminal"
-                ? t("originalWorkspaceTerminal")
+                ? terminalTabLabel(
+                    "original",
+                    tab.branch ?? originalBranch,
+                    undefined,
+                    t,
+                  )
               : tab.path
                 ? tab.title
                 : t("openFile"),
       })),
     );
-  }, [t]);
+  }, [originalBranch, taskBranch, t]);
 
   useEffect(() => {
     if (tabs.length > 0 && !tabs.some((tab) => tab.id === activeTabId)) {
@@ -480,8 +539,11 @@ export function WorkspacePanel({
       kind === "terminal" || kind === "original-terminal"
         ? createTerminalTab(
             kind === "original-terminal" ? "original" : "task",
+            kind === "original-terminal" ? originalBranch : taskBranch,
             t,
           )
+        : kind === "delivery"
+          ? createDeliveryTab(t)
         : createFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
@@ -489,6 +551,19 @@ export function WorkspacePanel({
 
   function addFileTab() {
     addTab("file");
+  }
+
+  function openDeliveryCenter() {
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.kind === "delivery");
+      if (existing) {
+        setActiveTabId(existing.id);
+        return current;
+      }
+      const next = createDeliveryTab(t);
+      setActiveTabId(next.id);
+      return [...current, next];
+    });
   }
 
   function closeTab(id: string) {
@@ -611,10 +686,13 @@ export function WorkspacePanel({
                 role="tab"
                 aria-selected={tab.id === activeTab?.id}
                 className={`workspace-tab pressable ${tab.id === activeTab?.id ? "active" : ""}`}
+                title={tab.title}
                 onClick={() => setActiveTabId(tab.id)}
               >
                 {tab.kind === "review" ? (
                   <FileDiff size={14} />
+                ) : tab.kind === "delivery" ? (
+                  <PackageCheck size={14} />
                 ) : tab.kind === "terminal" ||
                   tab.kind === "original-terminal" ? (
                   <Terminal size={14} />
@@ -646,9 +724,28 @@ export function WorkspacePanel({
           <PanelAddMenu
             available={
               terminal
-                ? ["terminal", "original-terminal", "file"]
-                : ["file"]
+                ? [
+                    ...(taskWorkspaceAvailable
+                      ? (["terminal"] as const)
+                      : []),
+                    "original-terminal",
+                    ...(deliveryEnabled ? (["delivery"] as const) : []),
+                    "file",
+                  ]
+                : deliveryEnabled
+                  ? ["delivery", "file"]
+                  : ["file"]
             }
+            taskTerminalLabel={terminalWorkspaceContextLabel(
+              "task",
+              taskBranch,
+              t,
+            )}
+            originalTerminalLabel={terminalWorkspaceContextLabel(
+              "original",
+              originalBranch,
+              t,
+            )}
             onSelect={addTab}
           />
         </div>
@@ -676,6 +773,31 @@ export function WorkspacePanel({
                 }
                 hidden={tab.id !== activeTab?.id}
                 label={tab.title}
+                onSessionChange={(session) => {
+                  const terminalWorkspace =
+                    tab.kind === "original-terminal" ? "original" : "task";
+                  const branch =
+                    session.branch ??
+                    (terminalWorkspace === "original"
+                      ? originalBranch
+                      : taskBranch);
+                  setTabs((current) =>
+                    current.map((currentTab) =>
+                      currentTab.id === tab.id
+                        ? {
+                            ...currentTab,
+                            branch,
+                            title: terminalTabLabel(
+                              terminalWorkspace,
+                              branch,
+                              undefined,
+                              t,
+                            ),
+                          }
+                        : currentTab,
+                    ),
+                  );
+                }}
               />
             ))}
         {activeTab?.kind === "review" ? (
@@ -689,20 +811,28 @@ export function WorkspacePanel({
               deliveryEnabled={deliveryEnabled}
               deliveryDisabled={deliveryDisabled}
               automaticDelivery={automaticDelivery}
-              onRetryAutomaticDelivery={onRetryAutomaticDelivery}
-              onUndoAutomaticDelivery={onUndoAutomaticDelivery}
               defaultCommitMessage={taskTitle}
               onPreflightDelivery={adapter.preflightDelivery}
               onApplyDelivery={adapter.applyDelivery}
               onCommitDelivery={adapter.commitDelivery}
-              onGetCodeHostStatus={adapter.getCodeHostStatus}
-              onCommitAndPush={adapter.commitAndPush}
-              onCreateDraftPullRequest={adapter.createDraftPullRequest}
               onDiscardTask={onDiscardTask}
+              onOpenDeliveryCenter={openDeliveryCenter}
               onLayoutChange={setDiffLayout}
               onRefresh={onRefreshChanges}
             onRestore={onRestoreChanges}
             restoreDisabled={restoreDisabled}
+          />
+        ) : activeTab?.kind === "delivery" ? (
+          <DeliveryCenterView
+            adapter={adapter}
+            projectId={projectId}
+            threadId={threadId}
+            revision={changes?.revision}
+            automaticDelivery={automaticDelivery}
+            disabled={deliveryDisabled}
+            defaultCommitMessage={taskTitle}
+            onRetryAutomaticDelivery={onRetryAutomaticDelivery}
+            onUndoAutomaticDelivery={onUndoAutomaticDelivery}
           />
         ) : activeTab?.kind === "file" ? (
           <FileView
@@ -957,16 +1087,12 @@ export function ReviewView({
   deliveryEnabled = false,
   deliveryDisabled = false,
   automaticDelivery,
-  onRetryAutomaticDelivery,
-  onUndoAutomaticDelivery,
   defaultCommitMessage,
   onPreflightDelivery,
   onApplyDelivery,
   onCommitDelivery,
-  onGetCodeHostStatus,
-  onCommitAndPush,
-  onCreateDraftPullRequest,
   onDiscardTask,
+  onOpenDeliveryCenter,
   onLayoutChange,
   onRefresh,
   onRestore,
@@ -981,16 +1107,12 @@ export function ReviewView({
   deliveryEnabled?: boolean;
   deliveryDisabled?: boolean;
   automaticDelivery?: AutomaticDeliveryState;
-  onRetryAutomaticDelivery?(): void;
-  onUndoAutomaticDelivery?(): void;
   defaultCommitMessage?: string;
   onPreflightDelivery?: WorkspaceAdapter["preflightDelivery"];
   onApplyDelivery?: WorkspaceAdapter["applyDelivery"];
   onCommitDelivery?: WorkspaceAdapter["commitDelivery"];
-  onGetCodeHostStatus?: WorkspaceAdapter["getCodeHostStatus"];
-  onCommitAndPush?: WorkspaceAdapter["commitAndPush"];
-  onCreateDraftPullRequest?: WorkspaceAdapter["createDraftPullRequest"];
   onDiscardTask?(): void;
+  onOpenDeliveryCenter?(): void;
   onLayoutChange(layout: "unified" | "split"): void;
   onRefresh(): void;
   onRestore?(
@@ -1021,14 +1143,6 @@ export function ReviewView({
     preflight: WorktreeDeliveryPreflight;
     message: string;
   }>();
-  const [codeHostStatus, setCodeHostStatus] =
-    useState<CodeHostDeliveryStatus>();
-  const [codeHostLoading, setCodeHostLoading] = useState(false);
-  const [codeHostError, setCodeHostError] = useState<string>();
-  const [pendingCodeHostAction, setPendingCodeHostAction] = useState<
-    | { action: "push"; message: string }
-    | { action: "pr"; title: string; body: string }
-  >();
 
   useEffect(() => {
     if (!changes?.files.length) {
@@ -1043,52 +1157,6 @@ export function ReviewView({
   useEffect(() => {
     if (largeChangeSet) setTreeVisible(true);
   }, [largeChangeSet]);
-
-  const refreshCodeHostStatus = useCallback(async () => {
-    if (
-      !changes ||
-      !projectId ||
-      !threadId ||
-      !deliveryEnabled ||
-      !onGetCodeHostStatus
-    ) {
-      setCodeHostStatus(undefined);
-      return;
-    }
-    setCodeHostLoading(true);
-    setCodeHostError(undefined);
-    try {
-      setCodeHostStatus(
-        await onGetCodeHostStatus(
-          projectId,
-          threadId,
-          changes.revision,
-        ),
-      );
-    } catch (reason) {
-      setCodeHostError(errorMessage(reason));
-    } finally {
-      setCodeHostLoading(false);
-    }
-  }, [
-    changes,
-    deliveryEnabled,
-    onGetCodeHostStatus,
-    projectId,
-    threadId,
-  ]);
-
-  useEffect(() => {
-    void refreshCodeHostStatus();
-  }, [refreshCodeHostStatus]);
-
-  useEffect(() => {
-    if (codeHostStatus?.pullRequest?.state !== "open") return;
-    const timer = window.setInterval(() => {
-      void refreshCodeHostStatus();
-    }, 30_000);
-    return () => window.clearInterval(timer);
-  }, [codeHostStatus?.pullRequest?.state, refreshCodeHostStatus]);
 
   function selectChangedFile(path: string) {
     setSelectedPath(path);
@@ -1184,50 +1252,6 @@ export function ReviewView({
     }
   }
 
-  async function confirmCodeHostAction() {
-    if (
-      !pendingCodeHostAction ||
-      !changes ||
-      !projectId ||
-      !threadId ||
-      codeHostLoading
-    ) {
-      return;
-    }
-    setCodeHostLoading(true);
-    setCodeHostError(undefined);
-    try {
-      if (pendingCodeHostAction.action === "push") {
-        if (!onCommitAndPush) throw new Error(t("githubDeliveryUnavailable"));
-        const result = await onCommitAndPush(
-          projectId,
-          threadId,
-          changes.revision,
-          pendingCodeHostAction.message,
-        );
-        setCodeHostStatus(result.status);
-      } else {
-        if (!onCreateDraftPullRequest) {
-          throw new Error(t("githubDeliveryUnavailable"));
-        }
-        setCodeHostStatus(
-          await onCreateDraftPullRequest(
-            projectId,
-            threadId,
-            changes.revision,
-            pendingCodeHostAction.title,
-            pendingCodeHostAction.body,
-          ),
-        );
-      }
-      setPendingCodeHostAction(undefined);
-    } catch (reason) {
-      setCodeHostError(errorMessage(reason));
-    } finally {
-      setCodeHostLoading(false);
-    }
-  }
-
   const showDeliveryCenter = Boolean(
     deliveryEnabled && projectId && threadId,
   );
@@ -1236,7 +1260,6 @@ export function ReviewView({
   );
   const localDataFiles =
     changes?.files.filter((file) => file.localOnly).length ?? 0;
-  const gitFiles = (changes?.files.length ?? 0) - localDataFiles;
   const deliveryScope =
     projectId && threadId ? `${projectId}\u0000${threadId}` : undefined;
   const deliveryState =
@@ -1246,6 +1269,37 @@ export function ReviewView({
   const deliveryNeedsAttention =
     deliveryState?.status === "conflict" ||
     deliveryState?.status === "failed";
+  const compactDeliveryLabel = deliveryState?.status === "syncing"
+    ? t("deliveryStatusSyncing")
+    : deliveryState?.status === "undoing"
+      ? t("deliveryStatusSyncing")
+      : deliveryState?.status === "undone"
+        ? t("deliveryStatusUndone")
+        : deliveryState?.status === "conflict"
+          ? t("deliveryStatusConflict")
+          : deliveryState?.status === "failed"
+            ? t("deliveryStatusFailed")
+            : deliveryState?.status === "synced"
+              ? deliveryState.result?.files === 0
+                ? t("deliveryStatusNoChanges")
+                : t("deliveryStatusSynced")
+              : t("deliveryStatusWaiting");
+  const compactDeliveryDetail = deliveryState?.status === "syncing"
+    ? t("automaticDeliverySyncing")
+    : deliveryState?.status === "undoing"
+      ? t("automaticDeliveryUndoing")
+      : deliveryState?.status === "undone"
+        ? t("automaticDeliveryUndone")
+        : deliveryNeedsAttention
+          ? deliveryState.error
+          : deliveryState?.result
+            ? deliveryState.result.files === 0
+              ? t("automaticDeliveryNoChanges")
+              : t("automaticDeliverySynced", {
+                  branch: deliveryState.result.targetBranch,
+                  count: deliveryState.result.appliedFiles,
+                })
+            : t("automaticDeliveryReady");
 
   return (
     <div className="review-view">
@@ -1267,10 +1321,71 @@ export function ReviewView({
                     {t("localDataCount", { count: localDataFiles })}
                   </span>
                 )}
+                {showDeliveryCenter && (
+                  <button
+                    type="button"
+                    className={`review-delivery-indicator ${deliveryNeedsAttention ? "error" : deliveryState?.status ?? "ready"} pressable`}
+                    aria-label={`${t("openDeliveryCenter")}: ${compactDeliveryLabel}`}
+                    aria-live="polite"
+                    title={compactDeliveryDetail}
+                    disabled={!onOpenDeliveryCenter}
+                    onClick={onOpenDeliveryCenter}
+                  >
+                    {deliveryState?.status === "syncing" ||
+                    deliveryState?.status === "undoing" ? (
+                      <LoaderCircle className="spin" size={13} />
+                    ) : deliveryNeedsAttention ? (
+                      <TriangleAlert size={13} />
+                    ) : deliveryState?.status === "undone" ? (
+                      <RotateCcw size={13} />
+                    ) : (
+                      <GitMerge size={13} />
+                    )}
+                    <span>{compactDeliveryLabel}</span>
+                    {onOpenDeliveryCenter && <ChevronRight size={12} />}
+                  </button>
+                )}
               </>
             )}
           </div>
           <div className="review-view-controls">
+            {changes && changes.files.length > 0 && onRestore && (
+              <button
+                type="button"
+                className="review-toolbar-action restore pressable"
+                disabled={loading || restoring || restoreDisabled}
+                aria-label={t("restoreAllChanges")}
+                title={
+                  restoreDisabled
+                    ? t("restoreUnavailableWhileRunning")
+                    : t("restoreAllChanges")
+                }
+                onClick={() => {
+                  setRestoreError(undefined);
+                  setPendingRestore({
+                    label: t("allChangedFiles", {
+                      count: changes.files.length,
+                    }),
+                  });
+                }}
+              >
+                <RotateCcw size={14} />
+                <span>{t("restoreAll")}</span>
+              </button>
+            )}
+            {showDeliveryCenter && onDiscardTask && (
+              <button
+                type="button"
+                className="review-toolbar-action danger pressable"
+                disabled={deliveryDisabled}
+                aria-label={t("discardTask")}
+                title={t("discardTaskDescription")}
+                onClick={onDiscardTask}
+              >
+                <Trash2 size={14} />
+                <span>{t("discardTask")}</span>
+              </button>
+            )}
             <button
               type="button"
               className="panel-icon-button pressable"
@@ -1315,124 +1430,6 @@ export function ReviewView({
             </button>
           </div>
         </div>
-        {(showDeliveryCenter ||
-          Boolean(changes && changes.files.length > 0 && onRestore)) && (
-          <div className="review-operation-bar">
-            {showDeliveryCenter && (
-              <div className="review-delivery-actions">
-                <div
-                  className={`automatic-delivery-status ${deliveryNeedsAttention ? "error" : deliveryState?.status ?? "ready"}`}
-                  role="status"
-                >
-                  <span className="automatic-delivery-icon" aria-hidden="true">
-                    {deliveryState?.status === "syncing" ||
-                    deliveryState?.status === "undoing" ? (
-                      <LoaderCircle className="spin" size={14} />
-                    ) : deliveryNeedsAttention ? (
-                      <TriangleAlert size={14} />
-                    ) : deliveryState?.status === "undone" ? (
-                      <RotateCcw size={14} />
-                    ) : (
-                      <GitMerge size={14} />
-                    )}
-                  </span>
-                  <span className="automatic-delivery-copy">
-                    <strong>{t("automaticDelivery")}</strong>
-                    <small>
-                      {deliveryState?.status === "syncing"
-                        ? t("automaticDeliverySyncing")
-                        : deliveryState?.status === "undoing"
-                          ? t("automaticDeliveryUndoing")
-                          : deliveryState?.status === "undone"
-                            ? t("automaticDeliveryUndone")
-                            : deliveryNeedsAttention
-                              ? deliveryState.error
-                              : deliveryState?.result
-                                ? t("automaticDeliverySynced", {
-                                    branch: deliveryState.result.targetBranch,
-                                    count: deliveryState.result.appliedFiles,
-                                  })
-                                : t("automaticDeliveryReady")}
-                    </small>
-                    {deliveryState?.status === "conflict" &&
-                      deliveryState.preflight?.conflicts.length ? (
-                        <ul className="automatic-delivery-conflicts">
-                          {deliveryState.preflight.conflicts.map((conflict) => (
-                            <li key={`${conflict.path}:${conflict.reason}`}>
-                              <code>{conflict.path}</code>
-                              <span>{t(deliveryConflictKey(conflict.reason))}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
-                  </span>
-                  {deliveryNeedsAttention &&
-                    onRetryAutomaticDelivery && (
-                      <button
-                        type="button"
-                        className="automatic-delivery-action pressable"
-                        disabled={deliveryDisabled}
-                        onClick={onRetryAutomaticDelivery}
-                      >
-                        <RefreshCw size={13} />
-                        {t("retry")}
-                      </button>
-                    )}
-                  {deliveryState?.status === "synced" &&
-                    deliveryState.result?.undoAvailable &&
-                    onUndoAutomaticDelivery && (
-                      <button
-                        type="button"
-                        className="automatic-delivery-action pressable"
-                        disabled={deliveryDisabled}
-                        onClick={onUndoAutomaticDelivery}
-                      >
-                        <RotateCcw size={13} />
-                        {t("undoAutomaticDelivery")}
-                      </button>
-                    )}
-                </div>
-                {onDiscardTask && (
-                  <button
-                    type="button"
-                    className="review-discard-button pressable"
-                    disabled={deliveryBusy || deliveryDisabled}
-                    title={t("discardTaskDescription")}
-                    onClick={onDiscardTask}
-                  >
-                    <Trash2 size={14} />
-                    {t("discardTask")}
-                  </button>
-                )}
-              </div>
-            )}
-            {changes && changes.files.length > 0 && onRestore && (
-              <div className="review-recovery-actions">
-                <button
-                  type="button"
-                  className="review-restore-all pressable"
-                  disabled={loading || restoring || restoreDisabled}
-                  title={
-                    restoreDisabled
-                      ? t("restoreUnavailableWhileRunning")
-                      : t("restoreAllChanges")
-                  }
-                  onClick={() => {
-                    setRestoreError(undefined);
-                    setPendingRestore({
-                      label: t("allChangedFiles", {
-                        count: changes.files.length,
-                      }),
-                    });
-                  }}
-                >
-                  <RotateCcw size={14} />
-                  {t("restoreAll")}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {(deliveryError || deliveryResult) && !pendingDelivery && (
@@ -1469,39 +1466,6 @@ export function ReviewView({
             <X size={13} />
           </button>
         </div>
-      )}
-
-      {showDeliveryCenter && onGetCodeHostStatus && (
-        <GitHubDeliveryCard
-          status={codeHostStatus}
-          loading={codeHostLoading}
-          error={codeHostError}
-          disabled={deliveryDisabled}
-          onRefresh={() => void refreshCodeHostStatus()}
-          onCommitPush={
-            onCommitAndPush && gitFiles > 0
-              ? () =>
-                  setPendingCodeHostAction({
-                    action: "push",
-                    message:
-                      defaultCommitMessage?.trim() ||
-                      t("defaultCommitMessage"),
-                  })
-              : undefined
-          }
-          onCreateDraftPr={
-            onCreateDraftPullRequest
-              ? () =>
-                  setPendingCodeHostAction({
-                    action: "pr",
-                    title:
-                      defaultCommitMessage?.trim() ||
-                      t("defaultPullRequestTitle"),
-                    body: t("defaultPullRequestBody"),
-                  })
-              : undefined
-          }
-        />
       )}
 
       <div className={`review-view-body ${treeVisible ? "has-tree" : ""}`}>
@@ -1592,23 +1556,563 @@ export function ReviewView({
           onConfirm={() => void confirmDelivery()}
         />
       )}
+    </div>
+  );
+}
+
+export function DeliveryCenterView({
+  adapter,
+  projectId,
+  threadId,
+  revision,
+  automaticDelivery,
+  disabled,
+  defaultCommitMessage,
+  onRetryAutomaticDelivery,
+  onUndoAutomaticDelivery,
+}: {
+  adapter: WorkspaceAdapter;
+  projectId: string;
+  threadId?: string;
+  revision?: string;
+  automaticDelivery?: AutomaticDeliveryState;
+  disabled: boolean;
+  defaultCommitMessage?: string;
+  onRetryAutomaticDelivery?(): void | Promise<void>;
+  onUndoAutomaticDelivery?(): void | Promise<void>;
+}) {
+  const { t } = useI18n();
+  const [history, setHistory] = useState<WorktreeDeliveryHistorySnapshot>();
+  const [codeHostStatus, setCodeHostStatus] =
+    useState<CodeHostDeliveryStatus>();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>();
+  const [busyAction, setBusyAction] = useState<"retry" | "undo">();
+  const [pendingCodeHostAction, setPendingCodeHostAction] = useState<
+    | { action: "push"; message: string }
+    | { action: "pr"; title: string; body: string }
+  >();
+  const scope = threadId ? `${projectId}\u0000${threadId}` : undefined;
+  const liveState = automaticDelivery?.scope === scope
+    ? automaticDelivery
+    : undefined;
+
+  const refresh = useCallback(async () => {
+    if (!threadId || !adapter.getDeliveryHistory) {
+      setHistory(undefined);
+      setCodeHostStatus(undefined);
+      setError(t("deliveryHistoryUnavailable"));
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    const failures: string[] = [];
+    try {
+      setHistory(await adapter.getDeliveryHistory(projectId, threadId));
+    } catch (reason) {
+      failures.push(errorMessage(reason));
+    }
+    if (revision && adapter.getCodeHostStatus) {
+      try {
+        setCodeHostStatus(
+          await adapter.getCodeHostStatus(projectId, threadId, revision),
+        );
+      } catch (reason) {
+        setCodeHostStatus(undefined);
+        failures.push(errorMessage(reason));
+      }
+    } else {
+      setCodeHostStatus(undefined);
+    }
+    setError(failures[0]);
+    setLoading(false);
+  }, [adapter, projectId, revision, t, threadId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, liveState?.status, liveState?.revision]);
+
+  useEffect(() => {
+    if (codeHostStatus?.pullRequest?.state !== "open") return;
+    const timer = window.setInterval(() => void refresh(), 30_000);
+    return () => window.clearInterval(timer);
+  }, [codeHostStatus?.pullRequest?.state, refresh]);
+
+  const entries = [...(history?.entries ?? [])].reverse();
+  const latest = entries[0];
+  const activeConflict = liveState?.status === "conflict"
+    ? liveState.preflight?.conflicts
+    : latest?.status === "conflict"
+      ? latest.conflicts
+      : undefined;
+  const targetBranch =
+    liveState?.result?.targetBranch ??
+    liveState?.preflight?.targetBranch ??
+    history?.targetBranch ??
+    codeHostStatus?.baseBranch;
+  const taskBranch =
+    codeHostStatus?.taskBranch ??
+    liveState?.result?.taskBranch ??
+    liveState?.preflight?.taskBranch ??
+    entries.find((entry) => entry.taskBranch)?.taskBranch;
+  const latestHasNoChanges = deliveryHistoryEntryHasNoChanges(latest);
+  const canRetry =
+    Boolean(revision && (adapter.applyDelivery || onRetryAutomaticDelivery)) &&
+    (liveState?.status === "failed" ||
+      liveState?.status === "conflict" ||
+      (latest?.status === "failed" && !latestHasNoChanges) ||
+      latest?.status === "conflict");
+  const visibleSyncStatus = liveState?.status ?? latest?.status;
+  const deliveryHasNoChanges =
+    (liveState?.status === "synced" && liveState.result?.files === 0) ||
+    (!liveState && latestHasNoChanges);
+  const syncTone =
+    deliveryHasNoChanges
+      ? ("success" as const)
+      : visibleSyncStatus === "conflict" || visibleSyncStatus === "failed"
+      ? ("danger" as const)
+      : visibleSyncStatus === "synced"
+        ? ("success" as const)
+        : undefined;
+
+  async function retryDelivery() {
+    if (
+      !threadId ||
+      !revision ||
+      (!adapter.applyDelivery && !onRetryAutomaticDelivery) ||
+      busyAction
+    ) return;
+    setBusyAction("retry");
+    setError(undefined);
+    try {
+      if (
+        (liveState?.status === "failed" ||
+          liveState?.status === "conflict") &&
+        onRetryAutomaticDelivery
+      ) {
+        await onRetryAutomaticDelivery();
+      } else {
+        await adapter.applyDelivery?.(projectId, threadId, revision);
+      }
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+      await refresh();
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
+  async function undoDeliveryPoint() {
+    const undoPoint = history?.undoPoint;
+    if (!threadId || !undoPoint || !adapter.undoDelivery || busyAction) return;
+    setBusyAction("undo");
+    setError(undefined);
+    try {
+      if (liveState?.status === "synced" && onUndoAutomaticDelivery) {
+        await onUndoAutomaticDelivery();
+      } else {
+        await adapter.undoDelivery(projectId, threadId, undoPoint.revision);
+      }
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
+  async function confirmCodeHostAction() {
+    if (!pendingCodeHostAction || !threadId || !revision) return;
+    setLoading(true);
+    setError(undefined);
+    try {
+      if (pendingCodeHostAction.action === "push") {
+        if (!adapter.commitAndPush) {
+          throw new Error(t("githubDeliveryUnavailable"));
+        }
+        const result = await adapter.commitAndPush(
+          projectId,
+          threadId,
+          revision,
+          pendingCodeHostAction.message,
+        );
+        setCodeHostStatus(result.status);
+      } else {
+        if (!adapter.createDraftPullRequest) {
+          throw new Error(t("githubDeliveryUnavailable"));
+        }
+        setCodeHostStatus(
+          await adapter.createDraftPullRequest(
+            projectId,
+            threadId,
+            revision,
+            pendingCodeHostAction.title,
+            pendingCodeHostAction.body,
+          ),
+        );
+      }
+      setPendingCodeHostAction(undefined);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!threadId) {
+    return (
+      <PanelState icon={<PackageCheck size={22} />}>
+        {t("deliveryCenterNeedsTask")}
+      </PanelState>
+    );
+  }
+
+  return (
+    <div className="delivery-center-view">
+      <header className="delivery-center-header">
+        <div className="delivery-center-title">
+          <span aria-hidden="true"><PackageCheck size={17} /></span>
+          <div>
+            <strong>{t("deliveryCenter")}</strong>
+            <small>{t("deliveryCenterDescription")}</small>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="panel-icon-button pressable"
+          aria-label={t("refreshDeliveryCenter")}
+          title={t("refreshDeliveryCenter")}
+          disabled={loading}
+          onClick={() => void refresh()}
+        >
+          <RefreshCw className={loading ? "spin" : undefined} size={15} />
+        </button>
+      </header>
+
+      <div className="delivery-center-scroll">
+        {error && (
+          <div className="delivery-center-error" role="status">
+            <TriangleAlert size={14} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <section
+          className="delivery-overview"
+          aria-label={t("deliveryOverview")}
+        >
+          <DeliveryMetric
+            label={t("targetBranch")}
+            value={targetBranch ?? t("notRecorded")}
+            detail={
+              taskBranch
+                ? t("fromTaskBranch", { branch: taskBranch })
+                : undefined
+            }
+            icon={<GitMerge size={15} />}
+          />
+          <DeliveryMetric
+            label={t("syncStatus")}
+            value={
+              deliveryHasNoChanges
+                ? t("deliveryStatusNoChanges")
+                : deliveryHistoryStatusLabel(visibleSyncStatus, t)
+            }
+            detail={
+              deliveryHasNoChanges
+                ? t("historyNoChanges")
+                : history?.currentRevision
+                ? t("revisionShort", {
+                    revision: history.currentRevision.slice(0, 8),
+                  })
+                : t("noSyncHistory")
+            }
+            tone={syncTone}
+            icon={
+              loading || liveState?.status === "syncing" ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <PackageCheck size={15} />
+              )
+            }
+          />
+          <DeliveryMetric
+            label={t("publishStatus")}
+            value={
+              codeHostStatus?.pullRequest
+                ? t("pullRequestNumber", {
+                    number: codeHostStatus.pullRequest.number,
+                  })
+                : codeHostStatus?.pushed
+                  ? t("branchPushed")
+                  : t("branchLocalOnly")
+            }
+            detail={codeHostStatus?.pullRequest
+              ? codeHostStatus.pullRequest.draft
+                ? t("draftPullRequest")
+                : codeHostStatus.pullRequest.state
+              : codeHostStatus?.repository}
+            tone={codeHostStatus?.pushed ? "success" : undefined}
+            icon={<UploadCloud size={15} />}
+          />
+          <DeliveryMetric
+            label={t("recoveryPoint")}
+            value={history?.undoPoint
+              ? t("undoFiles", { count: history.undoPoint.files.length })
+              : t("noUndoPoint")}
+            detail={history?.undoPoint?.createdAt
+              ? formatDeliveryTime(history.undoPoint.createdAt)
+              : undefined}
+            tone={history?.undoPoint ? "warning" : undefined}
+            icon={<RotateCcw size={15} />}
+          />
+        </section>
+
+        {(canRetry || history?.undoPoint) && (
+          <section className="delivery-recovery-card">
+            <div>
+              <strong>{t("recoveryActions")}</strong>
+              <small>
+                {history?.undoPoint
+                  ? t("undoPointDescription", {
+                      count: history.undoPoint.files.length,
+                    })
+                  : t("retryDeliveryDescription")}
+              </small>
+            </div>
+            <div className="delivery-recovery-buttons">
+              {canRetry && (
+                <button
+                  type="button"
+                  className="github-delivery-button pressable"
+                  disabled={disabled || Boolean(busyAction)}
+                  onClick={() => void retryDelivery()}
+                >
+                  {busyAction === "retry"
+                    ? <LoaderCircle className="spin" size={14} />
+                    : <RefreshCw size={14} />}
+                  {t("retry")}
+                </button>
+              )}
+              {history?.undoPoint && adapter.undoDelivery && (
+                <button
+                  type="button"
+                  className="github-delivery-button danger pressable"
+                  disabled={disabled || Boolean(busyAction)}
+                  onClick={() => void undoDeliveryPoint()}
+                >
+                  {busyAction === "undo"
+                    ? <LoaderCircle className="spin" size={14} />
+                    : <RotateCcw size={14} />}
+                  {t("undoAutomaticDelivery")}
+                </button>
+              )}
+            </div>
+            {history?.undoPoint && (
+              <ul className="delivery-undo-files">
+                {history.undoPoint.files.slice(0, 5).map((path) => (
+                  <li key={path}><code>{path}</code></li>
+                ))}
+                {history.undoPoint.files.length > 5 && (
+                  <li>
+                    {t("moreFiles", {
+                      count: history.undoPoint.files.length - 5,
+                    })}
+                  </li>
+                )}
+              </ul>
+            )}
+          </section>
+        )}
+
+        {activeConflict?.length ? (
+          <section className="delivery-conflict-card">
+            <div className="delivery-section-heading">
+              <span><TriangleAlert size={15} /></span>
+              <div>
+                <strong>{t("conflictFiles")}</strong>
+                <small>{t("conflictFilesDescription")}</small>
+              </div>
+            </div>
+            <ul>
+              {activeConflict.map((conflict) => (
+                <li key={`${conflict.path}:${conflict.reason}`}>
+                  <code>{conflict.path}</code>
+                  <span>{t(deliveryConflictKey(conflict.reason))}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {adapter.getCodeHostStatus && revision && (
+          <GitHubDeliveryCard
+            status={codeHostStatus}
+            loading={loading}
+            error={undefined}
+            disabled={disabled}
+            onRefresh={() => void refresh()}
+            onCommitPush={adapter.commitAndPush
+              ? () => setPendingCodeHostAction({
+                  action: "push",
+                  message: defaultCommitMessage?.trim() || t("defaultCommitMessage"),
+                })
+              : undefined}
+            onCreateDraftPr={adapter.createDraftPullRequest
+              ? () => setPendingCodeHostAction({
+                  action: "pr",
+                  title: defaultCommitMessage?.trim() || t("defaultPullRequestTitle"),
+                  body: t("defaultPullRequestBody"),
+                })
+              : undefined}
+          />
+        )}
+
+        <section className="delivery-history-card">
+          <div className="delivery-section-heading">
+            <span><GitCommitHorizontal size={15} /></span>
+            <div>
+              <strong>{t("syncHistory")}</strong>
+              <small>{t("syncHistoryDescription")}</small>
+            </div>
+          </div>
+          {entries.length === 0 ? (
+            <p className="delivery-history-empty">{t("noSyncHistory")}</p>
+          ) : (
+            <ol className="delivery-history-list">
+              {entries.map((entry) => {
+                const noChanges = deliveryHistoryEntryHasNoChanges(entry);
+                return (
+                  <li
+                    key={entry.id}
+                    className={noChanges ? "no-changes" : entry.status}
+                  >
+                    <span
+                      className="delivery-history-marker"
+                      aria-hidden="true"
+                    >
+                      {!noChanges &&
+                      (entry.status === "conflict" ||
+                        entry.status === "failed")
+                        ? <TriangleAlert size={13} />
+                        : entry.status === "undone"
+                          ? <RotateCcw size={13} />
+                          : <GitMerge size={13} />}
+                    </span>
+                    <div className="delivery-history-copy">
+                      <div>
+                        <strong>
+                          {noChanges
+                            ? t("deliveryStatusNoChanges")
+                            : deliveryHistoryStatusLabel(entry.status, t)}
+                        </strong>
+                        <time dateTime={entry.createdAt}>
+                          {formatDeliveryTime(entry.createdAt)}
+                        </time>
+                      </div>
+                      <small>
+                        {entry.status === "undone"
+                          ? t("historyUndoSummary", {
+                              count: entry.revertedFiles ?? 0,
+                            })
+                          : entry.status === "synced" || noChanges
+                            ? noChanges
+                              ? t("historyNoChanges")
+                              : t("historySyncSummary", {
+                                  branch:
+                                    entry.targetBranch ?? t("notRecorded"),
+                                  count: entry.appliedFiles ?? 0,
+                                })
+                            : entry.error ?? t("deliveryBlocked")}
+                      </small>
+                      {(entry.commit || entry.revision) && (
+                        <code>
+                          {entry.commit?.slice(0, 10) ??
+                            entry.revision.slice(0, 10)}
+                        </code>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+      </div>
+
       {pendingCodeHostAction && (
         <GitHubDeliveryDialog
           action={pendingCodeHostAction.action}
           value={pendingCodeHostAction}
-          busy={codeHostLoading}
-          error={codeHostError}
+          busy={loading}
+          error={error}
           onChange={setPendingCodeHostAction}
           onCancel={() => {
-            if (codeHostLoading) return;
-            setPendingCodeHostAction(undefined);
-            setCodeHostError(undefined);
+            if (!loading) setPendingCodeHostAction(undefined);
           }}
           onConfirm={() => void confirmCodeHostAction()}
         />
       )}
     </div>
   );
+}
+
+function DeliveryMetric({
+  label,
+  value,
+  detail,
+  tone,
+  icon,
+}: {
+  label: string;
+  value: string;
+  detail?: string;
+  tone?: "success" | "warning" | "danger";
+  icon: ReactNode;
+}) {
+  return (
+    <article className={`delivery-metric ${tone ?? ""}`}>
+      <span aria-hidden="true">{icon}</span>
+      <div>
+        <small>{label}</small>
+        <strong title={value}>{value}</strong>
+        {detail && <span title={detail}>{detail}</span>}
+      </div>
+    </article>
+  );
+}
+
+function deliveryHistoryStatusLabel(
+  status: AutomaticDeliveryState["status"] | WorktreeDeliveryHistoryEntry["status"] | undefined,
+  t: Translate,
+): string {
+  if (status === "syncing") return t("deliveryStatusSyncing");
+  if (status === "conflict") return t("deliveryStatusConflict");
+  if (status === "failed") return t("deliveryStatusFailed");
+  if (status === "undone" || status === "undoing") return t("deliveryStatusUndone");
+  if (status === "synced") return t("deliveryStatusSynced");
+  return t("deliveryStatusWaiting");
+}
+
+function deliveryHistoryEntryHasNoChanges(
+  entry: WorktreeDeliveryHistoryEntry | undefined,
+): boolean {
+  return Boolean(
+    entry &&
+      ((entry.status === "synced" && entry.files === 0) ||
+        (entry.status === "failed" &&
+          entry.error === "This task has no changes to deliver")),
+  );
+}
+
+function formatDeliveryTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function ReviewFile({
@@ -1653,18 +2157,23 @@ function ReviewFile({
         <div className="review-binary">{t("binaryDiff")}</div>
       ) : (
         <div className="review-diff">
-          <DiffViewer
-            oldValue={file.oldContent ?? ""}
-            newValue={file.newContent ?? ""}
-            splitView={layout === "split"}
-            useDarkTheme={resolvedTheme === "dark"}
-            showDiffOnly
-            extraLinesSurroundingDiff={3}
-            hideSummary
-            disableWorker
-            highlightLanguage={languageForPath(file.path)}
-            styles={reviewDiffStylesForLayout(layout)}
-          />
+          <Suspense
+            fallback={
+              <div className="review-diff-loading" role="status">
+                <LoaderCircle className="spin" size={15} />
+                <span>{t("loading")}</span>
+              </div>
+            }
+          >
+            <LazyReviewDiffViewer
+              oldValue={file.oldContent ?? ""}
+              newValue={file.newContent ?? ""}
+              layout={layout}
+              dark={resolvedTheme === "dark"}
+              language={languageForPath(file.path)}
+              styles={reviewDiffStylesForLayout(layout)}
+            />
+          </Suspense>
         </div>
       )}
     </section>
@@ -1829,8 +2338,11 @@ export function GitHubDeliveryCard({
       )}
 
       {(error || (status && !status.available)) && (
-        <div className="github-delivery-error" role="status">
-          <TriangleAlert size={13} />
+        <div
+          className={`github-delivery-error ${error ? "" : "setup"}`}
+          role={error ? "alert" : "note"}
+        >
+          {error ? <TriangleAlert size={13} /> : <Info size={13} />}
           <div>
             <p>
               {error ?? t(codeHostSetupHelpKey(setupIssue))}
@@ -2722,11 +3234,40 @@ export function FileSource({
 }) {
   const { t } = useI18n();
   const source = useRef<HTMLDivElement>(null);
-  const lines = useMemo(
-    () => highlightedFileLines(name, content),
-    [content, name],
+  const plainLines = useMemo(
+    () => plainFileLines(content),
+    [content],
   );
+  const [highlighted, setHighlighted] = useState<{
+    name: string;
+    content: string;
+    lines: HighlightSegment[][];
+  }>();
+  const lines =
+    highlighted?.name === name && highlighted.content === content
+      ? highlighted.lines
+      : plainLines;
   const targetLine = line && line <= lines.length ? line : undefined;
+
+  useEffect(() => {
+    if (!languageForPath(name)) return;
+    let current = true;
+    void import("./syntax-highlighter.js")
+      .then(({ highlightedFileLines }) => {
+        if (!current) return;
+        setHighlighted({
+          name,
+          content,
+          lines: highlightedFileLines(name, content),
+        });
+      })
+      .catch(() => {
+        // Plain text remains readable if syntax highlighting cannot load.
+      });
+    return () => {
+      current = false;
+    };
+  }, [content, name]);
 
   useEffect(() => {
     if (!targetLine || !revealRequest) return;
@@ -2769,73 +3310,8 @@ export function FileSource({
   );
 }
 
-interface HighlightSegment {
-  text: string;
-  className?: string;
-}
-
-interface HighlightNode {
-  type: string;
-  value?: string;
-  properties?: {
-    className?: string | readonly string[];
-  };
-  children?: readonly HighlightNode[];
-}
-
-export function highlightedFileLines(
-  name: string,
-  content: string,
-): HighlightSegment[][] {
-  const language = languageForPath(name);
-  if (!language || !refractor.registered(language)) {
-    return content.split("\n").map((text) => text ? [{ text }] : []);
-  }
-
-  try {
-    const root = refractor.highlight(content, language) as HighlightNode;
-    const lines: HighlightSegment[][] = [[]];
-
-    const appendText = (text: string, classNames: readonly string[]) => {
-      const parts = text.split("\n");
-      parts.forEach((part, index) => {
-        if (part) {
-          lines[lines.length - 1].push({
-            text: part,
-            ...(classNames.length > 0
-              ? { className: [...new Set(classNames)].join(" ") }
-              : {}),
-          });
-        }
-        if (index < parts.length - 1) lines.push([]);
-      });
-    };
-
-    const visit = (
-      node: HighlightNode,
-      inheritedClassNames: readonly string[],
-    ) => {
-      if (node.type === "text") {
-        appendText(node.value ?? "", inheritedClassNames);
-        return;
-      }
-      const ownClassName = node.properties?.className;
-      const ownClassNames = Array.isArray(ownClassName)
-        ? ownClassName.filter(
-            (className): className is string => typeof className === "string",
-          )
-        : typeof ownClassName === "string"
-          ? ownClassName.split(/\s+/).filter(Boolean)
-          : [];
-      const classNames = [...inheritedClassNames, ...ownClassNames];
-      for (const child of node.children ?? []) visit(child, classNames);
-    };
-
-    visit(root, []);
-    return lines;
-  } catch {
-    return content.split("\n").map((text) => text ? [{ text }] : []);
-  }
+function plainFileLines(content: string): HighlightSegment[][] {
+  return content.split("\n").map((text) => text ? [{ text }] : []);
 }
 
 interface ChangeTreeNode {
@@ -3270,6 +3746,14 @@ function createReviewTab(t: Translate): WorkspaceTab {
   };
 }
 
+function createDeliveryTab(t: Translate): WorkspaceTab {
+  return {
+    id: createBrowserUuid(),
+    kind: "delivery",
+    title: t("deliveryCenter"),
+  };
+}
+
 function createFileTab(t: Translate): WorkspaceTab {
   return {
     id: createBrowserUuid(),
@@ -3280,15 +3764,14 @@ function createFileTab(t: Translate): WorkspaceTab {
 
 function createTerminalTab(
   workspace: "task" | "original",
+  branch: string | undefined,
   t: Translate,
 ): WorkspaceTab {
   return {
     id: createBrowserUuid(),
     kind: workspace === "original" ? "original-terminal" : "terminal",
-    title:
-      workspace === "original"
-        ? t("originalWorkspaceTerminal")
-        : t("taskTerminal"),
+    title: terminalTabLabel(workspace, branch, undefined, t),
+    branch,
   };
 }
 
@@ -3357,43 +3840,6 @@ function changeTreeContainsQuery(node: ChangeTreeNode, query: string): boolean {
 
 function reviewFileId(path: string): string {
   return `review-file-${encodeURIComponent(path)}`;
-}
-
-function languageForPath(path: string): string | undefined {
-  const extension = path.split(".").at(-1)?.toLowerCase();
-  return {
-    bash: "bash",
-    c: "c",
-    cjs: "javascript",
-    cpp: "cpp",
-    cs: "csharp",
-    css: "css",
-    go: "go",
-    html: "html",
-    java: "java",
-    js: "javascript",
-    json: "json",
-    jsx: "jsx",
-    kt: "kotlin",
-    less: "less",
-    lua: "lua",
-    md: "markdown",
-    mjs: "javascript",
-    php: "php",
-    py: "python",
-    rb: "ruby",
-    rs: "rust",
-    sass: "sass",
-    scss: "scss",
-    sh: "bash",
-    sql: "sql",
-    swift: "swift",
-    ts: "typescript",
-    tsx: "tsx",
-    xml: "xml",
-    yaml: "yaml",
-    yml: "yaml",
-  }[extension ?? ""];
 }
 
 const diffStyles = {
