@@ -15,7 +15,10 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { TaskWorkspaceManager } from "../src/main/task-workspace.js";
+import {
+  resolveTerminalWorkspace,
+  TaskWorkspaceManager,
+} from "../src/main/task-workspace.js";
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -164,6 +167,55 @@ describe("TaskWorkspaceManager", () => {
     await expect(
       readFile(join(outside, "keep.txt"), "utf8"),
     ).resolves.toBe("keep\n");
+  });
+});
+
+describe("resolveTerminalWorkspace", () => {
+  it("keeps task and original terminal contexts distinct", async () => {
+    const root = await temporaryDirectory();
+    const original = join(root, "original");
+    const task = join(root, "task");
+    await mkdir(original);
+    await git(original, ["init", "-b", "main"]);
+    await git(original, ["config", "user.name", "Threadlight Test"]);
+    await git(original, ["config", "user.email", "test@threadlight.local"]);
+    await writeFile(join(original, "tracked.txt"), "original\n");
+    await git(original, ["add", "tracked.txt"]);
+    await git(original, ["commit", "-m", "Initial"]);
+    await git(original, ["worktree", "add", "-b", "threadlight/task", task]);
+    const project = {
+      id: "project-1",
+      name: "project",
+      basePath: original,
+      lastOpenedAt: new Date(0).toISOString(),
+      conversations: [
+        {
+          id: "thread-1",
+          title: "Task",
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+          workspace: {
+            mode: "worktree" as const,
+            path: task,
+            root: task,
+            repositoryRoot: original,
+            branch: "threadlight/task",
+            baseCommit: "fixture",
+          },
+        },
+      ],
+    };
+
+    expect(resolveTerminalWorkspace(project, "thread-1")).toEqual({
+      cwd: await realpath(task),
+      branch: "threadlight/task",
+    });
+    expect(
+      resolveTerminalWorkspace(project, "thread-1", "original"),
+    ).toEqual({ cwd: await realpath(original), branch: "main" });
+    expect(() =>
+      resolveTerminalWorkspace(project, "missing-thread"),
+    ).toThrow("Unknown conversation: missing-thread");
   });
 });
 

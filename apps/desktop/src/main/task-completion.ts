@@ -90,3 +90,36 @@ export function completionTitle(language: DesktopLanguage): string {
       return "Task completed";
   }
 }
+
+export function deliveryAttentionTitle(
+  language: DesktopLanguage,
+  status: "conflict" | "failed",
+): string {
+  const copy = (() => {
+    switch (language) {
+      case "zh-CN":
+        return { conflict: "自动同步有冲突", failed: "自动同步失败" };
+      case "zh-TW":
+        return { conflict: "自動同步發生衝突", failed: "自動同步失敗" };
+      case "ja":
+        return {
+          conflict: "自動同期に競合があります",
+          failed: "自動同期に失敗しました",
+        };
+      case "ko":
+        return { conflict: "자동 동기화 충돌", failed: "자동 동기화 실패" };
+      case "en":
+        return {
+          conflict: "Automatic sync conflict",
+          failed: "Automatic sync failed",
+        };
+    }
+  })();
+  return copy[status];
+}
+
+export function deliveryAttentionBody(task: string, error?: string): string {
+  const detail = error?.trim();
+  if (!detail) return task;
+  return `${task} · ${detail.length > 180 ? `${detail.slice(0, 177)}…` : detail}`;
+}

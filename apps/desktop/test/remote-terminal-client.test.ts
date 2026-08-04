@@ -48,7 +48,12 @@ describe("RemoteTerminalClient", () => {
             JSON.stringify({
               type: "opened",
               requestId: message.requestId,
-              session: { id: "terminal-1", shell: "zsh" },
+              session: {
+                id: "terminal-1",
+                shell: "zsh",
+                cwd: "/workspace/threadlight-task",
+                branch: "threadlight/task",
+              },
             }),
           );
         }
@@ -75,10 +80,16 @@ describe("RemoteTerminalClient", () => {
       client.create({
         projectId: "project-1",
         threadId: "thread-1",
+        workspace: "task",
         cols: 100,
         rows: 30,
       }),
-    ).resolves.toEqual({ id: "terminal-1", shell: "zsh" });
+    ).resolves.toEqual({
+      id: "terminal-1",
+      shell: "zsh",
+      cwd: "/workspace/threadlight-task",
+      branch: "threadlight/task",
+    });
     expect(authorization).toBe("Bearer host-token");
 
     client.write("terminal-1", "pwd\r");
@@ -100,6 +111,7 @@ describe("RemoteTerminalClient", () => {
           type: "open",
           projectId: "project-1",
           threadId: "thread-1",
+          workspace: "task",
         }),
         {
           type: "input",

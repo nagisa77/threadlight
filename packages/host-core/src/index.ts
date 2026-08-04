@@ -65,12 +65,20 @@ export {
   type TaskWorkspaceManagerOptions,
 } from "./task-workspace.js";
 export {
+  resolveTerminalWorkspace,
+  type TerminalWorkspaceContext,
+} from "./terminal-workspace.js";
+export {
+  applyAutomaticWorktreeDelivery,
   WorktreeDeliveryManager,
+  type AutomaticWorktreeDeliveryState,
   type WorktreeDeliveryConflict,
+  type WorktreeDeliveryJournalTarget,
   type WorktreeDeliveryManagerOptions,
   type WorktreeDeliveryPreflight,
   type WorktreeDeliveryRequest,
   type WorktreeDeliveryResult,
+  type WorktreeDeliveryUndoResult,
 } from "./worktree-delivery.js";
 export {
   CodeHostDeliveryManager,

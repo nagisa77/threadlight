@@ -212,6 +212,12 @@ const workspace: WorkspaceAdapter = {
       threadId,
       revision,
     }),
+  undoDelivery: (projectId, threadId, revision) =>
+    window.threadlightDesktop.undoWorktreeDelivery({
+      projectId,
+      threadId,
+      revision,
+    }),
   commitDelivery: (projectId, threadId, revision, message) =>
     window.threadlightDesktop.commitWorktreeDelivery({
       projectId,

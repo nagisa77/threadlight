@@ -428,6 +428,16 @@ describe("ProjectStore", () => {
       projectId: "project-1",
       id: "thread-1",
     });
+    store.markConversationAttention({
+      projectId: "project-1",
+      id: "thread-1",
+    });
+    expect(new ProjectStore(mapPath).snapshot()
+      .projects[0]?.conversations[0]?.status).toBe("attention");
+    store.markConversationCompleted({
+      projectId: "project-1",
+      id: "thread-1",
+    });
     now = new Date("2026-07-29T08:01:00.000Z");
     store.updateConversation({
       projectId: "project-1",

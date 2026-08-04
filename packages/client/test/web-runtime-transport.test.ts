@@ -121,6 +121,7 @@ describe("BrowserTerminalClient", () => {
     const opening = client.create({
       projectId: "project-1",
       threadId: "thread-1",
+      workspace: "task",
       cols: 90,
       rows: 28,
     });
@@ -132,12 +133,24 @@ describe("BrowserTerminalClient", () => {
     socket.message({
       type: "opened",
       requestId: request.requestId,
-      session: { id: "terminal-1", shell: "zsh" },
+      session: {
+        id: "terminal-1",
+        shell: "zsh",
+        cwd: "/workspace/threadlight-task",
+        branch: "threadlight/task",
+      },
     });
 
     await expect(opening).resolves.toEqual({
       id: "terminal-1",
       shell: "zsh",
+      cwd: "/workspace/threadlight-task",
+      branch: "threadlight/task",
+    });
+    expect(JSON.parse(socket.sent[0]!)).toMatchObject({
+      projectId: "project-1",
+      threadId: "thread-1",
+      workspace: "task",
     });
     expect(socketUrl).toBe("wss://host.example.test/v1/host/terminal");
     expect(socketUrl).not.toContain("token");

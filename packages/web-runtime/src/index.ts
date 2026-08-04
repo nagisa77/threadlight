@@ -537,6 +537,8 @@ function remoteWorkspaceAdapter(
       host.preflightWorktreeDelivery(projectId, threadId, revision),
     applyDelivery: (projectId, threadId, revision) =>
       host.applyWorktreeDelivery(projectId, threadId, revision),
+    undoDelivery: (projectId, threadId, revision) =>
+      host.undoWorktreeDelivery(projectId, threadId, revision),
     commitDelivery: (projectId, threadId, revision, message) =>
       host.commitWorktreeDelivery(
         projectId,

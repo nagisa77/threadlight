@@ -309,7 +309,7 @@ export interface HostSearchResult {
   snippet: string;
 }
 
-export type HostConversationStatus = "pending" | "completed";
+export type HostConversationStatus = "pending" | "completed" | "attention";
 
 export type HostTaskWorkspace =
   | {
@@ -440,6 +440,40 @@ export interface HostWorktreeDeliveryResult
   extends HostWorktreeDeliveryPreflight {
   appliedFiles: number;
   commit?: string;
+  undoAvailable?: boolean;
+}
+
+export interface HostWorktreeDeliveryUndoResult {
+  targetBranch: string;
+  revertedFiles: number;
+  revision: string;
+}
+
+export type HostDeliverySource = "lifecycle" | "retry";
+
+export interface HostDeliveryEvent {
+  projectId: string;
+  threadId: string;
+  source: HostDeliverySource;
+}
+
+export interface HostDeliveryRevisionEvent extends HostDeliveryEvent {
+  revision: string;
+}
+
+export interface HostDeliverySyncedEvent extends HostDeliveryRevisionEvent {
+  result: HostWorktreeDeliveryResult;
+}
+
+export interface HostDeliveryConflictEvent extends HostDeliveryRevisionEvent {
+  preflight: HostWorktreeDeliveryPreflight;
+  error: string;
+}
+
+export interface HostDeliveryFailedEvent extends HostDeliveryEvent {
+  revision?: string;
+  preflight?: HostWorktreeDeliveryPreflight;
+  error: string;
 }
 
 export interface HostCodeHostCheck {
@@ -506,7 +540,11 @@ export interface ThreadlightHostHealth {
 export interface TerminalSessionInfo {
   id: string;
   shell: string;
+  cwd?: string;
+  branch?: string;
 }
+
+export type TerminalWorkspaceScope = "task" | "original";
 
 export type TerminalSessionEvent =
   | {
@@ -526,6 +564,7 @@ export type HostTerminalClientMessage =
       requestId: string;
       projectId: string;
       threadId?: string;
+      workspace?: TerminalWorkspaceScope;
       cols: number;
       rows: number;
     }
@@ -1022,6 +1061,10 @@ export interface ThreadlightNotificationMap {
   "connector/authorization-requested": {
     url: string;
   };
+  "delivery/syncing": HostDeliveryRevisionEvent;
+  "delivery/synced": HostDeliverySyncedEvent;
+  "delivery/conflict": HostDeliveryConflictEvent;
+  "delivery/failed": HostDeliveryFailedEvent;
   "thread/title": {
     threadId: string;
     title: string;

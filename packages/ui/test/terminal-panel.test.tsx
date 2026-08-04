@@ -9,9 +9,10 @@ import {
 import type { WorkspaceAdapter } from "../src/workspace-panel.js";
 
 describe("TerminalPanel", () => {
-  it("opens interactive terminals in the original project directory", () => {
+  it("binds task terminals to the thread and keeps original terminals explicit", () => {
     expect(projectTerminalCreateRequest("project-1")).toEqual({
       projectId: "project-1",
+      workspace: "task",
       cols: 80,
       rows: 24,
     });
@@ -20,6 +21,19 @@ describe("TerminalPanel", () => {
     ).toEqual({
       projectId: "standalone",
       threadId: "thread-1",
+      workspace: "task",
+      cols: 80,
+      rows: 24,
+    });
+    expect(
+      projectTerminalCreateRequest(
+        "standalone",
+        "thread-1",
+        "original",
+      ),
+    ).toEqual({
+      projectId: "standalone",
+      workspace: "original",
       cols: 80,
       rows: 24,
     });
@@ -52,9 +66,10 @@ describe("TerminalPanel", () => {
     expect(html).toContain('aria-label="底部面板"');
     expect(html).toContain('class="lucide lucide-terminal"');
     expect(html).not.toContain("lucide-square-terminal");
-    expect(html).toContain("终端 1");
+    expect(html).toContain("任务终端 1");
     expect(html).toContain('aria-label="新建面板标签"');
-    expect(html).toContain(">终端</span>");
+    expect(html).toContain(">任务终端</span>");
+    expect(html).toContain(">原工作区终端</span>");
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="关闭底部面板"');
     expect(html).toContain("正在启动终端");

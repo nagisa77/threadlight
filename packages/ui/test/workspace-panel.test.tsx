@@ -70,7 +70,7 @@ describe("ReviewView", () => {
     });
   });
 
-  it("offers worktree delivery actions only for an isolated task", () => {
+  it("shows automatic original-branch sync only for an isolated task", () => {
     const html = renderToStaticMarkup(
       <ReviewView
         changes={{
@@ -89,6 +89,24 @@ describe("ReviewView", () => {
         onPreflightDelivery={vi.fn()}
         onApplyDelivery={vi.fn()}
         onCommitDelivery={vi.fn()}
+        automaticDelivery={{
+          scope: "project-1\u0000thread-1",
+          revision: "revision-1",
+          status: "synced",
+          result: {
+            taskBranch: "threadlight/task",
+            targetBranch: "main",
+            sourceBranch: "main",
+            branchChanged: false,
+            files: 1,
+            pendingFiles: 0,
+            alreadyAppliedFiles: 1,
+            conflicts: [],
+            appliedFiles: 1,
+            undoAvailable: true,
+          },
+        }}
+        onUndoAutomaticDelivery={vi.fn()}
         onDiscardTask={vi.fn()}
         onLayoutChange={vi.fn()}
         onRefresh={vi.fn()}
@@ -96,15 +114,61 @@ describe("ReviewView", () => {
       />,
     );
 
-    expect(html).toContain("应用到原分支");
-    expect(html).toContain("暂存并提交");
+    expect(html).toContain("自动同步到原分支");
+    expect(html).toContain("已同步 1 个文件到 main");
+    expect(html).toContain(">撤回<");
+    expect(html).not.toContain("暂存并提交");
     expect(html).toContain("丢弃任务");
-    expect(html.indexOf("应用到原分支")).toBeLessThan(
+    expect(html.indexOf("自动同步到原分支")).toBeLessThan(
       html.indexOf("全部恢复"),
     );
   });
 
-  it("labels local data and keeps Git commit unavailable for local-only changes", () => {
+  it("shows lifecycle-reported automatic delivery conflicts with retry", () => {
+    const html = renderToStaticMarkup(
+      <ReviewView
+        changes={{
+          threadId: "thread-1",
+          additions: 1,
+          deletions: 1,
+          revision: "revision-2",
+          files: [change("src/index.ts", "modified")],
+        }}
+        loading={false}
+        layout="unified"
+        projectId="project-1"
+        threadId="thread-1"
+        deliveryEnabled
+        automaticDelivery={{
+          scope: "project-1\u0000thread-1",
+          revision: "revision-2",
+          status: "conflict",
+          error: "Worktree delivery is blocked by 1 conflict",
+          preflight: {
+            taskBranch: "threadlight/task",
+            targetBranch: "main",
+            sourceBranch: "main",
+            branchChanged: false,
+            files: 1,
+            pendingFiles: 1,
+            alreadyAppliedFiles: 0,
+            conflicts: [
+              { path: "src/index.ts", reason: "target_modified" },
+            ],
+          },
+        }}
+        onRetryAutomaticDelivery={vi.fn()}
+        onLayoutChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("src/index.ts");
+    expect(html).toContain("原工作区包含冲突修改");
+    expect(html).toContain(">重试<");
+  });
+
+  it("labels local data while automatic sync remains available", () => {
     const html = renderToStaticMarkup(
       <ReviewView
         changes={{
@@ -135,9 +199,9 @@ describe("ReviewView", () => {
 
     expect(html).toContain("本地数据");
     expect(html).toContain("1 个本地数据文件");
-    expect(html).toContain("只有本地数据变更；请使用");
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*暂存并提交/s);
-    expect(html).not.toMatch(/<button[^>]*disabled=""[^>]*>.*应用到原分支/s);
+    expect(html).toContain("自动同步到原分支");
+    expect(html).toContain("任务完成后，修改会自动应用到原工作区");
+    expect(html).not.toContain("暂存并提交");
   });
 
   it("shows Draft PR, CI, checks, and review comments in GitHub delivery", () => {
@@ -345,7 +409,8 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="打开系统文件…"');
     expect(html).toContain('aria-label="新建面板标签"');
     expect(html).toContain('role="menuitem"');
-    expect(html).toContain(">终端</span>");
+    expect(html).toContain(">任务终端</span>");
+    expect(html).toContain(">原工作区终端</span>");
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="调整聊天与右侧面板宽度"');
     expect(html).toContain('aria-orientation="vertical"');

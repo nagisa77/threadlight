@@ -20,6 +20,7 @@ import {
 import {
   THREADLIGHT_METHODS,
   type HostProjectsSnapshot,
+  type HostDeliverySource,
   type AttachmentData,
   type JsonRpcId,
   type JsonRpcOutgoing,
@@ -65,10 +66,15 @@ import {
 import { createExternalWindowHandler } from "./external-links.js";
 import { ConversationChangeTracker } from "./conversation-changes.js";
 import {
+  resolveTerminalWorkspace,
   TaskWorkspaceManager,
   type TaskWorkspace,
 } from "./task-workspace.js";
-import { WorktreeDeliveryManager } from "./worktree-delivery.js";
+import {
+  applyAutomaticWorktreeDelivery,
+  WorktreeDeliveryManager,
+  type AutomaticWorktreeDeliveryState,
+} from "./worktree-delivery.js";
 import { CodeHostDeliveryManager } from "./code-host-delivery.js";
 import { GitHubCliProvider } from "./github-cli-provider.js";
 import {
@@ -103,6 +109,8 @@ import {
 } from "./project-opener.js";
 import {
   completedTaskTarget,
+  deliveryAttentionBody,
+  deliveryAttentionTitle,
   handleTaskCompletion,
   type TaskCompletionNotification,
 } from "./task-completion.js";
@@ -182,6 +190,7 @@ import {
   DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
   DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
   DESKTOP_WORKSPACE_LIST_CHANNEL,
+  DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL,
   type DesktopAttachmentReferenceRequest,
   type DesktopAutomation,
   type DesktopAutomationCreateRequest,
@@ -252,6 +261,7 @@ interface AppServerRuntime {
 }
 const appServers = new Map<string, AppServerRuntime>();
 const threadProjects = new Map<string, string>();
+const deliveryAttentionCompletions = new Set<string>();
 const pendingThreadStarts = new Map<
   string | number | null,
   { projectId: string; workspace: DesktopTaskWorkspace }
@@ -488,8 +498,17 @@ function ensureAppServer(
         ) {
           return;
         }
-        await recordProjectMessage(projectId, messageWorkspace, message);
         const rendererWindow = mainWindow ?? window;
+        await recordProjectMessage(
+          projectId,
+          messageWorkspace,
+          message,
+          (notification) => {
+            if (rendererWindow && !rendererWindow.isDestroyed()) {
+              sendToRenderer(rendererWindow, notification);
+            }
+          },
+        );
         if (rendererWindow && !rendererWindow.isDestroyed()) {
           sendToRenderer(rendererWindow, message);
         }
@@ -643,11 +662,22 @@ async function recordProjectMessage(
   projectId: string,
   workspace: DesktopTaskWorkspace,
   message: JsonRpcOutgoing,
+  publish: (message: JsonRpcOutgoing) => void,
 ): Promise<void> {
   if ("method" in message) {
     const threadId = (message.params as { threadId?: unknown } | undefined)
       ?.threadId;
     if (typeof threadId === "string") threadProjects.set(threadId, projectId);
+    const incomingDelivery = deliveryStateFromNotification(message);
+    if (typeof threadId === "string" && incomingDelivery) {
+      recordDeliveryConversationState(
+        projectId,
+        threadId,
+        incomingDelivery.status,
+        incomingDelivery.source,
+        incomingDelivery.error,
+      );
+    }
     const processSessionId = processSessionIdFromMessage(message);
     if (processSessionId) {
       processWorkspaces.set(processSessionId, workspace.path);
@@ -673,13 +703,91 @@ async function recordProjectMessage(
       }
     }
     const completedTarget = completedTaskTarget(projectId, message);
-    if (completedTarget) {
+    if (
+      completedTarget &&
+      !deliveryAttentionCompletions.has(
+        deliveryConversationKey(completedTarget.projectId, completedTarget.id),
+      )
+    ) {
       try {
         projectStore?.markConversationCompleted(completedTarget);
       } catch {
         // A task can be removed while a late runtime notification is queued.
       }
     }
+    if (
+      message.method === "turn/completed" &&
+      typeof threadId === "string" &&
+      workspace.mode === "worktree" &&
+      currentProject(projectId)?.runtime?.kind !== "remote"
+    ) {
+      const project = currentProject(projectId);
+      if (project && conversationChangeTracker && worktreeDeliveryManager) {
+        let revision: string | undefined;
+        try {
+          const changes = await conversationChangeTracker.changes(
+            projectId,
+            threadId,
+            workspace.path,
+          );
+          revision = changes.revision;
+          await applyAutomaticWorktreeDelivery(
+            worktreeDeliveryManager,
+            {
+              projectId,
+              threadId,
+              revision: changes.revision,
+              projectPath: project.basePath,
+              workspace,
+            },
+            (state) => {
+              recordDeliveryConversationState(
+                projectId,
+                threadId,
+                state.status,
+                "lifecycle",
+                state.error,
+              );
+              publish(
+                automaticDeliveryNotification(
+                  projectId,
+                  threadId,
+                  state,
+                  "lifecycle",
+                ),
+              );
+            },
+          );
+        } catch (error) {
+          if (!revision) {
+            const reason = errorMessage(error);
+            recordDeliveryConversationState(
+              projectId,
+              threadId,
+              "failed",
+              "lifecycle",
+              reason,
+            );
+            publish(
+              deliveryFailedNotification(
+                projectId,
+                threadId,
+                "lifecycle",
+                reason,
+              ),
+            );
+          }
+          // Versioned failures have already published conflict/failed details.
+        }
+      }
+    }
+    const suppressCompletionNotification = Boolean(
+      message.method === "turn/completed" &&
+        typeof threadId === "string" &&
+        deliveryAttentionCompletions.delete(
+          deliveryConversationKey(projectId, threadId),
+        ),
+    );
     const automationId =
       typeof threadId === "string"
         ? automationThreads.get(threadId)
@@ -719,7 +827,11 @@ async function recordProjectMessage(
       );
       automationTurnWaiters.delete(threadId);
       automationThreads.delete(threadId);
-    } else if (projectStore && settingsStore) {
+    } else if (
+      projectStore &&
+      settingsStore &&
+      !suppressCompletionNotification
+    ) {
       handleTaskCompletion(projectId, message, {
         language: settingsStore.snapshot().language,
         markUnread: (target) => projectStore!.markConversationUnread(target),
@@ -1808,6 +1920,15 @@ async function handleConversationDelete(
   await conversationChangeTracker
     ?.deleteSnapshot(target.projectId, target.id)
     .catch(() => undefined);
+  if (!isRemoteHost() && project && worktreeDeliveryManager) {
+    await worktreeDeliveryManager
+      .deleteJournal({
+        projectId: target.projectId,
+        threadId: target.id,
+        projectPath: project.basePath,
+      })
+      .catch(() => undefined);
+  }
   const snapshot = isRemoteHost()
     ? syncRemoteProjects(
         await remoteHost!.client.deleteConversation(target),
@@ -1908,7 +2029,46 @@ async function handleWorktreeDeliveryApply(
     );
   }
   const delivery = requireWorktreeDelivery(request);
-  return delivery.manager.apply(delivery.request);
+  return applyAutomaticWorktreeDelivery(
+    delivery.manager,
+    delivery.request,
+    (state) => {
+      recordDeliveryConversationState(
+        request.projectId,
+        request.threadId,
+        state.status,
+        "retry",
+        state.error,
+      );
+      event.sender.send(
+        DESKTOP_MESSAGE_CHANNEL,
+        automaticDeliveryNotification(
+          request.projectId,
+          request.threadId,
+          state,
+          "retry",
+        ),
+      );
+    },
+  );
+}
+
+async function handleWorktreeDeliveryUndo(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const request = parseWorktreeDeliveryRequest(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.client.undoWorktreeDelivery(
+      request.projectId,
+      request.threadId,
+      request.revision,
+    );
+  }
+  const delivery = requireWorktreeDelivery(request);
+  return delivery.manager.undo(delivery.request);
 }
 
 async function handleWorktreeDeliveryCommit(
@@ -2417,10 +2577,17 @@ async function handleTerminalCreate(
   if (project.runtime?.kind === "remote") {
     return requireRemoteTerminalClient().create(request);
   }
-  const workspace = request.threadId
-    ? workspaceForThread(project, request.threadId)
-    : folderWorkspace(project.basePath);
-  return terminalService.create(workspace.path, request.cols, request.rows);
+  const workspace = resolveTerminalWorkspace(
+    project,
+    request.threadId,
+    request.workspace,
+  );
+  const session = terminalService.create(
+    workspace.cwd,
+    request.cols,
+    request.rows,
+  );
+  return { ...session, ...workspace };
 }
 
 function handleTerminalWrite(event: IpcMainEvent, value: unknown): void {
@@ -3170,6 +3337,9 @@ function parseTerminalCreateRequest(
     typeof request.projectId !== "string" ||
     (request.threadId !== undefined &&
       typeof request.threadId !== "string") ||
+    (request.workspace !== undefined &&
+      request.workspace !== "task" &&
+      request.workspace !== "original") ||
     typeof request.cols !== "number" ||
     typeof request.rows !== "number"
   ) {
@@ -3179,6 +3349,9 @@ function parseTerminalCreateRequest(
     projectId: request.projectId,
     ...(typeof request.threadId === "string"
       ? { threadId: request.threadId }
+      : {}),
+    ...(request.workspace === "task" || request.workspace === "original"
+      ? { workspace: request.workspace }
       : {}),
     cols: request.cols,
     rows: request.rows,
@@ -3226,6 +3399,164 @@ function sendToRenderer(window: BrowserWindow, message: JsonRpcOutgoing): void {
   if (!window.isDestroyed()) {
     window.webContents.send(DESKTOP_MESSAGE_CHANNEL, message);
   }
+}
+
+function automaticDeliveryNotification(
+  projectId: string,
+  threadId: string,
+  state: AutomaticWorktreeDeliveryState,
+  source: HostDeliverySource,
+): JsonRpcOutgoing {
+  const base = { projectId, threadId, revision: state.revision, source };
+  if (state.status === "syncing") {
+    return { jsonrpc: "2.0", method: "delivery/syncing", params: base };
+  }
+  if (state.status === "synced") {
+    return {
+      jsonrpc: "2.0",
+      method: "delivery/synced",
+      params: { ...base, result: state.result! },
+    };
+  }
+  if (state.status === "conflict") {
+    return {
+      jsonrpc: "2.0",
+      method: "delivery/conflict",
+      params: {
+        ...base,
+        preflight: state.preflight!,
+        error: state.error!,
+      },
+    };
+  }
+  return deliveryFailedNotification(
+    projectId,
+    threadId,
+    source,
+    state.error!,
+    state.revision,
+    state.preflight,
+  );
+}
+
+function deliveryFailedNotification(
+  projectId: string,
+  threadId: string,
+  source: HostDeliverySource,
+  error: string,
+  revision?: string,
+  preflight?: AutomaticWorktreeDeliveryState["preflight"],
+): JsonRpcOutgoing {
+  return {
+    jsonrpc: "2.0",
+    method: "delivery/failed",
+    params: {
+      projectId,
+      threadId,
+      source,
+      ...(revision ? { revision } : {}),
+      ...(preflight ? { preflight } : {}),
+      error,
+    },
+  };
+}
+
+function deliveryStateFromNotification(
+  message: JsonRpcOutgoing,
+):
+  | {
+      status: "syncing" | "synced" | "conflict" | "failed";
+      source: HostDeliverySource;
+      error?: string;
+    }
+  | undefined {
+  if (!("method" in message)) return;
+  if (
+    message.method !== "delivery/syncing" &&
+    message.method !== "delivery/synced" &&
+    message.method !== "delivery/conflict" &&
+    message.method !== "delivery/failed"
+  ) {
+    return;
+  }
+  const params = message.params as Record<string, unknown> | undefined;
+  if (params?.source !== "lifecycle" && params?.source !== "retry") return;
+  return {
+    status: message.method.slice("delivery/".length) as
+      | "syncing"
+      | "synced"
+      | "conflict"
+      | "failed",
+    source: params.source,
+    ...(typeof params.error === "string" ? { error: params.error } : {}),
+  };
+}
+
+function recordDeliveryConversationState(
+  projectId: string,
+  threadId: string,
+  status: "syncing" | "synced" | "conflict" | "failed",
+  source: HostDeliverySource,
+  error?: string,
+): void {
+  const project = currentProject(projectId);
+  const conversation = project?.conversations.find(({ id }) => id === threadId);
+  const target = { projectId, id: threadId };
+  try {
+    if (status === "syncing") {
+      projectStore?.markConversationPending(target);
+    } else if (status === "synced") {
+      projectStore?.markConversationCompleted(target);
+      deliveryAttentionCompletions.delete(
+        deliveryConversationKey(projectId, threadId),
+      );
+    } else {
+      projectStore?.markConversationAttention(target);
+      projectStore?.markConversationUnread(target);
+      if (source === "lifecycle") {
+        deliveryAttentionCompletions.add(
+          deliveryConversationKey(projectId, threadId),
+        );
+      }
+    }
+  } catch {
+    // A task can be removed while a late delivery result is queued.
+  }
+  if (
+    source === "lifecycle" &&
+    (status === "conflict" || status === "failed")
+  ) {
+    showDeliveryAttentionNotification({
+      status,
+      task: conversation?.title ?? threadId,
+      error,
+    });
+  }
+}
+
+function deliveryConversationKey(projectId: string, threadId: string): string {
+  return `${projectId}\u0000${threadId}`;
+}
+
+function showDeliveryAttentionNotification(input: {
+  status: "conflict" | "failed";
+  task: string;
+  error?: string;
+}): void {
+  if (!Notification.isSupported()) return;
+  const language = settingsStore?.snapshot().language ?? "en";
+  const notification = new Notification({
+    title: deliveryAttentionTitle(language, input.status),
+    body: deliveryAttentionBody(input.task, input.error),
+    icon: appIconPath,
+  });
+  notification.on("click", () => {
+    const window = mainWindow;
+    if (!window || window.isDestroyed()) return;
+    window.show();
+    window.focus();
+  });
+  notification.show();
 }
 
 function showTaskCompletionNotification(
@@ -3834,6 +4165,10 @@ app.whenReady().then(() => {
   ipcMain.handle(
     DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,
     handleWorktreeDeliveryApply,
+  );
+  ipcMain.handle(
+    DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL,
+    handleWorktreeDeliveryUndo,
   );
   ipcMain.handle(
     DESKTOP_WORKTREE_DELIVERY_COMMIT_CHANNEL,

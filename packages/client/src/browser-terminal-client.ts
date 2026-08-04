@@ -3,6 +3,7 @@ import type {
   HostTerminalServerMessage,
   TerminalSessionEvent,
   TerminalSessionInfo,
+  TerminalWorkspaceScope,
 } from "@threadlight/protocol";
 
 import { createBrowserUuid } from "./browser-uuid.js";
@@ -64,6 +65,7 @@ export class BrowserTerminalClient {
   async create(request: {
     projectId: string;
     threadId?: string;
+    workspace?: TerminalWorkspaceScope;
     cols: number;
     rows: number;
   }): Promise<TerminalSessionInfo> {
@@ -81,6 +83,7 @@ export class BrowserTerminalClient {
           requestId,
           projectId: request.projectId,
           ...(request.threadId ? { threadId: request.threadId } : {}),
+          ...(request.workspace ? { workspace: request.workspace } : {}),
           cols: request.cols,
           rows: request.rows,
         });
@@ -338,14 +341,23 @@ function parseServerMessage(data: string): HostTerminalServerMessage {
     if (
       typeof message.requestId !== "string" ||
       typeof session?.id !== "string" ||
-      typeof session.shell !== "string"
+      typeof session.shell !== "string" ||
+      (session.cwd !== undefined && typeof session.cwd !== "string") ||
+      (session.branch !== undefined && typeof session.branch !== "string")
     ) {
       throw new Error("Invalid remote terminal open response");
     }
     return {
       type: "opened",
       requestId: message.requestId,
-      session: { id: session.id, shell: session.shell },
+      session: {
+        id: session.id,
+        shell: session.shell,
+        ...(typeof session.cwd === "string" ? { cwd: session.cwd } : {}),
+        ...(typeof session.branch === "string"
+          ? { branch: session.branch }
+          : {}),
+      },
     };
   }
   if (

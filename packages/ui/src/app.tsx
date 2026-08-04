@@ -141,6 +141,7 @@ import {
 import { TerminalPanel, type TerminalAdapter } from "./terminal.js";
 import {
   WorkspacePanel,
+  type AutomaticDeliveryState,
   type ConversationChangesSnapshot,
   type WorkspaceAdapter,
   type WorkspaceFileOpenRequest,
@@ -513,6 +514,9 @@ function ThreadlightAppContent({
     useState(false);
   const [conversationChangesError, setConversationChangesError] =
     useState<string>();
+  const [automaticDeliveries, setAutomaticDeliveries] = useState<
+    Record<string, AutomaticDeliveryState>
+  >({});
   const [suggestedQuestions, setSuggestedQuestions] =
     useState<SuggestedQuestionsState>();
   const [suggestionRetry, setSuggestionRetry] = useState(0);
@@ -545,11 +549,68 @@ function ThreadlightAppContent({
   const currentConversation = currentProject?.conversations.find(
     (conversation) => conversation.id === state.threadId,
   );
+  const automaticDeliveryScope =
+    currentProject && state.threadId
+      ? `${currentProject.id}\u0000${state.threadId}`
+      : undefined;
+  const automaticDelivery = automaticDeliveryScope
+    ? automaticDeliveries[automaticDeliveryScope]
+    : undefined;
   const currentWorkspacePath =
     currentConversation?.workspace?.path ?? currentProject?.basePath;
   projectSnapshotRef.current = projectSnapshot;
   activeThreadIdRef.current = state.threadId;
   viewRef.current = view;
+
+  useEffect(() => {
+    const storeDelivery = (
+      delivery: {
+        projectId: string;
+        threadId: string;
+        revision?: string;
+        result?: AutomaticDeliveryState["result"];
+        preflight?: AutomaticDeliveryState["preflight"];
+        error?: string;
+      },
+      status: "syncing" | "synced" | "conflict" | "failed",
+    ) => {
+      const scope = `${delivery.projectId}\u0000${delivery.threadId}`;
+      setAutomaticDeliveries((current) => ({
+        ...current,
+        [scope]: {
+          scope,
+          revision: delivery.revision ?? current[scope]?.revision ?? "",
+          status,
+          ...(delivery.result ? { result: delivery.result } : {}),
+          ...(delivery.preflight ? { preflight: delivery.preflight } : {}),
+          ...(delivery.error ? { error: delivery.error } : {}),
+        },
+      }));
+      if (status !== "syncing" && projects) {
+        void projects
+          .load()
+          .then(setProjectSnapshot)
+          .catch(() => undefined);
+      }
+    };
+    const unsubscribes = [
+      client.on("delivery/syncing", (delivery) => {
+        storeDelivery(delivery, "syncing");
+      }),
+      client.on("delivery/synced", (delivery) => {
+        storeDelivery(delivery, "synced");
+      }),
+      client.on("delivery/conflict", (delivery) => {
+        storeDelivery(delivery, "conflict");
+      }),
+      client.on("delivery/failed", (delivery) => {
+        storeDelivery(delivery, "failed");
+      }),
+    ];
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [client, projects]);
 
   useEffect(() => {
     if (
@@ -767,6 +828,8 @@ function ThreadlightAppContent({
               ? t("runningTasks")
               : item.status === "pending"
                 ? t("pendingTasks")
+                : item.status === "attention"
+                  ? t("needsAttention")
                 : t("completedTasks")
         }`,
         keywords: `${project.name} ${
@@ -1111,6 +1174,83 @@ function ThreadlightAppContent({
   useEffect(() => {
     void refreshConversationChanges();
   }, [refreshConversationChanges, state.isRunning, state.messages.length]);
+
+  const retryAutomaticDelivery = useCallback(async () => {
+    if (
+      !workspace?.applyDelivery ||
+      !currentProject ||
+      !state.threadId ||
+      !automaticDelivery
+    ) {
+      return;
+    }
+    const scope = `${currentProject.id}\u0000${state.threadId}`;
+    let revision = automaticDelivery.revision;
+    try {
+      const changes = await workspace.getChanges(
+        currentProject.id,
+        state.threadId,
+      );
+      revision = changes.revision;
+      if (conversationChangesScope.current === scope) {
+        setConversationChanges(changes);
+      }
+      await workspace.applyDelivery(
+        currentProject.id,
+        state.threadId,
+        revision,
+      );
+    } catch (reason) {
+      setAutomaticDeliveries((current) => ({
+        ...current,
+        [scope]: {
+          ...(current[scope] ?? automaticDelivery),
+          scope,
+          revision,
+          status: "failed",
+          error: errorMessage(reason),
+        },
+      }));
+    }
+  }, [automaticDelivery, currentProject, state.threadId, workspace]);
+
+  const undoAutomaticDelivery = useCallback(async () => {
+    if (
+      !workspace?.undoDelivery ||
+      !currentProject ||
+      !state.threadId ||
+      !automaticDelivery ||
+      automaticDelivery.status !== "synced"
+    ) {
+      return;
+    }
+    const current = automaticDelivery;
+    const scope = current.scope;
+    setAutomaticDeliveries((deliveries) => ({
+      ...deliveries,
+      [scope]: { ...current, status: "undoing" },
+    }));
+    try {
+      await workspace.undoDelivery(
+        currentProject.id,
+        state.threadId,
+        current.revision,
+      );
+      setAutomaticDeliveries((deliveries) => ({
+        ...deliveries,
+        [scope]: { ...current, status: "undone", result: undefined },
+      }));
+    } catch (reason) {
+      setAutomaticDeliveries((deliveries) => ({
+        ...deliveries,
+        [scope]: {
+          ...current,
+          status: "failed",
+          error: errorMessage(reason),
+        },
+      }));
+    }
+  }, [automaticDelivery, currentProject, state.threadId, workspace]);
 
   useEffect(() => {
     if (!workspaceChangeRefreshKey) return;
@@ -3682,6 +3822,9 @@ function ThreadlightAppContent({
               currentConversation?.workspace?.mode === "worktree"
             }
             deliveryDisabled={state.isRunning}
+            automaticDelivery={automaticDelivery}
+            onRetryAutomaticDelivery={() => void retryAutomaticDelivery()}
+            onUndoAutomaticDelivery={() => void undoAutomaticDelivery()}
             taskTitle={currentConversation?.title}
             onDiscardTask={
               currentConversation?.workspace?.mode === "worktree"
@@ -4597,6 +4740,8 @@ export function TaskSearchDialog({
                           <LoaderCircle className="spin" size={14} />
                         ) : conversation.archivedAt ? (
                           <Archive size={14} />
+                        ) : conversation.status === "attention" ? (
+                          <TriangleAlert size={14} />
                         ) : conversation.pinnedAt ? (
                           <Pin size={14} />
                         ) : (
@@ -4612,6 +4757,8 @@ export function TaskSearchDialog({
                               ? t("archivedTasks")
                               : conversation.status === "pending"
                                 ? t("pendingTasks")
+                                : conversation.status === "attention"
+                                  ? t("needsAttention")
                                 : t("completedTasks")}
                         </small>
                       </span>
@@ -4887,8 +5034,12 @@ export function ProjectGroup({
   const projectUsingComputer = project.conversations.some(
     (conversation) => conversation.id === computerThreadId,
   );
+  const projectAttention = project.conversations.some(
+    (conversation) => conversation.status === "attention",
+  );
   const projectUnread = project.conversations.some(
-    (conversation) => conversation.unread,
+    (conversation) =>
+      conversation.unread && conversation.status !== "attention",
   );
   const projectActionCount = [
     onNewTask,
@@ -4958,6 +5109,7 @@ export function ProjectGroup({
           <span className="project-name">{project.name}</span>
           {(showsProjectLevelActivity(visibleExpanded, projectRunning) ||
             showsProjectLevelActivity(visibleExpanded, projectUsingComputer) ||
+            showsProjectLevelActivity(visibleExpanded, projectAttention) ||
             showsProjectLevelActivity(visibleExpanded, projectUnread)) && (
             <span className="project-live-indicators">
               {showsProjectLevelActivity(visibleExpanded, projectRunning) && (
@@ -4975,6 +5127,18 @@ export function ProjectGroup({
               ) && (
                 <ComputerUseIndicator
                   label={t("projectTaskUsingComputer", {
+                    project: project.name,
+                  })}
+                />
+              )}
+              {showsProjectLevelActivity(
+                visibleExpanded,
+                projectAttention,
+              ) && (
+                <TriangleAlert
+                  className="project-attention-indicator"
+                  size={13}
+                  aria-label={t("projectNeedsAttention", {
                     project: project.name,
                   })}
                 />
@@ -5362,7 +5526,20 @@ export function ProjectConversationItem({
             />
           )}
           <span className="thread-title">{conversation.title}</span>
-          {(running || computerActive || conversation.unread) && (
+          {conversation.status === "attention" && (
+            <span
+              className="thread-attention-badge"
+              aria-label={t("taskNeedsAttention", {
+                title: conversation.title,
+              })}
+            >
+              <TriangleAlert size={10} aria-hidden="true" />
+              {t("needsAttention")}
+            </span>
+          )}
+          {(running ||
+            computerActive ||
+            (conversation.unread && conversation.status !== "attention")) && (
             <span className="thread-live-indicators">
               {running && (
                 <LoaderCircle
@@ -5376,12 +5553,13 @@ export function ProjectConversationItem({
                   label={t("taskUsingComputer", { title: conversation.title })}
                 />
               )}
-              {conversation.unread && (
+              {conversation.unread &&
+                conversation.status !== "attention" && (
                 <span
                   className="thread-unread-indicator"
                   aria-label={t("taskUnread", { title: conversation.title })}
                 />
-              )}
+                )}
             </span>
           )}
         </button>

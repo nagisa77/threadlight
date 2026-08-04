@@ -423,6 +423,12 @@ export class ProjectStore {
     return this.setConversationStatus(target, "completed");
   }
 
+  markConversationAttention(
+    target: DesktopConversationTarget,
+  ): DesktopProjectsSnapshot {
+    return this.setConversationStatus(target, "attention");
+  }
+
   deleteConversation(
     target: DesktopConversationTarget,
   ): DesktopProjectsSnapshot {
@@ -613,7 +619,8 @@ function isConversation(value: unknown): boolean {
     typeof conversation.updatedAt === "string" &&
     (conversation.status === undefined ||
       conversation.status === "pending" ||
-      conversation.status === "completed") &&
+      conversation.status === "completed" ||
+      conversation.status === "attention") &&
     (conversation.unread === undefined ||
       typeof conversation.unread === "boolean") &&
     (conversation.renamedAt === undefined ||

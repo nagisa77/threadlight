@@ -638,6 +638,29 @@ describe("ProjectGroup", () => {
     expect(html).not.toContain("spin");
   });
 
+  it("shows a persistent attention badge instead of an unread dot", () => {
+    const html = renderToStaticMarkup(
+      <ProjectConversationItem
+        conversation={{
+          id: "thread-1",
+          title: "处理同步冲突",
+          createdAt: "2026-08-04T00:00:00.000Z",
+          updatedAt: "2026-08-04T00:00:00.000Z",
+          status: "attention",
+          unread: true,
+        }}
+        active={false}
+        disabled={false}
+        onSelect={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('class="thread-attention-badge"');
+    expect(html).toContain("需关注");
+    expect(html).toContain('aria-label="处理同步冲突需要关注"');
+    expect(html).not.toContain('class="thread-unread-indicator"');
+  });
+
   it("uses the thinking spinner for running projects and tasks", () => {
     const html = renderToStaticMarkup(
       <ProjectGroup

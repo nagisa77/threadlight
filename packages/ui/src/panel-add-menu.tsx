@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Files, Plus, Terminal } from "lucide-react";
 import { useI18n } from "./i18n.js";
 
-export type PanelViewKind = "terminal" | "file";
+export type PanelViewKind = "terminal" | "original-terminal" | "file";
 
 export function PanelAddMenu({
   available,
@@ -56,7 +56,21 @@ export function PanelAddMenu({
             }}
           >
             <Terminal size={16} />
-            <span>{t("terminal")}</span>
+            <span>{t("taskTerminal")}</span>
+          </button>
+        )}
+        {available.includes("original-terminal") && (
+          <button
+            type="button"
+            className="panel-add-option pressable"
+            role="menuitem"
+            onClick={() => {
+              onSelect("original-terminal");
+              setOpen(false);
+            }}
+          >
+            <Terminal size={16} />
+            <span>{t("originalWorkspaceTerminal")}</span>
           </button>
         )}
         {available.includes("file") && (

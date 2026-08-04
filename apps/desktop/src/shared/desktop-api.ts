@@ -7,6 +7,7 @@ import type {
   JsonRpcRequest,
   TerminalSessionEvent,
   TerminalSessionInfo,
+  TerminalWorkspaceScope,
 } from "@threadlight/protocol";
 
 export const DESKTOP_REQUEST_CHANNEL = "threadlight:request";
@@ -97,6 +98,8 @@ export const DESKTOP_WORKTREE_DELIVERY_PREFLIGHT_CHANNEL =
   "threadlight:worktree-delivery:preflight";
 export const DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL =
   "threadlight:worktree-delivery:apply";
+export const DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL =
+  "threadlight:worktree-delivery:undo";
 export const DESKTOP_WORKTREE_DELIVERY_COMMIT_CHANNEL =
   "threadlight:worktree-delivery:commit";
 export const DESKTOP_CODE_HOST_DELIVERY_STATUS_CHANNEL =
@@ -284,7 +287,7 @@ export interface DesktopConversationSummary {
   workspace?: DesktopTaskWorkspace;
 }
 
-export type DesktopConversationStatus = "pending" | "completed";
+export type DesktopConversationStatus = "pending" | "completed" | "attention";
 
 export type DesktopTaskWorkspace =
   | {
@@ -447,6 +450,7 @@ export interface DesktopComputerPermissionSnapshot {
 export interface DesktopTerminalCreateRequest {
   projectId: string;
   threadId?: string;
+  workspace?: TerminalWorkspaceScope;
   cols: number;
   rows: number;
 }
@@ -513,6 +517,13 @@ export interface DesktopWorktreeDeliveryResult
   extends DesktopWorktreeDeliveryPreflight {
   appliedFiles: number;
   commit?: string;
+  undoAvailable?: boolean;
+}
+
+export interface DesktopWorktreeDeliveryUndoResult {
+  targetBranch: string;
+  revertedFiles: number;
+  revision: string;
 }
 
 export interface DesktopCodeHostCheck {
@@ -885,6 +896,9 @@ export interface DesktopApi {
   applyWorktreeDelivery(
     request: DesktopWorktreeDeliveryRequest,
   ): Promise<DesktopWorktreeDeliveryResult>;
+  undoWorktreeDelivery(
+    request: DesktopWorktreeDeliveryRequest,
+  ): Promise<DesktopWorktreeDeliveryUndoResult>;
   commitWorktreeDelivery(
     request: DesktopWorktreeDeliveryCommitRequest,
   ): Promise<DesktopWorktreeDeliveryResult>;

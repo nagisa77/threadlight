@@ -11,6 +11,7 @@ import { createBrowserUuid } from "@threadlight/client";
 import type {
   TerminalSessionEvent,
   TerminalSessionInfo,
+  TerminalWorkspaceScope,
 } from "@threadlight/protocol";
 import { File, Terminal, X } from "lucide-react";
 
@@ -31,6 +32,7 @@ export interface TerminalAdapter {
   create(request: {
     projectId: string;
     threadId?: string;
+    workspace?: TerminalWorkspaceScope;
     cols: number;
     rows: number;
   }): Promise<TerminalSessionInfo>;
@@ -74,7 +76,7 @@ export function TerminalPanel({
   const { t } = useI18n();
   const nextTerminalNumber = useRef(1);
   const [tabs, setTabs] = useState<BottomPanelTab[]>(() => [
-    createTerminalTab(1, t),
+    createTerminalTab(1, "task", t),
   ]);
   const [activeTabId, setActiveTabId] = useState(() => tabs[0].id);
   const [panelHeight, setPanelHeight] = useState(260);
@@ -82,8 +84,12 @@ export function TerminalPanel({
 
   function addTab(kind: PanelViewKind) {
     const tab =
-      kind === "terminal"
-        ? createTerminalTab(++nextTerminalNumber.current, t)
+      isTerminalKind(kind)
+        ? createTerminalTab(
+            ++nextTerminalNumber.current,
+            kind === "original-terminal" ? "original" : "task",
+            t,
+          )
         : createBottomFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
@@ -162,7 +168,7 @@ export function TerminalPanel({
                   aria-selected={tab.id === activeTab?.id}
                   onClick={() => setActiveTabId(tab.id)}
                 >
-                  {tab.kind === "terminal" ? (
+                  {isTerminalKind(tab.kind) ? (
                     <Terminal size={14} aria-hidden="true" />
                   ) : (
                     <File size={14} aria-hidden="true" />
@@ -182,7 +188,11 @@ export function TerminalPanel({
             ))}
           </div>
           <PanelAddMenu
-            available={workspace ? ["terminal", "file"] : ["terminal"]}
+            available={
+              workspace
+                ? ["terminal", "original-terminal", "file"]
+                : ["terminal", "original-terminal"]
+            }
             onSelect={addTab}
           />
         </div>
@@ -199,12 +209,15 @@ export function TerminalPanel({
 
       <div className="panel-container-stage">
         {tabs.map((tab) =>
-          tab.kind === "terminal" ? (
+          isTerminalKind(tab.kind) ? (
             <TerminalView
               key={tab.id}
               adapter={adapter}
               projectId={projectId}
               threadId={threadId}
+              workspace={
+                tab.kind === "original-terminal" ? "original" : "task"
+              }
               hidden={tab.id !== activeTab?.id}
               label={tab.title}
             />
@@ -230,12 +243,14 @@ export function TerminalView({
   adapter,
   projectId,
   threadId,
+  workspace = "task",
   hidden = false,
   label,
 }: {
   adapter: TerminalAdapter;
   projectId: string;
   threadId?: string;
+  workspace?: TerminalWorkspaceScope;
   hidden?: boolean;
   label?: string;
 }) {
@@ -266,7 +281,7 @@ export function TerminalView({
       }
     });
     void adapter
-      .create(projectTerminalCreateRequest(projectId, threadId))
+      .create(projectTerminalCreateRequest(projectId, threadId, workspace))
       .then((created) => {
         createdSessionId = created.id;
         if (mounted) {
@@ -286,7 +301,7 @@ export function TerminalView({
       if (sessionId.current === createdSessionId) sessionId.current = null;
       if (createdSessionId) void adapter.close(createdSessionId);
     };
-  }, [adapter, projectId, threadId]);
+  }, [adapter, projectId, threadId, workspace]);
 
   const registerOutputWriter = useCallback(
     (writer: ((data: string) => void) | undefined) => {
@@ -316,6 +331,22 @@ export function TerminalView({
             theme={resolvedTheme}
             registerOutputWriter={registerOutputWriter}
           />
+          <div className="terminal-session-context">
+            <span
+              className="terminal-session-context-item cwd"
+              title={session.cwd}
+            >
+              <span>{t("terminalCwd")}</span>
+              <code>{session.cwd ?? "—"}</code>
+            </span>
+            <span
+              className="terminal-session-context-item branch"
+              title={session.branch}
+            >
+              <span>{t("terminalBranch")}</span>
+              <code>{session.branch ?? "—"}</code>
+            </span>
+          </div>
           {exitCode !== undefined && (
             <div className="terminal-exited">
               {t("terminalExited", { code: exitCode })}
@@ -334,10 +365,12 @@ export function TerminalView({
 export function projectTerminalCreateRequest(
   projectId: string,
   threadId?: string,
+  workspace: TerminalWorkspaceScope = "task",
 ): Parameters<TerminalAdapter["create"]>[0] {
   return {
     projectId,
-    ...(threadId ? { threadId } : {}),
+    ...(workspace === "task" && threadId ? { threadId } : {}),
+    workspace,
     cols: DEFAULT_COLUMNS,
     rows: DEFAULT_ROWS,
   };
@@ -484,12 +517,23 @@ function terminalTheme(theme: ResolvedTheme) {
   };
 }
 
-function createTerminalTab(number: number, t: Translate): BottomPanelTab {
+function createTerminalTab(
+  number: number,
+  workspace: TerminalWorkspaceScope,
+  t: Translate,
+): BottomPanelTab {
   return {
     id: createBrowserUuid(),
-    kind: "terminal",
-    title: t("terminalNumber", { number }),
+    kind: workspace === "original" ? "original-terminal" : "terminal",
+    title:
+      workspace === "original"
+        ? t("originalWorkspaceTerminalNumber", { number })
+        : t("taskTerminalNumber", { number }),
   };
+}
+
+function isTerminalKind(kind: PanelViewKind): boolean {
+  return kind === "terminal" || kind === "original-terminal";
 }
 
 function createBottomFileTab(t: Translate): BottomPanelTab {

@@ -17,6 +17,9 @@ describe("review panel layout", () => {
     expect(styles).toMatch(
       /\.review-delivery-button,[\s\S]*?\.review-discard-button\s*\{[^}]*white-space:\s*nowrap;/s,
     );
+    expect(styles).toMatch(
+      /\.automatic-delivery-status\s*\{[^}]*min-width:\s*220px;/s,
+    );
     expect(styles).toContain("@container review-panel (max-width: 720px)");
     expect(styles).toContain("@container review-panel (max-width: 540px)");
     expect(styles).toContain("@container review-panel (max-width: 400px)");

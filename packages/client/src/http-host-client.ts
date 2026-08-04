@@ -20,6 +20,7 @@ import type {
   HostSystemFile,
   HostWorktreeDeliveryPreflight,
   HostWorktreeDeliveryResult,
+  HostWorktreeDeliveryUndoResult,
   ThreadlightHostHealth,
 } from "@threadlight/protocol";
 
@@ -324,6 +325,17 @@ export class HttpHostClient {
   ): Promise<HostWorktreeDeliveryResult> {
     return this.request(
       this.conversationAction(projectId, threadId, "delivery/apply"),
+      { method: "POST", body: { revision } },
+    );
+  }
+
+  undoWorktreeDelivery(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<HostWorktreeDeliveryUndoResult> {
+    return this.request(
+      this.conversationAction(projectId, threadId, "delivery/undo"),
       { method: "POST", body: { revision } },
     );
   }

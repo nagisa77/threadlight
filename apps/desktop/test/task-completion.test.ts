@@ -9,11 +9,28 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   completedTaskTarget,
+  deliveryAttentionBody,
+  deliveryAttentionTitle,
   handleTaskCompletion,
   type TaskCompletionNotification,
 } from "../src/main/task-completion.js";
 
 describe("task completion notifications", () => {
+  it("builds localized delivery attention notifications with bounded detail", () => {
+    expect(deliveryAttentionTitle("zh-CN", "conflict")).toBe(
+      "自动同步有冲突",
+    );
+    expect(deliveryAttentionTitle("en", "failed")).toBe(
+      "Automatic sync failed",
+    );
+    expect(deliveryAttentionBody("同步任务", "target changed")).toBe(
+      "同步任务 · target changed",
+    );
+    expect(deliveryAttentionBody("同步任务", "x".repeat(220))).toHaveLength(
+      "同步任务 · ".length + 178,
+    );
+  });
+
   it("projects completed and failed turns to a persistent task target", () => {
     expect(
       completedTaskTarget("project-1", {

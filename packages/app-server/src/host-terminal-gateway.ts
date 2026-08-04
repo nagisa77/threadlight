@@ -1,6 +1,7 @@
-import { realpathSync, statSync } from "node:fs";
-
-import type { ProjectStore } from "@threadlight/host-core";
+import {
+  resolveTerminalWorkspace,
+  type ProjectStore,
+} from "@threadlight/host-core";
 import type {
   HostTerminalClientMessage,
   HostTerminalServerMessage,
@@ -80,19 +81,24 @@ export class HostTerminalGateway {
 
     try {
       if (message.type === "open") {
+        const project = this.options.projects.project(message.projectId);
+        if (!project) {
+          throw new Error(`Unknown project: ${message.projectId}`);
+        }
+        const workspace = resolveTerminalWorkspace(
+          project,
+          message.threadId,
+          message.workspace,
+        );
         const session = connection.sessions.create(
-          terminalWorkingDirectory(
-            this.options.projects,
-            message.projectId,
-            message.threadId,
-          ),
+          workspace.cwd,
           message.cols,
           message.rows,
         );
         this.send(connection, {
           type: "opened",
           requestId: message.requestId,
-          session,
+          session: { ...session, ...workspace },
         });
         return;
       }
@@ -155,6 +161,9 @@ function parseTerminalMessage(data: RawData): HostTerminalClientMessage {
       !message.projectId ||
       (message.threadId !== undefined &&
         typeof message.threadId !== "string") ||
+      (message.workspace !== undefined &&
+        message.workspace !== "task" &&
+        message.workspace !== "original") ||
       typeof message.cols !== "number" ||
       typeof message.rows !== "number"
     ) {
@@ -166,6 +175,9 @@ function parseTerminalMessage(data: RawData): HostTerminalClientMessage {
       projectId: message.projectId,
       ...(typeof message.threadId === "string"
         ? { threadId: message.threadId }
+        : {}),
+      ...(message.workspace === "task" || message.workspace === "original"
+        ? { workspace: message.workspace }
         : {}),
       cols: message.cols,
       rows: message.rows,
@@ -209,25 +221,6 @@ function parseTerminalMessage(data: RawData): HostTerminalClientMessage {
     return { type: "close", sessionId: message.sessionId };
   }
   throw new Error("Unknown terminal message");
-}
-
-function terminalWorkingDirectory(
-  projects: ProjectStore,
-  projectId: string,
-  threadId?: string,
-): string {
-  const project = projects.project(projectId);
-  if (!project) throw new Error(`Unknown project: ${projectId}`);
-  const workspacePath = threadId
-    ? project.conversations.find(
-        (conversation) => conversation.id === threadId,
-      )?.workspace?.path
-    : undefined;
-  const directory = realpathSync(workspacePath ?? project.basePath);
-  if (!statSync(directory).isDirectory()) {
-    throw new Error("Terminal workspace is not a directory");
-  }
-  return directory;
 }
 
 function errorMessage(error: unknown): string {

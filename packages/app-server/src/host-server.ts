@@ -22,6 +22,7 @@ import {
 import type { Duplex } from "node:stream";
 
 import {
+  applyAutomaticWorktreeDelivery,
   AutomationScheduler,
   AutomationStore,
   CodeHostDeliveryManager,
@@ -59,6 +60,7 @@ import type {
   HostSearchRequest,
   HostSearchResult,
   HostSettingsUpdate,
+  HostDeliverySource,
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -722,7 +724,15 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        await this.worktreeDelivery.apply(deliveryRequest),
+        await this.applyAutomaticDelivery(deliveryRequest, "retry"),
+      );
+      return;
+    }
+    if (request.method === "POST" && route.action === "delivery/undo") {
+      this.writeJson(
+        response,
+        200,
+        await this.worktreeDelivery.undo(deliveryRequest),
       );
       return;
     }
@@ -1174,8 +1184,13 @@ export class ThreadlightHostServer {
         return;
       }
     }
-    this.resolveAutomationTurn(projectId, message);
     this.recordNotification(projectId, message);
+    try {
+      await this.synchronizeCompletedWorktree(projectId, message);
+    } catch {
+      // Delivery failures are persisted as attention and published to clients.
+    }
+    this.resolveAutomationTurn(projectId, message);
     const event = serverSentEvent(message);
     for (const client of this.projectEventClients(projectId)) {
       client.write(event);
@@ -1211,6 +1226,140 @@ export class ThreadlightHostServer {
       }
     } catch {
       // Late notifications may arrive after a task is deleted.
+    }
+  }
+
+  private async synchronizeCompletedWorktree(
+    projectId: string,
+    message: JsonRpcOutgoing,
+  ): Promise<void> {
+    if (!("method" in message) || message.method !== "turn/completed") {
+      return;
+    }
+    const threadId = (
+      message.params as { threadId?: unknown } | undefined
+    )?.threadId;
+    if (typeof threadId !== "string") return;
+    const project = this.options.projects.project(projectId);
+    const workspace = project?.conversations.find(
+      (conversation) => conversation.id === threadId,
+    )?.workspace;
+    if (!project || workspace?.mode !== "worktree") return;
+    let changes;
+    try {
+      changes = await this.conversationChanges.changes(
+        projectId,
+        threadId,
+        workspace.path,
+      );
+    } catch (error) {
+      this.recordDeliveryConversationState(projectId, threadId, "failed");
+      this.publishDeliveryNotification(projectId, {
+        jsonrpc: "2.0",
+        method: "delivery/failed",
+        params: {
+          projectId,
+          threadId,
+          source: "lifecycle",
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
+    await this.applyAutomaticDelivery({
+      projectId,
+      threadId,
+      revision: changes.revision,
+      projectPath: project.basePath,
+      workspace,
+    }, "lifecycle");
+  }
+
+  private applyAutomaticDelivery(
+    request: Parameters<WorktreeDeliveryManager["apply"]>[0],
+    source: HostDeliverySource,
+  ) {
+    return applyAutomaticWorktreeDelivery(
+      this.worktreeDelivery,
+      request,
+      (state) => {
+        this.recordDeliveryConversationState(
+          request.projectId,
+          request.threadId,
+          state.status,
+        );
+        const base = {
+          projectId: request.projectId,
+          threadId: request.threadId,
+          revision: state.revision,
+          source,
+        };
+        const notification: JsonRpcOutgoing =
+          state.status === "syncing"
+            ? {
+                jsonrpc: "2.0",
+                method: "delivery/syncing",
+                params: base,
+              }
+            : state.status === "synced"
+              ? {
+                  jsonrpc: "2.0",
+                  method: "delivery/synced",
+                  params: { ...base, result: state.result! },
+                }
+              : state.status === "conflict"
+                ? {
+                    jsonrpc: "2.0",
+                    method: "delivery/conflict",
+                    params: {
+                      ...base,
+                      preflight: state.preflight!,
+                      error: state.error!,
+                    },
+                  }
+                : {
+                    jsonrpc: "2.0",
+                    method: "delivery/failed",
+                    params: {
+                      ...base,
+                      ...(state.preflight
+                        ? { preflight: state.preflight }
+                        : {}),
+                      error: state.error!,
+                    },
+                  };
+        this.publishDeliveryNotification(request.projectId, notification);
+      },
+    );
+  }
+
+  private recordDeliveryConversationState(
+    projectId: string,
+    threadId: string,
+    status: "syncing" | "synced" | "conflict" | "failed",
+  ): void {
+    try {
+      const target = { projectId, id: threadId };
+      if (status === "syncing") {
+        this.options.projects.markConversationPending(target);
+      } else if (status === "synced") {
+        this.options.projects.markConversationCompleted(target);
+      } else {
+        this.options.projects.markConversationAttention(target);
+        this.options.projects.markConversationUnread(target);
+      }
+    } catch {
+      // A task can be removed while a late delivery result is queued.
+    }
+  }
+
+  private publishDeliveryNotification(
+    projectId: string,
+    notification: JsonRpcOutgoing,
+  ): void {
+    const event = serverSentEvent(notification);
+    for (const client of this.projectEventClients(projectId)) {
+      client.write(event);
     }
   }
 
@@ -1466,9 +1615,19 @@ export class ThreadlightHostServer {
     projectId: string;
     id: string;
   }, workspace?: TaskWorkspace): Promise<void> {
+    const project = this.options.projects.project(target.projectId);
     await this.conversationChanges
       .deleteSnapshot(target.projectId, target.id)
       .catch(() => undefined);
+    if (project) {
+      await this.worktreeDelivery
+        .deleteJournal({
+          projectId: target.projectId,
+          threadId: target.id,
+          projectPath: project.basePath,
+        })
+        .catch(() => undefined);
+    }
     if (!workspace || workspace.mode === "folder") return;
     const key = runtimeKey(target.projectId, workspace.path);
     const runtime = this.runtimes.get(key);

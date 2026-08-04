@@ -4,6 +4,7 @@ import {
   readFileSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -950,6 +951,44 @@ describe("ThreadlightHostServer", () => {
               id: request.id ?? null,
               result: { threadId: "thread-1" },
             });
+            return;
+          }
+          if (request.method === "turn/start") {
+            const input = (request.params as { input?: unknown } | undefined)
+              ?.input;
+            const failed = input === "Fail safely";
+            const conflict = input === "Conflict sync";
+            const turnId = failed
+              ? "turn-failed"
+              : conflict
+                ? "turn-conflict"
+                : "turn-automatic";
+            writeFileSync(
+              join(projectRoot, "src", "index.ts"),
+              failed
+                ? "export const value = 'failed turn';\n"
+                : conflict
+                  ? "export const value = 'conflicting turn';\n"
+                  : "export const value = 'automatic';\n",
+            );
+            emit({
+              jsonrpc: "2.0",
+              id: request.id ?? null,
+              result: { turnId },
+            });
+            queueMicrotask(() => {
+              emit({
+                jsonrpc: "2.0",
+                method: failed ? "turn/failed" : "turn/completed",
+                params: {
+                  threadId: "thread-1",
+                  turnId,
+                  ...(failed
+                    ? { error: "Scripted turn failed" }
+                    : { output: "Applied automatically" }),
+                },
+              });
+            });
           }
         });
         peers.push({
@@ -1105,6 +1144,26 @@ describe("ThreadlightHostServer", () => {
       "task data\n",
     );
     await expect(
+      webSession.workspace.undoDelivery?.(
+        "project-1",
+        "thread-1",
+        reviewed.revision,
+      ),
+    ).resolves.toMatchObject({
+      targetBranch: expect.stringMatching(/^(main|master)$/),
+      revertedFiles: 2,
+    });
+    expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
+      "export const value = 'baseline';\n",
+    );
+    await expect(
+      webSession.workspace.applyDelivery?.(
+        "project-1",
+        "thread-1",
+        reviewed.revision,
+      ),
+    ).resolves.toMatchObject({ appliedFiles: 2, undoAvailable: true });
+    await expect(
       webSession.workspace.commitDelivery?.(
         "project-1",
         "thread-1",
@@ -1160,6 +1219,169 @@ describe("ThreadlightHostServer", () => {
         title: "Remote task",
       },
     });
+
+    const automaticDeliveryStates: string[] = [];
+    let deliveryConflict:
+      | { source: string; preflight: { conflicts: readonly unknown[] } }
+      | undefined;
+    let deliveryFailed: { source: string; error: string } | undefined;
+    let failedTurnObserved = false;
+    const unsubscribeDeliverySyncing = webSession.client.on(
+      "delivery/syncing",
+      ({ threadId }) => {
+        if (threadId === "thread-1") automaticDeliveryStates.push("syncing");
+      },
+    );
+    const unsubscribeDeliverySynced = webSession.client.on(
+      "delivery/synced",
+      ({ threadId }) => {
+        if (threadId === "thread-1") automaticDeliveryStates.push("synced");
+      },
+    );
+    const unsubscribeDeliveryConflict = webSession.client.on(
+      "delivery/conflict",
+      (event) => {
+        if (event.threadId !== "thread-1") return;
+        automaticDeliveryStates.push("conflict");
+        deliveryConflict = event;
+      },
+    );
+    const unsubscribeDeliveryFailed = webSession.client.on(
+      "delivery/failed",
+      (event) => {
+        if (event.threadId === "thread-1") {
+          automaticDeliveryStates.push("failed");
+          deliveryFailed = event;
+        }
+      },
+    );
+    const unsubscribeFailedTurn = webSession.client.on(
+      "turn/failed",
+      ({ threadId }) => {
+        if (threadId === "thread-1") failedTurnObserved = true;
+      },
+    );
+
+    await authenticatedJson(
+      `${endpoint}/v1/projects/project-1/runtime/rpc`,
+      {
+        method: "POST",
+        body: {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "turn/start",
+          params: { threadId: "thread-1", input: "Update the value" },
+        },
+      },
+    );
+    await waitFor(
+      () =>
+        readFileSync(join(projectPath, "src", "index.ts"), "utf8") ===
+        "export const value = 'automatic';\n",
+    );
+    await waitFor(() => automaticDeliveryStates.includes("synced"));
+    expect(automaticDeliveryStates).toEqual(["syncing", "synced"]);
+
+    writeFileSync(
+      join(projectPath, "src", "index.ts"),
+      "export const value = 'manual original';\n",
+    );
+    await authenticatedJson(
+      `${endpoint}/v1/projects/project-1/runtime/rpc`,
+      {
+        method: "POST",
+        body: {
+          jsonrpc: "2.0",
+          id: 4,
+          method: "turn/start",
+          params: { threadId: "thread-1", input: "Conflict sync" },
+        },
+      },
+    );
+    await waitFor(() => automaticDeliveryStates.includes("conflict"));
+    expect(automaticDeliveryStates).toEqual([
+      "syncing",
+      "synced",
+      "syncing",
+      "conflict",
+    ]);
+    expect(deliveryConflict).toMatchObject({
+      source: "lifecycle",
+      preflight: { conflicts: [expect.objectContaining({ path: "src/index.ts" })] },
+    });
+    expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
+      "export const value = 'manual original';\n",
+    );
+    const attentionConversation = (await host.projects()).projects[0]
+      ?.conversations.find(({ id }) => id === "thread-1");
+    expect(attentionConversation).toMatchObject({
+      status: "attention",
+      unread: true,
+    });
+
+    await authenticatedJson(
+      `${endpoint}/v1/projects/project-1/runtime/rpc`,
+      {
+        method: "POST",
+        body: {
+          jsonrpc: "2.0",
+          id: 3,
+          method: "turn/start",
+          params: { threadId: "thread-1", input: "Fail safely" },
+        },
+      },
+    );
+    await waitFor(() => failedTurnObserved);
+    expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
+      "export const value = 'manual original';\n",
+    );
+    expect(automaticDeliveryStates).toEqual([
+      "syncing",
+      "synced",
+      "syncing",
+      "conflict",
+    ]);
+
+    writeFileSync(
+      join(projectPath, "src", "index.ts"),
+      "export const value = 'automatic';\n",
+    );
+    execFileSync("git", ["switch", "-c", "other"], { cwd: projectPath });
+    const failedDeliveryChanges = await host.conversationChanges(
+      "project-1",
+      "thread-1",
+    );
+    await expect(
+      webSession.workspace.applyDelivery?.(
+        "project-1",
+        "thread-1",
+        failedDeliveryChanges.revision,
+      ),
+    ).rejects.toThrow("original worktree is now on other");
+    await waitFor(() => automaticDeliveryStates.includes("failed"));
+    expect(automaticDeliveryStates).toEqual([
+      "syncing",
+      "synced",
+      "syncing",
+      "conflict",
+      "syncing",
+      "failed",
+    ]);
+    expect(deliveryFailed).toMatchObject({
+      source: "retry",
+      error: expect.stringContaining("original worktree is now on other"),
+    });
+    unsubscribeDeliverySyncing();
+    unsubscribeDeliverySynced();
+    unsubscribeDeliveryConflict();
+    unsubscribeDeliveryFailed();
+    unsubscribeFailedTurn();
+    const deliveryJournalDirectory = join(
+      projectPath,
+      ".threadlight",
+      "delivery-journal",
+    );
+    expect(existsSync(deliveryJournalDirectory)).toBe(true);
     webSession.dispose();
 
     await host.updateConversation({
@@ -1172,6 +1394,8 @@ describe("ThreadlightHostServer", () => {
       id: "thread-1",
     });
     expect(existsSync(conversation.workspace.root)).toBe(false);
+    expect(existsSync(deliveryJournalDirectory)).toBe(true);
+    expect(readdirSync(deliveryJournalDirectory)).toEqual([]);
   });
 
   it("fails pending RPC requests immediately when a runtime exits", async () => {
@@ -1305,10 +1529,45 @@ describe("ThreadlightHostServer", () => {
     expect(await openedMessage).toEqual({
       type: "opened",
       requestId: "open-1",
-      session: { id: "terminal-1", shell: "zsh" },
+      session: {
+        id: "terminal-1",
+        shell: "zsh",
+        cwd: realpathSync(taskWorkspace),
+      },
     });
     expect(terminalSessions[0]?.creates).toEqual([
       { cwd: realpathSync(taskWorkspace), cols: 100, rows: 30 },
+    ]);
+
+    const originalOpenedMessage = nextWebSocketMessage(socket);
+    socket.send(
+      JSON.stringify({
+        type: "open",
+        requestId: "open-original",
+        projectId: "project-1",
+        threadId: "thread-1",
+        workspace: "original",
+        cols: 90,
+        rows: 26,
+      }),
+    );
+    expect(await originalOpenedMessage).toEqual({
+      type: "opened",
+      requestId: "open-original",
+      session: {
+        id: "terminal-1",
+        shell: "zsh",
+        cwd: realpathSync(workspace),
+        branch: execFileSync(
+          "git",
+          ["-C", workspace, "branch", "--show-current"],
+          { encoding: "utf8" },
+        ).trim(),
+      },
+    });
+    expect(terminalSessions[0]?.creates).toEqual([
+      { cwd: realpathSync(taskWorkspace), cols: 100, rows: 30 },
+      { cwd: realpathSync(workspace), cols: 90, rows: 26 },
     ]);
 
     const dataMessage = nextWebSocketMessage(socket);

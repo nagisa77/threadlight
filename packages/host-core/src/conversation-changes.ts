@@ -74,6 +74,7 @@ export interface ConversationDeliveryFile {
   binary: boolean;
   localOnly?: boolean;
   baselineContent?: Buffer;
+  baselineMode?: number;
   taskContent?: Buffer;
   taskMode?: number;
 }
@@ -335,6 +336,9 @@ export class ConversationChangeTracker {
           binary: change.binary,
           ...(change.localOnly ? { localOnly: true } : {}),
           ...(baselineContent !== undefined ? { baselineContent } : {}),
+          ...(baseline?.mode !== undefined
+            ? { baselineMode: baseline.mode }
+            : {}),
           ...(taskContent !== undefined
             ? { taskContent, taskMode: task?.mode }
             : {}),

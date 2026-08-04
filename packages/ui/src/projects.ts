@@ -15,7 +15,7 @@ export interface ConversationSummary {
   workspace?: TaskWorkspace;
 }
 
-export type ConversationStatus = "pending" | "completed";
+export type ConversationStatus = "pending" | "completed" | "attention";
 
 export type TaskWorkspace =
   | {

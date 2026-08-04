@@ -96,6 +96,28 @@ export interface WorktreeDeliveryPreflight {
 export interface WorktreeDeliveryResult extends WorktreeDeliveryPreflight {
   appliedFiles: number;
   commit?: string;
+  undoAvailable?: boolean;
+}
+
+export interface WorktreeDeliveryUndoResult {
+  targetBranch: string;
+  revertedFiles: number;
+  revision: string;
+}
+
+export interface AutomaticDeliveryState {
+  scope: string;
+  revision: string;
+  status:
+    | "syncing"
+    | "synced"
+    | "conflict"
+    | "failed"
+    | "undoing"
+    | "undone";
+  result?: WorktreeDeliveryResult;
+  preflight?: WorktreeDeliveryPreflight;
+  error?: string;
 }
 
 export interface CodeHostCheck {
@@ -195,6 +217,11 @@ export interface WorkspaceAdapter {
     threadId: string,
     revision: string,
   ): Promise<WorktreeDeliveryResult>;
+  undoDelivery?(
+    projectId: string,
+    threadId: string,
+    revision: string,
+  ): Promise<WorktreeDeliveryUndoResult>;
   commitDelivery?(
     projectId: string,
     threadId: string,
@@ -277,6 +304,9 @@ export function WorkspacePanel({
   restoreDisabled = false,
   deliveryEnabled = false,
   deliveryDisabled = false,
+  automaticDelivery,
+  onRetryAutomaticDelivery,
+  onUndoAutomaticDelivery,
   taskTitle,
   onDiscardTask,
   toolbarActions,
@@ -304,6 +334,9 @@ export function WorkspacePanel({
   restoreDisabled?: boolean;
   deliveryEnabled?: boolean;
   deliveryDisabled?: boolean;
+  automaticDelivery?: AutomaticDeliveryState;
+  onRetryAutomaticDelivery?(): void;
+  onUndoAutomaticDelivery?(): void;
   taskTitle?: string;
   onDiscardTask?(): void;
   toolbarActions?: ReactNode;
@@ -416,7 +449,9 @@ export function WorkspacePanel({
           tab.kind === "review"
             ? t("review")
             : tab.kind === "terminal"
-              ? t("terminal")
+              ? t("taskTerminal")
+              : tab.kind === "original-terminal"
+                ? t("originalWorkspaceTerminal")
               : tab.path
                 ? tab.title
                 : t("openFile"),
@@ -432,7 +467,12 @@ export function WorkspacePanel({
 
   function addTab(kind: PanelViewKind) {
     const tab =
-      kind === "terminal" ? createTerminalTab(t) : createFileTab(t);
+      kind === "terminal" || kind === "original-terminal"
+        ? createTerminalTab(
+            kind === "original-terminal" ? "original" : "task",
+            t,
+          )
+        : createFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
   }
@@ -565,7 +605,8 @@ export function WorkspacePanel({
               >
                 {tab.kind === "review" ? (
                   <FileDiff size={14} />
-                ) : tab.kind === "terminal" ? (
+                ) : tab.kind === "terminal" ||
+                  tab.kind === "original-terminal" ? (
                   <Terminal size={14} />
                 ) : (
                   <File size={14} />
@@ -593,7 +634,11 @@ export function WorkspacePanel({
             ))}
           </div>
           <PanelAddMenu
-            available={terminal ? ["terminal", "file"] : ["file"]}
+            available={
+              terminal
+                ? ["terminal", "original-terminal", "file"]
+                : ["file"]
+            }
             onSelect={addTab}
           />
         </div>
@@ -605,12 +650,20 @@ export function WorkspacePanel({
       <div className="workspace-panel-stage">
         {terminal &&
           tabs
-            .filter((tab) => tab.kind === "terminal")
+            .filter(
+              (tab) =>
+                tab.kind === "terminal" ||
+                tab.kind === "original-terminal",
+            )
             .map((tab) => (
               <TerminalView
                 key={tab.id}
                 adapter={terminal}
                 projectId={projectId}
+                threadId={threadId}
+                workspace={
+                  tab.kind === "original-terminal" ? "original" : "task"
+                }
                 hidden={tab.id !== activeTab?.id}
                 label={tab.title}
               />
@@ -625,6 +678,9 @@ export function WorkspacePanel({
               threadId={threadId}
               deliveryEnabled={deliveryEnabled}
               deliveryDisabled={deliveryDisabled}
+              automaticDelivery={automaticDelivery}
+              onRetryAutomaticDelivery={onRetryAutomaticDelivery}
+              onUndoAutomaticDelivery={onUndoAutomaticDelivery}
               defaultCommitMessage={taskTitle}
               onPreflightDelivery={adapter.preflightDelivery}
               onApplyDelivery={adapter.applyDelivery}
@@ -890,6 +946,9 @@ export function ReviewView({
   threadId,
   deliveryEnabled = false,
   deliveryDisabled = false,
+  automaticDelivery,
+  onRetryAutomaticDelivery,
+  onUndoAutomaticDelivery,
   defaultCommitMessage,
   onPreflightDelivery,
   onApplyDelivery,
@@ -911,6 +970,9 @@ export function ReviewView({
   threadId?: string;
   deliveryEnabled?: boolean;
   deliveryDisabled?: boolean;
+  automaticDelivery?: AutomaticDeliveryState;
+  onRetryAutomaticDelivery?(): void;
+  onUndoAutomaticDelivery?(): void;
   defaultCommitMessage?: string;
   onPreflightDelivery?: WorkspaceAdapter["preflightDelivery"];
   onApplyDelivery?: WorkspaceAdapter["applyDelivery"];
@@ -1165,6 +1227,15 @@ export function ReviewView({
   const localDataFiles =
     changes?.files.filter((file) => file.localOnly).length ?? 0;
   const gitFiles = (changes?.files.length ?? 0) - localDataFiles;
+  const deliveryScope =
+    projectId && threadId ? `${projectId}\u0000${threadId}` : undefined;
+  const deliveryState =
+    automaticDelivery?.scope === deliveryScope
+      ? automaticDelivery
+      : undefined;
+  const deliveryNeedsAttention =
+    deliveryState?.status === "conflict" ||
+    deliveryState?.status === "failed";
 
   return (
     <div className="review-view">
@@ -1239,51 +1310,78 @@ export function ReviewView({
           <div className="review-operation-bar">
             {showDeliveryCenter && (
               <div className="review-delivery-actions">
-                <button
-                  type="button"
-                  className="review-delivery-button primary pressable"
-                  disabled={
-                    loading ||
-                    deliveryBusy ||
-                    deliveryDisabled ||
-                    !canDeliverChanges ||
-                    !onApplyDelivery
-                  }
-                  title={
-                    deliveryDisabled
-                      ? t("deliveryUnavailableWhileRunning")
-                      : t("applyToOriginalBranch")
-                  }
-                  onClick={() => void beginDelivery("apply")}
+                <div
+                  className={`automatic-delivery-status ${deliveryNeedsAttention ? "error" : deliveryState?.status ?? "ready"}`}
+                  role="status"
                 >
-                  {deliveryBusy ? (
-                    <LoaderCircle className="spin" size={14} />
-                  ) : (
-                    <GitMerge size={14} />
-                  )}
-                  {t("applyToOriginal")}
-                </button>
-                <button
-                  type="button"
-                  className="review-delivery-button pressable"
-                  disabled={
-                    loading ||
-                    deliveryBusy ||
-                    deliveryDisabled ||
-                    !canDeliverChanges ||
-                    gitFiles === 0 ||
-                    !onCommitDelivery
-                  }
-                  title={
-                    gitFiles === 0
-                      ? t("commitRequiresGitChanges")
-                      : t("stageAndCommitDescription")
-                  }
-                  onClick={() => void beginDelivery("commit")}
-                >
-                  <GitCommitHorizontal size={14} />
-                  {t("stageAndCommit")}
-                </button>
+                  <span className="automatic-delivery-icon" aria-hidden="true">
+                    {deliveryState?.status === "syncing" ||
+                    deliveryState?.status === "undoing" ? (
+                      <LoaderCircle className="spin" size={14} />
+                    ) : deliveryNeedsAttention ? (
+                      <TriangleAlert size={14} />
+                    ) : deliveryState?.status === "undone" ? (
+                      <RotateCcw size={14} />
+                    ) : (
+                      <GitMerge size={14} />
+                    )}
+                  </span>
+                  <span className="automatic-delivery-copy">
+                    <strong>{t("automaticDelivery")}</strong>
+                    <small>
+                      {deliveryState?.status === "syncing"
+                        ? t("automaticDeliverySyncing")
+                        : deliveryState?.status === "undoing"
+                          ? t("automaticDeliveryUndoing")
+                          : deliveryState?.status === "undone"
+                            ? t("automaticDeliveryUndone")
+                            : deliveryNeedsAttention
+                              ? deliveryState.error
+                              : deliveryState?.result
+                                ? t("automaticDeliverySynced", {
+                                    branch: deliveryState.result.targetBranch,
+                                    count: deliveryState.result.appliedFiles,
+                                  })
+                                : t("automaticDeliveryReady")}
+                    </small>
+                    {deliveryState?.status === "conflict" &&
+                      deliveryState.preflight?.conflicts.length ? (
+                        <ul className="automatic-delivery-conflicts">
+                          {deliveryState.preflight.conflicts.map((conflict) => (
+                            <li key={`${conflict.path}:${conflict.reason}`}>
+                              <code>{conflict.path}</code>
+                              <span>{t(deliveryConflictKey(conflict.reason))}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                  </span>
+                  {deliveryNeedsAttention &&
+                    onRetryAutomaticDelivery && (
+                      <button
+                        type="button"
+                        className="automatic-delivery-action pressable"
+                        disabled={deliveryDisabled}
+                        onClick={onRetryAutomaticDelivery}
+                      >
+                        <RefreshCw size={13} />
+                        {t("retry")}
+                      </button>
+                    )}
+                  {deliveryState?.status === "synced" &&
+                    deliveryState.result?.undoAvailable &&
+                    onUndoAutomaticDelivery && (
+                      <button
+                        type="button"
+                        className="automatic-delivery-action pressable"
+                        disabled={deliveryDisabled}
+                        onClick={onUndoAutomaticDelivery}
+                      >
+                        <RotateCcw size={13} />
+                        {t("undoAutomaticDelivery")}
+                      </button>
+                    )}
+                </div>
                 {onDiscardTask && (
                   <button
                     type="button"
@@ -3072,11 +3170,17 @@ function createFileTab(t: Translate): WorkspaceTab {
   };
 }
 
-function createTerminalTab(t: Translate): WorkspaceTab {
+function createTerminalTab(
+  workspace: "task" | "original",
+  t: Translate,
+): WorkspaceTab {
   return {
     id: createBrowserUuid(),
-    kind: "terminal",
-    title: t("terminal"),
+    kind: workspace === "original" ? "original-terminal" : "terminal",
+    title:
+      workspace === "original"
+        ? t("originalWorkspaceTerminal")
+        : t("taskTerminal"),
   };
 }
 
