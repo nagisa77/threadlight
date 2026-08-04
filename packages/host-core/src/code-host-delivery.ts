@@ -39,9 +39,18 @@ export interface CodeHostPullRequest {
   comments: readonly CodeHostReviewComment[];
 }
 
+export type CodeHostDeliverySetupIssue =
+  | "cli_missing"
+  | "authentication_required"
+  | "remote_missing"
+  | "remote_ambiguous"
+  | "repository_unavailable"
+  | "unknown";
+
 export interface CodeHostDeliveryStatus {
   provider: "github";
   available: boolean;
+  setupIssue?: CodeHostDeliverySetupIssue;
   reason?: string;
   repository?: string;
   remote?: string;

@@ -484,7 +484,24 @@ const zh = {
   commitRequiresGitChanges: "只有本地数据变更；请使用“应用到原分支”",
   githubDelivery: "GitHub 交付",
   loadingGitHubStatus: "正在读取 GitHub 状态…",
-  githubCliRequired: "需要安装并登录 GitHub CLI",
+  githubCliMissing: "当前 Host 未安装 GitHub CLI",
+  githubCliMissingHelp:
+    "请在运行当前 Threadlight Host 的机器上安装 GitHub CLI（不是浏览器所在设备），然后运行以下登录命令。",
+  githubCliInstallGuide: "查看安装说明",
+  githubAuthRequired: "当前 Host 尚未登录 GitHub",
+  githubAuthRequiredHelp: "请在当前 Host 的终端运行以下命令，然后刷新状态。",
+  githubRemoteMissing: "仓库尚未配置 Git 远端",
+  githubRemoteMissingHelp:
+    "请在当前 Host 的项目目录添加 GitHub 远端，然后刷新状态。",
+  githubRemoteAmbiguous: "需要选择用于交付的 Git 远端",
+  githubRemoteAmbiguousHelp:
+    "检测到多个 Git 远端。请为任务分支指定一个远端，然后刷新状态。",
+  githubRepositoryUnavailable: "无法识别 GitHub 仓库",
+  githubRepositoryUnavailableHelp:
+    "请确认远端指向 GitHub、当前账号有访问权限，并检查 Host 的网络连接。",
+  githubDeliveryUnavailableHelp:
+    "请查看错误详情，修复当前 Host 的配置后刷新状态。",
+  githubStatusDetails: "错误详情：{reason}",
   refreshGitHubStatus: "刷新 GitHub 状态",
   branchPushed: "已 Push",
   branchLocalOnly: "仅本地",
@@ -1076,7 +1093,25 @@ const en: Messages = {
   commitRequiresGitChanges: "Only local data changed; use Apply to original",
   githubDelivery: "GitHub delivery",
   loadingGitHubStatus: "Loading GitHub status…",
-  githubCliRequired: "Install and sign in to GitHub CLI",
+  githubCliMissing: "GitHub CLI is not installed on this Host",
+  githubCliMissingHelp:
+    "Install GitHub CLI on the machine running the current Threadlight Host—not the device running this browser—then run the sign-in command below.",
+  githubCliInstallGuide: "View installation instructions",
+  githubAuthRequired: "This Host is not signed in to GitHub",
+  githubAuthRequiredHelp:
+    "Run the command below in a terminal on the current Host, then refresh the status.",
+  githubRemoteMissing: "This repository has no Git remote",
+  githubRemoteMissingHelp:
+    "Add a GitHub remote from the project directory on the current Host, then refresh the status.",
+  githubRemoteAmbiguous: "Choose a Git remote for delivery",
+  githubRemoteAmbiguousHelp:
+    "Multiple Git remotes were found. Configure one for the task branch, then refresh the status.",
+  githubRepositoryUnavailable: "The GitHub repository could not be identified",
+  githubRepositoryUnavailableHelp:
+    "Check that the remote points to GitHub, the signed-in account has access, and the Host can reach GitHub.",
+  githubDeliveryUnavailableHelp:
+    "Review the error details, fix the configuration on the current Host, then refresh the status.",
+  githubStatusDetails: "Error details: {reason}",
   refreshGitHubStatus: "Refresh GitHub status",
   branchPushed: "Pushed",
   branchLocalOnly: "Local only",
@@ -1666,7 +1701,25 @@ const ja: Messages = {
   commitRequiresGitChanges: "ローカルデータの変更のみです。元ブランチへの適用を使用してください",
   githubDelivery: "GitHub 配信",
   loadingGitHubStatus: "GitHub の状態を読み込み中…",
-  githubCliRequired: "GitHub CLI のインストールとログインが必要です",
+  githubCliMissing: "現在の Host に GitHub CLI がインストールされていません",
+  githubCliMissingHelp:
+    "ブラウザの端末ではなく、現在の Threadlight Host を実行しているマシンに GitHub CLI をインストールし、以下のログインコマンドを実行してください。",
+  githubCliInstallGuide: "インストール手順を見る",
+  githubAuthRequired: "現在の Host は GitHub にログインしていません",
+  githubAuthRequiredHelp:
+    "現在の Host のターミナルで以下のコマンドを実行し、状態を更新してください。",
+  githubRemoteMissing: "リポジトリに Git remote が設定されていません",
+  githubRemoteMissingHelp:
+    "現在の Host のプロジェクトディレクトリで GitHub remote を追加し、状態を更新してください。",
+  githubRemoteAmbiguous: "配信に使用する Git remote を選択してください",
+  githubRemoteAmbiguousHelp:
+    "複数の Git remote が見つかりました。タスクブランチに使用する remote を設定し、状態を更新してください。",
+  githubRepositoryUnavailable: "GitHub リポジトリを特定できません",
+  githubRepositoryUnavailableHelp:
+    "remote が GitHub を指していること、ログイン中のアカウントに権限があること、Host から GitHub に接続できることを確認してください。",
+  githubDeliveryUnavailableHelp:
+    "エラー詳細を確認し、現在の Host の設定を修正してから状態を更新してください。",
+  githubStatusDetails: "エラー詳細: {reason}",
   refreshGitHubStatus: "GitHub の状態を更新",
   branchPushed: "Push 済み",
   branchLocalOnly: "ローカルのみ",
@@ -2267,7 +2320,24 @@ const zhTW: Messages = {
   commitRequiresGitChanges: "只有本機資料變更；請使用「套用到原分支」",
   githubDelivery: "GitHub 交付",
   loadingGitHubStatus: "正在讀取 GitHub 狀態…",
-  githubCliRequired: "需要安裝並登入 GitHub CLI",
+  githubCliMissing: "目前的 Host 尚未安裝 GitHub CLI",
+  githubCliMissingHelp:
+    "請在執行目前 Threadlight Host 的機器上安裝 GitHub CLI（不是瀏覽器所在裝置），然後執行以下登入指令。",
+  githubCliInstallGuide: "查看安裝說明",
+  githubAuthRequired: "目前的 Host 尚未登入 GitHub",
+  githubAuthRequiredHelp: "請在目前 Host 的終端機執行以下指令，然後重新整理狀態。",
+  githubRemoteMissing: "儲存庫尚未設定 Git remote",
+  githubRemoteMissingHelp:
+    "請在目前 Host 的專案目錄加入 GitHub remote，然後重新整理狀態。",
+  githubRemoteAmbiguous: "需要選擇交付使用的 Git remote",
+  githubRemoteAmbiguousHelp:
+    "偵測到多個 Git remote。請為任務分支指定一個 remote，然後重新整理狀態。",
+  githubRepositoryUnavailable: "無法識別 GitHub 儲存庫",
+  githubRepositoryUnavailableHelp:
+    "請確認 remote 指向 GitHub、目前帳號有存取權限，並檢查 Host 的網路連線。",
+  githubDeliveryUnavailableHelp:
+    "請查看錯誤詳細資料，修正目前 Host 的設定後重新整理狀態。",
+  githubStatusDetails: "錯誤詳細資料：{reason}",
   refreshGitHubStatus: "重新整理 GitHub 狀態",
   branchPushed: "已 Push",
   branchLocalOnly: "僅本機",
@@ -2855,7 +2925,25 @@ const ko: Messages = {
   commitRequiresGitChanges: "로컬 데이터만 변경되었습니다. 원래 브랜치에 적용을 사용하세요",
   githubDelivery: "GitHub 전달",
   loadingGitHubStatus: "GitHub 상태 불러오는 중…",
-  githubCliRequired: "GitHub CLI 설치 및 로그인이 필요합니다",
+  githubCliMissing: "현재 Host에 GitHub CLI가 설치되어 있지 않습니다",
+  githubCliMissingHelp:
+    "브라우저 기기가 아니라 현재 Threadlight Host를 실행 중인 머신에 GitHub CLI를 설치한 다음 아래 로그인 명령을 실행하세요.",
+  githubCliInstallGuide: "설치 안내 보기",
+  githubAuthRequired: "현재 Host가 GitHub에 로그인되어 있지 않습니다",
+  githubAuthRequiredHelp:
+    "현재 Host의 터미널에서 아래 명령을 실행한 다음 상태를 새로 고치세요.",
+  githubRemoteMissing: "저장소에 Git remote가 설정되어 있지 않습니다",
+  githubRemoteMissingHelp:
+    "현재 Host의 프로젝트 디렉터리에서 GitHub remote를 추가한 다음 상태를 새로 고치세요.",
+  githubRemoteAmbiguous: "전달에 사용할 Git remote를 선택해야 합니다",
+  githubRemoteAmbiguousHelp:
+    "여러 Git remote가 발견되었습니다. 작업 브랜치에 사용할 remote를 설정한 다음 상태를 새로 고치세요.",
+  githubRepositoryUnavailable: "GitHub 저장소를 확인할 수 없습니다",
+  githubRepositoryUnavailableHelp:
+    "remote가 GitHub를 가리키는지, 로그인한 계정에 권한이 있는지, Host에서 GitHub에 연결할 수 있는지 확인하세요.",
+  githubDeliveryUnavailableHelp:
+    "오류 세부 정보를 확인하고 현재 Host의 설정을 수정한 다음 상태를 새로 고치세요.",
+  githubStatusDetails: "오류 세부 정보: {reason}",
   refreshGitHubStatus: "GitHub 상태 새로고침",
   branchPushed: "Push됨",
   branchLocalOnly: "로컬 전용",

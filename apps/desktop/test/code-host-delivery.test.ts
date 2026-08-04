@@ -126,6 +126,107 @@ describe("CodeHostDeliveryManager", () => {
 });
 
 describe("GitHubCliProvider", () => {
+  it("reports a missing GitHub CLI separately from authentication failures", async () => {
+    const provider = new GitHubCliProvider({
+      run: async () => {
+        throw Object.assign(new Error("spawn gh ENOENT"), { code: "ENOENT" });
+      },
+    });
+
+    await expect(
+      provider.status("/repository", "threadlight/task", "main"),
+    ).resolves.toMatchObject({
+      available: false,
+      setupIssue: "cli_missing",
+    });
+  });
+
+  it("reports an unauthenticated GitHub CLI with a sign-in action", async () => {
+    const provider = new GitHubCliProvider({
+      run: async () => {
+        throw Object.assign(new Error("not logged in"), {
+          stderr: "You are not logged into any GitHub hosts. Run gh auth login.",
+        });
+      },
+    });
+
+    await expect(
+      provider.status("/repository", "threadlight/task", "main"),
+    ).resolves.toMatchObject({
+      available: false,
+      setupIssue: "authentication_required",
+      reason: expect.stringContaining("gh auth login"),
+    });
+  });
+
+  it("reports a repository without remotes instead of blaming GitHub CLI", async () => {
+    const provider = new GitHubCliProvider({
+      run: async (command, args) => {
+        const key = `${command} ${args.join(" ")}`;
+        if (key === "gh auth status") return output("");
+        if (key.includes("git config branch.threadlight/task.remote")) {
+          throw new Error("branch has no configured remote");
+        }
+        if (key === "git remote") return output("");
+        throw new Error(`Unexpected command: ${key}`);
+      },
+    });
+
+    await expect(
+      provider.status("/repository", "threadlight/task", "main"),
+    ).resolves.toMatchObject({
+      available: false,
+      setupIssue: "remote_missing",
+      reason: "No Git remotes found",
+    });
+  });
+
+  it("asks for a remote choice when a repository has multiple non-default remotes", async () => {
+    const provider = new GitHubCliProvider({
+      run: async (command, args) => {
+        const key = `${command} ${args.join(" ")}`;
+        if (key === "gh auth status") return output("");
+        if (key.includes("git config branch.threadlight/task.remote")) {
+          throw new Error("branch has no configured remote");
+        }
+        if (key === "git remote") return output("github\nupstream\n");
+        throw new Error(`Unexpected command: ${key}`);
+      },
+    });
+
+    await expect(
+      provider.status("/repository", "threadlight/task", "main"),
+    ).resolves.toMatchObject({
+      available: false,
+      setupIssue: "remote_ambiguous",
+    });
+  });
+
+  it("separates GitHub repository lookup failures from CLI setup", async () => {
+    const provider = new GitHubCliProvider({
+      run: async (command, args) => {
+        const key = `${command} ${args.join(" ")}`;
+        if (key === "gh auth status") return output("");
+        if (key.includes("git config branch.threadlight/task.remote")) {
+          return output("origin\n");
+        }
+        if (key === "gh repo view --json nameWithOwner") {
+          throw Object.assign(new Error("repository lookup failed"), {
+            stderr: "none of the git remotes configured for this repository point to a known GitHub host",
+          });
+        }
+        throw new Error(`Unexpected command: ${key}`);
+      },
+    });
+
+    await expect(
+      provider.status("/repository", "threadlight/task", "main"),
+    ).resolves.toMatchObject({
+      available: false,
+      setupIssue: "repository_unavailable",
+    });
+  });
+
   it("normalizes CI checks, reviews, and inline comments from scripted gh output", async () => {
     const commands: string[] = [];
     const provider = new GitHubCliProvider({

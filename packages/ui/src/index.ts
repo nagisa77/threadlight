@@ -189,6 +189,7 @@ export type {
   ConversationFileChange,
   CodeHostCheck,
   CodeHostCommitPushResult,
+  CodeHostDeliverySetupIssue,
   CodeHostDeliveryStatus,
   CodeHostPullRequest,
   CodeHostReviewComment,

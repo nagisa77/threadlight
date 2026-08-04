@@ -30,8 +30,12 @@ export class GitHubCliProvider implements CodeHostProvider {
     headBranch: string,
     baseBranch: string,
   ): Promise<CodeHostDeliveryStatus> {
+    let step: GitHubStatusStep = "authentication";
     try {
       await this.run("gh", ["auth", "status"], repositoryRoot);
+      step = "remote";
+      const remote = await this.remote(repositoryRoot, headBranch);
+      step = "repository";
       const repository = parseJson<{
         nameWithOwner: string;
       }>(
@@ -43,7 +47,7 @@ export class GitHubCliProvider implements CodeHostProvider {
           )
         ).stdout,
       );
-      const remote = await this.remote(repositoryRoot, headBranch);
+      step = "delivery";
       const pushed = await this.isPushed(repositoryRoot, headBranch, remote);
       const ahead = pushed
         ? await this.aheadCount(repositoryRoot)
@@ -70,6 +74,7 @@ export class GitHubCliProvider implements CodeHostProvider {
       return {
         provider: "github",
         available: false,
+        setupIssue: githubSetupIssue(error, step),
         reason: commandError(error),
         taskBranch: headBranch,
         baseBranch,
@@ -153,7 +158,10 @@ export class GitHubCliProvider implements CodeHostProvider {
     const remotes = stdout.split(/\s+/).filter(Boolean);
     if (remotes.includes("origin")) return "origin";
     if (remotes.length === 1) return remotes[0]!;
-    throw new Error("Choose a Git remote by configuring the task branch upstream");
+    if (remotes.length === 0) throw new Error("No Git remotes found");
+    throw new Error(
+      "Choose a Git remote by configuring the task branch upstream",
+    );
   }
 
   private async isPushed(
@@ -436,4 +444,34 @@ function commandError(error: unknown): string {
     if (stderr) return stderr;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+type GitHubStatusStep =
+  | "authentication"
+  | "remote"
+  | "repository"
+  | "delivery";
+
+function githubSetupIssue(
+  error: unknown,
+  step: GitHubStatusStep,
+): CodeHostDeliveryStatus["setupIssue"] {
+  if (step === "authentication" && isMissingCommand(error)) {
+    return "cli_missing";
+  }
+  if (step === "authentication") return "authentication_required";
+  if (step === "remote") {
+    return /choose a git remote/i.test(commandError(error))
+      ? "remote_ambiguous"
+      : "remote_missing";
+  }
+  if (step === "repository") return "repository_unavailable";
+  return "unknown";
+}
+
+function isMissingCommand(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("code" in error)) {
+    return false;
+  }
+  return error.code === "ENOENT";
 }

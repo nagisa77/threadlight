@@ -9099,6 +9099,51 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .github-delivery-error svg {
   flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.github-delivery-error > div {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.github-delivery-error p {
+  margin: 0;
+}
+
+.github-delivery-error code {
+  width: fit-content;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 9px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.github-delivery-error a {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink);
+  font-weight: 620;
+  text-underline-offset: 2px;
+}
+
+.github-delivery-error a svg {
+  margin-top: 0;
+}
+
+.github-delivery-error small {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 9px;
 }
 
 .github-delivery-actions {

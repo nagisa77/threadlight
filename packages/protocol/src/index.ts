@@ -511,6 +511,13 @@ export interface HostCodeHostPullRequest {
 export interface HostCodeHostDeliveryStatus {
   provider: "github";
   available: boolean;
+  setupIssue?:
+    | "cli_missing"
+    | "authentication_required"
+    | "remote_missing"
+    | "remote_ambiguous"
+    | "repository_unavailable"
+    | "unknown";
   reason?: string;
   repository?: string;
   remote?: string;

@@ -86,6 +86,7 @@ export {
   type CodeHostCommitPushResult,
   type CodeHostDeliveryManagerOptions,
   type CodeHostDeliveryRequest,
+  type CodeHostDeliverySetupIssue,
   type CodeHostDeliveryStatus,
   type CodeHostProvider,
   type CodeHostPullRequest,

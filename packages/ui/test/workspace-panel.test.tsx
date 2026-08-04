@@ -254,6 +254,56 @@ describe("ReviewView", () => {
     expect(html).toContain("Please cover the error path.");
   });
 
+  it("explains that a missing remote is not a GitHub CLI installation problem", () => {
+    const html = renderToStaticMarkup(
+      <GitHubDeliveryCard
+        status={{
+          provider: "github",
+          available: false,
+          setupIssue: "remote_missing",
+          reason: "No Git remotes found",
+          taskBranch: "threadlight/task",
+          baseBranch: "main",
+          pushed: false,
+          ahead: 0,
+        }}
+        loading={false}
+        disabled={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("仓库尚未配置 Git 远端");
+    expect(html).toContain("git remote add origin &lt;repository-url&gt;");
+    expect(html).toContain("错误详情：No Git remotes found");
+    expect(html).not.toContain("当前 Host 未安装 GitHub CLI");
+  });
+
+  it("points missing CLI users to installation on the Threadlight Host", () => {
+    const html = renderToStaticMarkup(
+      <GitHubDeliveryCard
+        status={{
+          provider: "github",
+          available: false,
+          setupIssue: "cli_missing",
+          reason: "spawn gh ENOENT",
+          taskBranch: "threadlight/task",
+          baseBranch: "main",
+          pushed: false,
+          ahead: 0,
+        }}
+        loading={false}
+        disabled={false}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("当前 Host 未安装 GitHub CLI");
+    expect(html).toContain("不是浏览器所在设备");
+    expect(html).toContain("gh auth login");
+    expect(html).toContain("https://github.com/cli/cli#installation");
+  });
+
   it("builds a changed-files-only tree with added, modified, and deleted states", () => {
     const files = [
       change("apps/desktop/src/main/index.ts", "modified"),

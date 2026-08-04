@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns2,
+  ExternalLink,
   File,
   FileCode2,
   FileDiff,
@@ -155,6 +156,7 @@ export interface CodeHostPullRequest {
 export interface CodeHostDeliveryStatus {
   provider: "github";
   available: boolean;
+  setupIssue?: CodeHostDeliverySetupIssue;
   reason?: string;
   repository?: string;
   remote?: string;
@@ -164,6 +166,14 @@ export interface CodeHostDeliveryStatus {
   ahead: number;
   pullRequest?: CodeHostPullRequest;
 }
+
+export type CodeHostDeliverySetupIssue =
+  | "cli_missing"
+  | "authentication_required"
+  | "remote_missing"
+  | "remote_ambiguous"
+  | "repository_unavailable"
+  | "unknown";
 
 export interface CodeHostCommitPushResult {
   commit: string;
@@ -1774,6 +1784,8 @@ export function GitHubDeliveryCard({
   const { t } = useI18n();
   const pullRequest = status?.pullRequest;
   const comments = pullRequest?.comments.slice(0, 8) ?? [];
+  const setupIssue = codeHostSetupIssue(status);
+  const setupCommand = codeHostSetupCommand(setupIssue, status);
   return (
     <section className="github-delivery-card" aria-label={t("githubDelivery")}>
       <div className="github-delivery-heading">
@@ -1784,7 +1796,11 @@ export function GitHubDeliveryCard({
           <strong>{t("githubDelivery")}</strong>
           <span>
             {status?.repository ??
-              (loading ? t("loadingGitHubStatus") : t("githubCliRequired"))}
+              (loading
+                ? t("loadingGitHubStatus")
+                : status && !status.available
+                  ? t(codeHostSetupTitleKey(setupIssue))
+                  : t("githubDeliveryUnavailable"))}
           </span>
         </div>
         <button
@@ -1813,10 +1829,28 @@ export function GitHubDeliveryCard({
       )}
 
       {(error || (status && !status.available)) && (
-        <p className="github-delivery-error" role="status">
+        <div className="github-delivery-error" role="status">
           <TriangleAlert size={13} />
-          {error ?? status?.reason ?? t("githubDeliveryUnavailable")}
-        </p>
+          <div>
+            <p>
+              {error ?? t(codeHostSetupHelpKey(setupIssue))}
+            </p>
+            {!error && setupCommand && <code>{setupCommand}</code>}
+            {!error && setupIssue === "cli_missing" && (
+              <a
+                href="https://github.com/cli/cli#installation"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("githubCliInstallGuide")}
+                <ExternalLink size={11} aria-hidden="true" />
+              </a>
+            )}
+            {!error && status?.reason && (
+              <small>{t("githubStatusDetails", { reason: status.reason })}</small>
+            )}
+          </div>
+        </div>
       )}
 
       {status?.available && !pullRequest && (
@@ -1945,6 +1979,80 @@ export function GitHubDeliveryCard({
       )}
     </section>
   );
+}
+
+function codeHostSetupIssue(
+  status?: CodeHostDeliveryStatus,
+): CodeHostDeliverySetupIssue {
+  if (status?.setupIssue) return status.setupIssue;
+  const reason = status?.reason?.toLowerCase() ?? "";
+  if (/\bgh\b.*(enoent|not found|not recognized)/.test(reason)) {
+    return "cli_missing";
+  }
+  if (/auth login|not logged|authentication/.test(reason)) {
+    return "authentication_required";
+  }
+  if (/no git remotes? found|no remotes?/.test(reason)) {
+    return "remote_missing";
+  }
+  if (/choose a git remote|multiple remotes?/.test(reason)) {
+    return "remote_ambiguous";
+  }
+  return "unknown";
+}
+
+function codeHostSetupTitleKey(
+  issue: CodeHostDeliverySetupIssue,
+):
+  | "githubCliMissing"
+  | "githubAuthRequired"
+  | "githubRemoteMissing"
+  | "githubRemoteAmbiguous"
+  | "githubRepositoryUnavailable"
+  | "githubDeliveryUnavailable" {
+  if (issue === "cli_missing") return "githubCliMissing";
+  if (issue === "authentication_required") return "githubAuthRequired";
+  if (issue === "remote_missing") return "githubRemoteMissing";
+  if (issue === "remote_ambiguous") return "githubRemoteAmbiguous";
+  if (issue === "repository_unavailable") {
+    return "githubRepositoryUnavailable";
+  }
+  return "githubDeliveryUnavailable";
+}
+
+function codeHostSetupHelpKey(
+  issue: CodeHostDeliverySetupIssue,
+):
+  | "githubCliMissingHelp"
+  | "githubAuthRequiredHelp"
+  | "githubRemoteMissingHelp"
+  | "githubRemoteAmbiguousHelp"
+  | "githubRepositoryUnavailableHelp"
+  | "githubDeliveryUnavailableHelp" {
+  if (issue === "cli_missing") return "githubCliMissingHelp";
+  if (issue === "authentication_required") return "githubAuthRequiredHelp";
+  if (issue === "remote_missing") return "githubRemoteMissingHelp";
+  if (issue === "remote_ambiguous") return "githubRemoteAmbiguousHelp";
+  if (issue === "repository_unavailable") {
+    return "githubRepositoryUnavailableHelp";
+  }
+  return "githubDeliveryUnavailableHelp";
+}
+
+function codeHostSetupCommand(
+  issue: CodeHostDeliverySetupIssue,
+  status?: CodeHostDeliveryStatus,
+): string | undefined {
+  if (issue === "cli_missing" || issue === "authentication_required") {
+    return "gh auth login";
+  }
+  if (issue === "remote_missing") {
+    return "git remote add origin <repository-url>";
+  }
+  if (issue === "remote_ambiguous" && status) {
+    return `git config branch.${status.taskBranch}.remote <remote>`;
+  }
+  return undefined;
 }
 
 type PendingGitHubAction =
