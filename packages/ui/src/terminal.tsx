@@ -121,12 +121,10 @@ export function TerminalPanel({
 
   function closeTab(id: string) {
     setTabs((current) => {
-      const index = current.findIndex((tab) => tab.id === id);
-      const next = current.filter((tab) => tab.id !== id);
-      if (id === activeTabId) {
-        setActiveTabId(next[Math.min(index, next.length - 1)]?.id ?? "");
-      }
-      if (next.length === 0) onClose();
+      const { tabs: next, activeTabId: nextActive, panelClosed } =
+        nextTabsAfterClose(current, activeTabId, id);
+      if (nextActive !== activeTabId) setActiveTabId(nextActive);
+      if (panelClosed) onClose();
       return next;
     });
   }
@@ -294,6 +292,7 @@ export function TerminalPanel({
                   session,
                 )
               }
+              onExit={() => closeTab(tab.id)}
             />
           ) : workspace ? (
             <FileView
@@ -321,6 +320,7 @@ export function TerminalView({
   hidden = false,
   label,
   onSessionChange,
+  onExit,
 }: {
   adapter: TerminalAdapter;
   projectId: string;
@@ -329,12 +329,12 @@ export function TerminalView({
   hidden?: boolean;
   label?: string;
   onSessionChange?(session: TerminalSessionInfo): void;
+  onExit?(exitCode: number): void;
 }) {
   const { t } = useI18n();
   const { resolvedTheme } = useTheme();
   const accessibleLabel = label ?? t("terminal");
   const [session, setSession] = useState<TerminalSessionInfo>();
-  const [exitCode, setExitCode] = useState<number>();
   const [error, setError] = useState<string>();
   const sessionId = useRef<string | null>(null);
   const outputWriter = useRef<((data: string) => void) | null>(null);
@@ -346,7 +346,7 @@ export function TerminalView({
     const unsubscribe = adapter.subscribe((event) => {
       if (event.sessionId !== sessionId.current) return;
       if (event.type === "exit") {
-        if (mounted) setExitCode(event.exitCode);
+        if (mounted) onExit?.(event.exitCode);
         return;
       }
       if (outputWriter.current) outputWriter.current(event.data);
@@ -432,11 +432,6 @@ export function TerminalView({
               <code>{session.branch ?? "—"}</code>
             </span>
           </div>
-          {exitCode !== undefined && (
-            <div className="terminal-exited">
-              {t("terminalExited", { code: exitCode })}
-            </div>
-          )}
         </>
       ) : (
         <div className={`terminal-empty ${error ? "error" : ""}`}>
@@ -458,6 +453,24 @@ export function projectTerminalCreateRequest(
     workspace,
     cols: DEFAULT_COLUMNS,
     rows: DEFAULT_ROWS,
+  };
+}
+
+export function nextTabsAfterClose(
+  tabs: BottomPanelTab[],
+  activeTabId: string,
+  closeId: string,
+): { tabs: BottomPanelTab[]; activeTabId: string; panelClosed: boolean } {
+  const index = tabs.findIndex((tab) => tab.id === closeId);
+  const next = tabs.filter((tab) => tab.id !== closeId);
+  const nextActiveId =
+    closeId === activeTabId
+      ? (next[Math.min(index, next.length - 1)]?.id ?? "")
+      : activeTabId;
+  return {
+    tabs: next,
+    activeTabId: nextActiveId,
+    panelClosed: next.length === 0,
   };
 }
 

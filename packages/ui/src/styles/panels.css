@@ -250,19 +250,6 @@ body.is-resizing-workspace {
   white-space: nowrap;
 }
 
-.terminal-exited {
-  position: absolute;
-  right: 10px;
-  bottom: 33px;
-  padding: 3px 7px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--subtle);
-  background: rgb(251 251 250 / 92%);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
-}
-
 .settings-loading {
   display: flex;
   height: 118px;
