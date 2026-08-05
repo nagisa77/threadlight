@@ -729,8 +729,9 @@ function ThreadlightAppContent({
     (currentConversation?.workspace?.mode === "worktree"
       ? currentConversation.workspace.sourceBranch
       : undefined);
-  const defaultTerminalWorkspace =
-    currentConversation?.workspace?.mode === "worktree" ? "task" : "original";
+  const defaultTerminalWorkspace = currentConversation?.workspace
+    ? "task"
+    : "original";
   const defaultTerminalContext = terminalWorkspaceContextLabel(
     defaultTerminalWorkspace,
     defaultTerminalWorkspace === "task"

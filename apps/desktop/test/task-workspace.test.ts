@@ -9,16 +9,14 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  resolveTerminalWorkspace,
-  TaskWorkspaceManager,
-} from "../src/main/task-workspace.js";
+import { TaskWorkspaceManager } from "../src/main/task-workspace.js";
+import { resolveTerminalWorkspace } from "../../../packages/host-core/src/terminal-workspace.ts";
 
 const execFileAsync = promisify(execFile);
 const temporaryDirectories: string[] = [];
@@ -216,6 +214,60 @@ describe("resolveTerminalWorkspace", () => {
     expect(() =>
       resolveTerminalWorkspace(project, "missing-thread"),
     ).toThrow("Unknown conversation: missing-thread");
+  });
+
+  it("uses the home directory for standalone terminals without a task workspace", async () => {
+    const root = await temporaryDirectory();
+    const standaloneRoot = join(root, "standalone", "workspaces");
+    await mkdir(standaloneRoot, { recursive: true });
+    const project = {
+      id: "standalone",
+      name: "Standalone",
+      basePath: standaloneRoot,
+      scope: "standalone" as const,
+      lastOpenedAt: new Date(0).toISOString(),
+      conversations: [],
+    };
+
+    expect(resolveTerminalWorkspace(project)).toEqual({
+      cwd: await realpath(homedir()),
+    });
+    expect(resolveTerminalWorkspace(project, undefined, "original")).toEqual({
+      cwd: await realpath(homedir()),
+    });
+  });
+
+  it("uses the standalone task workspace once a conversation exists", async () => {
+    const root = await temporaryDirectory();
+    const standaloneRoot = join(root, "standalone", "workspaces");
+    const task = join(standaloneRoot, "workspace-id");
+    await mkdir(task, { recursive: true });
+    const project = {
+      id: "standalone",
+      name: "Standalone",
+      basePath: standaloneRoot,
+      scope: "standalone" as const,
+      lastOpenedAt: new Date(0).toISOString(),
+      conversations: [
+        {
+          id: "thread-1",
+          title: "Task",
+          createdAt: new Date(0).toISOString(),
+          updatedAt: new Date(0).toISOString(),
+          workspace: {
+            mode: "standalone" as const,
+            path: task,
+          },
+        },
+      ],
+    };
+
+    expect(resolveTerminalWorkspace(project, "thread-1")).toEqual({
+      cwd: await realpath(task),
+    });
+    expect(resolveTerminalWorkspace(project, "thread-1", "original")).toEqual({
+      cwd: await realpath(homedir()),
+    });
   });
 });
 

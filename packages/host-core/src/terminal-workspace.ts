@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 
 import type {
   HostProjectSummary,
@@ -28,7 +29,9 @@ export function resolveTerminalWorkspace(
   const directory = realpathSync(
     workspace === "task" && taskWorkspace
       ? taskWorkspace.path
-      : project.basePath,
+      : project.scope === "standalone"
+        ? homedir()
+        : project.basePath,
   );
   if (!statSync(directory).isDirectory()) {
     throw new Error("Terminal workspace is not a directory");
