@@ -320,6 +320,13 @@ function DeferredTerminalPanel({ label }: { label: string }) {
   );
 }
 
+export function shouldIgnoreComposerKey(
+  composing: boolean,
+  nativeEvent: Pick<globalThis.KeyboardEvent, "isComposing" | "keyCode">,
+) {
+  return composing || nativeEvent.isComposing || nativeEvent.keyCode === 229;
+}
+
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
   initialThreadId?: string;
@@ -689,6 +696,7 @@ function ThreadlightAppContent({
   const deliveryAwaitingScopes = useRef(new Set<string>());
   const composerRoot = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  const composing = useRef(false);
   const commandPaletteTrigger = useRef<HTMLButtonElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
@@ -2825,7 +2833,22 @@ function ThreadlightAppContent({
     setWorkspacePanelWidth(nextWidth);
   }
 
+  function handleCompositionStart() {
+    composing.current = true;
+  }
+
+  function handleCompositionEnd() {
+    composing.current = false;
+  }
+
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    // Some IMEs (notably on macOS) report `isComposing` as false for the
+    // Enter key that confirms the current candidate. Keep our own state and
+    // also recognize the legacy keyCode 229 signal before handling menus or
+    // submitting the message.
+    if (shouldIgnoreComposerKey(composing.current, event.nativeEvent)) {
+      return;
+    }
     if (event.key === "Escape" && voiceStatus === "recording") {
       event.preventDefault();
       cancelVoiceInput();
@@ -3927,6 +3950,8 @@ function ThreadlightAppContent({
                       }
                       setVoiceError(undefined);
                     }}
+                    onCompositionStart={handleCompositionStart}
+                    onCompositionEnd={handleCompositionEnd}
                     onKeyDown={handleKeyDown}
                     onInput={(event) => {
                       event.currentTarget.style.height = "auto";
