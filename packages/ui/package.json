@@ -26,7 +26,8 @@
   },
   "files": [
     "dist",
-    "src/styles.css"
+    "src/styles.css",
+    "src/styles"
   ],
   "dependencies": {
     "@threadlight/client": "0.1.0",

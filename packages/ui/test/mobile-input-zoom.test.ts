@@ -1,10 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readUiStyles } from "./style-source.js";
 
-const styles = readFileSync(
-  new URL("../src/styles.css", import.meta.url),
-  "utf8",
-);
+const styles = readUiStyles();
 const webDocument = readFileSync(
   new URL("../../../apps/web/index.html", import.meta.url),
   "utf8",

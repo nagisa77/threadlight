@@ -2,15 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { installMobileViewportHeight } from "../src/mobile-viewport.js";
+import { readUiStyles } from "../../../packages/ui/test/style-source.js";
 
 const appSource = readFileSync(
   new URL("../src/main.tsx", import.meta.url),
   "utf8",
 );
-const uiStyles = readFileSync(
-  new URL("../../../packages/ui/src/styles.css", import.meta.url),
-  "utf8",
-);
+const uiStyles = readUiStyles();
 
 class TestViewport extends EventTarget {
   height: number;

@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readUiStyles } from "./style-source.js";
 
-const styles = readFileSync(
-  new URL("../src/styles.css", import.meta.url),
-  "utf8",
-);
+const styles = readUiStyles();
 
 describe("assistant error message styles", () => {
   it("uses a neutral status surface instead of red error copy", () => {

@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readUiStyles } from "./style-source.js";
 
-const styles = readFileSync(
-  new URL("../src/styles.css", import.meta.url),
-  "utf8",
-);
+const styles = readUiStyles();
 
 describe("workspace titlebar hit regions", () => {
   it("reserves room for the floating controls when the panel is closed", () => {

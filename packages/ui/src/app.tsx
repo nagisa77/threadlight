@@ -12,10 +12,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
-import {
-  createBrowserUuid,
-  type ThreadlightClient,
-} from "@threadlight/client";
+import { createBrowserUuid, type ThreadlightClient } from "@threadlight/client";
 import type {
   AgentPlanData,
   AttachmentData,
@@ -98,10 +95,7 @@ import {
   MarkdownContent,
   type LocalFileReference,
 } from "./markdown.js";
-import {
-  ProjectMemoryPage,
-  type ProjectMemoryAdapter,
-} from "./memory.js";
+import { ProjectMemoryPage, type ProjectMemoryAdapter } from "./memory.js";
 import {
   CommandPalette,
   type CommandPaletteEntry,
@@ -114,10 +108,7 @@ import {
   isFileSearchShortcut,
   isTogglePanelShortcut,
 } from "./keyboard-shortcuts.js";
-import type {
-  SettingsAdapter,
-  SettingsSnapshot,
-} from "./settings.js";
+import type { SettingsAdapter, SettingsSnapshot } from "./settings.js";
 import { providerIsConfigured } from "./settings-readiness.js";
 import {
   ConversationAccessControl,
@@ -125,10 +116,7 @@ import {
   ExecutionPolicyPage,
   type ExecutionPolicyAdapter,
 } from "./execution-policy.js";
-import {
-  DiagnosticsPage,
-  type DiagnosticsAdapter,
-} from "./diagnostics.js";
+import { DiagnosticsPage, type DiagnosticsAdapter } from "./diagnostics.js";
 import type { AutomationAdapter } from "./automations.js";
 import {
   I18nProvider,
@@ -183,6 +171,97 @@ import {
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
+
+import {
+  ComputerPermissionCard,
+  ComputerShareStatus,
+  MessageActions,
+  TurnStatusPill,
+  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
+  clampWorkspacePanelWidth,
+  conversationChangesRefreshKey,
+  pendingComputerPermissionResume,
+  planDocumentOpenRequest,
+} from "./features/turn-status.js";
+import {
+  ProjectGroup,
+  ProjectListHeading,
+  RecentTasksGroup,
+  RuntimeStatusControl,
+  TaskSearchDialog,
+  conversationContextChanged,
+  filterProjectsForTaskList,
+  ownsActiveComputerShare,
+  type TaskListFilter,
+} from "./features/project-sidebar.js";
+import {
+  ActivityList,
+  ComposerAttachments,
+  ConnectionError,
+  MessageAttachments,
+  ProgressList,
+  attachmentHint,
+  composerSubmitDelivery,
+  connectionLabel,
+  errorMessage,
+  hasFiles,
+  hasUserInput,
+  projectContainingThread,
+  shortId,
+} from "./features/conversation-content.js";
+export {
+  ComputerPermissionCard,
+  ComputerShareStatus,
+  ConversationChangesButton,
+  MessageActions,
+  TurnStatusPill,
+  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
+  clampWorkspacePanelWidth,
+  conversationChangesRefreshKey,
+  currentPlanStep,
+  pendingComputerPermissionResume,
+  planDocumentOpenRequest,
+  writeClipboardText,
+} from "./features/turn-status.js";
+export {
+  ProjectActionPopover,
+  ProjectConversationItem,
+  ProjectGroup,
+  ProjectListHeading,
+  RecentTasksGroup,
+  RuntimeStatusControl,
+  TaskSearchDialog,
+  conversationContextChanged,
+  filterProjectsForTaskList,
+  ownsActiveComputerShare,
+  showsProjectLevelActivity,
+  type TaskListFilter,
+} from "./features/project-sidebar.js";
+export {
+  ActivityList,
+  MessageAttachments,
+  ProgressList,
+  composerSubmitDelivery,
+  hasUserInput,
+  projectContainingThread,
+} from "./features/conversation-content.js";
+
+import {
+  DeleteConversationDialog,
+  EmptyState,
+  ProjectEmptyState,
+  ProjectPickerPopover,
+  RemoteProjectPathDialog,
+  RemoteRuntimeDialog,
+} from "./features/project-dialogs.js";
+export {
+  DeleteConversationDialog,
+  EmptyState,
+  NewTaskProjectPrompt,
+  ProjectPickerPopover,
+  RemoteRuntimeDialog,
+  filterProjectsForPicker,
+} from "./features/project-dialogs.js";
 
 const LazyFirstRunGuide = lazy(() =>
   import("./first-run.js").then(({ FirstRunGuide }) => ({
@@ -269,27 +348,10 @@ export interface ClipboardAdapter {
 }
 
 export interface ConnectorAuthorizationAdapter {
-  authorize<Result>(
-    action: () => Promise<Result>,
-  ): Promise<Result>;
+  authorize<Result>(action: () => Promise<Result>): Promise<Result>;
 }
 
-export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
-  "exec_command",
-  "process_status",
-  "process_read",
-  "process_wait",
-  "process_kill",
-  "apply_patch",
-  "write_file",
-  "edit_file",
-] as const;
-
-const workspaceChangeRefreshTools = new Set<string>(
-  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
-);
-const COMPUTER_PERMISSION_RESUME_KEY =
-  "threadlight:computer-permission-resume";
+const COMPUTER_PERMISSION_RESUME_KEY = "threadlight:computer-permission-resume";
 const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
 const SIDEBAR_VISIBILITY_KEY = "threadlight:sidebar-visible";
 const FIRST_RUN_COMPLETE_KEY = "threadlight:first-run-complete:v1";
@@ -358,25 +420,17 @@ export interface AttachmentStageAdapter {
 
 export interface AttachmentPreviewAdapter {
   imageUrl(attachment: AttachmentData): string | undefined;
-  loadImageUrl?(
-    attachment: AttachmentData,
-  ): Promise<string | undefined>;
+  loadImageUrl?(attachment: AttachmentData): Promise<string | undefined>;
 }
 
-export type ComputerPermissionCapability =
-  | "screen_recording"
-  | "accessibility";
+export type ComputerPermissionCapability = "screen_recording" | "accessibility";
 
 export interface ComputerPermissionSnapshot {
   required: boolean;
   blockingCapability?: ComputerPermissionCapability;
   ownerThreadId?: string;
   screenRecording:
-    | "not-determined"
-    | "granted"
-    | "denied"
-    | "restricted"
-    | "unknown";
+    "not-determined" | "granted" | "denied" | "restricted" | "unknown";
   accessibility: "granted" | "denied";
   relaunchRequired: boolean;
 }
@@ -409,12 +463,10 @@ export interface ComputerShareAdapter {
   load(): Promise<ComputerShareSnapshot>;
   showPictureInPicture(): Promise<ComputerShareSnapshot>;
   stop(): Promise<ComputerShareSnapshot>;
-  subscribe(
-    listener: (snapshot: ComputerShareSnapshot) => void,
-  ): () => void;
+  subscribe(listener: (snapshot: ComputerShareSnapshot) => void): () => void;
 }
 
-interface PendingAttachment {
+export interface PendingAttachment {
   id: string;
   file: File;
   previewUrl?: string;
@@ -428,11 +480,8 @@ interface SuggestedQuestionsState {
   suggestions: readonly string[];
 }
 
-type VoiceInputStatus =
-  | "idle"
-  | "requesting"
-  | "recording"
-  | "transcribing";
+export type VoiceInputStatus =
+  "idle" | "requesting" | "recording" | "transcribing";
 
 export function ThreadlightApp(props: ThreadlightAppProps) {
   const [language, setLanguage] = useState<Language>("zh-CN");
@@ -445,8 +494,10 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
     void props.settings
       ?.load()
       .then((snapshot) => {
-        if (active && isLanguage(snapshot.language)) setLanguage(snapshot.language);
-        if (active && isThemePreference(snapshot.theme)) setTheme(snapshot.theme);
+        if (active && isLanguage(snapshot.language))
+          setLanguage(snapshot.language);
+        if (active && isThemePreference(snapshot.theme))
+          setTheme(snapshot.theme);
         if (active) {
           setPreferredProjectOpener(snapshot.preferredProjectOpener);
         }
@@ -547,8 +598,7 @@ function ThreadlightAppContent({
   const [selectedCapabilities, setSelectedCapabilities] = useState<
     readonly CapabilityDescriptor[]
   >([]);
-  const [capabilityQuery, setCapabilityQuery] =
-    useState<CapabilityQuery>();
+  const [capabilityQuery, setCapabilityQuery] = useState<CapabilityQuery>();
   const [activeCapabilityIndex, setActiveCapabilityIndex] = useState(0);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
@@ -564,8 +614,7 @@ function ThreadlightAppContent({
   const [firstRunCompleted, setFirstRunCompleted] = useState(
     storedFirstRunComplete,
   );
-  const [firstRunDemoThreadId, setFirstRunDemoThreadId] =
-    useState<string>();
+  const [firstRunDemoThreadId, setFirstRunDemoThreadId] = useState<string>();
   const [firstRunRetryDemo, setFirstRunRetryDemo] = useState(false);
   const observedInitialProjects = useRef(false);
   const [hostSnapshot, setHostSnapshot] = useState<HostsSnapshot>();
@@ -897,10 +946,7 @@ function ThreadlightAppContent({
   useEffect(() => {
     if (mobileSidebar || typeof window === "undefined") return;
     try {
-      window.localStorage.setItem(
-        SIDEBAR_VISIBILITY_KEY,
-        String(sidebarOpen),
-      );
+      window.localStorage.setItem(SIDEBAR_VISIBILITY_KEY, String(sidebarOpen));
     } catch {
       // Storage may be unavailable in privacy-restricted browser contexts.
     }
@@ -947,9 +993,9 @@ function ThreadlightAppContent({
       : "";
   const hasConversationChanges = Boolean(
     workspace &&
-      currentProject &&
-      conversationChanges &&
-      conversationChanges.files.length > 0,
+    currentProject &&
+    conversationChanges &&
+    conversationChanges.files.length > 0,
   );
   const suggestionKey = state.threadId
     ? `${state.threadId}\u0000${language}`
@@ -965,8 +1011,7 @@ function ThreadlightAppContent({
     selectedCapabilityIds,
   );
   const addActions = filterComposerAddActions(
-    attachmentStage &&
-      pendingAttachments.length < MAX_COMPOSER_ATTACHMENTS
+    attachmentStage && pendingAttachments.length < MAX_COMPOSER_ATTACHMENTS
       ? [
           {
             id: "attachment" as const,
@@ -978,8 +1023,7 @@ function ThreadlightAppContent({
       : [],
     capabilityQuery?.query ?? "",
   );
-  const composerMenuItemCount =
-    addActions.length + filteredCapabilities.length;
+  const composerMenuItemCount = addActions.length + filteredCapabilities.length;
   const sidebarProjects = filterProjectsForTaskList(
     (projectSnapshot?.projects ?? []).filter(
       (project) => project.scope !== "standalone",
@@ -1001,14 +1045,16 @@ function ThreadlightAppContent({
       keywords: "new create task thread",
     },
     ...(memory && currentProject?.scope !== "standalone"
-      ? [{
-          id: "action:memory",
-          kind: "action" as const,
-          actionId: "memory",
-          title: t("projectMemory"),
-          subtitle: t("commandMemoryDescription"),
-          keywords: "memory context",
-        }]
+      ? [
+          {
+            id: "action:memory",
+            kind: "action" as const,
+            actionId: "memory",
+            title: t("projectMemory"),
+            subtitle: t("commandMemoryDescription"),
+            keywords: "memory context",
+          },
+        ]
       : []),
     ...(workspace
       ? [
@@ -1033,44 +1079,53 @@ function ThreadlightAppContent({
         ]
       : []),
     ...(terminal
-      ? [{
-          id: "action:terminal",
-          kind: "action" as const,
-          actionId: "terminal",
-          title: terminalOpen ? t("closeTerminal") : t("openTerminal"),
-          subtitle: t("commandTerminalDescription"),
-          keywords: "shell command terminal",
-        }]
+      ? [
+          {
+            id: "action:terminal",
+            kind: "action" as const,
+            actionId: "terminal",
+            title: terminalOpen ? t("closeTerminal") : t("openTerminal"),
+            subtitle: t("commandTerminalDescription"),
+            keywords: "shell command terminal",
+          },
+        ]
       : []),
     ...(diagnostics
-      ? [{
-          id: "action:diagnostics",
-          kind: "action" as const,
-          actionId: "diagnostics",
-          title: t("usageDiagnostics"),
-          subtitle: t("commandDiagnosticsDescription"),
-          keywords: "usage diagnostics tokens",
-        }]
+      ? [
+          {
+            id: "action:diagnostics",
+            kind: "action" as const,
+            actionId: "diagnostics",
+            title: t("usageDiagnostics"),
+            subtitle: t("commandDiagnosticsDescription"),
+            keywords: "usage diagnostics tokens",
+          },
+        ]
       : []),
     ...(automations && currentProject?.scope !== "standalone"
-      ? [{
-          id: "action:automations",
-          kind: "action" as const,
-          actionId: "automations",
-          title: t("automations"),
-          subtitle: t("commandAutomationsDescription"),
-          keywords: "automation schedule recurring cron tests dependencies issues",
-        }]
+      ? [
+          {
+            id: "action:automations",
+            kind: "action" as const,
+            actionId: "automations",
+            title: t("automations"),
+            subtitle: t("commandAutomationsDescription"),
+            keywords:
+              "automation schedule recurring cron tests dependencies issues",
+          },
+        ]
       : []),
     ...(settings
-      ? [{
-          id: "action:settings",
-          kind: "action" as const,
-          actionId: "settings",
-          title: t("settings"),
-          subtitle: t("commandSettingsDescription"),
-          keywords: "preferences provider model theme language",
-        }]
+      ? [
+          {
+            id: "action:settings",
+            kind: "action" as const,
+            actionId: "settings",
+            title: t("settings"),
+            subtitle: t("commandSettingsDescription"),
+            keywords: "preferences provider model theme language",
+          },
+        ]
       : []),
   ];
   const commandPaletteTasks: CommandPaletteEntry[] =
@@ -1082,9 +1137,7 @@ function ThreadlightAppContent({
         threadId: item.id,
         title: item.title,
         subtitle: `${
-          project.scope === "standalone"
-            ? t("notInProject")
-            : project.name
+          project.scope === "standalone" ? t("notInProject") : project.name
         } · ${
           item.archivedAt
             ? t("archivedTasks")
@@ -1094,15 +1147,13 @@ function ThreadlightAppContent({
                 ? t("pendingTasks")
                 : item.status === "attention"
                   ? t("needsAttention")
-                : t("completedTasks")
+                  : t("completedTasks")
         }`,
         keywords: `${project.name} ${
           project.scope === "standalone"
             ? "standalone not in project 不在项目中 不在專案中 プロジェクト外 프로젝트"
             : ""
-        } ${
-          item.archivedAt ? "archived" : item.status
-        }`,
+        } ${item.archivedAt ? "archived" : item.status}`,
       })),
     ) ?? [];
 
@@ -1165,8 +1216,7 @@ function ThreadlightAppContent({
       const snapshot = projectSnapshotRef.current;
       const project = snapshot?.projects.find((candidate) =>
         candidate.conversations.some(
-          (conversation) =>
-            conversation.id === threadId && conversation.unread,
+          (conversation) => conversation.id === threadId && conversation.unread,
         ),
       );
       if (!project || !threadId) return;
@@ -1221,15 +1271,11 @@ function ThreadlightAppContent({
       }
     };
     window.addEventListener("pointerdown", closeFromOutside);
-    return () =>
-      window.removeEventListener("pointerdown", closeFromOutside);
+    return () => window.removeEventListener("pointerdown", closeFromOutside);
   }, [addMenuOpen, capabilityQuery]);
 
   useEffect(() => {
-    if (
-      (!capabilityQuery && !addMenuOpen) ||
-      composerMenuItemCount === 0
-    ) {
+    if ((!capabilityQuery && !addMenuOpen) || composerMenuItemCount === 0) {
       return;
     }
     document
@@ -1247,8 +1293,9 @@ function ThreadlightAppContent({
     composerMenuItemCount,
   ]);
 
-  const workspaceChangeRefreshKey =
-    conversationChangesRefreshKey(state.progress);
+  const workspaceChangeRefreshKey = conversationChangesRefreshKey(
+    state.progress,
+  );
 
   useEffect(() => {
     if (!projectOpener) return;
@@ -1391,10 +1438,7 @@ function ThreadlightAppContent({
   );
 
   const restoreConversationChanges = useCallback(
-    async (
-      paths: readonly string[] | undefined,
-      revision: string,
-    ) => {
+    async (paths: readonly string[] | undefined, revision: string) => {
       if (
         !workspace?.restoreChanges ||
         !currentProject ||
@@ -1414,11 +1458,7 @@ function ThreadlightAppContent({
         );
         setConversationChanges(snapshot);
       } catch (error) {
-        if (
-          errorMessage(error).includes(
-            "workspace changed after this Diff",
-          )
-        ) {
+        if (errorMessage(error).includes("workspace changed after this Diff")) {
           throw new Error(t("restoreConflict"));
         }
         throw error;
@@ -1426,13 +1466,7 @@ function ThreadlightAppContent({
         setConversationChangesLoading(false);
       }
     },
-    [
-      currentProject,
-      state.isRunning,
-      state.threadId,
-      t,
-      workspace,
-    ],
+    [currentProject, state.isRunning, state.threadId, t, workspace],
   );
 
   useEffect(() => {
@@ -1692,11 +1726,7 @@ function ThreadlightAppContent({
   ]);
 
   useEffect(() => {
-    if (
-      state.connection !== "ready" ||
-      state.isRunning ||
-      !state.threadId
-    ) {
+    if (state.connection !== "ready" || state.isRunning || !state.threadId) {
       return;
     }
     const pending = pendingComputerPermissionResume(
@@ -1818,12 +1848,9 @@ function ThreadlightAppContent({
 
   useEffect(() => {
     const element = conversation.current;
-    if (element && followOutput.current) element.scrollTop = element.scrollHeight;
-  }, [
-    state.messages.length,
-    state.progress,
-    state.streamingText,
-  ]);
+    if (element && followOutput.current)
+      element.scrollTop = element.scrollHeight;
+  }, [state.messages.length, state.progress, state.streamingText]);
 
   useEffect(() => {
     if (
@@ -1839,14 +1866,10 @@ function ThreadlightAppContent({
     const frame = requestAnimationFrame(() => {
       const target =
         (pendingSearchJump.activityId
-          ? document.getElementById(
-              `activity-${pendingSearchJump.activityId}`,
-            )
+          ? document.getElementById(`activity-${pendingSearchJump.activityId}`)
           : undefined) ??
         (pendingSearchJump.messageId
-          ? document.getElementById(
-              `message-${pendingSearchJump.messageId}`,
-            )
+          ? document.getElementById(`message-${pendingSearchJump.messageId}`)
           : undefined);
       if (!target) return;
       followOutput.current = false;
@@ -1937,10 +1960,7 @@ function ThreadlightAppContent({
     }
   }
 
-  async function finishVoiceInput(
-    recorder: MediaRecorder,
-    operation: number,
-  ) {
+  async function finishVoiceInput(recorder: MediaRecorder, operation: number) {
     if (
       !voiceInput ||
       operation !== voiceOperation.current ||
@@ -2248,9 +2268,11 @@ function ThreadlightAppContent({
       closeConversationPanels();
       setView("thread");
       await connectProject(snapshot);
-      if (standalone?.conversations.some(
-        (conversation) => !conversation.archivedAt,
-      )) {
+      if (
+        standalone?.conversations.some(
+          (conversation) => !conversation.archivedAt,
+        )
+      ) {
         await newThread();
       }
       requestAnimationFrame(() => textarea.current?.focus());
@@ -2381,11 +2403,7 @@ function ThreadlightAppContent({
   }
 
   async function openProjectFolder(path?: string) {
-    if (
-      !projects ||
-      switchingProject ||
-      voiceStatus !== "idle"
-    ) {
+    if (!projects || switchingProject || voiceStatus !== "idle") {
       return;
     }
     setSwitchingProject(true);
@@ -2611,11 +2629,7 @@ function ThreadlightAppContent({
   }
 
   async function selectConversation(projectId: string, threadId?: string) {
-    if (
-      !projects ||
-      switchingProject ||
-      voiceStatus !== "idle"
-    ) {
+    if (!projects || switchingProject || voiceStatus !== "idle") {
       return false;
     }
     closeSidebarForNavigation();
@@ -2668,10 +2682,7 @@ function ThreadlightAppContent({
     setDeleteError(undefined);
 
     try {
-      if (
-        deletingActiveConversation &&
-        !(await stopComputerShare())
-      ) {
+      if (deletingActiveConversation && !(await stopComputerShare())) {
         return;
       }
       if (target.mode === "discard" && !target.conversation.archivedAt) {
@@ -2763,9 +2774,7 @@ function ThreadlightAppContent({
     await workspace.reveal(currentProject.id, file.path, state.threadId);
   }
 
-  function beginWorkspacePanelResize(
-    event: ReactPointerEvent<HTMLDivElement>,
-  ) {
+  function beginWorkspacePanelResize(event: ReactPointerEvent<HTMLDivElement>) {
     const workspaceElement = workspaceRoot.current;
     if (!workspaceElement || event.button !== 0) return;
 
@@ -2782,8 +2791,7 @@ function ThreadlightAppContent({
         bounds.right - clientX,
         bounds.width,
       );
-      workspaceElement.style.gridTemplateColumns =
-        `minmax(360px, 1fr) ${nextWidth}px`;
+      workspaceElement.style.gridTemplateColumns = `minmax(360px, 1fr) ${nextWidth}px`;
     };
     const handleMove = (pointerEvent: globalThis.PointerEvent) => {
       updateWidth(pointerEvent.clientX);
@@ -2914,10 +2922,7 @@ function ThreadlightAppContent({
     setCapabilityQuery(undefined);
     setAddMenuOpen(false);
     setActiveCapabilityIndex(0);
-    const connector = connectorCapabilityForSelection(
-      capability,
-      capabilities,
-    );
+    const connector = connectorCapabilityForSelection(capability, capabilities);
     if (connector && connector.status !== "ready") {
       void prepareConnector(capability, connector, next.cursor);
       return;
@@ -2969,10 +2974,7 @@ function ThreadlightAppContent({
       const updated = { ...capability, status: status.status };
       updateCapabilityStatus(capability.id, status.status);
       if (status.status === "ready" && !openWhenReady) {
-        commitCapabilitySelection(
-          { ...selection, status: "ready" },
-          cursor,
-        );
+        commitCapabilitySelection({ ...selection, status: "ready" }, cursor);
         return;
       }
       setConnectorSetup({ capability: updated, selection, status });
@@ -2998,10 +3000,7 @@ function ThreadlightAppContent({
   }
 
   function manageConnector(selection: CapabilityDescriptor) {
-    const connector = connectorCapabilityForSelection(
-      selection,
-      capabilities,
-    );
+    const connector = connectorCapabilityForSelection(selection, capabilities);
     if (!connector) return;
     void prepareConnector(
       selection,
@@ -3017,17 +3016,12 @@ function ThreadlightAppContent({
   ) {
     setCapabilities((current) =>
       current.map((capability) =>
-        capability.id === capabilityId
-          ? { ...capability, status }
-          : capability,
+        capability.id === capabilityId ? { ...capability, status } : capability,
       ),
     );
   }
 
-  async function connectConnector(
-    clientId: string,
-    clientSecret: string,
-  ) {
+  async function connectConnector(clientId: string, clientSecret: string) {
     if (!state.threadId || !connectorSetup) return;
     const { capability, selection } = connectorSetup;
     setConnectorBusy(true);
@@ -3089,9 +3083,7 @@ function ThreadlightAppContent({
       );
       updateCapabilityStatus(capability.id, status.status);
       setSelectedCapabilities((current) =>
-        current.filter(
-          ({ id }) => id !== capability.id && id !== selection.id,
-        ),
+        current.filter(({ id }) => id !== capability.id && id !== selection.id),
       );
       setConnectorSetup({
         capability: { ...capability, status: status.status },
@@ -3108,15 +3100,16 @@ function ThreadlightAppContent({
   const globalActions = currentProject ? (
     <>
       {currentProject.scope !== "standalone" &&
-        projectOpener && projectOpeners.length > 0 && (
-        <ProjectOpenControl
-          adapter={projectOpener}
-          projectId={currentProject.id}
-          threadId={state.threadId}
-          preferred={preferredProjectOpener}
-          openers={projectOpeners}
-        />
-      )}
+        projectOpener &&
+        projectOpeners.length > 0 && (
+          <ProjectOpenControl
+            adapter={projectOpener}
+            projectId={currentProject.id}
+            threadId={state.threadId}
+            preferred={preferredProjectOpener}
+            openers={projectOpeners}
+          />
+        )}
       {terminal && (
         <button
           type="button"
@@ -3161,11 +3154,7 @@ function ThreadlightAppContent({
           onClick={() => hideSidebar(true)}
         />
       )}
-      <aside
-        id="app-sidebar"
-        className="sidebar"
-        aria-hidden={!sidebarOpen}
-      >
+      <aside id="app-sidebar" className="sidebar" aria-hidden={!sidebarOpen}>
         <div className="window-drag-region" />
         <button
           ref={sidebarCloseButton}
@@ -3193,23 +3182,23 @@ function ThreadlightAppContent({
         {automations &&
           currentProject &&
           currentProject.scope !== "standalone" && (
-          <div className="sidebar-primary-nav">
-            <button
-              type="button"
-              className={`scheduled-button project-row pressable ${view === "automations" ? "active" : ""}`}
-              aria-current={view === "automations" ? "page" : undefined}
-              disabled={switchingProject || voiceStatus !== "idle"}
-              onClick={() => {
-                cancelVoiceInput();
-                setView("automations");
-                closeSidebarForNavigation();
-              }}
-            >
-              <CalendarClock size={16} />
-              <span>{t("scheduled")}</span>
-            </button>
-          </div>
-        )}
+            <div className="sidebar-primary-nav">
+              <button
+                type="button"
+                className={`scheduled-button project-row pressable ${view === "automations" ? "active" : ""}`}
+                aria-current={view === "automations" ? "page" : undefined}
+                disabled={switchingProject || voiceStatus !== "idle"}
+                onClick={() => {
+                  cancelVoiceInput();
+                  setView("automations");
+                  closeSidebarForNavigation();
+                }}
+              >
+                <CalendarClock size={16} />
+                <span>{t("scheduled")}</span>
+              </button>
+            </div>
+          )}
 
         <nav className="thread-list" aria-label={t("projectsAndTasks")}>
           {projects ? (
@@ -3222,9 +3211,7 @@ function ThreadlightAppContent({
                   switchingProject ||
                   voiceStatus !== "idle"
                 }
-                addDisabled={
-                  switchingProject || voiceStatus !== "idle"
-                }
+                addDisabled={switchingProject || voiceStatus !== "idle"}
                 onSearch={() => openCommandPalette("all")}
                 onAdd={() => void openProjectFolder()}
               />
@@ -3237,10 +3224,7 @@ function ThreadlightAppContent({
                     activeThreadId={state.threadId}
                     runningThreadIds={runningThreadIds}
                     computerThreadId={computerShareSnapshot?.ownerThreadId}
-                    disabled={
-                      switchingProject ||
-                      voiceStatus !== "idle"
-                    }
+                    disabled={switchingProject || voiceStatus !== "idle"}
                     onNewTask={() => createProjectThread(project.id)}
                     onOpenMemory={
                       memory
@@ -3305,14 +3289,9 @@ function ThreadlightAppContent({
                       activeThreadId={state.threadId}
                       runningThreadIds={runningThreadIds}
                       computerThreadId={computerShareSnapshot?.ownerThreadId}
-                      disabled={
-                        switchingProject || voiceStatus !== "idle"
-                      }
+                      disabled={switchingProject || voiceStatus !== "idle"}
                       onSelect={(threadId) =>
-                        void selectConversation(
-                          standaloneProject.id,
-                          threadId,
-                        )
+                        void selectConversation(standaloneProject.id, threadId)
                       }
                       onRename={(conversation, title) =>
                         updateConversationMetadata(
@@ -3348,7 +3327,9 @@ function ThreadlightAppContent({
                 !standaloneProject?.conversations.some(
                   (conversation) => !conversation.archivedAt,
                 ) ? (
-                  <div className="thread-placeholder">{t("openFolderToStart")}</div>
+                  <div className="thread-placeholder">
+                    {t("openFolderToStart")}
+                  </div>
                 ) : null}
               </div>
             </>
@@ -3386,22 +3367,18 @@ function ThreadlightAppContent({
             </button>
           )}
           <RuntimeStatusControl
-            status={
-              currentProject || !projects ? state.connection : "idle"
-            }
+            status={currentProject || !projects ? state.connection : "idle"}
             label={
               currentHost?.name ??
               (currentProject || !projects
                 ? connectionLabel(state.connection, t)
                 : t("noProjectOpen"))
             }
-            mode={
-              `${currentHost?.kind === "remote" ? t("remoteHost") : t("local")} · ${
-                currentProject || !projects
-                  ? connectionLabel(state.connection, t)
-                  : t("noProjectOpen")
-              }`
-            }
+            mode={`${currentHost?.kind === "remote" ? t("remoteHost") : t("local")} · ${
+              currentProject || !projects
+                ? connectionLabel(state.connection, t)
+                : t("noProjectOpen")
+            }`}
             disabled={switchingProject || voiceStatus !== "idle"}
             title={t("connectRemoteRuntime")}
             onOpen={
@@ -3450,714 +3427,702 @@ function ThreadlightAppContent({
           </button>
         )}
         <div className="workspace-primary">
-        {showFirstRunGuide && settings && runtimeSettings ? (
-          <Suspense fallback={<DeferredView label={t("loading")} />}>
-            <LazyFirstRunGuide
-              key={firstRunRetryDemo ? "demo-retry" : "first-run"}
-              adapter={settings}
-              settings={runtimeSettings}
-              project={currentProject}
-              connectionReady={state.connection === "ready"}
-              initialStep={firstRunRetryDemo ? "demo" : undefined}
-              onSettingsSaved={setRuntimeSettings}
-              onRuntimeRestart={reconnectRuntime}
-              onOpenProject={() => openProjectFolder()}
-              onRunDemo={runFirstDemoTask}
-            />
-          </Suspense>
-        ) : view === "memory" &&
-        memory &&
-        currentProject &&
-        currentProject.scope !== "standalone" ? (
-          <ProjectMemoryPage
-            adapter={memory}
-            projectId={currentProject.id}
-            projectName={currentProject.name}
-          />
-        ) : view === "diagnostics" &&
-          diagnostics &&
-          currentProject ? (
-          <DiagnosticsPage
-            adapter={diagnostics}
-            projectId={currentProject.id}
-            projectName={currentProject.name}
-          />
-        ) : view === "automations" &&
-          automations &&
-          currentProject ? (
-          <Suspense fallback={<DeferredView label={t("loading")} />}>
-            <LazyAutomationsPage
-              adapter={automations}
+          {showFirstRunGuide && settings && runtimeSettings ? (
+            <Suspense fallback={<DeferredView label={t("loading")} />}>
+              <LazyFirstRunGuide
+                key={firstRunRetryDemo ? "demo-retry" : "first-run"}
+                adapter={settings}
+                settings={runtimeSettings}
+                project={currentProject}
+                connectionReady={state.connection === "ready"}
+                initialStep={firstRunRetryDemo ? "demo" : undefined}
+                onSettingsSaved={setRuntimeSettings}
+                onRuntimeRestart={reconnectRuntime}
+                onOpenProject={() => openProjectFolder()}
+                onRunDemo={runFirstDemoTask}
+              />
+            </Suspense>
+          ) : view === "memory" &&
+            memory &&
+            currentProject &&
+            currentProject.scope !== "standalone" ? (
+            <ProjectMemoryPage
+              adapter={memory}
               projectId={currentProject.id}
               projectName={currentProject.name}
-              onOpenThread={(threadId) =>
-                void selectConversation(currentProject.id, threadId)
-              }
             />
-          </Suspense>
-        ) : view === "settings" && settings ? (
-          <Suspense fallback={<DeferredView label={t("loading")} />}>
-            <LazySettingsPage
-              adapter={settings}
-              secretStorageBoundary={
-                currentHost?.kind === "remote" ? "host-file" : "system"
-              }
-              onRuntimeRestart={reconnectRuntime}
-              onLanguageChange={onLanguageChange}
-              onThemeChange={onThemeChange}
-              projectOpeners={projectOpeners}
-              onPreferredProjectOpenerChange={onPreferredProjectOpenerChange}
-              onSettingsChange={setRuntimeSettings}
+          ) : view === "diagnostics" && diagnostics && currentProject ? (
+            <DiagnosticsPage
+              adapter={diagnostics}
+              projectId={currentProject.id}
+              projectName={currentProject.name}
             />
-          </Suspense>
-        ) : view === "security" &&
-          executionPolicy &&
-          currentProject ? (
-          <ExecutionPolicyPage
-            adapter={executionPolicy}
-            projectId={currentProject.id}
-            projectName={currentProject.name}
-          />
-        ) : projects && !currentProject ? (
-          <ProjectEmptyState
-            error={projectError}
-            opening={switchingProject}
-            onOpen={() => void openProjectFolder()}
-            onCreateStandalone={
-              projects.createStandalone
-                ? () => void createStandaloneThread()
-                : undefined
-            }
-            onConnectRemote={
-              projects.connectRemote
-                ? () => setRemoteRuntimeOpen(true)
-                : undefined
-            }
-          />
-        ) : (
-          <>
-            <header className="workspace-header">
-              <div
-                className="workspace-header-drag-region"
-                aria-hidden="true"
+          ) : view === "automations" && automations && currentProject ? (
+            <Suspense fallback={<DeferredView label={t("loading")} />}>
+              <LazyAutomationsPage
+                adapter={automations}
+                projectId={currentProject.id}
+                projectName={currentProject.name}
+                onOpenThread={(threadId) =>
+                  void selectConversation(currentProject.id, threadId)
+                }
               />
-              <div className="workspace-header-title">
-                <h1>{state.messages[0]?.text || t("task")}</h1>
-                <p>
-                  {currentProject?.scope === "standalone"
-                    ? t("notInProject")
-                    : currentProject?.runtime?.kind === "remote"
-                    ? `${t("remoteRuntime")} · ${currentProject.runtime.workspacePath}`
-                    : (currentProject?.basePath ?? "Agent runtime")} ·{" "}
-                  {shortId(state.threadId)}
-                </p>
-              </div>
-              <div className="workspace-header-actions">
-                {state.isRunning && (
-                  <span className="running-badge">
-                    <LoaderCircle size={13} /> {t("running")}
-                  </span>
-                )}
-              </div>
-            </header>
+            </Suspense>
+          ) : view === "settings" && settings ? (
+            <Suspense fallback={<DeferredView label={t("loading")} />}>
+              <LazySettingsPage
+                adapter={settings}
+                secretStorageBoundary={
+                  currentHost?.kind === "remote" ? "host-file" : "system"
+                }
+                onRuntimeRestart={reconnectRuntime}
+                onLanguageChange={onLanguageChange}
+                onThemeChange={onThemeChange}
+                projectOpeners={projectOpeners}
+                onPreferredProjectOpenerChange={onPreferredProjectOpenerChange}
+                onSettingsChange={setRuntimeSettings}
+              />
+            </Suspense>
+          ) : view === "security" && executionPolicy && currentProject ? (
+            <ExecutionPolicyPage
+              adapter={executionPolicy}
+              projectId={currentProject.id}
+              projectName={currentProject.name}
+            />
+          ) : projects && !currentProject ? (
+            <ProjectEmptyState
+              error={projectError}
+              opening={switchingProject}
+              onOpen={() => void openProjectFolder()}
+              onCreateStandalone={
+                projects.createStandalone
+                  ? () => void createStandaloneThread()
+                  : undefined
+              }
+              onConnectRemote={
+                projects.connectRemote
+                  ? () => setRemoteRuntimeOpen(true)
+                  : undefined
+              }
+            />
+          ) : (
+            <>
+              <header className="workspace-header">
+                <div
+                  className="workspace-header-drag-region"
+                  aria-hidden="true"
+                />
+                <div className="workspace-header-title">
+                  <h1>{state.messages[0]?.text || t("task")}</h1>
+                  <p>
+                    {currentProject?.scope === "standalone"
+                      ? t("notInProject")
+                      : currentProject?.runtime?.kind === "remote"
+                        ? `${t("remoteRuntime")} · ${currentProject.runtime.workspacePath}`
+                        : (currentProject?.basePath ?? "Agent runtime")}{" "}
+                    · {shortId(state.threadId)}
+                  </p>
+                </div>
+                <div className="workspace-header-actions">
+                  {state.isRunning && (
+                    <span className="running-badge">
+                      <LoaderCircle size={13} /> {t("running")}
+                    </span>
+                  )}
+                </div>
+              </header>
 
-            <section
-              ref={conversation}
-              className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""}`}
-              aria-live="polite"
-              onScroll={(event) => {
-                followOutput.current = isNearBottom(event.currentTarget);
-              }}
-            >
-              <div className="conversation-inner">
-                {state.connection === "error" && (
-                  <ConnectionError
-                    message={
-                      state.connectionError ?? t("appServerConnectionFailed")
-                    }
-                    onRetry={() => void retry()}
-                    onOpenSettings={settings ? () => setView("settings") : undefined}
-                  />
-                )}
+              <section
+                ref={conversation}
+                className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""}`}
+                aria-live="polite"
+                onScroll={(event) => {
+                  followOutput.current = isNearBottom(event.currentTarget);
+                }}
+              >
+                <div className="conversation-inner">
+                  {state.connection === "error" && (
+                    <ConnectionError
+                      message={
+                        state.connectionError ?? t("appServerConnectionFailed")
+                      }
+                      onRetry={() => void retry()}
+                      onOpenSettings={
+                        settings ? () => setView("settings") : undefined
+                      }
+                    />
+                  )}
 
-                {state.messages.length === 0 && state.connection !== "error" ? (
-                  <EmptyState
-                    connecting={state.connection === "connecting"}
-                    project={currentProject}
-                    projects={(projectSnapshot?.projects ?? []).filter(
-                      (project) => project.scope !== "standalone",
-                    )}
-                    suggestions={
-                      suggestedQuestions?.key === suggestionKey
-                        ? suggestedQuestions.suggestions
-                        : []
-                    }
-                    suggestionsLoading={
-                      state.connection === "ready" &&
-                      (suggestedQuestions?.key !== suggestionKey ||
-                        suggestedQuestions.status === "loading")
-                    }
-                    suggestionsFailed={
-                      suggestedQuestions?.key === suggestionKey &&
-                      suggestedQuestions.status === "error"
-                    }
-                    onRetrySuggestions={() =>
-                      setSuggestionRetry((retry) => retry + 1)
-                    }
-                    onSelectProject={createProjectThread}
-                    onOpenProject={() => void openProjectFolder()}
-                    onCreateStandalone={() =>
-                      void createStandaloneThread()
-                    }
-                    onSelect={(value) => {
-                      setInput(value);
-                      textarea.current?.focus();
-                    }}
-                  />
-                ) : (
-                  <div className="message-list">
-                    {state.messages.map((message) => (
-                      <article
-                        id={`message-${message.id}`}
-                        className={`message ${message.role} ${message.error ? "error" : ""}`}
-                        key={message.id}
-                        tabIndex={-1}
-                      >
-                        {message.role === "user" &&
-                          message.attachments &&
-                          message.attachments.length > 0 && (
-                            <MessageAttachments
-                              attachments={message.attachments}
-                              attachmentPreview={attachmentPreview}
-                            />
-                          )}
-                        <MessageCapabilityReceipts
-                          role={message.role}
-                          capabilities={message.capabilities}
-                          capabilityRefs={message.capabilityRefs}
-                          catalog={capabilities}
-                        />
-                        {(message.text || message.role === "assistant") && (
-                          <div className="message-body">
-                            {message.progress && message.progress.length > 0 && (
-                              <ProgressList
-                                progress={message.progress}
-                                onTerminateProcess={terminateProcess}
-                                onOpenLocalFile={openLocalFile}
-                                onRevealLocalFile={
-                                  workspace?.reveal || workspace?.revealSystemFile
-                                    ? revealLocalFile
-                                    : undefined
-                                }
+                  {state.messages.length === 0 &&
+                  state.connection !== "error" ? (
+                    <EmptyState
+                      connecting={state.connection === "connecting"}
+                      project={currentProject}
+                      projects={(projectSnapshot?.projects ?? []).filter(
+                        (project) => project.scope !== "standalone",
+                      )}
+                      suggestions={
+                        suggestedQuestions?.key === suggestionKey
+                          ? suggestedQuestions.suggestions
+                          : []
+                      }
+                      suggestionsLoading={
+                        state.connection === "ready" &&
+                        (suggestedQuestions?.key !== suggestionKey ||
+                          suggestedQuestions.status === "loading")
+                      }
+                      suggestionsFailed={
+                        suggestedQuestions?.key === suggestionKey &&
+                        suggestedQuestions.status === "error"
+                      }
+                      onRetrySuggestions={() =>
+                        setSuggestionRetry((retry) => retry + 1)
+                      }
+                      onSelectProject={createProjectThread}
+                      onOpenProject={() => void openProjectFolder()}
+                      onCreateStandalone={() => void createStandaloneThread()}
+                      onSelect={(value) => {
+                        setInput(value);
+                        textarea.current?.focus();
+                      }}
+                    />
+                  ) : (
+                    <div className="message-list">
+                      {state.messages.map((message) => (
+                        <article
+                          id={`message-${message.id}`}
+                          className={`message ${message.role} ${message.error ? "error" : ""}`}
+                          key={message.id}
+                          tabIndex={-1}
+                        >
+                          {message.role === "user" &&
+                            message.attachments &&
+                            message.attachments.length > 0 && (
+                              <MessageAttachments
+                                attachments={message.attachments}
+                                attachmentPreview={attachmentPreview}
                               />
                             )}
-                            {(!message.progress ||
-                              message.progress.length === 0) &&
-                              message.activities &&
-                              message.activities.length > 0 && (
-                                <ActivityList
-                                  activities={message.activities}
-                                  onTerminateProcess={terminateProcess}
-                                />
-                              )}
-                            {message.role === "assistant" ? (
-                              <MarkdownContent
-                                onOpenLocalFile={openLocalFile}
-                                sources={message.sources}
-                                citations={message.citations}
-                                onRevealLocalFile={
-                                  workspace?.reveal || workspace?.revealSystemFile
-                                    ? revealLocalFile
-                                    : undefined
-                                }
-                              >
-                                {message.text}
-                              </MarkdownContent>
-                            ) : (
-                              <p>{message.text}</p>
-                            )}
-                          </div>
-                        )}
-                        {message.text && (
-                          <MessageActions
+                          <MessageCapabilityReceipts
                             role={message.role}
-                            text={message.text}
-                            copyText={clipboard?.writeText}
-                            onRewrite={
-                              message.role === "user"
-                                ? () => rewriteQuestion(message.text)
-                                : undefined
-                            }
+                            capabilities={message.capabilities}
+                            capabilityRefs={message.capabilityRefs}
+                            catalog={capabilities}
                           />
-                        )}
-                      </article>
-                    ))}
+                          {(message.text || message.role === "assistant") && (
+                            <div className="message-body">
+                              {message.progress &&
+                                message.progress.length > 0 && (
+                                  <ProgressList
+                                    progress={message.progress}
+                                    onTerminateProcess={terminateProcess}
+                                    onOpenLocalFile={openLocalFile}
+                                    onRevealLocalFile={
+                                      workspace?.reveal ||
+                                      workspace?.revealSystemFile
+                                        ? revealLocalFile
+                                        : undefined
+                                    }
+                                  />
+                                )}
+                              {(!message.progress ||
+                                message.progress.length === 0) &&
+                                message.activities &&
+                                message.activities.length > 0 && (
+                                  <ActivityList
+                                    activities={message.activities}
+                                    onTerminateProcess={terminateProcess}
+                                  />
+                                )}
+                              {message.role === "assistant" ? (
+                                <MarkdownContent
+                                  onOpenLocalFile={openLocalFile}
+                                  sources={message.sources}
+                                  citations={message.citations}
+                                  onRevealLocalFile={
+                                    workspace?.reveal ||
+                                    workspace?.revealSystemFile
+                                      ? revealLocalFile
+                                      : undefined
+                                  }
+                                >
+                                  {message.text}
+                                </MarkdownContent>
+                              ) : (
+                                <p>{message.text}</p>
+                              )}
+                            </div>
+                          )}
+                          {message.text && (
+                            <MessageActions
+                              role={message.role}
+                              text={message.text}
+                              copyText={clipboard?.writeText}
+                              onRewrite={
+                                message.role === "user"
+                                  ? () => rewriteQuestion(message.text)
+                                  : undefined
+                              }
+                            />
+                          )}
+                        </article>
+                      ))}
 
-                    {(state.progress.length > 0 ||
-                      state.streamingText.length > 0 ||
-                      state.isThinking) && (
-                      <div className="live-run">
-                        {state.progress.length > 0 && (
-                          <ProgressList
-                            progress={state.progress}
-                            live
-                            onTerminateProcess={terminateProcess}
-                            onOpenLocalFile={openLocalFile}
-                            onRevealLocalFile={
-                              workspace?.reveal || workspace?.revealSystemFile
-                                ? revealLocalFile
-                                : undefined
-                            }
-                          />
-                        )}
-                        {state.streamingText.length > 0 && (
-                          <div className="streaming-copy" aria-busy="true">
-                            <MarkdownContent
+                      {(state.progress.length > 0 ||
+                        state.streamingText.length > 0 ||
+                        state.isThinking) && (
+                        <div className="live-run">
+                          {state.progress.length > 0 && (
+                            <ProgressList
+                              progress={state.progress}
+                              live
+                              onTerminateProcess={terminateProcess}
                               onOpenLocalFile={openLocalFile}
                               onRevealLocalFile={
                                 workspace?.reveal || workspace?.revealSystemFile
                                   ? revealLocalFile
                                   : undefined
                               }
-                            >
-                              {state.streamingText}
-                            </MarkdownContent>
-                          </div>
-                        )}
-                        {state.isThinking && (
-                          <div className="thinking-row">
-                            <LoaderCircle size={15} />
-                            {t("thinking")}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {automaticDelivery && !state.isRunning && (
-                      <DeliveryTurnStatus
-                        delivery={automaticDelivery}
-                        disabled={
-                          automaticDelivery.status === "syncing" ||
-                          automaticDelivery.status === "undoing"
-                        }
-                        onOpen={openDeliveryCenter}
-                        onRetry={
-                          workspace?.applyDelivery
-                            ? () => void retryAutomaticDelivery()
-                            : undefined
-                        }
-                        onUndo={
-                          workspace?.undoDelivery
-                            ? () => void undoAutomaticDelivery()
-                            : undefined
-                        }
-                      />
-                    )}
-
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <footer className="composer-wrap">
-              {(state.plan ||
-                (hasConversationChanges && conversationChanges)) && (
-                <TurnStatusPill
-                  plan={state.plan}
-                  changes={
-                    hasConversationChanges ? conversationChanges : undefined
-                  }
-                  onOpenChanges={openReviewPanel}
-                />
-              )}
-              {!providerReady && (
-                <button
-                  type="button"
-                  className="composer-provider-gate pressable"
-                  onClick={() =>
-                    setView(firstRunRequired ? "thread" : "settings")
-                  }
-                >
-                  <KeyRound size={14} />
-                  <span>
-                    <strong>{t("providerRequired")}</strong>
-                    <small>{t("providerRequiredDescription")}</small>
-                  </span>
-                  <span>{t("configureProvider")}</span>
-                </button>
-              )}
-              <div
-                ref={composerRoot}
-                className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
-              >
-                <input
-                  ref={fileInput}
-                  className="visually-hidden"
-                  type="file"
-                  multiple
-                  tabIndex={-1}
-                  onChange={(event) => {
-                    addAttachments([...(event.currentTarget.files ?? [])]);
-                    event.currentTarget.value = "";
-                  }}
-                />
-                {computerPermissionSnapshot?.required &&
-                  (!computerPermissionSnapshot.ownerThreadId ||
-                    computerPermissionSnapshot.ownerThreadId ===
-                      state.threadId) && (
-                    <ComputerPermissionCard
-                      snapshot={computerPermissionSnapshot}
-                      busy={computerPermissionBusy}
-                      error={computerPermissionError}
-                      onRequest={(capability) =>
-                        void requestComputerPermission(capability)
-                      }
-                      onRefresh={() => void refreshComputerPermissions()}
-                      onRelaunch={() =>
-                        void relaunchForComputerPermissions()
-                      }
-                    />
-                  )}
-                {ownsActiveComputerShare(
-                  computerShareSnapshot,
-                  state.threadId,
-                ) && (
-                  <ComputerShareStatus
-                    snapshot={computerShareSnapshot}
-                    busy={
-                      showingComputerShare || stoppingComputerShare
-                    }
-                    stopping={stoppingComputerShare}
-                    error={computerShareError}
-                    onShow={() => void showComputerSharePreview()}
-                    onStop={() => void stopComputerShare()}
-                  />
-                )}
-                {pendingAttachments.length > 0 && (
-                  <ComposerAttachments
-                    attachments={pendingAttachments}
-                    onRemove={removeAttachment}
-                    disabled={preparingAttachments}
-                  />
-                )}
-                {state.queuedTurns.length > 0 && (
-                  <div
-                    className="composer-queue"
-                    aria-label={t("queuedMessages")}
-                  >
-                    {state.queuedTurns.map((item, index) => (
-                      <div className="composer-queue-item" key={item.id}>
-                        <span
-                          className={`composer-queue-badge ${item.delivery}`}
-                        >
-                          {t(
-                            item.delivery === "inject"
-                              ? "injectSoon"
-                              : "afterCurrent",
+                            />
                           )}
-                        </span>
-                        <span className="composer-queue-copy">
-                          {item.input}
-                        </span>
-                        <div className="composer-queue-actions">
-                          <button
-                            type="button"
-                            className="pressable"
-                            disabled={index === 0}
-                            onClick={() =>
-                              void reorderQueuedTurn(
-                                item.id,
-                                state.queuedTurns[index - 1]?.id,
-                              )
-                            }
-                            aria-label={t("moveQueuedMessageUp")}
-                            title={t("moveUp")}
-                          >
-                            <ChevronUp size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="pressable"
-                            disabled={
-                              index === state.queuedTurns.length - 1
-                            }
-                            onClick={() =>
-                              void reorderQueuedTurn(
-                                item.id,
-                                state.queuedTurns[index + 2]?.id,
-                              )
-                            }
-                            aria-label={t("moveQueuedMessageDown")}
-                            title={t("moveDown")}
-                          >
-                            <ChevronDown size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            className="pressable cancel"
-                            onClick={() =>
-                              void cancelQueuedTurn(item.id)
-                            }
-                            aria-label={t("cancelQueuedMessage")}
-                            title={t("cancel")}
-                          >
-                            <X size={14} />
-                          </button>
+                          {state.streamingText.length > 0 && (
+                            <div className="streaming-copy" aria-busy="true">
+                              <MarkdownContent
+                                onOpenLocalFile={openLocalFile}
+                                onRevealLocalFile={
+                                  workspace?.reveal ||
+                                  workspace?.revealSystemFile
+                                    ? revealLocalFile
+                                    : undefined
+                                }
+                              >
+                                {state.streamingText}
+                              </MarkdownContent>
+                            </div>
+                          )}
+                          {state.isThinking && (
+                            <div className="thinking-row">
+                              <LoaderCircle size={15} />
+                              {t("thinking")}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <CapabilityChips
-                  capabilities={selectedCapabilities}
-                  disabled={state.isRunning}
-                  onManage={manageConnector}
-                  onRemove={(capability) =>
-                    setSelectedCapabilities((current) => {
-                      if (capability.id === "tool:plan") {
-                        setComposerMode("default");
-                      }
-                      return current.filter(({ id }) => id !== capability.id);
-                    })
-                  }
-                />
-                {(capabilityQuery || addMenuOpen) && (
-                  <CapabilityMenu
-                    actions={addActions}
-                    capabilities={filteredCapabilities}
-                    activeIndex={Math.min(
-                      activeCapabilityIndex,
-                      Math.max(0, composerMenuItemCount - 1),
-                    )}
-                    loading={capabilitiesLoading}
-                    onSelectAction={selectAddAction}
-                    onSelect={selectCapability}
-                  />
-                )}
-                <textarea
-                  ref={textarea}
-                  value={input}
-                  rows={2}
-                  placeholder={
-                    voiceStatus === "recording"
-                      ? t("listening")
-                      : providerReady
-                        ? t("askThreadlight")
-                        : t("configureProviderToStart")
-                  }
-                  disabled={state.connection !== "ready" || !providerReady}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setInput(value);
-                    if (state.isRunning) {
-                      setCapabilityQuery(undefined);
-                    } else {
-                      updateCapabilityQuery(
-                        value,
-                        event.target.selectionStart,
-                      );
-                    }
-                    setVoiceError(undefined);
-                  }}
-                  onKeyDown={handleKeyDown}
-                  onInput={(event) => {
-                    event.currentTarget.style.height = "auto";
-                    event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
-                  }}
-                  aria-label={t("message")}
-                  aria-describedby="composer-hint"
-                  role="combobox"
-                  aria-haspopup="listbox"
-                  aria-autocomplete="list"
-                  aria-expanded={Boolean(capabilityQuery || addMenuOpen)}
-                  aria-controls={
-                    capabilityQuery || addMenuOpen
-                      ? "composer-capability-menu"
-                      : undefined
-                  }
-                  aria-activedescendant={
-                    (capabilityQuery || addMenuOpen) &&
-                    composerMenuItemCount > 0
-                      ? `composer-capability-${Math.min(
-                          activeCapabilityIndex,
-                          composerMenuItemCount - 1,
-                        )}`
-                      : undefined
-                  }
-                />
-                <div className="composer-toolbar">
-                  <div className="composer-toolbar-start">
-                    <button
-                      type="button"
-                      className={`composer-action add pressable ${addMenuOpen ? "active" : ""}`}
-                      onPointerDown={(event) => {
-                        event.preventDefault();
-                        setCapabilityQuery(undefined);
-                        setAddMenuOpen((open) => !open);
-                        setActiveCapabilityIndex(0);
-                        requestAnimationFrame(() => textarea.current?.focus());
-                      }}
-                      disabled={
-                        state.connection !== "ready" ||
-                        !providerReady ||
-                        state.isRunning ||
-                        preparingAttachments
-                      }
-                      aria-label={t("add")}
-                      aria-expanded={addMenuOpen}
-                      aria-controls={
-                        addMenuOpen ? "composer-capability-menu" : undefined
-                      }
-                      title={t("add")}
-                    >
-                      <Plus size={18} />
-                    </button>
-                    {executionPolicy &&
-                      projects &&
-                      currentProject &&
-                      state.threadId && (
-                        <ConversationAccessControl
-                          mode={
-                            currentConversation?.accessMode ?? "approval"
-                          }
+                      )}
+
+                      {automaticDelivery && !state.isRunning && (
+                        <DeliveryTurnStatus
+                          delivery={automaticDelivery}
                           disabled={
-                            state.connection !== "ready" ||
-                            state.isRunning ||
-                            switchingProject ||
-                            voiceStatus !== "idle"
+                            automaticDelivery.status === "syncing" ||
+                            automaticDelivery.status === "undoing"
                           }
-                          onOpen={() => {
-                            setAddMenuOpen(false);
-                            setCapabilityQuery(undefined);
-                          }}
-                          onChange={updateConversationAccessMode}
+                          onOpen={openDeliveryCenter}
+                          onRetry={
+                            workspace?.applyDelivery
+                              ? () => void retryAutomaticDelivery()
+                              : undefined
+                          }
+                          onUndo={
+                            workspace?.undoDelivery
+                              ? () => void undoAutomaticDelivery()
+                              : undefined
+                          }
                         />
                       )}
-                  </div>
-                  <div className="composer-toolbar-end">
-                    {voiceInput && !state.isRunning && (
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <footer className="composer-wrap">
+                {(state.plan ||
+                  (hasConversationChanges && conversationChanges)) && (
+                  <TurnStatusPill
+                    plan={state.plan}
+                    changes={
+                      hasConversationChanges ? conversationChanges : undefined
+                    }
+                    onOpenChanges={openReviewPanel}
+                  />
+                )}
+                {!providerReady && (
+                  <button
+                    type="button"
+                    className="composer-provider-gate pressable"
+                    onClick={() =>
+                      setView(firstRunRequired ? "thread" : "settings")
+                    }
+                  >
+                    <KeyRound size={14} />
+                    <span>
+                      <strong>{t("providerRequired")}</strong>
+                      <small>{t("providerRequiredDescription")}</small>
+                    </span>
+                    <span>{t("configureProvider")}</span>
+                  </button>
+                )}
+                <div
+                  ref={composerRoot}
+                  className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
+                >
+                  <input
+                    ref={fileInput}
+                    className="visually-hidden"
+                    type="file"
+                    multiple
+                    tabIndex={-1}
+                    onChange={(event) => {
+                      addAttachments([...(event.currentTarget.files ?? [])]);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                  {computerPermissionSnapshot?.required &&
+                    (!computerPermissionSnapshot.ownerThreadId ||
+                      computerPermissionSnapshot.ownerThreadId ===
+                        state.threadId) && (
+                      <ComputerPermissionCard
+                        snapshot={computerPermissionSnapshot}
+                        busy={computerPermissionBusy}
+                        error={computerPermissionError}
+                        onRequest={(capability) =>
+                          void requestComputerPermission(capability)
+                        }
+                        onRefresh={() => void refreshComputerPermissions()}
+                        onRelaunch={() => void relaunchForComputerPermissions()}
+                      />
+                    )}
+                  {ownsActiveComputerShare(
+                    computerShareSnapshot,
+                    state.threadId,
+                  ) && (
+                    <ComputerShareStatus
+                      snapshot={computerShareSnapshot}
+                      busy={showingComputerShare || stoppingComputerShare}
+                      stopping={stoppingComputerShare}
+                      error={computerShareError}
+                      onShow={() => void showComputerSharePreview()}
+                      onStop={() => void stopComputerShare()}
+                    />
+                  )}
+                  {pendingAttachments.length > 0 && (
+                    <ComposerAttachments
+                      attachments={pendingAttachments}
+                      onRemove={removeAttachment}
+                      disabled={preparingAttachments}
+                    />
+                  )}
+                  {state.queuedTurns.length > 0 && (
+                    <div
+                      className="composer-queue"
+                      aria-label={t("queuedMessages")}
+                    >
+                      {state.queuedTurns.map((item, index) => (
+                        <div className="composer-queue-item" key={item.id}>
+                          <span
+                            className={`composer-queue-badge ${item.delivery}`}
+                          >
+                            {t(
+                              item.delivery === "inject"
+                                ? "injectSoon"
+                                : "afterCurrent",
+                            )}
+                          </span>
+                          <span className="composer-queue-copy">
+                            {item.input}
+                          </span>
+                          <div className="composer-queue-actions">
+                            <button
+                              type="button"
+                              className="pressable"
+                              disabled={index === 0}
+                              onClick={() =>
+                                void reorderQueuedTurn(
+                                  item.id,
+                                  state.queuedTurns[index - 1]?.id,
+                                )
+                              }
+                              aria-label={t("moveQueuedMessageUp")}
+                              title={t("moveUp")}
+                            >
+                              <ChevronUp size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="pressable"
+                              disabled={index === state.queuedTurns.length - 1}
+                              onClick={() =>
+                                void reorderQueuedTurn(
+                                  item.id,
+                                  state.queuedTurns[index + 2]?.id,
+                                )
+                              }
+                              aria-label={t("moveQueuedMessageDown")}
+                              title={t("moveDown")}
+                            >
+                              <ChevronDown size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="pressable cancel"
+                              onClick={() => void cancelQueuedTurn(item.id)}
+                              aria-label={t("cancelQueuedMessage")}
+                              title={t("cancel")}
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <CapabilityChips
+                    capabilities={selectedCapabilities}
+                    disabled={state.isRunning}
+                    onManage={manageConnector}
+                    onRemove={(capability) =>
+                      setSelectedCapabilities((current) => {
+                        if (capability.id === "tool:plan") {
+                          setComposerMode("default");
+                        }
+                        return current.filter(({ id }) => id !== capability.id);
+                      })
+                    }
+                  />
+                  {(capabilityQuery || addMenuOpen) && (
+                    <CapabilityMenu
+                      actions={addActions}
+                      capabilities={filteredCapabilities}
+                      activeIndex={Math.min(
+                        activeCapabilityIndex,
+                        Math.max(0, composerMenuItemCount - 1),
+                      )}
+                      loading={capabilitiesLoading}
+                      onSelectAction={selectAddAction}
+                      onSelect={selectCapability}
+                    />
+                  )}
+                  <textarea
+                    ref={textarea}
+                    value={input}
+                    rows={2}
+                    placeholder={
+                      voiceStatus === "recording"
+                        ? t("listening")
+                        : providerReady
+                          ? t("askThreadlight")
+                          : t("configureProviderToStart")
+                    }
+                    disabled={state.connection !== "ready" || !providerReady}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setInput(value);
+                      if (state.isRunning) {
+                        setCapabilityQuery(undefined);
+                      } else {
+                        updateCapabilityQuery(
+                          value,
+                          event.target.selectionStart,
+                        );
+                      }
+                      setVoiceError(undefined);
+                    }}
+                    onKeyDown={handleKeyDown}
+                    onInput={(event) => {
+                      event.currentTarget.style.height = "auto";
+                      event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 160)}px`;
+                    }}
+                    aria-label={t("message")}
+                    aria-describedby="composer-hint"
+                    role="combobox"
+                    aria-haspopup="listbox"
+                    aria-autocomplete="list"
+                    aria-expanded={Boolean(capabilityQuery || addMenuOpen)}
+                    aria-controls={
+                      capabilityQuery || addMenuOpen
+                        ? "composer-capability-menu"
+                        : undefined
+                    }
+                    aria-activedescendant={
+                      (capabilityQuery || addMenuOpen) &&
+                      composerMenuItemCount > 0
+                        ? `composer-capability-${Math.min(
+                            activeCapabilityIndex,
+                            composerMenuItemCount - 1,
+                          )}`
+                        : undefined
+                    }
+                  />
+                  <div className="composer-toolbar">
+                    <div className="composer-toolbar-start">
                       <button
                         type="button"
-                        className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
-                        onClick={() => {
-                          if (voiceStatus === "recording") stopVoiceInput();
-                          else void startVoiceInput();
+                        className={`composer-action add pressable ${addMenuOpen ? "active" : ""}`}
+                        onPointerDown={(event) => {
+                          event.preventDefault();
+                          setCapabilityQuery(undefined);
+                          setAddMenuOpen((open) => !open);
+                          setActiveCapabilityIndex(0);
+                          requestAnimationFrame(() =>
+                            textarea.current?.focus(),
+                          );
                         }}
                         disabled={
                           state.connection !== "ready" ||
                           !providerReady ||
-                          voiceStatus === "requesting" ||
-                          voiceStatus === "transcribing"
-                        }
-                        aria-label={
-                          voiceStatus === "recording"
-                            ? t("stopRecording")
-                            : voiceStatus === "requesting"
-                              ? t("requestingMicrophone")
-                              : voiceStatus === "transcribing"
-                                ? t("transcribingVoice")
-                                : t("voiceInput")
-                        }
-                        aria-pressed={voiceStatus === "recording"}
-                        title={
-                          voiceStatus === "recording"
-                            ? t("stopRecording")
-                            : t("voiceInput")
-                        }
-                      >
-                        {voiceStatus === "requesting" ||
-                        voiceStatus === "transcribing" ? (
-                          <LoaderCircle className="spin" size={17} />
-                        ) : voiceStatus === "recording" ? (
-                          <Square
-                            size={12}
-                            fill="currentColor"
-                            strokeWidth={0}
-                          />
-                        ) : (
-                          <Mic size={17} />
-                        )}
-                      </button>
-                    )}
-                    {state.isRunning && (
-                      <button
-                        type="button"
-                        className="composer-action send pressable"
-                        onClick={() => void submit(input, "inject")}
-                        disabled={!input.trim()}
-                        aria-label={t("injectMessage")}
-                        title={t("injectMessage")}
-                      >
-                        <ArrowUp size={18} strokeWidth={2.4} />
-                      </button>
-                    )}
-                    {state.isRunning ? (
-                      <button
-                        type="button"
-                        className="composer-action stop pressable"
-                        onClick={stopRunningTurn}
-                        aria-label={t("stopRun")}
-                        title={t("stop")}
-                      >
-                        <CircleStop size={18} />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="composer-action send pressable"
-                        onClick={() => void submit()}
-                        disabled={
-                          (!input.trim() &&
-                            pendingAttachments.length === 0) ||
-                          state.connection !== "ready" ||
-                          !providerReady ||
-                          voiceStatus !== "idle" ||
+                          state.isRunning ||
                           preparingAttachments
                         }
-                        aria-label={t("sendMessage")}
-                        title={t("send")}
+                        aria-label={t("add")}
+                        aria-expanded={addMenuOpen}
+                        aria-controls={
+                          addMenuOpen ? "composer-capability-menu" : undefined
+                        }
+                        title={t("add")}
                       >
-                        <ArrowUp size={18} strokeWidth={2.4} />
+                        <Plus size={18} />
                       </button>
-                    )}
+                      {executionPolicy &&
+                        projects &&
+                        currentProject &&
+                        state.threadId && (
+                          <ConversationAccessControl
+                            mode={currentConversation?.accessMode ?? "approval"}
+                            disabled={
+                              state.connection !== "ready" ||
+                              state.isRunning ||
+                              switchingProject ||
+                              voiceStatus !== "idle"
+                            }
+                            onOpen={() => {
+                              setAddMenuOpen(false);
+                              setCapabilityQuery(undefined);
+                            }}
+                            onChange={updateConversationAccessMode}
+                          />
+                        )}
+                    </div>
+                    <div className="composer-toolbar-end">
+                      {voiceInput && !state.isRunning && (
+                        <button
+                          type="button"
+                          className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
+                          onClick={() => {
+                            if (voiceStatus === "recording") stopVoiceInput();
+                            else void startVoiceInput();
+                          }}
+                          disabled={
+                            state.connection !== "ready" ||
+                            !providerReady ||
+                            voiceStatus === "requesting" ||
+                            voiceStatus === "transcribing"
+                          }
+                          aria-label={
+                            voiceStatus === "recording"
+                              ? t("stopRecording")
+                              : voiceStatus === "requesting"
+                                ? t("requestingMicrophone")
+                                : voiceStatus === "transcribing"
+                                  ? t("transcribingVoice")
+                                  : t("voiceInput")
+                          }
+                          aria-pressed={voiceStatus === "recording"}
+                          title={
+                            voiceStatus === "recording"
+                              ? t("stopRecording")
+                              : t("voiceInput")
+                          }
+                        >
+                          {voiceStatus === "requesting" ||
+                          voiceStatus === "transcribing" ? (
+                            <LoaderCircle className="spin" size={17} />
+                          ) : voiceStatus === "recording" ? (
+                            <Square
+                              size={12}
+                              fill="currentColor"
+                              strokeWidth={0}
+                            />
+                          ) : (
+                            <Mic size={17} />
+                          )}
+                        </button>
+                      )}
+                      {state.isRunning && (
+                        <button
+                          type="button"
+                          className="composer-action send pressable"
+                          onClick={() => void submit(input, "inject")}
+                          disabled={!input.trim()}
+                          aria-label={t("injectMessage")}
+                          title={t("injectMessage")}
+                        >
+                          <ArrowUp size={18} strokeWidth={2.4} />
+                        </button>
+                      )}
+                      {state.isRunning ? (
+                        <button
+                          type="button"
+                          className="composer-action stop pressable"
+                          onClick={stopRunningTurn}
+                          aria-label={t("stopRun")}
+                          title={t("stop")}
+                        >
+                          <CircleStop size={18} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="composer-action send pressable"
+                          onClick={() => void submit()}
+                          disabled={
+                            (!input.trim() &&
+                              pendingAttachments.length === 0) ||
+                            state.connection !== "ready" ||
+                            !providerReady ||
+                            voiceStatus !== "idle" ||
+                            preparingAttachments
+                          }
+                          aria-label={t("sendMessage")}
+                          title={t("send")}
+                        >
+                          <ArrowUp size={18} strokeWidth={2.4} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <p
-                id="composer-hint"
-                className={`composer-hint ${voiceError || attachmentError || state.submissionError ? "error" : ""}`}
-                aria-live="polite"
-              >
-                {attachmentHint(
-                  voiceStatus,
-                  voiceError,
-                  attachmentError,
-                  state.submissionError,
-                  pendingAttachments,
-                  preparingAttachments,
-                  state.isRunning,
-                  t,
-                )}
-              </p>
-            </footer>
-            {isDraggingFiles && (
-              <div className="attachment-drop-overlay" aria-hidden="true">
-                <div>
-                  <Paperclip size={20} />
-                  <span>{t("dropFiles")}</span>
+                <p
+                  id="composer-hint"
+                  className={`composer-hint ${voiceError || attachmentError || state.submissionError ? "error" : ""}`}
+                  aria-live="polite"
+                >
+                  {attachmentHint(
+                    voiceStatus,
+                    voiceError,
+                    attachmentError,
+                    state.submissionError,
+                    pendingAttachments,
+                    preparingAttachments,
+                    state.isRunning,
+                    t,
+                  )}
+                </p>
+              </footer>
+              {isDraggingFiles && (
+                <div className="attachment-drop-overlay" aria-hidden="true">
+                  <div>
+                    <Paperclip size={20} />
+                    <span>{t("dropFiles")}</span>
+                  </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
         </div>
         {!globalActionsInPanel &&
           currentProject &&
           (projectOpener || terminal || workspace) && (
-          <div className="workspace-global-actions">
-            {globalActions}
-          </div>
-        )}
+            <div className="workspace-global-actions">{globalActions}</div>
+          )}
         {workspace && currentProject && workspacePanelMounted.current && (
           <Suspense
             fallback={
@@ -4216,9 +4181,7 @@ function ThreadlightAppContent({
                       })
                   : undefined
               }
-              toolbarActions={
-                globalActionsInPanel ? globalActions : undefined
-              }
+              toolbarActions={globalActionsInPanel ? globalActions : undefined}
             />
           </Suspense>
         )}
@@ -4327,3226 +4290,7 @@ function ThreadlightAppContent({
           onDisconnect={() => void disconnectConnector()}
         />
       )}
-      {executionPolicy && (
-        <ExecutionApprovalGate adapter={executionPolicy} />
-      )}
+      {executionPolicy && <ExecutionApprovalGate adapter={executionPolicy} />}
     </div>
   );
-}
-
-export function MessageActions({
-  role,
-  text,
-  copyText,
-  onRewrite,
-}: {
-  role: "user" | "assistant";
-  text: string;
-  copyText?(text: string): Promise<void>;
-  onRewrite?(): void;
-}) {
-  const { t } = useI18n();
-  const [copyStatus, setCopyStatus] = useState<
-    "idle" | "copied" | "failed"
-  >("idle");
-  const copyStatusTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
-
-  useEffect(
-    () => () => {
-      if (copyStatusTimer.current) clearTimeout(copyStatusTimer.current);
-    },
-    [],
-  );
-
-  async function copyMessage() {
-    try {
-      await writeClipboardText(text, copyText);
-      setCopyStatus("copied");
-    } catch {
-      setCopyStatus("failed");
-    }
-    if (copyStatusTimer.current) clearTimeout(copyStatusTimer.current);
-    copyStatusTimer.current = setTimeout(() => setCopyStatus("idle"), 1600);
-  }
-
-  const copyLabel =
-    copyStatus === "copied"
-      ? t("copied")
-      : copyStatus === "failed"
-        ? t("copyFailed")
-        : t("copyMessage");
-
-  return (
-    <div
-      className={`message-actions ${role}`}
-      aria-label={t("messageActions")}
-      aria-live="polite"
-    >
-      <button
-        type="button"
-        className={`message-action pressable ${copyStatus}`}
-        onClick={() => void copyMessage()}
-        aria-label={copyLabel}
-        title={copyLabel}
-      >
-        {copyStatus === "copied" ? (
-          <Check size={14} />
-        ) : copyStatus === "failed" ? (
-          <X size={14} />
-        ) : (
-          <Copy size={14} />
-        )}
-      </button>
-      {role === "user" && onRewrite && (
-        <button
-          type="button"
-          className="message-action pressable"
-          onClick={onRewrite}
-          aria-label={t("rewriteQuestion")}
-          title={t("rewriteQuestion")}
-        >
-          <PencilLine size={14} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-export async function writeClipboardText(
-  text: string,
-  desktopWriteText?: (text: string) => Promise<void>,
-): Promise<void> {
-  if (desktopWriteText) {
-    try {
-      await desktopWriteText(text);
-      return;
-    } catch {
-      // Continue through the browser fallbacks.
-    }
-  }
-
-  if (
-    typeof navigator !== "undefined" &&
-    navigator.clipboard?.writeText
-  ) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // Clipboard API can exist but reject writes in Electron or non-secure contexts.
-    }
-  }
-
-  if (typeof document === "undefined") {
-    throw new Error("Clipboard write is unavailable");
-  }
-  const previousFocus =
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : undefined;
-  const fallback = document.createElement("textarea");
-  fallback.value = text;
-  fallback.setAttribute("readonly", "");
-  fallback.style.position = "fixed";
-  fallback.style.left = "-9999px";
-  fallback.style.top = "0";
-  document.body.append(fallback);
-  fallback.focus();
-  fallback.select();
-  fallback.setSelectionRange(0, text.length);
-  const copied = document.execCommand("copy");
-  fallback.remove();
-  previousFocus?.focus({ preventScroll: true });
-  if (!copied) throw new Error("Clipboard write failed");
-}
-
-export function ConversationChangesButton({
-  changes,
-  onOpen,
-}: {
-  changes: ConversationChangesSnapshot;
-  onOpen(): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <button
-      type="button"
-      className="conversation-changes-button pressable"
-      onClick={onOpen}
-    >
-      <FileDiff size={14} />
-      <span>{t("filesChanged", { count: changes.files.length })}</span>
-      <span className="change-additions">+{changes.additions}</span>
-      <span className="change-deletions">-{changes.deletions}</span>
-    </button>
-  );
-}
-
-export function TurnStatusPill({
-  plan,
-  changes,
-  onOpenChanges,
-}: {
-  plan?: AgentPlanData;
-  changes?: ConversationChangesSnapshot;
-  onOpenChanges(): void;
-}) {
-  const { t } = useI18n();
-  const step = plan ? currentPlanStep(plan) : undefined;
-  const completed =
-    !!plan?.items.length &&
-    plan.items.every((item) => item.status === "completed");
-
-  return (
-    <div className="turn-status-float">
-      <div className="turn-status-pill">
-        {plan && (
-          <div className="plan-status">
-            <button
-              type="button"
-              className="plan-status-trigger"
-              aria-label={
-                plan.items.length
-                  ? t("planStep", {
-                      current: step ?? 1,
-                      total: plan.items.length,
-                    })
-                  : t("planning")
-              }
-            >
-              {completed ? (
-                <span className="plan-status-icon completed">
-                  <Check size={11} strokeWidth={2.5} />
-                </span>
-              ) : (
-                <LoaderCircle
-                  className="plan-status-icon spin"
-                  size={15}
-                  strokeWidth={2.2}
-                />
-              )}
-              <strong>
-                {plan.items.length
-                  ? t("planStep", {
-                      current: step ?? 1,
-                      total: plan.items.length,
-                    })
-                  : t("planning")}
-              </strong>
-            </button>
-            {plan.items.length > 0 && (
-              <div
-                className="plan-status-popover"
-                role="list"
-                aria-label={t("plan")}
-              >
-                {plan.items.map((item, index) => (
-                  <div
-                    className={`plan-status-item ${item.status}`}
-                    role="listitem"
-                    data-current={index + 1 === step || undefined}
-                    key={`${index}:${item.step}`}
-                  >
-                    {item.status === "completed" ? (
-                      <span className="plan-item-icon completed">
-                        <Check size={11} strokeWidth={2.5} />
-                      </span>
-                    ) : (
-                      <LoaderCircle
-                        className={`plan-item-icon ${item.status === "in_progress" ? "spin" : ""}`}
-                        size={15}
-                        strokeWidth={2}
-                      />
-                    )}
-                    <span title={item.step}>{item.step}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {plan && changes && <span className="turn-status-separator">·</span>}
-        {changes && (
-          <ConversationChangesButton
-            changes={changes}
-            onOpen={onOpenChanges}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function currentPlanStep(plan: AgentPlanData): number | undefined {
-  if (plan.items.length === 0) return;
-  const active = plan.items.findIndex(
-    (item) => item.status === "in_progress",
-  );
-  if (active >= 0) return active + 1;
-  const pending = plan.items.findIndex((item) => item.status === "pending");
-  return pending >= 0 ? pending + 1 : plan.items.length;
-}
-
-export function planDocumentOpenRequest(
-  plan: AgentPlanData | undefined,
-  threadId: string | undefined,
-  activeDocumentKey: string | undefined,
-  requestId: number,
-):
-  | {
-      documentKey: string;
-      openPanel: boolean;
-      request: WorkspaceFileOpenRequest;
-    }
-  | undefined {
-  if (
-    !threadId ||
-    !plan?.documentPath ||
-    !plan.documentVersion
-  ) {
-    return;
-  }
-  const documentKey = `${threadId}\u0000${plan.documentPath}`;
-  const openPanel = activeDocumentKey !== documentKey;
-  return {
-    documentKey,
-    openPanel,
-    request: {
-      id: requestId,
-      path: plan.documentPath,
-      activate: openPanel,
-    },
-  };
-}
-
-export function conversationChangesRefreshKey(
-  progress: readonly ConversationProgress[],
-): string {
-  return progress
-    .flatMap((step) => step.activities)
-    .filter(
-      (activity) =>
-        workspaceChangeRefreshTools.has(activity.name) &&
-        (activity.status !== "running" || activity.process !== undefined),
-    )
-    .map(
-      (activity) =>
-        `${activity.id}:${activity.status}:${activity.process?.sessionId ?? ""}`,
-    )
-    .join("\u0000");
-}
-
-export function clampWorkspacePanelWidth(
-  requestedWidth: number,
-  workspaceWidth: number,
-): number {
-  const minimumWidth = Math.min(420, workspaceWidth / 2);
-  const maximumWidth = Math.max(minimumWidth, workspaceWidth - 360);
-  return Math.round(
-    Math.min(maximumWidth, Math.max(minimumWidth, requestedWidth)),
-  );
-}
-
-export function ComputerPermissionCard({
-  snapshot,
-  busy,
-  error,
-  onRequest,
-  onRefresh,
-  onRelaunch,
-}: {
-  snapshot: ComputerPermissionSnapshot;
-  busy?: ComputerPermissionCapability | "refresh" | "relaunch";
-  error?: string;
-  onRequest(capability: ComputerPermissionCapability): void;
-  onRefresh(): void;
-  onRelaunch(): void;
-}) {
-  const { t } = useI18n();
-  const screenReady = snapshot.screenRecording === "granted";
-  const accessibilityReady = snapshot.accessibility === "granted";
-  const ready = screenReady && accessibilityReady;
-
-  return (
-    <section className="computer-permission-card" aria-live="polite">
-      <div className="computer-permission-heading">
-        <span className="computer-permission-icon" aria-hidden="true">
-          <ShieldAlert size={16} />
-        </span>
-        <span>
-          <strong>
-            {ready
-              ? t("computerPermissionReady")
-              : t("computerPermissionTitle")}
-          </strong>
-          <small>
-            {ready
-              ? t("computerPermissionRestartHint")
-              : t("computerPermissionDescription")}
-          </small>
-        </span>
-      </div>
-      <div className="computer-permission-list">
-        <ComputerPermissionRow
-          label={t("screenRecordingPermission")}
-          ready={screenReady}
-          busy={busy === "screen_recording"}
-          disabled={!!busy}
-          onRequest={() => onRequest("screen_recording")}
-        />
-        <ComputerPermissionRow
-          label={t("accessibilityPermission")}
-          ready={accessibilityReady}
-          busy={busy === "accessibility"}
-          disabled={!!busy}
-          onRequest={() => onRequest("accessibility")}
-        />
-      </div>
-      {error && <p className="computer-permission-error">{error}</p>}
-      <div className="computer-permission-actions">
-        {ready ? (
-          <button
-            type="button"
-            className="computer-permission-primary pressable"
-            disabled={!!busy}
-            onClick={onRelaunch}
-          >
-            {busy === "relaunch" && <LoaderCircle className="spin" size={13} />}
-            {t("restartThreadlight")}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="computer-permission-refresh pressable"
-            disabled={!!busy}
-            onClick={onRefresh}
-          >
-            {busy === "refresh" ? (
-              <LoaderCircle className="spin" size={13} />
-            ) : (
-              <RotateCcw size={13} />
-            )}
-            {t("recheckPermissions")}
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
-export function pendingComputerPermissionResume(
-  value: string | null,
-  now: number,
-): { threadId: string; expiresAt: number } | undefined {
-  if (!value) return;
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
-    const resume = parsed as Record<string, unknown>;
-    if (
-      typeof resume.threadId !== "string" ||
-      !resume.threadId ||
-      typeof resume.expiresAt !== "number" ||
-      !Number.isFinite(resume.expiresAt) ||
-      resume.expiresAt <= now
-    ) {
-      return;
-    }
-    return {
-      threadId: resume.threadId,
-      expiresAt: resume.expiresAt,
-    };
-  } catch {
-    return;
-  }
-}
-
-function ComputerPermissionRow({
-  label,
-  ready,
-  busy,
-  disabled,
-  onRequest,
-}: {
-  label: string;
-  ready: boolean;
-  busy: boolean;
-  disabled: boolean;
-  onRequest(): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="computer-permission-row">
-      <span className={ready ? "permission-dot granted" : "permission-dot"} />
-      <strong>{label}</strong>
-      <span className={ready ? "permission-state granted" : "permission-state"}>
-        {ready ? t("permissionGranted") : t("permissionRequired")}
-      </span>
-      {!ready && (
-        <button
-          type="button"
-          className="computer-permission-grant pressable"
-          disabled={disabled}
-          onClick={onRequest}
-        >
-          {busy && <LoaderCircle className="spin" size={12} />}
-          {t("grantPermission")}
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function ComputerShareStatus({
-  snapshot,
-  busy,
-  stopping,
-  error,
-  onShow,
-  onStop,
-}: {
-  snapshot: ComputerShareSnapshot;
-  busy: boolean;
-  stopping: boolean;
-  error?: string;
-  onShow(): void;
-  onStop(): void;
-}) {
-  const { t } = useI18n();
-  const applications = [
-    ...new Set(
-      snapshot.targets.map(
-        (target) => target.applicationName ?? target.name,
-      ),
-    ),
-  ];
-  const targetLabel =
-    applications.length > 0
-      ? applications.join("、")
-      : t("windowsCount", { count: snapshot.targets.length });
-
-  return (
-    <div className="composer-share" aria-live="polite">
-      <span className="composer-share-icon" aria-hidden="true">
-        <PictureInPicture2 size={14} />
-        <span />
-      </span>
-      <span className="composer-share-copy">
-        <strong>
-          {t("sharing")}
-          {snapshot.targets.length > 1
-            ? ` ${t("windowsCount", { count: snapshot.targets.length })}`
-            : ""}
-        </strong>
-        <small title={targetLabel}>{error ?? targetLabel}</small>
-      </span>
-      <button
-        type="button"
-        className="composer-share-action pressable"
-        disabled={busy}
-        onClick={onShow}
-      >
-        {busy && !stopping && <LoaderCircle className="spin" size={12} />}
-        {snapshot.pictureInPicture ? t("showPictureInPicture") : t("reopen")}
-      </button>
-      <button
-        type="button"
-        className="composer-share-stop pressable"
-        disabled={busy}
-        onClick={onStop}
-        aria-label={t("stopSharing")}
-        title={t("stopSharing")}
-      >
-        {stopping ? (
-          <LoaderCircle className="spin" size={12} />
-        ) : (
-          <X size={13} />
-        )}
-      </button>
-    </div>
-  );
-}
-
-export type TaskListFilter =
-  | "all"
-  | "running"
-  | "pending"
-  | "completed"
-  | "archived";
-
-export function filterProjectsForTaskList(
-  projects: readonly ProjectSummary[],
-  query: string,
-  filter: TaskListFilter,
-  runningThreadIds: readonly string[],
-): ProjectSummary[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  const running = new Set(runningThreadIds);
-  return projects.flatMap((project) => {
-    const projectMatches = [
-      project.name,
-      ...(project.scope === "standalone"
-        ? [
-            "standalone",
-            "not in project",
-            "不在项目中",
-            "不在專案中",
-            "プロジェクト外",
-            "프로젝트에 속하지 않음",
-          ]
-        : []),
-    ].some((value) => value.toLowerCase().includes(normalizedQuery));
-    const conversations = project.conversations.filter((conversation) => {
-      const archived = Boolean(conversation.archivedAt);
-      if (filter === "archived") {
-        if (!archived) return false;
-      } else {
-        if (archived) return false;
-        if (filter === "running" && !running.has(conversation.id)) return false;
-        if (
-          filter === "pending" &&
-          (running.has(conversation.id) ||
-            conversation.status !== "pending")
-        ) {
-          return false;
-        }
-        if (
-          filter === "completed" &&
-          (running.has(conversation.id) ||
-            (conversation.status ?? "completed") !== "completed")
-        ) {
-          return false;
-        }
-      }
-      return (
-        !normalizedQuery ||
-        projectMatches ||
-        conversation.title.toLowerCase().includes(normalizedQuery)
-      );
-    });
-    const filterActive = filter !== "all";
-    if (
-      conversations.length === 0 &&
-      (filterActive || (normalizedQuery && !projectMatches))
-    ) {
-      return [];
-    }
-    return [{ ...project, conversations }];
-  });
-}
-
-export function TaskSearchDialog({
-  projects,
-  query,
-  filter,
-  runningThreadIds,
-  activeThreadId,
-  onQueryChange,
-  onFilterChange,
-  onSelect,
-  onClose,
-}: {
-  projects: readonly ProjectSummary[];
-  query: string;
-  filter: TaskListFilter;
-  runningThreadIds: readonly string[];
-  activeThreadId?: string;
-  onQueryChange(query: string): void;
-  onFilterChange(filter: TaskListFilter): void;
-  onSelect(projectId: string, threadId: string): void;
-  onClose(): void;
-}) {
-  const { t } = useI18n();
-  const dialog = useRef<HTMLElement>(null);
-  const input = useRef<HTMLInputElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  const filteredProjects = filterProjectsForTaskList(
-    projects,
-    query,
-    filter,
-    runningThreadIds,
-  );
-  const resultCount = filteredProjects.reduce(
-    (count, project) => count + project.conversations.length,
-    0,
-  );
-  const running = new Set(runningThreadIds);
-  const filters: readonly TaskListFilter[] = [
-    "all",
-    "running",
-    "pending",
-    "completed",
-    "archived",
-  ];
-
-  useEffect(() => {
-    input.current?.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(
-        dialog.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
-  return (
-    <div
-      className="task-search-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        ref={dialog}
-        className="task-search-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="task-search-title"
-      >
-        <h2 id="task-search-title" className="sr-only">
-          {t("searchTasks")}
-        </h2>
-        <div className="task-search-dialog-input">
-          <Search size={17} aria-hidden="true" />
-          <input
-            ref={input}
-            type="search"
-            value={query}
-            placeholder={t("searchTasks")}
-            aria-label={t("searchTasks")}
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-          {query && (
-            <button
-              type="button"
-              className="task-search-dialog-clear pressable"
-              aria-label={t("clearSearch")}
-              title={t("clearSearch")}
-              onClick={() => {
-                onQueryChange("");
-                input.current?.focus();
-              }}
-            >
-              <X size={14} />
-            </button>
-          )}
-          <button
-            type="button"
-            className="task-search-dialog-close pressable"
-            aria-label={t("closeTaskSearch")}
-            title={t("closeTaskSearch")}
-            onClick={onClose}
-          >
-            <X size={15} />
-          </button>
-        </div>
-        <div
-          className="task-search-filters"
-          role="tablist"
-          aria-label={t("filterTasks")}
-        >
-          {filters.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              role="tab"
-              aria-selected={candidate === filter}
-              className={`task-search-filter pressable ${candidate === filter ? "active" : ""}`}
-              onClick={() => onFilterChange(candidate)}
-            >
-              {taskFilterLabel(candidate, t)}
-            </button>
-          ))}
-        </div>
-        <div
-          className="task-search-results"
-          aria-label={t("taskSearchResults", { count: resultCount })}
-        >
-          {resultCount === 0 ? (
-            <div className="task-search-empty">
-              <Search size={20} aria-hidden="true" />
-              <span>{t("noMatchingTasks")}</span>
-            </div>
-          ) : (
-            filteredProjects.map((project) => (
-              <section className="task-search-project" key={project.id}>
-                <h3>
-                  {project.scope === "standalone" ? (
-                    <X size={14} aria-hidden="true" />
-                  ) : (
-                    <Folder size={14} aria-hidden="true" />
-                  )}
-                  <span>
-                    {project.scope === "standalone"
-                      ? t("notInProject")
-                      : project.name}
-                  </span>
-                  <small>{project.conversations.length}</small>
-                </h3>
-                {project.conversations.map((conversation) => {
-                  const isRunning = running.has(conversation.id);
-                  return (
-                    <button
-                      key={conversation.id}
-                      type="button"
-                      className={`task-search-result pressable ${conversation.id === activeThreadId ? "active" : ""}`}
-                      aria-current={
-                        conversation.id === activeThreadId ? "page" : undefined
-                      }
-                      onClick={() => onSelect(project.id, conversation.id)}
-                    >
-                      <span className="task-search-result-icon">
-                        {isRunning ? (
-                          <LoaderCircle className="spin" size={14} />
-                        ) : conversation.archivedAt ? (
-                          <Archive size={14} />
-                        ) : conversation.status === "attention" ? (
-                          <TriangleAlert size={14} />
-                        ) : conversation.pinnedAt ? (
-                          <Pin size={14} />
-                        ) : (
-                          <FileText size={14} />
-                        )}
-                      </span>
-                      <span className="task-search-result-copy">
-                        <strong>{conversation.title}</strong>
-                        <small>
-                          {isRunning
-                            ? t("runningTasks")
-                            : conversation.archivedAt
-                              ? t("archivedTasks")
-                              : conversation.status === "pending"
-                                ? t("pendingTasks")
-                                : conversation.status === "attention"
-                                  ? t("needsAttention")
-                                : t("completedTasks")}
-                        </small>
-                      </span>
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </button>
-                  );
-                })}
-              </section>
-            ))
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function taskFilterLabel(filter: TaskListFilter, t: Translate): string {
-  if (filter === "running") return t("runningTasks");
-  if (filter === "pending") return t("pendingTasks");
-  if (filter === "completed") return t("completedTasks");
-  if (filter === "archived") return t("archivedTasks");
-  return t("allTasks");
-}
-
-export function ProjectListHeading({
-  searchTriggerRef,
-  searchDisabled,
-  addDisabled,
-  onSearch,
-  onAdd,
-}: {
-  searchTriggerRef?: RefObject<HTMLButtonElement | null>;
-  searchDisabled: boolean;
-  addDisabled: boolean;
-  onSearch(): void;
-  onAdd(): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="project-list-heading">
-      <p className="section-label">{t("projects")}</p>
-      <div className="project-heading-actions">
-        <button
-          ref={searchTriggerRef}
-          type="button"
-          className="icon-button pressable"
-          aria-label={t("commandPalette")}
-          title={`${t("commandPalette")}（⌘K）`}
-          disabled={searchDisabled}
-          onClick={onSearch}
-        >
-          <Search size={15} />
-        </button>
-        <button
-          className="icon-button pressable"
-          type="button"
-          title={t("addProject")}
-          aria-label={t("addProject")}
-          disabled={addDisabled}
-          onClick={onAdd}
-        >
-          <Plus size={16} />
-        </button>
-      </div>
-    </div>
-  );
-}
-
-export function RuntimeStatusControl({
-  status,
-  label,
-  mode,
-  disabled,
-  title,
-  onOpen,
-}: {
-  status: "idle" | "connecting" | "ready" | "error";
-  label: string;
-  mode: string;
-  disabled?: boolean;
-  title?: string;
-  onOpen?(): void;
-}) {
-  const content = (
-    <>
-      <span className={`status-dot ${status}`} aria-hidden="true" />
-      <span className="runtime-status-label" title={label}>
-        {label}
-      </span>
-      <span className="status-mode" title={mode}>
-        {mode}
-      </span>
-      {onOpen ? (
-        <ChevronRight
-          className="runtime-status-chevron"
-          size={13}
-          aria-hidden="true"
-        />
-      ) : null}
-    </>
-  );
-
-  return onOpen ? (
-    <button
-      type="button"
-      className="runtime-status-control pressable"
-      disabled={disabled}
-      aria-label={`${label} · ${mode}`}
-      title={title}
-      onClick={onOpen}
-    >
-      {content}
-    </button>
-  ) : (
-    <div
-      className="runtime-status-control static"
-      role="status"
-      aria-label={`${label} · ${mode}`}
-    >
-      {content}
-    </div>
-  );
-}
-
-export function RecentTasksGroup({
-  project,
-  active,
-  activeThreadId,
-  runningThreadIds = [],
-  computerThreadId,
-  disabled,
-  onSelect,
-  onRename,
-  onTogglePinned,
-  onArchive,
-  onDelete,
-}: {
-  project: ProjectSummary;
-  active: boolean;
-  activeThreadId?: string;
-  runningThreadIds?: readonly string[];
-  computerThreadId?: string;
-  disabled: boolean;
-  onSelect(threadId: string): void;
-  onRename?(
-    conversation: ConversationSummary,
-    title: string,
-  ): Promise<void>;
-  onTogglePinned?(conversation: ConversationSummary): Promise<void>;
-  onArchive?(
-    conversation: ConversationSummary,
-    archived: boolean,
-  ): Promise<void>;
-  onDelete?(conversation: ConversationSummary): void;
-}) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(true);
-  const conversations = project.conversations.filter(
-    (conversation) => !conversation.archivedAt,
-  );
-
-  return (
-    <section className="recent-tasks-group" aria-label={t("recent")}>
-      <button
-        type="button"
-        className="recent-tasks-heading pressable"
-        aria-expanded={expanded}
-        disabled={disabled}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span>{t("recent")}</span>
-        {expanded ? (
-          <ChevronDown size={14} aria-hidden="true" />
-        ) : (
-          <ChevronRight size={14} aria-hidden="true" />
-        )}
-      </button>
-      {expanded && (
-        <div className="recent-task-list">
-          {conversations.map((conversation) => (
-            <ProjectConversationItem
-              key={conversation.id}
-              conversation={conversation}
-              active={active && conversation.id === activeThreadId}
-              running={runningThreadIds.includes(conversation.id)}
-              computerActive={conversation.id === computerThreadId}
-              disabled={disabled}
-              onSelect={() => onSelect(conversation.id)}
-              onRename={
-                onRename
-                  ? (title) => onRename(conversation, title)
-                  : undefined
-              }
-              onTogglePinned={
-                onTogglePinned
-                  ? () => onTogglePinned(conversation)
-                  : undefined
-              }
-              onArchive={
-                onArchive
-                  ? (archived) => onArchive(conversation, archived)
-                  : undefined
-              }
-              onDelete={onDelete ? () => onDelete(conversation) : undefined}
-            />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-export function ProjectGroup({
-  project,
-  active,
-  activeThreadId,
-  runningThreadIds = [],
-  computerThreadId,
-  disabled,
-  forceExpanded = false,
-  onNewTask,
-  onOpenMemory,
-  onOpenSecurity,
-  onRevealInFinder,
-  onToggleProjectPinned,
-  onOpenDiagnostics,
-  onSelect,
-  onRename,
-  onTogglePinned,
-  onArchive,
-  onDelete,
-}: {
-  project: ProjectSummary;
-  active: boolean;
-  activeThreadId?: string;
-  runningThreadIds?: readonly string[];
-  computerThreadId?: string;
-  disabled: boolean;
-  forceExpanded?: boolean;
-  onNewTask?(): void | Promise<void>;
-  onOpenMemory?(): void | Promise<void>;
-  onOpenSecurity?(): void | Promise<void>;
-  onRevealInFinder?(): void | Promise<void>;
-  onToggleProjectPinned?(): Promise<void>;
-  onOpenDiagnostics?(): void | Promise<void>;
-  onSelect(threadId?: string): void;
-  onRename?(
-    conversation: ConversationSummary,
-    title: string,
-  ): Promise<void>;
-  onTogglePinned?(conversation: ConversationSummary): Promise<void>;
-  onArchive?(
-    conversation: ConversationSummary,
-    archived: boolean,
-  ): Promise<void>;
-  onDelete?(conversation: ConversationSummary): void;
-}) {
-  const { t } = useI18n();
-  const [expanded, setExpanded] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<PopoverPosition>({
-    top: 0,
-    left: 0,
-    transformOrigin: "top right",
-  });
-  const [menuBusy, setMenuBusy] = useState(false);
-  const [menuError, setMenuError] = useState<string>();
-  const menuTrigger = useRef<HTMLButtonElement>(null);
-  const visibleExpanded = expanded || forceExpanded;
-  const projectRunning = project.conversations.some((conversation) =>
-    runningThreadIds.includes(conversation.id),
-  );
-  const projectUsingComputer = project.conversations.some(
-    (conversation) => conversation.id === computerThreadId,
-  );
-  const projectAttention = project.conversations.some(
-    (conversation) => conversation.status === "attention",
-  );
-  const projectUnread = project.conversations.some(
-    (conversation) =>
-      conversation.unread && conversation.status !== "attention",
-  );
-  const projectActionCount = [
-    onNewTask,
-    onOpenMemory,
-    onOpenSecurity,
-    onRevealInFinder,
-    onToggleProjectPinned,
-    onOpenDiagnostics,
-  ].filter(Boolean).length;
-
-  function toggleExpanded() {
-    const nextExpanded = !visibleExpanded;
-    setExpanded(nextExpanded);
-    if (nextExpanded && !active) onSelect(project.conversations[0]?.id);
-  }
-
-  const closeProjectMenu = useCallback(() => setMenuOpen(false), []);
-
-  async function runProjectAction(
-    action: () => void | Promise<void>,
-  ) {
-    if (menuBusy) return;
-    setMenuBusy(true);
-    setMenuError(undefined);
-    try {
-      await action();
-      setMenuOpen(false);
-    } catch (error) {
-      setMenuError(errorMessage(error));
-    } finally {
-      setMenuBusy(false);
-    }
-  }
-
-  return (
-    <section
-      className="project-group"
-      aria-label={project.name}
-      title={menuError}
-    >
-      {menuError && (
-        <span className="sr-only" role="alert">
-          {menuError}
-        </span>
-      )}
-      <div className="project-row">
-        <button
-          type="button"
-          className="project-row-select pressable"
-          aria-current={active ? "location" : undefined}
-          aria-expanded={visibleExpanded}
-          disabled={disabled}
-          title={
-            project.runtime?.kind === "remote"
-              ? `${project.runtime.endpoint} · ${project.runtime.workspacePath}`
-              : project.basePath
-          }
-          onClick={toggleExpanded}
-        >
-          {project.runtime?.kind === "remote" ? (
-            <Server size={16} />
-          ) : visibleExpanded ? (
-            <FolderOpen size={16} />
-          ) : (
-            <Folder size={16} />
-          )}
-          <span className="project-name">{project.name}</span>
-          {(showsProjectLevelActivity(visibleExpanded, projectRunning) ||
-            showsProjectLevelActivity(visibleExpanded, projectUsingComputer) ||
-            showsProjectLevelActivity(visibleExpanded, projectAttention) ||
-            showsProjectLevelActivity(visibleExpanded, projectUnread)) && (
-            <span className="project-live-indicators">
-              {showsProjectLevelActivity(visibleExpanded, projectRunning) && (
-                <LoaderCircle
-                  className="project-runtime-indicator spin"
-                  size={13}
-                  aria-label={t("projectTaskRunning", {
-                    project: project.name,
-                  })}
-                />
-              )}
-              {showsProjectLevelActivity(
-                visibleExpanded,
-                projectUsingComputer,
-              ) && (
-                <ComputerUseIndicator
-                  label={t("projectTaskUsingComputer", {
-                    project: project.name,
-                  })}
-                />
-              )}
-              {showsProjectLevelActivity(
-                visibleExpanded,
-                projectAttention,
-              ) && (
-                <TriangleAlert
-                  className="project-attention-indicator"
-                  size={13}
-                  aria-label={t("projectNeedsAttention", {
-                    project: project.name,
-                  })}
-                />
-              )}
-              {showsProjectLevelActivity(visibleExpanded, projectUnread) && (
-                <span
-                  className="project-unread-indicator"
-                  aria-label={t("projectTaskUnread", {
-                    project: project.name,
-                  })}
-                />
-              )}
-            </span>
-          )}
-        </button>
-        {projectActionCount > 0 && (
-          <div className={`project-row-actions ${menuOpen ? "open" : ""}`}>
-            <button
-              ref={menuTrigger}
-              type="button"
-              className="project-row-action pressable"
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              aria-label={t("projectActions", { project: project.name })}
-              title={t("projectActions", { project: project.name })}
-              disabled={disabled || menuBusy}
-              onClick={(event) => {
-                const open = !menuOpen;
-                if (open) {
-                  setMenuError(undefined);
-                  setMenuPosition(
-                    anchoredPopoverPosition(
-                      event.currentTarget.getBoundingClientRect(),
-                      {
-                        width: 218,
-                        height: 10 + projectActionCount * 36,
-                      },
-                    ),
-                  );
-                }
-                setMenuOpen(open);
-              }}
-            >
-              {menuBusy ? (
-                <LoaderCircle className="spin" size={13} />
-              ) : (
-                <MoreHorizontal size={15} />
-              )}
-            </button>
-            <button
-              type="button"
-              className="project-row-action pressable"
-              aria-label={t("newTask")}
-              title={t("newTask")}
-              disabled={disabled || !onNewTask}
-              onClick={onNewTask}
-            >
-              <SquarePen size={14} />
-            </button>
-          </div>
-        )}
-      </div>
-      {menuOpen && (
-        <ProjectActionPopover
-          project={project}
-          busy={menuBusy}
-          position={menuPosition}
-          returnFocusRef={menuTrigger}
-          onClose={closeProjectMenu}
-          onNewTask={
-            onNewTask
-              ? () => void runProjectAction(onNewTask)
-              : undefined
-          }
-          onOpenMemory={
-            onOpenMemory
-              ? () => void runProjectAction(onOpenMemory)
-              : undefined
-          }
-          onOpenSecurity={
-            onOpenSecurity
-              ? () => void runProjectAction(onOpenSecurity)
-              : undefined
-          }
-          onRevealInFinder={
-            onRevealInFinder
-              ? () => void runProjectAction(onRevealInFinder)
-              : undefined
-          }
-          onToggleProjectPinned={
-            onToggleProjectPinned
-              ? () => void runProjectAction(onToggleProjectPinned)
-              : undefined
-          }
-          onOpenDiagnostics={
-            onOpenDiagnostics
-              ? () => void runProjectAction(onOpenDiagnostics)
-              : undefined
-          }
-        />
-      )}
-      {visibleExpanded && (
-        <div className="project-conversations">
-          {project.conversations.map((conversation) => (
-            <ProjectConversationItem
-              key={conversation.id}
-              conversation={conversation}
-              active={active && conversation.id === activeThreadId}
-              running={runningThreadIds.includes(conversation.id)}
-              computerActive={conversation.id === computerThreadId}
-              disabled={disabled}
-              onSelect={() => onSelect(conversation.id)}
-              onRename={
-                onRename
-                  ? (title) => onRename(conversation, title)
-                  : undefined
-              }
-              onTogglePinned={
-                onTogglePinned
-                  ? () => onTogglePinned(conversation)
-                  : undefined
-              }
-              onArchive={
-                onArchive
-                  ? (archived) => onArchive(conversation, archived)
-                  : undefined
-              }
-              onDelete={onDelete ? () => onDelete(conversation) : undefined}
-            />
-          ))}
-          {project.conversations.length === 0 && (
-            <span className="project-empty-label">{t("noTasks")}</span>
-          )}
-        </div>
-      )}
-    </section>
-  );
-}
-
-export function ProjectActionPopover({
-  project,
-  busy,
-  position,
-  returnFocusRef,
-  onClose,
-  onNewTask,
-  onOpenMemory,
-  onOpenSecurity,
-  onRevealInFinder,
-  onToggleProjectPinned,
-  onOpenDiagnostics,
-}: {
-  project: ProjectSummary;
-  busy: boolean;
-  position: PopoverPosition;
-  returnFocusRef?: RefObject<HTMLElement | null>;
-  onClose(): void;
-  onNewTask?(): void;
-  onOpenMemory?(): void;
-  onOpenSecurity?(): void;
-  onRevealInFinder?(): void;
-  onToggleProjectPinned?(): void;
-  onOpenDiagnostics?(): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <ActionPopover
-      label={t("projectActions", { project: project.name })}
-      position={position}
-      returnFocusRef={returnFocusRef}
-      onClose={onClose}
-    >
-      {onNewTask && (
-        <ActionPopoverItem
-          icon={<SquarePen size={15} />}
-          disabled={busy}
-          onSelect={onNewTask}
-        >
-          {t("newTask")}
-        </ActionPopoverItem>
-      )}
-      {onOpenMemory && (
-        <ActionPopoverItem
-          icon={<NotebookText size={15} />}
-          disabled={busy}
-          onSelect={onOpenMemory}
-        >
-          {t("manageProjectMemory")}
-        </ActionPopoverItem>
-      )}
-      {onOpenSecurity && (
-        <ActionPopoverItem
-          icon={<ShieldCheck size={15} />}
-          disabled={busy}
-          onSelect={onOpenSecurity}
-        >
-          {t("safeExecution")}
-        </ActionPopoverItem>
-      )}
-      {onRevealInFinder && (
-        <ActionPopoverItem
-          icon={<FolderOpen size={15} />}
-          disabled={busy}
-          onSelect={onRevealInFinder}
-        >
-          {t("revealInFinder")}
-        </ActionPopoverItem>
-      )}
-      {onToggleProjectPinned && (
-        <ActionPopoverItem
-          icon={project.pinnedAt ? <PinOff size={15} /> : <Pin size={15} />}
-          disabled={busy}
-          onSelect={onToggleProjectPinned}
-        >
-          {project.pinnedAt ? t("unpinProject") : t("pinProject")}
-        </ActionPopoverItem>
-      )}
-      {onOpenDiagnostics && (
-        <ActionPopoverItem
-          icon={<Activity size={15} />}
-          disabled={busy}
-          onSelect={onOpenDiagnostics}
-        >
-          {t("usageDiagnostics")}
-        </ActionPopoverItem>
-      )}
-    </ActionPopover>
-  );
-}
-
-export function ProjectConversationItem({
-  conversation,
-  active,
-  running = false,
-  computerActive = false,
-  disabled,
-  onSelect,
-  onRename,
-  onTogglePinned,
-  onArchive,
-  onDelete,
-}: {
-  conversation: ConversationSummary;
-  active: boolean;
-  running?: boolean;
-  computerActive?: boolean;
-  disabled: boolean;
-  onSelect(): void;
-  onRename?(title: string): Promise<void>;
-  onTogglePinned?(): Promise<void>;
-  onArchive?(archived: boolean): Promise<void>;
-  onDelete?(): void;
-}) {
-  const { t } = useI18n();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
-  const [editing, setEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(conversation.title);
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string>();
-  const menuRoot = useRef<HTMLDivElement>(null);
-  const titleInput = useRef<HTMLInputElement>(null);
-  const manageable = Boolean(onRename || onTogglePinned || onArchive || onDelete);
-
-  useEffect(() => {
-    if (!editing) setDraftTitle(conversation.title);
-  }, [conversation.title, editing]);
-
-  useEffect(() => {
-    if (!editing) return;
-    titleInput.current?.focus();
-    titleInput.current?.select();
-  }, [editing]);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    function closeMenu(event: globalThis.PointerEvent) {
-      if (
-        event.target instanceof Node &&
-        !menuRoot.current?.contains(event.target)
-      ) {
-        setMenuOpen(false);
-      }
-    }
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") setMenuOpen(false);
-    }
-    window.addEventListener("pointerdown", closeMenu);
-    window.addEventListener("keydown", handleEscape);
-    return () => {
-      window.removeEventListener("pointerdown", closeMenu);
-      window.removeEventListener("keydown", handleEscape);
-    };
-  }, [menuOpen]);
-
-  async function runAction(action: () => Promise<void>): Promise<boolean> {
-    if (busy) return false;
-    setBusy(true);
-    setActionError(undefined);
-    try {
-      await action();
-      setMenuOpen(false);
-      return true;
-    } catch (error) {
-      setActionError(errorMessage(error));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function confirmRename() {
-    const title = draftTitle.trim();
-    if (!onRename || !title || busy) return;
-    if (title === conversation.title) {
-      setEditing(false);
-      return;
-    }
-    if (await runAction(() => onRename(title))) setEditing(false);
-  }
-
-  return (
-    <div
-      className={`thread-item ${active ? "active" : ""} ${conversation.archivedAt ? "archived" : ""}`}
-      title={actionError}
-    >
-      {actionError && (
-        <span className="sr-only" role="alert">
-          {actionError}
-        </span>
-      )}
-      {editing ? (
-        <form
-          className="thread-rename-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void confirmRename();
-          }}
-        >
-          <input
-            ref={titleInput}
-            value={draftTitle}
-            maxLength={160}
-            aria-label={t("renameTask")}
-            disabled={busy}
-            onChange={(event) => setDraftTitle(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setDraftTitle(conversation.title);
-                setEditing(false);
-              }
-            }}
-          />
-          <button
-            type="submit"
-            className="thread-inline-action pressable"
-            aria-label={t("saveRename")}
-            title={t("saveRename")}
-            disabled={busy || !draftTitle.trim()}
-          >
-            {busy ? <LoaderCircle className="spin" size={12} /> : <Check size={12} />}
-          </button>
-        </form>
-      ) : (
-        <button
-          type="button"
-          className="thread-item-select pressable"
-          aria-current={active ? "page" : undefined}
-          disabled={disabled}
-          title={conversation.title}
-          onClick={onSelect}
-        >
-          {conversation.pinnedAt && (
-            <Pin
-              className="thread-pinned-indicator"
-              size={11}
-              aria-label={t("pinnedTask")}
-            />
-          )}
-          {conversation.archivedAt && (
-            <Archive
-              className="thread-archived-indicator"
-              size={11}
-              aria-label={t("archivedTask")}
-            />
-          )}
-          <span className="thread-title">{conversation.title}</span>
-          {conversation.status === "attention" && (
-            <span
-              className="thread-attention-badge"
-              aria-label={t("taskNeedsAttention", {
-                title: conversation.title,
-              })}
-            >
-              <TriangleAlert size={10} aria-hidden="true" />
-              {t("needsAttention")}
-            </span>
-          )}
-          {(running ||
-            computerActive ||
-            (conversation.unread && conversation.status !== "attention")) && (
-            <span className="thread-live-indicators">
-              {running && (
-                <LoaderCircle
-                  className="thread-runtime-indicator spin"
-                  size={13}
-                  aria-label={t("taskRunning", { title: conversation.title })}
-                />
-              )}
-              {computerActive && (
-                <ComputerUseIndicator
-                  label={t("taskUsingComputer", { title: conversation.title })}
-                />
-              )}
-              {conversation.unread &&
-                conversation.status !== "attention" && (
-                <span
-                  className="thread-unread-indicator"
-                  aria-label={t("taskUnread", { title: conversation.title })}
-                />
-                )}
-            </span>
-          )}
-        </button>
-      )}
-      {manageable && !editing && !running && !computerActive && (
-        <div ref={menuRoot} className="thread-actions">
-          <button
-            type="button"
-            className="thread-action-button pressable"
-            disabled={disabled || busy}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            aria-label={t("taskActions", { title: conversation.title })}
-            title={t("taskActions", { title: conversation.title })}
-            onClick={(event) => {
-              setActionError(undefined);
-              const open = !menuOpen;
-              if (open) {
-                const bounds = event.currentTarget.getBoundingClientRect();
-                const menuHeight = conversation.archivedAt ? 132 : 103;
-                const top =
-                  window.innerHeight - bounds.bottom >= menuHeight + 8
-                    ? bounds.bottom + 4
-                    : Math.max(8, bounds.top - menuHeight - 4);
-                setMenuPosition({
-                  top,
-                  left: Math.max(8, bounds.right - 154),
-                });
-              }
-              setMenuOpen(open);
-            }}
-          >
-            {busy ? <LoaderCircle className="spin" size={13} /> : <MoreHorizontal size={14} />}
-          </button>
-          {menuOpen && (
-            <div
-              className="thread-action-menu"
-              role="menu"
-              style={menuPosition}
-            >
-              {onRename && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setEditing(true);
-                  }}
-                >
-                  <PencilLine size={13} />
-                  {t("renameTask")}
-                </button>
-              )}
-              {onTogglePinned && !conversation.archivedAt && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => void runAction(onTogglePinned)}
-                >
-                  {conversation.pinnedAt ? <PinOff size={13} /> : <Pin size={13} />}
-                  {conversation.pinnedAt ? t("unpinTask") : t("pinTask")}
-                </button>
-              )}
-              {onArchive && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() =>
-                    void runAction(() =>
-                      onArchive(!conversation.archivedAt),
-                    )
-                  }
-                >
-                  {conversation.archivedAt ? (
-                    <ArchiveRestore size={13} />
-                  ) : (
-                    <Archive size={13} />
-                  )}
-                  {conversation.archivedAt
-                    ? t("restoreArchivedTask")
-                    : t("archiveTask")}
-                </button>
-              )}
-              {onDelete && conversation.archivedAt && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="danger"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onDelete();
-                  }}
-                >
-                  <Trash2 size={13} />
-                  {t("deletePermanently")}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function showsProjectLevelActivity(
-  expanded: boolean,
-  active: boolean,
-): boolean {
-  return active && !expanded;
-}
-
-export function conversationContextChanged(
-  currentProjectId: string | undefined,
-  currentThreadId: string | undefined,
-  nextProjectId: string | undefined,
-  nextThreadId: string | undefined,
-): boolean {
-  return (
-    currentProjectId !== nextProjectId ||
-    currentThreadId !== nextThreadId
-  );
-}
-
-export function ownsActiveComputerShare(
-  snapshot: ComputerShareSnapshot | undefined,
-  threadId: string | undefined,
-): snapshot is ComputerShareSnapshot {
-  return !!snapshot?.active && snapshot.ownerThreadId === threadId;
-}
-
-function ComputerUseIndicator({ label }: { label: string }) {
-  return (
-    <span
-      className="computer-use-indicator"
-      role="img"
-      aria-label={label}
-      title={label}
-    >
-      <Monitor size={13} aria-hidden="true" />
-      <span aria-hidden="true" />
-    </span>
-  );
-}
-
-export function DeleteConversationDialog({
-  conversation,
-  discard = false,
-  localDataFiles = 0,
-  deleting,
-  error,
-  onCancel,
-  onConfirm,
-}: {
-  conversation: ConversationSummary;
-  discard?: boolean;
-  localDataFiles?: number;
-  deleting: boolean;
-  error?: string;
-  onCancel(): void;
-  onConfirm(): void;
-}) {
-  const { t } = useI18n();
-  const cancelButton = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    cancelButton.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [deleting, onCancel]);
-
-  return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !deleting) onCancel();
-      }}
-    >
-      <section
-        className="delete-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-dialog-title"
-        aria-describedby="delete-dialog-description"
-      >
-        <span className="delete-dialog-icon" aria-hidden="true">
-          <Trash2 size={18} />
-        </span>
-        <div className="delete-dialog-copy">
-          <h2 id="delete-dialog-title">
-            {discard ? t("discardTaskQuestion") : t("deleteTaskQuestion")}
-          </h2>
-          <p id="delete-dialog-description">
-            {discard
-              ? t("discardTaskConfirmDescription", {
-                  title: conversation.title,
-                })
-              : t("deleteTaskDescription", { title: conversation.title })}
-          </p>
-          {discard && localDataFiles > 0 && (
-            <p className="delete-dialog-warning">
-              {t("discardLocalDataWarning", { count: localDataFiles })}
-            </p>
-          )}
-          {error && <p className="delete-dialog-error">{error}</p>}
-        </div>
-        <div className="delete-dialog-actions">
-          <button
-            ref={cancelButton}
-            type="button"
-            className="dialog-button secondary pressable"
-            disabled={deleting}
-            onClick={onCancel}
-          >
-            {t("cancel")}
-          </button>
-          <button
-            type="button"
-            className="dialog-button danger pressable"
-            disabled={deleting}
-            onClick={onConfirm}
-          >
-            {deleting && <LoaderCircle className="spin" size={14} />}
-            {deleting
-              ? discard
-                ? t("discardingTask")
-                : t("deleting")
-              : discard
-                ? t("discardTask")
-                : t("deleteTask")}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function ProjectEmptyState({
-  error,
-  opening,
-  onOpen,
-  onCreateStandalone,
-  onConnectRemote,
-}: {
-  error?: string;
-  opening: boolean;
-  onOpen(): void;
-  onCreateStandalone?(): void;
-  onConnectRemote?(): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="project-empty-state">
-      <span className="project-empty-icon" aria-hidden="true">
-        <FolderOpen size={23} />
-      </span>
-      <h1>{t("openProject")}</h1>
-      <p>{t("openProjectDescription")}</p>
-      {error && <p className="project-open-error">{error}</p>}
-      <button
-        type="button"
-        className="project-open-button pressable"
-        disabled={opening}
-        onClick={onOpen}
-      >
-        {opening ? (
-          <LoaderCircle className="spin" size={15} />
-        ) : (
-          <FolderPlus size={15} />
-        )}
-        {opening ? t("opening") : t("openViaFolder")}
-      </button>
-      {onCreateStandalone && (
-        <button
-          type="button"
-          className="project-remote-button pressable"
-          disabled={opening}
-          onClick={onCreateStandalone}
-        >
-          <X size={15} />
-          {t("notInProject")}
-        </button>
-      )}
-      {onConnectRemote && (
-        <button
-          type="button"
-          className="project-remote-button pressable"
-          disabled={opening}
-          onClick={onConnectRemote}
-        >
-          <Server size={15} />
-          {t("connectRemoteRuntime")}
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function RemoteRuntimeDialog({
-  hosts,
-  activeHostId,
-  busy,
-  error,
-  onCancel,
-  onActivate,
-  onUpdate,
-  onDelete,
-  onConnect,
-  onResetError,
-}: {
-  hosts?: HostsSnapshot;
-  activeHostId?: string;
-  busy: boolean;
-  error?: string;
-  onCancel(): void;
-  onActivate(hostId: string): void;
-  onUpdate?(input: {
-    hostId: string;
-    endpoint: string;
-    token?: string;
-    name?: string;
-  }): void;
-  onDelete?(hostId: string): void;
-  onConnect(input: { endpoint: string; token: string; name?: string }): void;
-  onResetError?(): void;
-}) {
-  const { t } = useI18n();
-  const [endpoint, setEndpoint] = useState("http://127.0.0.1:7432");
-  const [token, setToken] = useState("");
-  const [name, setName] = useState("");
-  const [editingHostId, setEditingHostId] = useState<string>();
-  const firstField = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    firstField.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (busy) return;
-    if (editingHostId && onUpdate) {
-      onUpdate({
-        hostId: editingHostId,
-        endpoint: endpoint.trim(),
-        ...(token.trim() ? { token } : {}),
-        ...(name.trim() ? { name: name.trim() } : {}),
-      });
-      return;
-    }
-    onConnect({
-      endpoint: endpoint.trim(),
-      token,
-      ...(name.trim() ? { name: name.trim() } : {}),
-    });
-  }
-
-  function editHost(host: HostSummary) {
-    if (host.kind !== "remote" || !host.endpoint) return;
-    setEditingHostId(host.id);
-    setEndpoint(host.endpoint);
-    setToken("");
-    setName(host.name);
-    onResetError?.();
-    requestAnimationFrame(() => firstField.current?.focus());
-  }
-
-  function cancelEditing() {
-    setEditingHostId(undefined);
-    setEndpoint("http://127.0.0.1:7432");
-    setToken("");
-    setName("");
-    onResetError?.();
-    requestAnimationFrame(() => firstField.current?.focus());
-  }
-
-  return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
-    >
-      <section
-        className="connector-dialog remote-runtime-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remote-runtime-title"
-        aria-describedby="remote-runtime-description"
-      >
-        <div className="connector-dialog-heading">
-          <span className="connector-dialog-icon" aria-hidden="true">
-            <Server size={18} />
-          </span>
-          <div>
-            <h2 id="remote-runtime-title">{t("connectRemoteRuntime")}</h2>
-            <p id="remote-runtime-description">
-              {t("remoteRuntimeDescription")}
-            </p>
-          </div>
-        </div>
-        {hosts && hosts.hosts.length > 0 && (
-          <div className="host-connection-list" aria-label={t("savedHosts")}>
-            <p className="connector-section-label">{t("savedHosts")}</p>
-            {hosts.hosts.map((host) => {
-              const active = host.id === activeHostId;
-              return (
-                <div
-                  key={host.id}
-                  className={`host-connection-row ${active ? "active" : ""}`}
-                >
-                  <button
-                    type="button"
-                    className="host-connection-select pressable"
-                    disabled={busy || active}
-                    onClick={() => onActivate(host.id)}
-                  >
-                    <span className="host-connection-icon" aria-hidden="true">
-                      {host.kind === "local" ? (
-                        <Monitor size={15} />
-                      ) : (
-                        <Server size={15} />
-                      )}
-                    </span>
-                    <span className="host-connection-copy">
-                      <strong>{host.name}</strong>
-                      <small>
-                        {host.kind === "local"
-                          ? t("localHost")
-                          : host.endpoint}
-                      </small>
-                    </span>
-                    {active && <Check size={14} aria-label={t("current")} />}
-                  </button>
-                  {host.kind === "remote" && (onUpdate || onDelete) && (
-                    <span className="host-connection-actions">
-                      {onUpdate && (
-                        <button
-                          type="button"
-                          className="host-connection-edit pressable"
-                          aria-label={t("editHost", { name: host.name })}
-                          title={t("editHost", { name: host.name })}
-                          disabled={busy}
-                          onClick={() => editHost(host)}
-                        >
-                          <PencilLine size={14} />
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button
-                          type="button"
-                          className="host-connection-remove pressable"
-                          aria-label={t("removeHost", { name: host.name })}
-                          title={t("removeHost", { name: host.name })}
-                          disabled={busy}
-                          onClick={() => {
-                            if (editingHostId === host.id) cancelEditing();
-                            onDelete(host.id);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <form onSubmit={submit}>
-          <p className="connector-section-label">
-            {editingHostId ? t("editSavedHost") : t("connectNewHost")}
-          </p>
-          <div className="connector-fields">
-            <label>
-              <span>{t("remoteRuntimeEndpoint")}</span>
-              <input
-                ref={firstField}
-                value={endpoint}
-                onChange={(event) => setEndpoint(event.target.value)}
-                inputMode="url"
-                autoComplete="url"
-                spellCheck={false}
-                required
-                disabled={busy}
-              />
-            </label>
-            <label>
-              <span>{t("remoteRuntimeToken")}</span>
-              <input
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                autoComplete="off"
-                required={!editingHostId}
-                disabled={busy}
-                placeholder={
-                  editingHostId ? t("remoteRuntimeTokenKeep") : undefined
-                }
-              />
-            </label>
-            <label>
-              <span>{t("remoteRuntimeName")}</span>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                autoComplete="off"
-                disabled={busy}
-                placeholder={t("remoteRuntimeNameOptional")}
-              />
-            </label>
-          </div>
-          <p className="remote-runtime-security">
-            <ShieldAlert size={14} />
-            {t("remoteRuntimeSecurity")}
-          </p>
-          {error && <p className="connector-dialog-error">{error}</p>}
-          <div className="connector-dialog-actions">
-            <button
-              type="button"
-              className="dialog-button secondary pressable"
-              disabled={busy}
-              onClick={editingHostId ? cancelEditing : onCancel}
-            >
-              {t("cancel")}
-            </button>
-            <button
-              type="submit"
-              className="dialog-button primary pressable"
-              disabled={
-                busy ||
-                !endpoint.trim() ||
-                (!editingHostId && !token.trim())
-              }
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}
-              {busy
-                ? editingHostId
-                  ? t("saving")
-                  : t("connectingRuntime")
-                : editingHostId
-                  ? t("saveChanges")
-                  : t("connect")}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
-  );
-}
-
-function RemoteProjectPathDialog({
-  busy,
-  error,
-  hostName,
-  onBrowse,
-  onCancel,
-  onOpen,
-}: {
-  busy: boolean;
-  error?: string;
-  hostName: string;
-  onBrowse?(path: string): Promise<HostDirectoryListing>;
-  onCancel(): void;
-  onOpen(path: string): void;
-}) {
-  const { t } = useI18n();
-  const [path, setPath] = useState("");
-  const [directories, setDirectories] = useState<
-    readonly HostDirectoryEntry[]
-  >([]);
-  const [directoryLoading, setDirectoryLoading] = useState(false);
-  const [directoryError, setDirectoryError] = useState<string>();
-  const [directoryPosition, setDirectoryPosition] =
-    useState<PopoverPosition>();
-  const [directoryDismissed, setDirectoryDismissed] = useState(false);
-  const firstField = useRef<HTMLInputElement>(null);
-  const firstDirectory = useRef<HTMLButtonElement>(null);
-  const browseRequest = useRef(0);
-
-  useEffect(() => {
-    firstField.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
-
-  useEffect(() => {
-    if (
-      !onBrowse ||
-      directoryDismissed ||
-      (!path.startsWith("/") && path !== "~" && !path.startsWith("~/"))
-    ) {
-      setDirectoryPosition(undefined);
-      setDirectories([]);
-      setDirectoryError(undefined);
-      setDirectoryLoading(false);
-      return;
-    }
-
-    const request = ++browseRequest.current;
-    const timeout = window.setTimeout(() => {
-      const bounds = firstField.current?.getBoundingClientRect();
-      if (!bounds) return;
-      setDirectoryPosition(
-        anchoredPopoverPosition(bounds, {
-          width: Math.min(440, Math.max(320, bounds.width)),
-          height: 260,
-          align: "start",
-          gap: 5,
-        }),
-      );
-      setDirectoryLoading(true);
-      setDirectoryError(undefined);
-      void Promise.resolve()
-        .then(() => onBrowse(path))
-        .then((listing) => {
-          if (browseRequest.current !== request) return;
-          setDirectories(listing.directories);
-        })
-        .catch((browseError) => {
-          if (browseRequest.current !== request) return;
-          setDirectories([]);
-          setDirectoryError(errorMessage(browseError));
-        })
-        .finally(() => {
-          if (browseRequest.current === request) {
-            setDirectoryLoading(false);
-          }
-        });
-    }, 120);
-    return () => {
-      window.clearTimeout(timeout);
-      if (browseRequest.current === request) browseRequest.current += 1;
-    };
-  }, [directoryDismissed, onBrowse, path]);
-
-  function selectDirectory(directory: HostDirectoryEntry) {
-    setPath(
-      directory.path.endsWith("/") ? directory.path : `${directory.path}/`,
-    );
-    setDirectoryDismissed(false);
-    requestAnimationFrame(() => firstField.current?.focus());
-  }
-
-  return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
-    >
-      <section
-        className="connector-dialog remote-project-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remote-project-title"
-      >
-        <div className="connector-dialog-heading">
-          <span className="connector-dialog-icon" aria-hidden="true">
-            <FolderPlus size={18} />
-          </span>
-          <div>
-            <h2 id="remote-project-title">{t("addRemoteProject")}</h2>
-            <p>{t("addRemoteProjectDescription", { host: hostName })}</p>
-          </div>
-        </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!busy && path.trim()) onOpen(path.trim());
-          }}
-        >
-          <div className="connector-fields">
-            <label>
-              <span>{t("remoteProjectPath")}</span>
-              <input
-                ref={firstField}
-                value={path}
-                onChange={(event) => {
-                  setPath(event.target.value);
-                  setDirectoryDismissed(false);
-                }}
-                onFocus={() => setDirectoryDismissed(false)}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowDown" && directoryPosition) {
-                    event.preventDefault();
-                    firstDirectory.current?.focus();
-                  } else if (event.key === "Escape" && directoryPosition) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setDirectoryDismissed(true);
-                  }
-                }}
-                placeholder="/home/user/projects/example"
-                autoComplete="off"
-                spellCheck={false}
-                required
-                disabled={busy}
-              />
-            </label>
-          </div>
-          {directoryPosition && (
-            <ActionPopover
-              label={t("remoteFolders")}
-              className="remote-directory-popover"
-              role="dialog"
-              position={directoryPosition}
-              initialFocusRef={firstField}
-              returnFocusRef={firstField}
-              onClose={() => setDirectoryDismissed(true)}
-            >
-              <div
-                className="remote-directory-list"
-                role="listbox"
-                aria-label={t("remoteFolders")}
-              >
-                {directoryLoading ? (
-                  <p className="remote-directory-status" role="status">
-                    <LoaderCircle className="spin" size={14} />
-                    {t("loadingFolders")}
-                  </p>
-                ) : directoryError ? (
-                  <p className="remote-directory-status error" role="status">
-                    <TriangleAlert size={14} />
-                    {directoryError}
-                  </p>
-                ) : directories.length === 0 ? (
-                  <p className="remote-directory-status" role="status">
-                    {t("noMatchingFolders")}
-                  </p>
-                ) : (
-                  directories.map((directory, index) => (
-                    <button
-                      key={directory.path}
-                      ref={index === 0 ? firstDirectory : undefined}
-                      type="button"
-                      role="option"
-                      data-popover-item
-                      aria-selected={false}
-                      onClick={() => selectDirectory(directory)}
-                    >
-                      <span
-                        className="remote-directory-option-icon"
-                        aria-hidden="true"
-                      >
-                        <Folder size={15} />
-                      </span>
-                      <span className="remote-directory-option-copy">
-                        <strong>{directory.name}</strong>
-                        <small>{directory.path}</small>
-                      </span>
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </button>
-                  ))
-                )}
-              </div>
-            </ActionPopover>
-          )}
-          {error && <p className="connector-dialog-error">{error}</p>}
-          <div className="connector-dialog-actions">
-            <button
-              type="button"
-              className="dialog-button secondary pressable"
-              disabled={busy}
-              onClick={onCancel}
-            >
-              {t("cancel")}
-            </button>
-            <button
-              type="submit"
-              className="dialog-button primary pressable"
-              disabled={busy || !path.trim()}
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}
-              {busy ? t("opening") : t("openProject")}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
-  );
-}
-
-export function EmptyState({
-  connecting,
-  project,
-  projects = [],
-  suggestions,
-  suggestionsLoading,
-  suggestionsFailed,
-  onRetrySuggestions,
-  onSelectProject,
-  onOpenProject,
-  onCreateStandalone,
-  onSelect,
-}: {
-  connecting: boolean;
-  project?: ProjectSummary;
-  projects?: readonly ProjectSummary[];
-  suggestions: readonly string[];
-  suggestionsLoading: boolean;
-  suggestionsFailed: boolean;
-  onRetrySuggestions(): void;
-  onSelectProject?(projectId: string): void | Promise<void>;
-  onOpenProject?(): void;
-  onCreateStandalone?(): void;
-  onSelect(value: string): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="empty-state">
-      <div className="empty-mark" aria-hidden="true">
-        <Sparkles size={22} />
-      </div>
-      {connecting ? (
-        <h2>{t("connectingRuntime")}</h2>
-      ) : project && onSelectProject ? (
-        <NewTaskProjectPrompt
-          project={project}
-          projects={projects}
-          onSelectProject={onSelectProject}
-          onOpenProject={onOpenProject}
-          onCreateStandalone={onCreateStandalone}
-        />
-      ) : (
-        <h2>{t("whatToDo")}</h2>
-      )}
-      {!connecting && (
-        <div
-          className="suggestions"
-          aria-busy={suggestionsLoading || undefined}
-        >
-          {suggestionsLoading ? (
-            <>
-              <span className="visually-hidden" role="status">
-                {t("generatingSuggestions")}
-              </span>
-              {[0, 1, 2].map((placeholder) => (
-                <div
-                  key={placeholder}
-                  className="suggestion suggestion-placeholder"
-                  aria-hidden="true"
-                >
-                  <span />
-                </div>
-              ))}
-            </>
-          ) : suggestionsFailed ? (
-            <button
-              type="button"
-              className="suggestion suggestion-retry pressable"
-              onClick={onRetrySuggestions}
-            >
-              <span>
-                <strong>{t("suggestionsUnavailable")}</strong>
-                {t("retrySuggestions")}
-              </span>
-              <RotateCcw size={14} />
-            </button>
-          ) : (
-            suggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                className="suggestion pressable"
-                onClick={() => onSelect(suggestion)}
-              >
-                {suggestion}
-                <ArrowUp size={14} />
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function filterProjectsForPicker(
-  projects: readonly ProjectSummary[],
-  query: string,
-): readonly ProjectSummary[] {
-  const normalized = query.trim().toLocaleLowerCase();
-  const projectScoped = projects.filter(
-    (project) => project.scope !== "standalone",
-  );
-  if (!normalized) return projectScoped;
-  return projectScoped.filter((project) =>
-    [project.name, project.basePath, project.runtime?.workspacePath]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => value.toLocaleLowerCase().includes(normalized)),
-  );
-}
-
-export function NewTaskProjectPrompt({
-  project,
-  projects,
-  onSelectProject,
-  onOpenProject,
-  onCreateStandalone,
-}: {
-  project: ProjectSummary;
-  projects: readonly ProjectSummary[];
-  onSelectProject(projectId: string): void | Promise<void>;
-  onOpenProject?(): void;
-  onCreateStandalone?(): void;
-}) {
-  const { t } = useI18n();
-  const trigger = useRef<HTMLButtonElement>(null);
-  const searchInput = useRef<HTMLInputElement>(null);
-  const [pickerPosition, setPickerPosition] = useState<PopoverPosition>();
-  const [query, setQuery] = useState("");
-  const [selectingProjectId, setSelectingProjectId] = useState<string>();
-
-  function openPicker() {
-    const bounds = trigger.current?.getBoundingClientRect();
-    if (!bounds) return;
-    setQuery("");
-    setPickerPosition(
-      anchoredPopoverPosition(bounds, {
-        width: 320,
-        height: Math.min(
-          470,
-          72 +
-            projects.length * 40 +
-            (onOpenProject || onCreateStandalone ? 84 : 0),
-        ),
-        align: "start",
-      }),
-    );
-  }
-
-  function closePicker() {
-    setPickerPosition(undefined);
-    setQuery("");
-  }
-
-  async function selectProject(projectId: string) {
-    closePicker();
-    setSelectingProjectId(projectId);
-    try {
-      await onSelectProject(projectId);
-    } finally {
-      setSelectingProjectId(undefined);
-    }
-  }
-
-  return (
-    <>
-      <h2 className="new-task-project-prompt">
-        <span>{t("newTaskPromptBeforeProject")}</span>
-        <button
-          ref={trigger}
-          type="button"
-          className="new-task-project-trigger pressable"
-          aria-haspopup="dialog"
-          aria-expanded={Boolean(pickerPosition)}
-          disabled={Boolean(selectingProjectId)}
-          onClick={() =>
-            pickerPosition ? closePicker() : openPicker()
-          }
-        >
-          <span>
-            {project.scope === "standalone" ? t("noProject") : project.name}
-          </span>
-          {selectingProjectId ? (
-            <LoaderCircle className="spin" size={16} />
-          ) : null}
-        </button>
-        <span>{t("newTaskPromptAfterProject")}</span>
-      </h2>
-      {pickerPosition && (
-        <ProjectPickerPopover
-          projects={projects}
-          currentProjectId={project.id}
-          query={query}
-          position={pickerPosition}
-          triggerRef={trigger}
-          searchInputRef={searchInput}
-          selectingProjectId={selectingProjectId}
-          onQueryChange={setQuery}
-          onClose={closePicker}
-          onSelect={(projectId) => void selectProject(projectId)}
-          onOpenProject={onOpenProject}
-          onCreateStandalone={onCreateStandalone}
-        />
-      )}
-    </>
-  );
-}
-
-export function ProjectPickerPopover({
-  projects,
-  currentProjectId,
-  query,
-  position,
-  triggerRef,
-  searchInputRef,
-  selectingProjectId,
-  onQueryChange,
-  onClose,
-  onSelect,
-  onOpenProject,
-  onCreateStandalone,
-}: {
-  projects: readonly ProjectSummary[];
-  currentProjectId: string;
-  query: string;
-  position: PopoverPosition;
-  triggerRef?: RefObject<HTMLButtonElement | null>;
-  searchInputRef?: RefObject<HTMLInputElement | null>;
-  selectingProjectId?: string;
-  onQueryChange(value: string): void;
-  onClose(): void;
-  onSelect(projectId: string): void;
-  onOpenProject?(): void;
-  onCreateStandalone?(): void;
-}) {
-  const { t } = useI18n();
-  const visibleProjects = filterProjectsForPicker(projects, query);
-
-  return (
-    <ActionPopover
-      label={t("selectProject")}
-      className="project-picker-popover"
-      role="dialog"
-      position={position}
-      initialFocusRef={searchInputRef}
-      returnFocusRef={triggerRef}
-      onClose={onClose}
-    >
-      <label className="project-picker-search">
-        <Search size={15} aria-hidden="true" />
-        <input
-          ref={searchInputRef}
-          type="search"
-          value={query}
-          aria-label={t("searchProjects")}
-          placeholder={t("searchProjects")}
-          autoComplete="off"
-          onChange={(event) => onQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && visibleProjects[0]) {
-              event.preventDefault();
-              onSelect(visibleProjects[0].id);
-            }
-          }}
-        />
-      </label>
-      <div
-        className="project-picker-list"
-        role="listbox"
-        aria-label={t("selectProject")}
-      >
-        {visibleProjects.length === 0 ? (
-          <p className="project-picker-empty" role="status">
-            {t("noMatchingProjects")}
-          </p>
-        ) : (
-          visibleProjects.map((candidate) => {
-            const current = candidate.id === currentProjectId;
-            const selecting = candidate.id === selectingProjectId;
-            return (
-              <button
-                key={candidate.id}
-                type="button"
-                className={`project-picker-option${current ? " current" : ""}`}
-                role="option"
-                aria-selected={current}
-                data-popover-item
-                disabled={Boolean(selectingProjectId)}
-                onClick={() => onSelect(candidate.id)}
-              >
-                <span className="project-picker-option-icon" aria-hidden="true">
-                  {candidate.runtime?.kind === "remote" ? (
-                    <Server size={17} />
-                  ) : (
-                    <Folder size={17} />
-                  )}
-                </span>
-                <span className="project-picker-option-name">
-                  {candidate.name}
-                </span>
-                {selecting ? (
-                  <LoaderCircle className="spin" size={16} aria-hidden="true" />
-                ) : current ? (
-                  <Check size={17} aria-hidden="true" />
-                ) : null}
-              </button>
-            );
-          })
-        )}
-      </div>
-      {(onOpenProject || onCreateStandalone) && (
-        <div className="project-picker-actions">
-          {onOpenProject && (
-            <ActionPopoverItem
-              icon={<Plus size={16} />}
-              onSelect={() => {
-                onClose();
-                onOpenProject();
-              }}
-            >
-              {t("newProject")}
-            </ActionPopoverItem>
-          )}
-          {onCreateStandalone && (
-            <ActionPopoverItem
-              icon={<X size={16} />}
-              onSelect={() => {
-                onClose();
-                onCreateStandalone();
-              }}
-            >
-              {t("notInProject")}
-            </ActionPopoverItem>
-          )}
-        </div>
-      )}
-    </ActionPopover>
-  );
-}
-
-export function ProgressList({
-  progress,
-  live = false,
-  onTerminateProcess,
-  onOpenLocalFile,
-  onRevealLocalFile,
-}: {
-  progress: readonly ConversationProgress[];
-  live?: boolean;
-  onTerminateProcess?(sessionId: string): Promise<unknown>;
-  onOpenLocalFile?(reference: LocalFileReference): void;
-  onRevealLocalFile?(
-    reference: LocalFileReference,
-  ): void | Promise<void>;
-}) {
-  return (
-    <div className="progress-list">
-      {progress.map((step, index) => (
-        <div className="progress-step" key={index}>
-          {step.text.trim() && (
-            <div className="progress-copy">
-              <MarkdownContent
-                onOpenLocalFile={onOpenLocalFile}
-                onRevealLocalFile={onRevealLocalFile}
-              >
-                {step.text}
-              </MarkdownContent>
-            </div>
-          )}
-          {step.activities.length > 0 && (
-            <ActivityList
-              activities={step.activities}
-              live={live}
-              onTerminateProcess={onTerminateProcess}
-            />
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-export function ActivityList({
-  activities,
-  live = false,
-  onTerminateProcess,
-}: {
-  activities: readonly ToolActivity[];
-  live?: boolean;
-  onTerminateProcess?(sessionId: string): Promise<unknown>;
-}) {
-  const { t } = useI18n();
-  const hasAttentionActivity = activities.some(
-    (activity) =>
-      activity.status === "failed" ||
-      activity.status === "terminated" ||
-      activity.status === "completed_with_warnings",
-  );
-  const [expanded, setExpanded] = useState(live || hasAttentionActivity);
-  const hasRunningActivity = activities.some(
-    (activity) => activity.status === "running",
-  );
-
-  return (
-    <details
-      className={live ? "activity-list live" : "activity-list"}
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-    >
-      <summary className="activity-heading">
-        <Terminal size={14} />
-        <span>
-          {live
-            ? hasRunningActivity
-              ? t("executing")
-              : t("executed")
-            : t("executionLog")}
-        </span>
-        <span className="activity-count">{activities.length}</span>
-        <ChevronRight className="activity-chevron" size={13} aria-hidden="true" />
-      </summary>
-      <div className="activity-content">
-        {activities.map((activity) => (
-          <div
-            id={`activity-${activity.id}`}
-            className="activity-item"
-            key={activity.id}
-            tabIndex={-1}
-          >
-            <div className="activity-summary">
-              <ActivityStatus status={activity.status} />
-              <code>{activity.name}</code>
-              {activity.name === "exec_command" &&
-                activity.process?.status === "running" &&
-                onTerminateProcess && (
-                  <TerminateProcessButton
-                    sessionId={activity.process.sessionId}
-                    onTerminate={onTerminateProcess}
-                  />
-                )}
-            </div>
-            {activity.detail && <pre>{activity.detail}</pre>}
-            {activity.name === "exec_command" && activity.process && (
-              <CommandOutput process={activity.process} />
-            )}
-          </div>
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function ActivityStatus({ status }: Pick<ToolActivity, "status">) {
-  if (status === "running") return <LoaderCircle className="spin" size={14} />;
-  if (status === "failed") return <X className="failed" size={14} />;
-  if (status === "completed_with_warnings") {
-    return <TriangleAlert className="warning" size={14} />;
-  }
-  if (status === "terminated") {
-    return <CircleStop className="terminated" size={14} />;
-  }
-  return <Check className="completed" size={14} />;
-}
-
-function CommandOutput({ process }: Pick<ToolActivity, "process">) {
-  const { t } = useI18n();
-  if (!process) return null;
-  const output = [
-    process.stdout,
-    process.stderr ? `stderr\n${process.stderr}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-  return (
-    <details className="command-output">
-      <summary>
-        <ChevronRight size={12} aria-hidden="true" />
-        <span>{t("commandOutput")}</span>
-        {process.truncated && <span className="output-note">{t("truncated")}</span>}
-      </summary>
-      <pre>{output || t("noOutput")}</pre>
-    </details>
-  );
-}
-
-function TerminateProcessButton({
-  sessionId,
-  onTerminate,
-}: {
-  sessionId: string;
-  onTerminate(sessionId: string): Promise<unknown>;
-}) {
-  const { t } = useI18n();
-  const [terminating, setTerminating] = useState(false);
-  const [error, setError] = useState(false);
-
-  return (
-    <>
-      <button
-        type="button"
-        className="process-terminate-button pressable"
-        disabled={terminating}
-        title={t("terminateCommand")}
-        aria-label={t("terminateCommand")}
-        onClick={() => {
-          setTerminating(true);
-          setError(false);
-          void onTerminate(sessionId).catch(() => {
-            setTerminating(false);
-            setError(true);
-          });
-        }}
-      >
-        {terminating ? (
-          <LoaderCircle className="spin" size={12} />
-        ) : (
-          <CircleStop size={12} />
-        )}
-        {terminating ? t("terminating") : t("terminate")}
-      </button>
-      {error && (
-        <span className="process-action-error" role="status">
-          {t("terminateFailed")}
-        </span>
-      )}
-    </>
-  );
-}
-
-function ConnectionError({
-  message,
-  onRetry,
-  onOpenSettings,
-}: {
-  message: string;
-  onRetry(): void;
-  onOpenSettings?(): void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="connection-error">
-      <span className="error-icon">
-        <X size={16} />
-      </span>
-      <div>
-        <strong>{t("runtimeConnectionFailed")}</strong>
-        <p>{message}</p>
-        <p className="error-help">{t("runtimeConnectionHelp")}</p>
-        <div className="connection-actions">
-          {onOpenSettings && (
-            <button className="primary pressable" onClick={onOpenSettings}>
-              {t("openSettings")}
-            </button>
-          )}
-          <button className="secondary pressable" onClick={onRetry}>
-            {t("reconnect")}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function MessageAttachments({
-  attachments,
-  attachmentPreview,
-}: {
-  attachments: readonly AttachmentData[];
-  attachmentPreview?: AttachmentPreviewAdapter;
-}) {
-  const { t } = useI18n();
-  const images = attachments
-    .filter(
-      (attachment) =>
-        attachment.kind === "image" &&
-        Boolean(
-          attachmentPreview &&
-            (previewUrlFor(attachmentPreview, attachment) ||
-              attachmentPreview.loadImageUrl),
-        ),
-    );
-  const imageIds = new Set(images.map((attachment) => attachment.id));
-  const files = attachments.filter((attachment) => !imageIds.has(attachment.id));
-  return (
-    <div className="message-attachments" aria-label={t("messageAttachments")}>
-      {images.length > 0 && (
-        <div className="message-image-grid">
-          {images.map((attachment) => (
-            <AttachmentImage
-              key={attachment.id}
-              attachment={attachment}
-              attachmentPreview={attachmentPreview!}
-            />
-          ))}
-        </div>
-      )}
-      {files.length > 0 && (
-        <div className="message-file-list">
-          {files.map((attachment) => (
-            <div className="message-file" key={attachment.id}>
-              <span className="attachment-file-icon">
-                <FileText size={16} />
-              </span>
-              <span>
-                <strong>{attachment.name}</strong>
-                <small>{formatFileSize(attachment.size)}</small>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AttachmentImage({
-  attachment,
-  attachmentPreview,
-}: {
-  attachment: AttachmentData;
-  attachmentPreview: AttachmentPreviewAdapter;
-}) {
-  const [url, setUrl] = useState(() =>
-    previewUrlFor(attachmentPreview, attachment),
-  );
-
-  useEffect(() => {
-    let active = true;
-    const immediate = previewUrlFor(attachmentPreview, attachment);
-    setUrl(immediate);
-    if (!immediate && attachmentPreview.loadImageUrl) {
-      void attachmentPreview
-        .loadImageUrl(attachment)
-        .then((loaded) => {
-          if (active && loaded) setUrl(loaded);
-        })
-        .catch(() => undefined);
-    }
-    return () => {
-      active = false;
-    };
-  }, [
-    attachment.id,
-    attachment.mimeType,
-    attachment.path,
-    attachmentPreview,
-  ]);
-
-  return url ? (
-    <img
-      src={url}
-      alt={attachment.name}
-      loading="lazy"
-    />
-  ) : (
-    <div
-      className="message-image-placeholder"
-      aria-label={attachment.name}
-    >
-      <FileText size={18} />
-      <span>{attachment.name}</span>
-    </div>
-  );
-}
-
-function previewUrlFor(
-  attachmentPreview: AttachmentPreviewAdapter | undefined,
-  attachment: AttachmentData,
-): string | undefined {
-  try {
-    return attachmentPreview?.imageUrl(attachment);
-  } catch {
-    return undefined;
-  }
-}
-
-function ComposerAttachments({
-  attachments,
-  onRemove,
-  disabled,
-}: {
-  attachments: readonly PendingAttachment[];
-  onRemove(id: string): void;
-  disabled: boolean;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="composer-attachments" aria-label={t("pendingAttachments")}>
-      {attachments.map((attachment) => {
-        const isImage = attachment.file.type.startsWith("image/");
-        return (
-          <div
-            className={`composer-attachment ${isImage ? "image" : "file"}`}
-            key={attachment.id}
-            title={attachment.file.name}
-          >
-            {isImage && attachment.previewUrl ? (
-              <img src={attachment.previewUrl} alt={attachment.file.name} />
-            ) : (
-              <span className="attachment-file-icon">
-                <FileText size={17} />
-              </span>
-            )}
-            {!isImage && (
-              <span className="composer-attachment-copy">
-                <strong>{attachment.file.name}</strong>
-                <small>{formatFileSize(attachment.file.size)}</small>
-              </span>
-            )}
-            <button
-              type="button"
-              className="attachment-remove pressable"
-              onClick={() => onRemove(attachment.id)}
-              disabled={disabled}
-              aria-label={t("removeFile", { name: attachment.file.name })}
-              title={t("remove")}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function shortId(id?: string): string {
-  return id ? id.slice(0, 8) : "—";
-}
-
-function connectionLabel(connection: string, t: Translate): string {
-  if (connection === "ready") return t("runtimeConnected");
-  if (connection === "error") return t("runtimeOffline");
-  return t("connectionConnecting");
-}
-
-function voiceInputHint(
-  status: VoiceInputStatus,
-  error: string | undefined,
-  t: Translate,
-): string {
-  if (error) return error;
-  if (status === "requesting") return t("microphoneRequestHint");
-  if (status === "recording") return t("recordingHint");
-  if (status === "transcribing") return t("transcribingHint");
-  return t("composerHint");
-}
-
-function attachmentHint(
-  status: VoiceInputStatus,
-  voiceError: string | undefined,
-  attachmentError: string | undefined,
-  submissionError: string | undefined,
-  attachments: readonly PendingAttachment[],
-  preparing: boolean,
-  isRunning: boolean,
-  t: Translate,
-): string {
-  if (voiceError || status !== "idle") {
-    return voiceInputHint(status, voiceError, t);
-  }
-  if (attachmentError) return attachmentError;
-  if (submissionError) return t("sendFailed", { message: submissionError });
-  if (preparing) return t("preparingAttachments");
-  if (attachments.length > 0) {
-    return t("attachmentsAdded", { count: attachments.length });
-  }
-  if (isRunning) return t("runningComposerHint");
-  return voiceInputHint(status, undefined, t);
-}
-
-export function composerSubmitDelivery(
-  event: Pick<KeyboardEvent<HTMLTextAreaElement>, "metaKey" | "ctrlKey">,
-  isRunning: boolean,
-): "inject" | "queued" {
-  return isRunning && (event.metaKey || event.ctrlKey)
-    ? "queued"
-    : "inject";
-}
-
-function hasFiles(dataTransfer: DataTransfer): boolean {
-  return dataTransfer.types.includes("Files");
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-export function hasUserInput(
-  messages: readonly { role: "user" | "assistant" }[],
-): boolean {
-  return messages.some((message) => message.role === "user");
-}
-
-export function projectContainingThread(
-  snapshot: ProjectsSnapshot,
-  threadId: string | undefined,
-): ProjectSummary | undefined {
-  if (!threadId) return;
-  return snapshot.projects.find((project) =>
-    project.conversations.some((conversation) => conversation.id === threadId),
-  );
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

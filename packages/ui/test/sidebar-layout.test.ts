@@ -2,11 +2,9 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { sidebarStartsOpen } from "../src/app.js";
+import { readUiStyles } from "./style-source.js";
 
-const styles = readFileSync(
-  new URL("../src/styles.css", import.meta.url),
-  "utf8",
-);
+const styles = readUiStyles();
 const desktopRenderer = readFileSync(
   new URL("../../../apps/desktop/src/renderer/main.tsx", import.meta.url),
   "utf8",

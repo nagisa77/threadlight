@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readUiStyles } from "./style-source.js";
 
-const styles = readFileSync(
-  new URL("../src/styles.css", import.meta.url),
-  "utf8",
-);
+const styles = readUiStyles();
 
 describe("project row activity layout", () => {
   it("gives project activity the trailing edge until row actions are revealed", () => {

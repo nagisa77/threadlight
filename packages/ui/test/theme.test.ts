@@ -1,11 +1,10 @@
-import { readFileSync } from "node:fs";
-
 import { describe, expect, it } from "vitest";
 
 import {
   THEME_PREFERENCES,
   isThemePreference,
 } from "../src/theme.js";
+import { readUiStyles } from "./style-source.js";
 
 describe("theme", () => {
   it("supports system, light, and dark preferences offline", () => {
@@ -17,10 +16,7 @@ describe("theme", () => {
   });
 
   it("defines dark application colors and all three visual previews", () => {
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readUiStyles();
 
     expect(css).toContain('html[data-theme="dark"]');
     expect(css).toContain(".theme-preview.system");
@@ -29,10 +25,7 @@ describe("theme", () => {
   });
 
   it("keeps dark navigation, headers, and interactive states on dark surfaces", () => {
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readUiStyles();
 
     expect(css).toMatch(
       /html\[data-theme="dark"\] \.workspace-header\s*\{[^}]*border-bottom-color:\s*var\(--line\);/s,
@@ -49,10 +42,7 @@ describe("theme", () => {
   });
 
   it("gives the theme field breathing room below its section heading", () => {
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readUiStyles();
 
     expect(css).toMatch(
       /\.theme-picker\s*\{[^}]*padding:\s*19px 0 17px;/s,
@@ -60,10 +50,7 @@ describe("theme", () => {
   });
 
   it("renders plan progress surfaces as readable frosted glass", () => {
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readUiStyles();
 
     expect(css).toMatch(
       /\.plan-status-popover::before\s*\{[^}]*backdrop-filter:\s*blur\(36px\) saturate\(1\.25\);/s,
@@ -75,10 +62,7 @@ describe("theme", () => {
   });
 
   it("does not add a background when hovering the changed-files action", () => {
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readUiStyles();
 
     expect(css).toMatch(
       /\.conversation-changes-button:hover\s*\{[^}]*background:\s*transparent;/s,
@@ -89,10 +73,7 @@ describe("theme", () => {
   });
 
   it("removes the gray outline from the dark turn-status pill", () => {
-    const css = readFileSync(
-      new URL("../src/styles.css", import.meta.url),
-      "utf8",
-    );
+    const css = readUiStyles();
     const rule = css.match(
       /html\[data-theme="dark"\] \.turn-status-pill\s*\{([^}]*)\}/s,
     );

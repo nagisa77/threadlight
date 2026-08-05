@@ -20,6 +20,7 @@
   "scripts": {
     "build": "npm run build:packages && npm run build --workspace @threadlight/desktop && npm run build --workspace @threadlight/web",
     "build:packages": "tsc -b && node scripts/copy-runtime-assets.mjs",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage",
     "clean": "tsc -b --clean",
     "desktop:dev": "npm run build:packages && npm run dev --workspace @threadlight/desktop",
     "desktop:package": "npm run build:packages && npm run package --workspace @threadlight/desktop",
@@ -32,7 +33,11 @@
     "start": "node packages/app-server/dist/bin.js",
     "host": "node packages/app-server/dist/host-bin.js",
     "host:dev": "npm run build:packages && npm run host --",
-    "host:package": "npm run build:packages && node scripts/package-host.mjs"
+    "host:package": "npm run build:packages && node scripts/package-host.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write package.json eslint.config.js vitest.config.ts packages/ui/src/app.tsx packages/ui/src/workspace-panel.tsx packages/ui/src/features packages/ui/test/style-source.ts packages/ui/test/architecture.test.ts",
+    "format:check": "prettier --check package.json eslint.config.js vitest.config.ts packages/ui/src/app.tsx packages/ui/src/workspace-panel.tsx packages/ui/src/features packages/ui/test/style-source.ts packages/ui/test/architecture.test.ts",
+    "test:coverage": "npm run build && vitest run --coverage"
   },
   "engines": {
     "node": ">=22"
@@ -44,9 +49,17 @@
     "ip-address": "10.4.0"
   },
   "devDependencies": {
+    "@babel/eslint-parser": "^8.0.1",
+    "@babel/plugin-syntax-jsx": "^8.0.1",
+    "@babel/preset-typescript": "^8.0.1",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.20.1",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.10",
     "esbuild": "^0.25.12",
+    "eslint": "^10.8.0",
+    "globals": "^17.9.0",
+    "prettier": "^3.9.6",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   }
