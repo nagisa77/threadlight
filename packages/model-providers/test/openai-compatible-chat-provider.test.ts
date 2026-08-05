@@ -93,6 +93,7 @@ describe("OpenAICompatibleChatProvider", () => {
       },
     );
 
+    expect(create.mock.calls[0]?.[0].tool_choice).toBe("auto");
     expect(first).toMatchObject({
       toolCalls: [
         { id: "call-1", name: "double", arguments: { value: 21 } },

@@ -127,6 +127,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
                 parameters: tool.parameters as JsonSchema,
               },
             })),
+            tool_choice: "auto",
           }
         : {}),
       stream: true,
