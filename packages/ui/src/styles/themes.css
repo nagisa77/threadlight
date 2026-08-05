@@ -212,11 +212,6 @@ html[data-theme="dark"] .terminal-tab.active {
   box-shadow: none;
 }
 
-html[data-theme="dark"] .terminal-exited {
-  border-color: var(--line);
-  background: rgb(31 32 34 / 92%);
-}
-
 html[data-theme="dark"] :is(
   .terminal-viewport .xterm-viewport,
   .settings-select-popover

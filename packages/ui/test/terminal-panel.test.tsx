@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  nextTabsAfterClose,
   projectTerminalCreateRequest,
   TerminalPanel,
   type TerminalAdapter,
@@ -75,6 +76,7 @@ describe("TerminalPanel", () => {
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="关闭底部面板"');
     expect(html).toContain("正在启动终端");
+    expect(html).not.toContain("terminal-exited");
   });
 
   it("labels a non-worktree default terminal as the original workspace", () => {
@@ -99,5 +101,50 @@ describe("TerminalPanel", () => {
 
     expect(html).toContain("原工作区 · main · 1");
     expect(html).not.toContain("任务 worktree");
+  });
+});
+
+describe("nextTabsAfterClose", () => {
+  it("closes the tab when its session exits", () => {
+    const result = nextTabsAfterClose(
+      [
+        { id: "tab-1", kind: "terminal", title: "终端 1" },
+        { id: "tab-2", kind: "original-terminal", title: "原工作区 · main · 2" },
+        { id: "tab-3", kind: "file", title: "文件" },
+      ],
+      "tab-1",
+      "tab-1",
+    );
+
+    expect(result.tabs.map((tab) => tab.id)).toEqual(["tab-2", "tab-3"]);
+    expect(result.activeTabId).toBe("tab-2");
+    expect(result.panelClosed).toBe(false);
+  });
+
+  it("keeps the active tab when a background tab exits", () => {
+    const result = nextTabsAfterClose(
+      [
+        { id: "tab-1", kind: "terminal", title: "终端 1" },
+        { id: "tab-2", kind: "original-terminal", title: "原工作区 · main · 2" },
+      ],
+      "tab-2",
+      "tab-1",
+    );
+
+    expect(result.tabs.map((tab) => tab.id)).toEqual(["tab-2"]);
+    expect(result.activeTabId).toBe("tab-2");
+    expect(result.panelClosed).toBe(false);
+  });
+
+  it("closes the whole panel when the last tab exits", () => {
+    const result = nextTabsAfterClose(
+      [{ id: "tab-1", kind: "terminal", title: "终端 1" }],
+      "tab-1",
+      "tab-1",
+    );
+
+    expect(result.tabs).toEqual([]);
+    expect(result.activeTabId).toBe("");
+    expect(result.panelClosed).toBe(true);
   });
 });
