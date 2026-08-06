@@ -538,6 +538,7 @@ export function ProjectGroup({
   onRevealInFinder,
   onToggleProjectPinned,
   onOpenDiagnostics,
+  onDeleteProject,
   onSelect,
   onRename,
   onTogglePinned,
@@ -557,6 +558,7 @@ export function ProjectGroup({
   onRevealInFinder?(): void | Promise<void>;
   onToggleProjectPinned?(): Promise<void>;
   onOpenDiagnostics?(): void | Promise<void>;
+  onDeleteProject?(): void | Promise<void>;
   onSelect(threadId?: string): void;
   onRename?(conversation: ConversationSummary, title: string): Promise<void>;
   onTogglePinned?(conversation: ConversationSummary): Promise<void>;
@@ -598,6 +600,7 @@ export function ProjectGroup({
     onRevealInFinder,
     onToggleProjectPinned,
     onOpenDiagnostics,
+    onDeleteProject,
   ].filter(Boolean).length;
 
   function toggleExpanded() {
@@ -779,6 +782,11 @@ export function ProjectGroup({
               ? () => void runProjectAction(onOpenDiagnostics)
               : undefined
           }
+          onDeleteProject={
+            onDeleteProject
+              ? () => void runProjectAction(onDeleteProject)
+              : undefined
+          }
         />
       )}
       {visibleExpanded && (
@@ -827,6 +835,7 @@ export function ProjectActionPopover({
   onRevealInFinder,
   onToggleProjectPinned,
   onOpenDiagnostics,
+  onDeleteProject,
 }: {
   project: ProjectSummary;
   busy: boolean;
@@ -839,6 +848,7 @@ export function ProjectActionPopover({
   onRevealInFinder?(): void;
   onToggleProjectPinned?(): void;
   onOpenDiagnostics?(): void;
+  onDeleteProject?(): void;
 }) {
   const { t } = useI18n();
   return (
@@ -900,6 +910,15 @@ export function ProjectActionPopover({
           onSelect={onOpenDiagnostics}
         >
           {t("usageDiagnostics")}
+        </ActionPopoverItem>
+      )}
+      {onDeleteProject && (
+        <ActionPopoverItem
+          icon={<Trash2 size={15} />}
+          disabled={busy}
+          onSelect={onDeleteProject}
+        >
+          {t("deleteProject")}
         </ActionPopoverItem>
       )}
     </ActionPopover>

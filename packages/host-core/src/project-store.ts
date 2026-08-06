@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -143,7 +144,7 @@ export class ProjectStore {
         name: basename(basePath),
         basePath,
         lastOpenedAt: timestamp,
-        conversations: [],
+        conversations: discoverConversations(basePath),
       };
       stored.projects.push(project);
     }
@@ -255,6 +256,22 @@ export class ProjectStore {
     }
     project.lastOpenedAt = this.now().toISOString();
     stored.activeProjectId = project.id;
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  deleteProject(projectId: string): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const project = stored.projects.find(
+      (candidate) => candidate.id === projectId,
+    );
+    if (!project) throw new Error(`Unknown project: ${projectId}`);
+    stored.projects = stored.projects.filter(
+      (candidate) => candidate.id !== projectId,
+    );
+    if (stored.activeProjectId === projectId) {
+      stored.activeProjectId = stored.projects[0]?.id;
+    }
     this.write(stored);
     return this.snapshot();
   }
@@ -549,6 +566,61 @@ function conversationPath(basePath: string, threadId: string): string {
     throw new Error("Invalid conversation id");
   }
   return join(basePath, ".threadlight", "conversations", `${threadId}.json`);
+}
+
+function discoverConversations(basePath: string): StoredConversation[] {
+  const directory = join(basePath, ".threadlight", "conversations");
+  let entries: string[];
+  try {
+    entries = readdirSync(directory, { withFileTypes: true })
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.endsWith(".json") &&
+          /^[\w-]+\.json$/.test(entry.name),
+      )
+      .map((entry) => entry.name);
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") return [];
+    throw error;
+  }
+  const conversations: StoredConversation[] = [];
+  for (const entry of entries) {
+    const threadId = entry.slice(0, -".json".length);
+    try {
+      const source = JSON.parse(
+        readFileSync(join(directory, entry), "utf8"),
+      ) as Record<string, unknown>;
+      if (source.threadId !== threadId) continue;
+      const createdAt =
+        typeof source.createdAt === "string" ? source.createdAt : "";
+      const updatedAt =
+        typeof source.updatedAt === "string" ? source.updatedAt : createdAt;
+      if (!createdAt) continue;
+      const title =
+        typeof source.title === "string" && source.title.trim()
+          ? source.title.trim()
+          : "新任务";
+      const conversation: StoredConversation = {
+        id: threadId,
+        title,
+        createdAt,
+        updatedAt,
+        status: "completed",
+        unread: false,
+      };
+      if (typeof source.titleGeneratedAt === "string") {
+        conversation.titleGeneratedAt = source.titleGeneratedAt;
+      }
+      if (source.accessMode === "approval" || source.accessMode === "full") {
+        conversation.accessMode = source.accessMode;
+      }
+      conversations.push(conversation);
+    } catch {
+      // Skip malformed conversation files; the folder is kept intact.
+    }
+  }
+  return conversations;
 }
 
 function canonicalDirectory(path: string): string {

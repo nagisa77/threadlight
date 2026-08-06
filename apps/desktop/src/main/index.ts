@@ -160,6 +160,7 @@ import {
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
   DESKTOP_PROJECT_UPDATE_CHANNEL,
+  DESKTOP_PROJECT_DELETE_CHANNEL,
   DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
@@ -611,6 +612,25 @@ function stopAppServers(): void {
   threadProjects.clear();
   pendingThreadStarts.clear();
   processWorkspaces.clear();
+}
+
+function stopProjectRuntimes(projectId: string): void {
+  const runtimes = [...appServers.entries()].filter(
+    ([, runtime]) => runtime.projectId === projectId,
+  );
+  const workspacePaths = new Set(
+    runtimes.map(([, runtime]) => runtime.workspace.path),
+  );
+  for (const [key, runtime] of runtimes) {
+    runtime.process.stop();
+    appServers.delete(key);
+  }
+  for (const [threadId, ownerProjectId] of threadProjects) {
+    if (ownerProjectId === projectId) threadProjects.delete(threadId);
+  }
+  for (const [sessionId, workspacePath] of processWorkspaces) {
+    if (workspacePaths.has(workspacePath)) processWorkspaces.delete(sessionId);
+  }
 }
 
 function sendTerminalEvent(terminalEvent: TerminalSessionEvent): void {
@@ -1778,6 +1798,50 @@ async function handleProjectUpdate(
     );
   }
   return projectStore.updateProject(update);
+}
+
+async function handleProjectDelete(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  if (typeof value !== "string" || !value) throw new Error("Invalid project id");
+  const deletingActive = currentActiveProject()?.id === value;
+  const project = currentProject(value);
+  const deletedThreadIds = new Set(
+    project?.conversations.map((conversation) => conversation.id) ?? [],
+  );
+  if (project?.runtime?.kind !== "remote" && project) {
+    for (const threadId of deletedThreadIds) {
+      await conversationChangeTracker
+        ?.deleteSnapshot(value, threadId)
+        .catch(() => undefined);
+      await worktreeDeliveryManager
+        ?.deleteJournal({
+          projectId: value,
+          threadId,
+          projectPath: project.basePath,
+        })
+        .catch(() => undefined);
+    }
+  }
+  const snapshot = isRemoteHost()
+    ? syncRemoteProjects(await remoteHost!.client.deleteProject(value))
+    : projectStore.deleteProject(value);
+  stopProjectRuntimes(value);
+  if (deletingActive && mainWindow) {
+    const nextProject = currentActiveProject();
+    if (nextProject) {
+      ensureAppServer(
+        mainWindow,
+        nextProject.id,
+        nextProject.basePath,
+        folderWorkspace(nextProject.basePath),
+      );
+    }
+  }
+  return snapshot;
 }
 
 async function handleProjectOpenersGet(
@@ -4158,6 +4222,7 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(DESKTOP_PROJECT_ACTIVATE_CHANNEL, handleProjectActivate);
   ipcMain.handle(DESKTOP_PROJECT_UPDATE_CHANNEL, handleProjectUpdate);
+  ipcMain.handle(DESKTOP_PROJECT_DELETE_CHANNEL, handleProjectDelete);
   ipcMain.handle(DESKTOP_PROJECT_OPENERS_GET_CHANNEL, handleProjectOpenersGet);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_WITH_CHANNEL, handleProjectOpenWith);
   ipcMain.handle(
