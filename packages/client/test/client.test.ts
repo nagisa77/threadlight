@@ -351,6 +351,24 @@ describe("ThreadlightClient", () => {
     await expect(deleted).resolves.toEqual({ deleted: true });
   });
 
+  it("requests the live running-thread list for sidebar recovery", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const running = client.runningThreads();
+    expect(transport.sent[0]).toMatchObject({
+      method: "thread/running",
+    });
+    expect(transport.sent[0].params).toBeUndefined();
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: { threadIds: ["thread-1"] },
+    });
+
+    await expect(running).resolves.toEqual({ threadIds: ["thread-1"] });
+  });
+
   it("requests three opening questions in the selected language", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

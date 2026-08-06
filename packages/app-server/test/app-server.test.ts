@@ -1275,6 +1275,73 @@ describe("AppServer", () => {
     await completed;
   });
 
+  it("reports live threads to a reconnecting client until the turn completes", async () => {
+    let finishGeneration!: () => void;
+    const generationPending = new Promise<void>((resolve) => {
+      finishGeneration = resolve;
+    });
+    let receiveDelta!: () => void;
+    const deltaReceived = new Promise<void>((resolve) => {
+      receiveDelta = resolve;
+    });
+    let completeTurn!: () => void;
+    const completed = new Promise<void>((resolve) => {
+      completeTurn = resolve;
+    });
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        options?.onEvent?.({
+          type: "output_text.delta",
+          delta: "正在运行",
+        });
+        receiveDelta();
+        await generationPending;
+        return { text: "完成。", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "scripted", instructions: "Reply" }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completeTurn();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "运行任务" },
+    });
+    await deltaReceived;
+
+    // A fresh client (for example after a renderer refresh) learns about the
+    // live turn without opening the thread.
+    await server.receive({ jsonrpc: "2.0", id: 4, method: "thread/running" });
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({ result: { threadIds: [threadId] } });
+
+    finishGeneration();
+    await completed;
+
+    await server.receive({ jsonrpc: "2.0", id: 5, method: "thread/running" });
+    expect(
+      messages.find((message) => "id" in message && message.id === 5),
+    ).toMatchObject({ result: { threadIds: [] } });
+    await server.dispose();
+  });
+
   it("runs a turn and streams completion notifications", async () => {
     const provider: ModelProvider = {
       async generate() {
