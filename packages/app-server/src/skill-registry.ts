@@ -327,11 +327,27 @@ export class SkillRegistry {
     };
   }
 
+  /**
+   * Returns a small binding directive for an explicitly requested skill.
+   * The full SKILL.md body is deliberately NOT injected here; the model must
+   * call skill_read and read every bundled resource before acting.
+   */
+  requiredReadPromptBlock(nameOrId: string): PromptBlock {
+    const skill = this.read(nameOrId);
+    return {
+      id: `skill.required-read.${skill.id.slice(0, 16)}`,
+      version: 1,
+      authority: "skill",
+      source: skill.path,
+      content: renderRequiredSkillReadInstructions(skill),
+    };
+  }
+
   catalogPrompt(): string {
     if (this.loadedSkills.length === 0) return "";
     const introduction = [
       "Available skills are listed below using progressive disclosure.",
-      "When the user explicitly names a skill with $skill-name, follow the injected skill instructions.",
+      "When the user explicitly names a skill with $skill-name, you MUST call skill_read to load its full instructions; only a short required-read directive is injected.",
       "When an unnamed task clearly matches a skill description, call skill_read before acting. Do not infer a skill's workflow from its description alone.",
       "Use skill_list to search or page through skills that are not present in this compact catalog.",
     ].join(" ");
@@ -382,7 +398,15 @@ export class SkillRegistry {
     return names.flatMap((name) => {
       const loaded = this.resolve(name);
       if (!loaded) return [];
-      return this.promptBlock(name);
+      return this.requiredReadPromptBlock(name);
+    });
+  }
+
+  /** Capability refs (`skill:<id>`) for skills explicitly mentioned as $name in the input. */
+  refsForExplicitMentions(input: string): string[] {
+    return explicitSkillMentions(input).flatMap((name) => {
+      const loaded = this.resolve(name);
+      return loaded ? [`skill:${loaded.id}`] : [];
     });
   }
 
@@ -442,7 +466,7 @@ export function createSkillReadTool(registry: SkillRegistry): Tool {
   return defineTool({
     name: "skill_read",
     description:
-      "Load the full instructions and resource inventory for one available skill. Use this before following an implicitly matched skill; explicitly mentioned skills are already injected.",
+      "Load the full instructions and resource inventory for one available skill. Use this before following an implicitly matched skill; explicitly requested skills are also loaded through this tool (only a required-read directive is injected). After reading, read every bundled resource listed in the result with capability_resource_read (resources under references/, agents/, scripts/ and assets/ are collected recursively; use the exact absolute paths returned by skill_read).",
     mutability: "read",
     parameters: {
       type: "object",
@@ -699,6 +723,24 @@ function renderSkillInstructions(
       ? `Bundled resources:\n${resources.map((path) => `- ${path}`).join("\n")}`
       : "Bundled resources: none",
     body || "Follow the skill description and return the requested result.",
+  ].join("\n\n");
+}
+
+function renderRequiredSkillReadInstructions(
+  skill: SkillReadResult,
+): string {
+  const resources =
+    skill.resources.length > 0
+      ? skill.resources.map((path) => `- ${path}`).join("\n")
+      : "- none";
+  return [
+    `[BINDING] Required skill read — $${skill.invocationName}`,
+    `Skill file: ${skill.path}`,
+    "The user explicitly requested this skill. Its full instructions are deliberately NOT injected; you must load them before acting:",
+    `1. Call skill_read(skill="${skill.invocationName}") to load the complete instructions and the bundled resource inventory.`,
+    "2. Read EVERY bundled resource listed in the skill_read result with capability_resource_read (resources under references/, agents/, scripts/ and assets/ are collected recursively; use the exact absolute paths returned by skill_read).",
+    `Bundled resources:\n${resources}`,
+    "3. Only after the full read, confirm that you have loaded the skill and follow its requirements for the rest of the task.",
   ].join("\n\n");
 }
 

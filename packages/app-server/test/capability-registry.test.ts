@@ -116,10 +116,24 @@ describe("capability registry", () => {
       async generate(request) {
         requests.push(request);
         if (requests.length === 1) {
+          expect(request.instructions).toContain("Required skill read");
           expect(request.instructions).toContain(declaredReference);
           expect(request.tools.map(({ name }) => name)).toContain(
             "capability_resource_read",
           );
+          return {
+            text: "I’ll load the skill.",
+            toolCalls: [
+              {
+                id: "skill-read-1",
+                name: "skill_read",
+                arguments: { skill: "pdf" },
+              },
+            ],
+          };
+        }
+        if (requests.length === 2) {
+          expect(request.toolResults?.[0]?.name).toBe("skill_read");
           return {
             text: "I’ll read the required guidance.",
             toolCalls: [
@@ -131,7 +145,7 @@ describe("capability registry", () => {
             ],
           };
         }
-        if (requests.length === 2) {
+        if (requests.length === 3) {
           expect(request.toolResults?.[0]?.output).toContain(
             "PDF_TOOLING_GUIDANCE",
           );
@@ -200,7 +214,7 @@ describe("capability registry", () => {
     });
     await waitFor(messages, "turn/completed");
 
-    expect(requests).toHaveLength(3);
+    expect(requests).toHaveLength(4);
     await server.dispose();
   });
 
@@ -255,7 +269,9 @@ describe("capability registry", () => {
       async generate(request) {
         requests.push(request);
         if (requests.length === 1) {
-          expect(request.instructions).toContain("DOCUMENT_WORKFLOW");
+          expect(request.instructions).toContain("Required skill read");
+          expect(request.instructions).toContain("$documents");
+          expect(request.instructions).not.toContain("DOCUMENT_WORKFLOW");
           expect(request.instructions).toContain(
             "explicitly selected the @Gmail MCP capability",
           );
@@ -266,8 +282,13 @@ describe("capability registry", () => {
             description: "Search Gmail",
           });
           return {
-            text: "I’ll search Gmail.",
+            text: "I’ll load the skill and search Gmail.",
             toolCalls: [
+              {
+                id: "skill-read-1",
+                name: "skill_read",
+                arguments: { skill: "documents" },
+              },
               {
                 id: "gmail-1",
                 name: gmailTool!.name,
@@ -278,7 +299,7 @@ describe("capability registry", () => {
           };
         }
         expect(request.state).toEqual({ step: 1 });
-        expect(request.toolResults?.[0]?.output).toContain("mail result");
+        expect(request.toolResults?.[1]?.output).toContain("mail result");
         return { text: "Done.", toolCalls: [], state: { step: 2 } };
       },
     };

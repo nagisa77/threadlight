@@ -64,6 +64,7 @@ import {
 import type {
   CapabilityActivation,
   CapabilityResource,
+  SkillReadRequirement,
 } from "./capability-registry.js";
 import { CapabilityResourceController } from "./capability-resource-controller.js";
 import {
@@ -78,6 +79,7 @@ import {
   UserActionRunController,
 } from "./run-controllers.js";
 import { TurnCapabilityController } from "./turn-capability-controller.js";
+import { SkillReadRequirementController } from "./skill-read-requirement-controller.js";
 import {
   ExecutionPolicyRunController,
   type ExecutionApprovalRequest,
@@ -155,6 +157,10 @@ export interface ThreadRuntime {
   promptBlocksForTurn?(
     input: string,
   ): readonly PromptBlock[] | Promise<readonly PromptBlock[]>;
+  /** Capability refs (`skill:<id>`) for skills explicitly mentioned as $name in the input. */
+  explicitSkillRefsForInput?(
+    input: string,
+  ): readonly string[] | Promise<readonly string[]>;
   resolveCapabilities?(
     refs: readonly string[],
     signal: AbortSignal,
@@ -164,11 +170,13 @@ export interface ThreadRuntime {
       promptBlocks: readonly PromptBlock[];
       tools: readonly Tool[];
       resources?: readonly CapabilityResource[];
+      skillReads?: readonly SkillReadRequirement[];
     }
     | Promise<{
         promptBlocks: readonly PromptBlock[];
         tools: readonly Tool[];
         resources?: readonly CapabilityResource[];
+        skillReads?: readonly SkillReadRequirement[];
       }>;
   connectorStatus?(
     capabilityId: string,
@@ -973,13 +981,23 @@ export class AppServer {
         input,
         attachments,
       );
+      const explicitSkillRefs =
+        thread.runtime?.explicitSkillRefsForInput
+          ? await thread.runtime.explicitSkillRefsForInput(input)
+          : [];
+      const capabilityRefsForTurn = [...capabilityRefs, ...explicitSkillRefs];
       const capabilityRuntime = thread.runtime?.resolveCapabilities
         ? await thread.runtime.resolveCapabilities(
-            capabilityRefs,
+            capabilityRefsForTurn,
             controller.signal,
             "explicit",
           )
-        : { promptBlocks: [], tools: [], resources: [] };
+        : {
+            promptBlocks: [],
+            tools: [],
+            resources: [],
+            skillReads: [],
+          };
       const capabilityResources = new CapabilityResourceController(
         capabilityRuntime.resources ?? [],
       );
@@ -998,7 +1016,7 @@ export class AppServer {
         (thread.runtime.capabilities?.length ?? 0) > 0
           ? new TurnCapabilityController({
               capabilities: thread.runtime.capabilities ?? [],
-              initialRefs: capabilityRefs,
+              initialRefs: capabilityRefsForTurn,
               resolve: thread.runtime.resolveCapabilities.bind(
                 thread.runtime,
               ),
@@ -1031,6 +1049,11 @@ export class AppServer {
             : undefined,
           planController,
           capabilityController,
+          (capabilityRuntime.skillReads ?? []).length > 0
+            ? new SkillReadRequirementController(
+                capabilityRuntime.skillReads ?? [],
+              )
+            : undefined,
           sourceCitationController,
           new ProjectMemoryReminderController(),
           new ResearchCoverageRunController(input),

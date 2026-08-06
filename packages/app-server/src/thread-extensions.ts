@@ -104,6 +104,8 @@ export interface SkillPluginThreadRuntime {
   tools: Tool[];
   promptBlocks: readonly PromptBlock[];
   promptBlocksForTurn(input: string): readonly PromptBlock[];
+  /** Capability refs (`skill:<id>`) for skills explicitly mentioned as $name in the input. */
+  explicitSkillRefsForInput(input: string): readonly string[];
   capabilities: readonly CapabilityDescriptor[];
   resolveCapabilities(
     refs: readonly string[],
@@ -256,6 +258,9 @@ export async function createSkillPluginThreadRuntime(
     promptBlocks,
     promptBlocksForTurn(input) {
       return registry.promptBlocksForExplicitMentions(input);
+    },
+    explicitSkillRefsForInput(input) {
+      return registry.refsForExplicitMentions(input);
     },
     get capabilities() {
       return capabilityRegistry.descriptors();

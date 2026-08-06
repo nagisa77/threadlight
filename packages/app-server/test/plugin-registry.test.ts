@@ -477,10 +477,13 @@ describe("plugins", () => {
     const result = await new AgentLoop({
       async generate(request) {
         requests.push(request);
-        expect(request.instructions).toContain(
+        expect(request.instructions).toContain("Required skill read");
+        expect(request.instructions).toContain("$excel");
+        expect(request.instructions).toContain("$powerpoint");
+        expect(request.instructions).not.toContain(
           "Do not replace formulas with cached values",
         );
-        expect(request.instructions).toContain(
+        expect(request.instructions).not.toContain(
           "Treat slides as a visual narrative",
         );
         return {
@@ -544,11 +547,12 @@ describe("plugins", () => {
     ]);
     expect(runtime.promptBlocks.map((block) => block.content).join("\n"))
       .toContain("$release-tools:prepare-release");
-    expect(
-      runtime.promptBlocksForTurn(
-        "Use $release-tools:prepare-release for this build.",
-      )[0]?.content,
-    ).toContain("Run release validation");
+    const explicitBlock = runtime.promptBlocksForTurn(
+      "Use $release-tools:prepare-release for this build.",
+    )[0]?.content;
+    expect(explicitBlock).toContain("Required skill read");
+    expect(explicitBlock).toContain("$release-tools:prepare-release");
+    expect(explicitBlock).not.toContain("Run release validation");
   });
 
   it("loads Streamable HTTP MCP connectors without persisting endpoints or credentials in the snapshot", async () => {

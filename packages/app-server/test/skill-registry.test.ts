@@ -2,6 +2,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -230,8 +231,11 @@ describe("Skill Registry", () => {
       3,
       "Use $review-code on this change.",
     );
-    expect(requests[0]?.instructions).toContain("REVIEW_WORKFLOW");
+    expect(requests[0]?.instructions).toContain("Required skill read");
+    expect(requests[0]?.instructions).not.toContain("REVIEW_WORKFLOW");
     expect(requests[0]?.toolResults).toEqual([]);
+    expect(requests[1]?.toolResults?.[0]?.name).toBe("skill_read");
+    expect(requests[1]?.toolResults?.[0]?.output).toContain("REVIEW_WORKFLOW");
 
     await server.receive({ jsonrpc: "2.0", id: 4, method: "thread/start" });
     const implicitThread = result<{ threadId: string }>(messages, 4).threadId;
@@ -242,10 +246,187 @@ describe("Skill Registry", () => {
       5,
       "Please perform a correctness review.",
     );
-    expect(requests[1]?.instructions).toContain("call skill_read");
-    expect(requests[1]?.instructions).not.toContain("REVIEW_WORKFLOW");
+    expect(requests[2]?.instructions).toContain("call skill_read");
+    expect(requests[2]?.instructions).not.toContain("REVIEW_WORKFLOW");
+    expect(requests[3]?.toolResults?.[0]?.name).toBe("skill_read");
+    expect(requests[3]?.toolResults?.[0]?.output).toContain("REVIEW_WORKFLOW");
+  });
+
+  it("rejects completion until an explicit skill is read through skill_read", async () => {
+    const root = temporaryDirectory("threadlight-skill-required-");
+    const repoSkills = join(root, ".agents", "skills");
+    writeSkill(
+      repoSkills,
+      "review-code",
+      "Review code when the user asks for a correctness review.",
+      "REVIEW_WORKFLOW: inspect the diff and return actionable findings.",
+    );
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          // Premature completion: rejected by SkillReadRequirementController.
+          return { text: "Done.", toolCalls: [] };
+        }
+        if (requests.length === 2) {
+          return {
+            text: "I'll load the requested skill.",
+            toolCalls: [
+              {
+                id: "skill-read-required",
+                name: "skill_read",
+                arguments: { skill: "review-code" },
+              },
+            ],
+          };
+        }
+        return { text: "Done.", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "skills", instructions: "Base prompt." }),
+      threadRuntimeFactory: (snapshot) =>
+        createSkillPluginThreadRuntime(
+          {
+            workspaceRoot: root,
+            userHome: join(root, "home"),
+            builtinSkillRoots: [],
+            repoSkillRoots: [repoSkills],
+            userSkillRoots: [],
+            pluginRoots: [],
+          },
+          snapshot,
+        ),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await runTurn(
+      server,
+      messages,
+      threadId,
+      3,
+      "Use $review-code on this change.",
+    );
+
+    // First attempt to finish is rejected; the directive is fed back as input.
+    expect(requests[0]?.input).toContain("$review-code");
+    expect(requests[1]?.input).toContain(
+      "Before finishing, you must load the explicitly requested skill(s) in full",
+    );
+    expect(requests[1]?.toolResults).toEqual([]);
     expect(requests[2]?.toolResults?.[0]?.name).toBe("skill_read");
-    expect(requests[2]?.toolResults?.[0]?.output).toContain("REVIEW_WORKFLOW");
+    expect(requests[2]?.toolResults?.[0]?.output).toContain(
+      "REVIEW_WORKFLOW",
+    );
+    const completed = messages.filter(
+      (message) =>
+        "method" in message &&
+        message.method === "turn/completed" &&
+        (message.params as { threadId?: string }).threadId === threadId,
+    );
+    expect(completed.length).toBe(1);
+    expect(requests.length).toBe(3);
+  });
+
+  it("registers bundled resources for skills mentioned as $name in the input", async () => {
+    const root = temporaryDirectory("threadlight-skill-mention-resources-");
+    const repoSkills = join(root, ".agents", "skills");
+    writeSkill(
+      repoSkills,
+      "release-check",
+      "Check a release checklist.",
+      "Read references/checklist.md before releasing.",
+    );
+    const checklistDir = join(repoSkills, "release-check", "references");
+    mkdirSync(checklistDir, { recursive: true });
+    const checklist = join(checklistDir, "checklist.md");
+    writeFileSync(checklist, "RELEASE_CHECKLIST_CONTENT\n");
+    const declaredChecklist = realpathSync(checklist);
+
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I'll load the skill.",
+            toolCalls: [
+              {
+                id: "read-skill",
+                name: "skill_read",
+                arguments: { skill: "release-check" },
+              },
+            ],
+          };
+        }
+        if (requests.length === 2) {
+          return {
+            text: "I'll read the bundled resource.",
+            toolCalls: [
+              {
+                id: "read-resource",
+                name: "capability_resource_read",
+                arguments: { path: declaredChecklist },
+              },
+            ],
+          };
+        }
+        return { text: "Release check complete.", toolCalls: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "skills", instructions: "Base prompt." }),
+      threadRuntimeFactory: (snapshot) =>
+        createSkillPluginThreadRuntime(
+          {
+            workspaceRoot: root,
+            userHome: join(root, "home"),
+            builtinSkillRoots: [],
+            repoSkillRoots: [repoSkills],
+            userSkillRoots: [],
+            pluginRoots: [],
+          },
+          snapshot,
+        ),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await runTurn(
+      server,
+      messages,
+      threadId,
+      3,
+      "Use $release-check for this build.",
+    );
+
+    expect(requests[0]?.tools.map(({ name }) => name)).toContain(
+      "capability_resource_read",
+    );
+    expect(requests[1]?.toolResults?.[0]?.name).toBe("skill_read");
+    expect(requests[2]?.toolResults?.[0]?.name).toBe(
+      "capability_resource_read",
+    );
+    expect(requests[2]?.toolResults?.[0]?.output).toContain(
+      "RELEASE_CHECKLIST_CONTENT",
+    );
+    const completed = messages.filter(
+      (message) =>
+        "method" in message &&
+        message.method === "turn/completed" &&
+        (message.params as { threadId?: string }).threadId === threadId,
+    );
+    expect(completed.length).toBe(1);
   });
 
   it("ships skill-creator as a built-in discoverable skill", async () => {
@@ -283,7 +464,21 @@ describe("Skill Registry", () => {
       async generate(request) {
         generation += 1;
         if (generation === 1) {
-          expect(request.instructions).toContain("Skill: $skill-creator");
+          expect(request.instructions).toContain("Required skill read");
+          expect(request.instructions).toContain("$skill-creator");
+          return {
+            text: "I’ll load the creator skill.",
+            toolCalls: [
+              {
+                id: "skill-read-creator",
+                name: "skill_read",
+                arguments: { skill: "skill-creator" },
+              },
+            ],
+          };
+        }
+        if (generation === 2) {
+          expect(request.toolResults?.[0]?.name).toBe("skill_read");
           return {
             text: "I’ll create the focused skill.",
             toolCalls: [
@@ -533,6 +728,18 @@ function scriptedSkillProvider(requests: ModelRequest[]): ModelProvider {
     async generate(request) {
       requests.push(request);
       if (request.input?.includes("$review-code")) {
+        if (!request.toolResults?.length) {
+          return {
+            text: "I'll load the requested skill.",
+            toolCalls: [
+              {
+                id: "skill-read-explicit",
+                name: "skill_read",
+                arguments: { skill: "review-code" },
+              },
+            ],
+          };
+        }
         return { text: "explicit complete", toolCalls: [] };
       }
       if (

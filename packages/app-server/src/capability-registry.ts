@@ -13,6 +13,17 @@ export interface CapabilityResolution {
   promptBlocks: readonly PromptBlock[];
   tools: readonly Tool[];
   resources?: readonly CapabilityResource[];
+  /** Skills that must be loaded via skill_read before the turn may complete. */
+  skillReads?: readonly SkillReadRequirement[];
+}
+
+export interface SkillReadRequirement {
+  /** Capability ref, e.g. `skill:<id>`. */
+  ref: string;
+  /** Invocation name accepted by skill_read (without the $ prefix). */
+  invocationName: string;
+  /** Bundled resource paths that must be read via capability_resource_read. */
+  resources: readonly string[];
 }
 
 export interface CapabilityResource {
@@ -91,6 +102,9 @@ export class CapabilityRegistry {
       promptBlocks: resolutions.flatMap(({ promptBlocks }) => promptBlocks),
       tools: resolutions.flatMap(({ tools }) => tools),
       resources: resolutions.flatMap(({ resources }) => resources ?? []),
+      skillReads: resolutions.flatMap(
+        ({ skillReads }) => skillReads ?? [],
+      ),
     };
   }
 }
@@ -134,14 +148,21 @@ export function skillCapabilitySources(
       },
       resolve() {
         return {
-          promptBlocks: [registry.promptBlock(skill.id)],
+          promptBlocks: [registry.requiredReadPromptBlock(skill.id)],
           tools: [],
           resources: registry.resources(skill.id).map((path) => ({
             path,
-            source: skill.invocationName,
+            source: `skill:${skill.id}`,
             read: (signal: AbortSignal) =>
               registry.readResource(skill.id, path, signal),
           })),
+          skillReads: [
+            {
+              ref: `skill:${skill.id}`,
+              invocationName: skill.invocationName,
+              resources: registry.resources(skill.id),
+            },
+          ],
         };
       },
     };
