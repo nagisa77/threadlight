@@ -3,6 +3,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -428,6 +429,102 @@ describe("Skill Registry", () => {
         "utf8",
       ),
     ).toContain("name: geo-teacher");
+  });
+
+  it("deduplicates the same canonical skill file across sources", async () => {
+    const root = temporaryDirectory("threadlight-skill-dedup-path-");
+    const userSkills = join(root, "home", ".agents", "skills");
+    const codexSkills = join(root, "home", ".codex", "skills");
+    mkdirSync(join(root, "home", ".agents"), { recursive: true });
+    writeSkill(
+      codexSkills,
+      "emil-design-eng",
+      "Apply Emil Kowalski's design engineering philosophy.",
+      "DESIGN_ENGINEERING_WORKFLOW",
+    );
+    symlinkSync(codexSkills, userSkills, "dir");
+
+    const registry = await SkillRegistry.discover({
+      sources: [
+        { scope: "user", root: userSkills },
+        { scope: "user", root: codexSkills },
+      ],
+    });
+
+    expect(registry.descriptors()).toHaveLength(1);
+    expect(registry.descriptors()[0]).toMatchObject({
+      name: "emil-design-eng",
+      invocationName: "emil-design-eng",
+      scope: "user",
+    });
+    expect(registry.warnings).toEqual([]);
+  });
+
+  it("scans ~/.codex/skills as an extra user source and prefers ~/.agents/skills on name collisions", async () => {
+    const root = temporaryDirectory("threadlight-codex-skills-");
+    const userSkills = join(root, "home", ".agents", "skills");
+    const codexSkills = join(root, "home", ".codex", "skills");
+    writeSkill(
+      userSkills,
+      "personal-helper",
+      "Run the primary personal workflow.",
+      "PRIMARY_WORKFLOW",
+    );
+    writeSkill(
+      codexSkills,
+      "personal-helper",
+      "Run the duplicated personal workflow.",
+      "DUPLICATE_WORKFLOW",
+    );
+    writeSkill(
+      codexSkills,
+      "emil-design-eng",
+      "Apply Emil Kowalski's design engineering philosophy.",
+      "DESIGN_ENGINEERING_WORKFLOW",
+    );
+
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [],
+      repoSkillRoots: [],
+      pluginRoots: [],
+    });
+
+    const skills = runtime.snapshot.skills.skills;
+    expect(skills).toHaveLength(2);
+    expect(skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "personal-helper",
+          invocationName: "personal-helper",
+        }),
+        expect.objectContaining({
+          name: "emil-design-eng",
+          invocationName: "emil-design-eng",
+        }),
+      ]),
+    );
+    expect(
+      skills.find((skill) => skill.name === "personal-helper")?.source,
+    ).toContain("PRIMARY_WORKFLOW");
+    expect(
+      skills.find((skill) => skill.name === "emil-design-eng")?.path,
+    ).toContain(".codex");
+    expect(runtime.snapshot.skills.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("$personal-helper is already registered"),
+      ]),
+    );
+    expect(runtime.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "emil-design-eng",
+          source: "user",
+          visibility: "search",
+        }),
+      ]),
+    );
   });
 });
 
