@@ -402,6 +402,7 @@ const zh = {
   runningComposerHint:
     "Enter 尽快注入 · Cmd/Ctrl + Enter 加入队列 · Shift + Enter 换行",
   sendFailed: "发送失败：{message}",
+  sending: "正在发送…",
   preparingAttachments: "正在准备附件…",
   attachmentsAdded: "已添加 {count} 个附件 · Enter 发送",
   noTasks: "暂无任务",
@@ -1101,6 +1102,7 @@ const en: Messages = {
   runningComposerHint:
     "Enter to inject soon · Cmd/Ctrl + Enter to queue · Shift + Enter for a new line",
   sendFailed: "Send failed: {message}",
+  sending: "Sending…",
   preparingAttachments: "Preparing attachments…",
   attachmentsAdded: "{count} attachments added · Enter to send",
   noTasks: "No tasks",
@@ -1799,6 +1801,7 @@ const ja: Messages = {
   runningComposerHint:
     "Enter ですぐに追加 · Cmd/Ctrl + Enter でキューへ追加 · Shift + Enter で改行",
   sendFailed: "送信に失敗しました：{message}",
+  sending: "送信中…",
   preparingAttachments: "添付ファイルを準備中…",
   attachmentsAdded: "{count} 件の添付ファイルを追加 · Enter で送信",
   noTasks: "タスクはありません",
@@ -2506,6 +2509,7 @@ const zhTW: Messages = {
   runningComposerHint:
     "Enter 儘快注入 · Cmd/Ctrl + Enter 加入佇列 · Shift + Enter 換行",
   sendFailed: "傳送失敗：{message}",
+  sending: "正在傳送…",
   preparingAttachments: "正在準備附件…",
   attachmentsAdded: "已新增 {count} 個附件 · 按 Enter 傳送",
   noTasks: "目前沒有工作",
@@ -3203,6 +3207,7 @@ const ko: Messages = {
   runningComposerHint:
     "Enter로 바로 추가 · Cmd/Ctrl + Enter로 대기열 추가 · Shift + Enter로 줄바꿈",
   sendFailed: "전송 실패: {message}",
+  sending: "전송 중…",
   preparingAttachments: "첨부 파일 준비 중…",
   attachmentsAdded: "첨부 파일 {count}개 추가됨 · Enter로 전송",
   noTasks: "작업 없음",

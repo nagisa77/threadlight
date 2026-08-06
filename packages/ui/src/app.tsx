@@ -327,6 +327,29 @@ export function shouldIgnoreComposerKey(
   return composing || nativeEvent.isComposing || nativeEvent.keyCode === 229;
 }
 
+/**
+ * Atomic guard that keeps a single composer submission in flight. The submit
+ * flow spans several awaits (attachment staging, thread creation, turn start),
+ * during which `isRunning` has not been set yet; without this guard rapid
+ * Enter presses would start duplicate tasks or turns.
+ */
+export function createSubmissionGate() {
+  let pending = false;
+  return {
+    get pending(): boolean {
+      return pending;
+    },
+    tryStart(): boolean {
+      if (pending) return false;
+      pending = true;
+      return true;
+    },
+    stop(): void {
+      pending = false;
+    },
+  };
+}
+
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
   initialThreadId?: string;
@@ -598,6 +621,9 @@ function ThreadlightAppContent({
     | "settings"
   >("thread");
   const [input, setInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submissionGate = useRef(createSubmissionGate());
+  const inputValueRef = useRef("");
   const [composerMode, setComposerMode] = useState<TurnMode>("default");
   const [capabilities, setCapabilities] = useState<
     readonly CapabilityDescriptor[]
@@ -2092,11 +2118,33 @@ function ThreadlightAppContent({
     addAttachments([...event.dataTransfer.files]);
   }
 
+  function restoreComposerDraft(draft: string) {
+    // Only restore when the user has not typed anything new while the
+    // submission was in flight, so a failed send never clobbers fresh input.
+    if (inputValueRef.current !== "") return;
+    setInput(draft);
+    inputValueRef.current = draft;
+    requestAnimationFrame(() => {
+      const element = textarea.current;
+      if (!element) return;
+      element.style.height = "auto";
+      element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+      element.focus();
+      element.setSelectionRange(draft.length, draft.length);
+    });
+  }
+
   async function submit(
     value = input,
     followUpDelivery: "inject" | "queued" = "inject",
   ) {
-    if (voiceStatus !== "idle" || preparingAttachments) return;
+    if (
+      submissionGate.current.pending ||
+      voiceStatus !== "idle" ||
+      preparingAttachments
+    ) {
+      return;
+    }
     if (!providerReady) {
       setView(firstRunRequired ? "thread" : "settings");
       return;
@@ -2110,83 +2158,105 @@ function ThreadlightAppContent({
       }
       return;
     }
-    const draftAttachments = [...pendingAttachmentsRef.current];
-    let stagedAttachments: AttachmentData[] = [];
-    if (draftAttachments.length > 0) {
-      if (!attachmentStage) return;
-      setPreparingAttachments(true);
-      setAttachmentError(undefined);
-      try {
-        stagedAttachments = await Promise.all(
-          draftAttachments.map((attachment) =>
-            attachmentStage.stage(attachment.file),
-          ),
-        );
-      } catch (error) {
-        setAttachmentError(errorMessage(error));
-        return;
-      } finally {
-        setPreparingAttachments(false);
-      }
-    }
-    let submittedThreadId: string | undefined;
-    if (newTaskDraft) {
-      const result = await sendNewThread(
-        value,
-        stagedAttachments,
-        composerMode,
-        selectedCapabilities,
-        "approval",
-      );
-      if (result) {
-        if ("error" in result) {
-          setNewTaskDraftError(result.error);
-        } else {
-          setNewTaskDraft(false);
-          setNewTaskDraftError(undefined);
-          if (result.sent) submittedThreadId = result.threadId;
-        }
-      }
-    } else if (
-      await send(
-        value,
-        stagedAttachments,
-        composerMode,
-        selectedCapabilities,
-        currentConversation?.accessMode ?? "approval",
-      )
-    ) {
-      submittedThreadId = state.threadId;
-    }
-    if (submittedThreadId) {
-      for (const attachment of draftAttachments) {
-        if (attachment.previewUrl?.startsWith("blob:")) {
-          URL.revokeObjectURL(attachment.previewUrl);
-        }
-      }
-      setInput("");
-      setComposerMode("default");
-      setSelectedCapabilities([]);
-      setCapabilityQuery(undefined);
-      setAttachmentError(undefined);
-      pendingAttachmentsRef.current = [];
-      setPendingAttachments([]);
-      if (textarea.current) textarea.current.style.height = "auto";
-      if (projects && currentProject) {
+    if (!submissionGate.current.tryStart()) return;
+    setSubmitting(true);
+    const draftInput = value;
+    // Clear the composer immediately instead of waiting for the server round
+    // trip, so the UI reacts instantly and the pending state is visible.
+    setInput("");
+    setCapabilityQuery(undefined);
+    inputValueRef.current = "";
+    if (textarea.current) textarea.current.style.height = "auto";
+    try {
+      const draftAttachments = [...pendingAttachmentsRef.current];
+      let stagedAttachments: AttachmentData[] = [];
+      if (draftAttachments.length > 0) {
+        if (!attachmentStage) return;
+        setPreparingAttachments(true);
+        setAttachmentError(undefined);
         try {
-          const existingTitle = currentProject.conversations.find(
-            (conversation) => conversation.id === submittedThreadId,
-          )?.title;
-          const snapshot = await projects.upsertConversation({
-            projectId: currentProject.id,
-            id: submittedThreadId,
-            title: existingTitle ?? t("task"),
-          });
-          setProjectSnapshot(snapshot);
+          stagedAttachments = await Promise.all(
+            draftAttachments.map((attachment) =>
+              attachmentStage.stage(attachment.file),
+            ),
+          );
         } catch (error) {
-          setProjectError(errorMessage(error));
+          setAttachmentError(errorMessage(error));
+          restoreComposerDraft(draftInput);
+          return;
+        } finally {
+          setPreparingAttachments(false);
         }
       }
+      let submittedThreadId: string | undefined;
+      let submitted = false;
+      if (newTaskDraft) {
+        const result = await sendNewThread(
+          value,
+          stagedAttachments,
+          composerMode,
+          selectedCapabilities,
+          "approval",
+        );
+        if (result) {
+          if ("error" in result) {
+            setNewTaskDraftError(result.error);
+            restoreComposerDraft(draftInput);
+          } else {
+            setNewTaskDraft(false);
+            setNewTaskDraftError(undefined);
+            if (result.sent) {
+              submittedThreadId = result.threadId;
+              submitted = true;
+            } else {
+              restoreComposerDraft(draftInput);
+            }
+          }
+        }
+      } else if (
+        await send(
+          value,
+          stagedAttachments,
+          composerMode,
+          selectedCapabilities,
+          currentConversation?.accessMode ?? "approval",
+        )
+      ) {
+        submittedThreadId = state.threadId;
+        submitted = true;
+      } else {
+        restoreComposerDraft(draftInput);
+      }
+      if (submitted) {
+        for (const attachment of draftAttachments) {
+          if (attachment.previewUrl?.startsWith("blob:")) {
+            URL.revokeObjectURL(attachment.previewUrl);
+          }
+        }
+        setComposerMode("default");
+        setSelectedCapabilities([]);
+        setAttachmentError(undefined);
+        pendingAttachmentsRef.current = [];
+        setPendingAttachments([]);
+        if (projects && currentProject && submittedThreadId) {
+          try {
+            const existingTitle = currentProject.conversations.find(
+              (conversation) => conversation.id === submittedThreadId,
+            )?.title;
+            const snapshot = await projects.upsertConversation({
+              projectId: currentProject.id,
+              id: submittedThreadId,
+              title: existingTitle ?? t("task"),
+            });
+            setProjectSnapshot(snapshot);
+          } catch (error) {
+            setProjectError(errorMessage(error));
+          }
+        }
+      }
+    } finally {
+      submissionGate.current.stop();
+      setSubmitting(false);
     }
   }
 
@@ -3940,6 +4010,7 @@ function ThreadlightAppContent({
                     onChange={(event) => {
                       const value = event.target.value;
                       setInput(value);
+                      inputValueRef.current = value;
                       if (state.isRunning) {
                         setCapabilityQuery(undefined);
                       } else {
@@ -3996,6 +4067,7 @@ function ThreadlightAppContent({
                           state.connection !== "ready" ||
                           !providerReady ||
                           state.isRunning ||
+                          submitting ||
                           preparingAttachments
                         }
                         aria-label={t("add")}
@@ -4100,6 +4172,7 @@ function ThreadlightAppContent({
                           className="composer-action send pressable"
                           onClick={() => void submit()}
                           disabled={
+                            submitting ||
                             (!input.trim() &&
                               pendingAttachments.length === 0) ||
                             state.connection !== "ready" ||
@@ -4110,7 +4183,11 @@ function ThreadlightAppContent({
                           aria-label={t("sendMessage")}
                           title={t("send")}
                         >
-                          <ArrowUp size={18} strokeWidth={2.4} />
+                          {submitting ? (
+                            <LoaderCircle className="spin" size={18} />
+                          ) : (
+                            <ArrowUp size={18} strokeWidth={2.4} />
+                          )}
                         </button>
                       )}
                     </div>
@@ -4129,6 +4206,7 @@ function ThreadlightAppContent({
                     pendingAttachments,
                     preparingAttachments,
                     state.isRunning,
+                    submitting,
                     t,
                   )}
                 </p>
