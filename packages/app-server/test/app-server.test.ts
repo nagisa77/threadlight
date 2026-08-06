@@ -31,20 +31,25 @@ function richPlanStep(
 }
 
 describe("AppServer", () => {
-  it("generates and persists a model title only after the first successful turn", async () => {
+  it("generates and persists a model title from the first user message before the turn completes", async () => {
     const messages: JsonRpcOutgoing[] = [];
     const titleReceived = Promise.withResolvers<void>();
+    const firstTurnCompleted = Promise.withResolvers<void>();
     const secondTurnCompleted = Promise.withResolvers<void>();
     const conversationStore = new MemoryConversationStore();
     let titleRequests = 0;
     let completedTurns = 0;
+    let titleNotificationIndex = -1;
+    let firstCompletedIndex = -1;
     const provider: ModelProvider = {
       async generate(request) {
         if (request.instructions.includes("Create one concise title")) {
           titleRequests += 1;
           expect(request.tools).toEqual([]);
           expect(request.state).toBeUndefined();
-          expect(request.input).toContain(
+          // The early trigger means the transcript contains only the first
+          // user message, with no assistant reply yet.
+          expect(request.input).toBe(
             "User: 新建任务时总显示运行时离线，请修复",
           );
           return { text: "标题：修复任务离线问题。", toolCalls: [] };
@@ -64,10 +69,15 @@ describe("AppServer", () => {
       send(message) {
         messages.push(message);
         if ("method" in message && message.method === "thread/title") {
+          titleNotificationIndex = messages.length - 1;
           titleReceived.resolve();
         }
         if ("method" in message && message.method === "turn/completed") {
           completedTurns += 1;
+          if (completedTurns === 1) {
+            firstCompletedIndex = messages.length - 1;
+            firstTurnCompleted.resolve();
+          }
           if (completedTurns === 2) secondTurnCompleted.resolve();
         }
       },
@@ -88,7 +98,9 @@ describe("AppServer", () => {
         input: "新建任务时总显示运行时离线，请修复",
       },
     });
+    // The title arrives while the first turn is still running.
     await titleReceived.promise;
+    expect(firstCompletedIndex).toBe(-1);
 
     expect(
       messages.filter(
@@ -108,12 +120,18 @@ describe("AppServer", () => {
       titleGeneratedAt: expect.any(String),
     });
 
+    // Queue a follow-up while the first turn is still active. It starts
+    // automatically once the first turn finishes, which mirrors how the
+    // desktop client follows up without racing the active turn cleanup.
     await server.receive({
       jsonrpc: "2.0",
       id: 4,
-      method: "turn/start",
-      params: { threadId, input: "再补一个测试" },
+      method: "turn/follow-up",
+      params: { threadId, input: "再补一个测试", delivery: "queued" },
     });
+
+    await firstTurnCompleted.promise;
+    expect(titleNotificationIndex).toBeLessThan(firstCompletedIndex);
     await secondTurnCompleted.promise;
 
     expect(titleRequests).toBe(1);

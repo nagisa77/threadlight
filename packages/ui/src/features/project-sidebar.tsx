@@ -1068,7 +1068,9 @@ export function ProjectConversationItem({
               aria-label={t("archivedTask")}
             />
           )}
-          <span className="thread-title">{conversation.title}</span>
+          <span key={conversation.title} className="thread-title">
+            {conversation.title}
+          </span>
           {conversation.status === "attention" && (
             <span
               className="thread-attention-badge"

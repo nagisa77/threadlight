@@ -744,6 +744,12 @@ export class AppServer {
       throw error;
     }
 
+    // Kick off title generation as soon as the first user message is
+    // persisted so the sidebar and header can refresh without waiting for
+    // the model to finish the answer. Guards in requestConversationTitle
+    // make this a no-op for follow-up turns.
+    this.requestConversationTitle(threadId, thread);
+
     if (queuedItem) {
       this.notifyQueueUpdated(threadId, thread);
       this.notify("turn/follow-up/consumed", {
@@ -1170,6 +1176,8 @@ export class AppServer {
             }
           : {}),
       });
+      // Fallback retry: if early generation failed at beginTurn, try once
+      // more after the turn so the conversation still gets a title.
       this.requestConversationTitle(threadId, thread);
     } catch (error) {
       const failureText =

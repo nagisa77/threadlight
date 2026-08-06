@@ -2764,6 +2764,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
     transform: none;
   }
 
+  .workspace-header h1,
+  .thread-title {
+    animation-name: title-reveal-fade;
+  }
+
   .running-badge svg,
   .thinking-row svg,
   .spin {
