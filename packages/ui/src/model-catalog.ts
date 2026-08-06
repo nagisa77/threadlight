@@ -194,14 +194,7 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     keyLabel: "API Key（可选）",
     keyDescription: "本地服务通常无需密钥；远程服务可按需填写。",
     defaultModel: "llama3.2",
-    models: [
-      {
-        value: "llama3.2",
-        label: "自定义模型",
-        qualifier: "手动配置",
-        description: "输入服务实际提供的模型 ID。",
-      },
-    ],
+    models: [],
   },
   {
     value: "deepseek",
@@ -282,6 +275,7 @@ export function modelDescription(
   model: string,
   t: Translate,
 ): string {
+  if (provider === "custom") return t("customModelDescription");
   const descriptions: Record<string, Parameters<Translate>[0]> = {
     "gpt-5.6-sol": "modelComplex",
     "gpt-5.6-terra": "modelBalanced",

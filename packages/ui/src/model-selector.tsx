@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Check, ChevronLeft, Cpu } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
 
 import {
   ActionPopover,
@@ -24,20 +24,10 @@ export interface ModelSelection {
   model: string;
 }
 
-const PROVIDER_DOTS: Record<ModelProviderId, string> = {
-  openai: "#10a37f",
-  deepseek: "#4d6bfe",
-  qwen: "#615ced",
-  kimi: "#1f8fff",
-  doubao: "#e8433f",
-  gemini: "#4285f4",
-  grok: "#6f6f6f",
-  custom: "#b47a1f",
-};
-
 const POPOVER_WIDTH = 264;
-const PROVIDER_ROW_HEIGHT = 42;
-const MODEL_ROW_HEIGHT = 54;
+const PROVIDER_ROW_HEIGHT = 48;
+const MODEL_ROW_HEIGHT = 62;
+const BACK_ROW_HEIGHT = 38;
 
 function isProviderId(value: string | undefined): value is ModelProviderId {
   return PROVIDER_OPTIONS.some((option) => option.value === value);
@@ -80,34 +70,36 @@ export function ModelSelector({
     const rows =
       providerOption.models.length +
       (isKnownModel(providerId, effectiveModel) ? 0 : 1);
-    return 10 + 34 + rows * MODEL_ROW_HEIGHT;
+    return 10 + BACK_ROW_HEIGHT + rows * MODEL_ROW_HEIGHT;
   }
 
-  function openPopover() {
+  function placePopover(height: number) {
     const bounds = triggerRef.current?.getBoundingClientRect();
     if (!bounds) return;
-    setLevel({ step: "providers" });
     setPosition(
       anchoredPopoverPosition(bounds, {
         width: POPOVER_WIDTH,
-        height: providerListHeight(),
+        height,
         align: "end",
+        placement: "top",
       }),
     );
+  }
+
+  function openPopover() {
+    setLevel({ step: "providers" });
+    placePopover(providerListHeight());
     setOpen(true);
   }
 
   function openModels(providerId: ModelProviderId) {
-    const bounds = triggerRef.current?.getBoundingClientRect();
-    if (!bounds) return;
     setLevel({ step: "models", provider: providerId });
-    setPosition(
-      anchoredPopoverPosition(bounds, {
-        width: POPOVER_WIDTH,
-        height: modelListHeight(providerId),
-        align: "end",
-      }),
-    );
+    placePopover(modelListHeight(providerId));
+  }
+
+  function showProviders() {
+    setLevel({ step: "providers" });
+    placePopover(providerListHeight());
   }
 
   function closePopover() {
@@ -117,17 +109,7 @@ export function ModelSelector({
 
   function handleClose() {
     if (level.step === "models") {
-      setLevel({ step: "providers" });
-      const bounds = triggerRef.current?.getBoundingClientRect();
-      if (bounds) {
-        setPosition(
-          anchoredPopoverPosition(bounds, {
-            width: POPOVER_WIDTH,
-            height: providerListHeight(),
-            align: "end",
-          }),
-        );
-      }
+      showProviders();
       return;
     }
     closePopover();
@@ -164,13 +146,18 @@ export function ModelSelector({
         disabled={disabled}
         aria-label={t("modelSelector")}
         aria-expanded={open}
+        aria-haspopup="menu"
         aria-controls={open ? "composer-model-menu" : undefined}
         title={t("modelSelectorTitle", { model: effectiveModel })}
       >
-        <Cpu size={15} strokeWidth={2.2} />
         <span className="composer-model-label">
           {modelShortLabel(effectiveModel)}
         </span>
+        <ChevronUp
+          className="model-trigger-arrow"
+          size={14}
+          strokeWidth={2.2}
+        />
       </button>
       {open && position && (
         <ActionPopover
@@ -196,13 +183,9 @@ export function ModelSelector({
                   className="model-provider-option"
                   disabled={!configured}
                   aria-checked={selected}
+                  aria-haspopup="menu"
                   onClick={() => openModels(providerOption.value)}
                 >
-                  <span
-                    className="model-provider-dot"
-                    style={{ background: PROVIDER_DOTS[providerOption.value] }}
-                    aria-hidden="true"
-                  />
                   <span className="model-option-copy">
                     <strong>{providerLabel(providerOption.value, t)}</strong>
                     <small>
@@ -218,6 +201,11 @@ export function ModelSelector({
                       strokeWidth={2.4}
                     />
                   )}
+                  <ChevronRight
+                    className="model-provider-chevron"
+                    size={14}
+                    strokeWidth={2.2}
+                  />
                 </button>
               );
             })
@@ -228,7 +216,7 @@ export function ModelSelector({
                 role="menuitem"
                 data-popover-item
                 className="model-back-option"
-                onClick={() => setLevel({ step: "providers" })}
+                onClick={showProviders}
               >
                 <ChevronLeft size={15} strokeWidth={2.2} />
                 <span>{providerLabel(level.provider, t)}</span>

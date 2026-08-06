@@ -2745,7 +2745,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .activity-chevron,
   .plan-status-popover,
   .project-opener-menu,
-  .local-file-context-menu {
+  .local-file-context-menu,
+  .action-popover {
     transition-duration: 0ms;
   }
 

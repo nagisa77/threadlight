@@ -30,6 +30,7 @@ export function anchoredPopoverPosition(
     gap?: number;
     margin?: number;
     align?: "start" | "end";
+    placement?: "auto" | "top" | "bottom";
   },
 ): PopoverPosition {
   const viewportWidth = options.viewportWidth ?? window.innerWidth;
@@ -37,8 +38,13 @@ export function anchoredPopoverPosition(
   const gap = options.gap ?? 6;
   const margin = options.margin ?? 8;
   const align = options.align ?? "end";
+  const placement = options.placement ?? "auto";
   const opensBelow =
-    viewportHeight - bounds.bottom >= options.height + gap + margin;
+    placement === "bottom"
+      ? true
+      : placement === "top"
+        ? false
+        : viewportHeight - bounds.bottom >= options.height + gap + margin;
   const desiredLeft =
     align === "start"
       ? (bounds.left ?? bounds.right - options.width)

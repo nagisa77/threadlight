@@ -70,6 +70,63 @@ describe("ActionPopover", () => {
     });
   });
 
+  it("stays above its trigger when placement is forced to top", () => {
+    expect(
+      anchoredPopoverPosition(
+        { top: 300, right: 260, bottom: 326 },
+        {
+          width: 218,
+          height: 190,
+          viewportWidth: 800,
+          viewportHeight: 600,
+          placement: "top",
+        },
+      ),
+    ).toEqual({
+      top: 104,
+      left: 42,
+      transformOrigin: "bottom right",
+    });
+  });
+
+  it("stays below its trigger when placement is forced to bottom", () => {
+    expect(
+      anchoredPopoverPosition(
+        { top: 300, right: 260, bottom: 326 },
+        {
+          width: 218,
+          height: 190,
+          viewportWidth: 800,
+          viewportHeight: 600,
+          placement: "bottom",
+        },
+      ),
+    ).toEqual({
+      top: 332,
+      left: 42,
+      transformOrigin: "top right",
+    });
+  });
+
+  it("keeps a forced-top popover inside the top viewport margin", () => {
+    expect(
+      anchoredPopoverPosition(
+        { top: 40, right: 260, bottom: 66 },
+        {
+          width: 218,
+          height: 190,
+          viewportWidth: 800,
+          viewportHeight: 600,
+          placement: "top",
+        },
+      ),
+    ).toEqual({
+      top: 8,
+      left: 42,
+      transformOrigin: "bottom right",
+    });
+  });
+
   it("portals viewport-positioned popovers outside transformed ancestors", () => {
     expect(popoverSource).toMatch(
       /createPortal\(popover,\s*document\.body\)/,

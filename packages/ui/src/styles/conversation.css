@@ -1931,7 +1931,7 @@
 .composer-action.model {
   display: flex;
   width: auto;
-  max-width: 148px;
+  max-width: 164px;
   min-width: 32px;
   gap: 5px;
   padding: 0 8px;
@@ -1960,6 +1960,11 @@
   white-space: nowrap;
 }
 
+.composer-action.model .model-trigger-arrow {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
 .composer-action.send {
   border: 1px solid #292824;
   color: white;
@@ -1976,9 +1981,8 @@
   padding: 0 10px;
 }
 
-.model-provider-option,
-.model-option {
-  min-height: 42px;
+.model-provider-option {
+  min-height: 48px;
   align-items: center;
 }
 
@@ -1987,12 +1991,9 @@
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
-.model-provider-dot {
-  width: 8px;
-  height: 8px;
+.model-provider-chevron {
   flex: 0 0 auto;
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent);
+  color: var(--subtle);
 }
 
 .model-option-copy {
@@ -2039,6 +2040,7 @@
 }
 
 .model-back-option {
+  min-height: 38px;
   margin-bottom: 2px;
   color: var(--muted);
   font-size: 10px;
@@ -2053,10 +2055,10 @@
 }
 
 .model-option {
-  min-height: 54px;
+  min-height: 62px;
   align-items: flex-start;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 .model-option .model-option-check {

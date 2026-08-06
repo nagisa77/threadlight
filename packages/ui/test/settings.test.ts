@@ -144,7 +144,7 @@ describe("settings", () => {
       },
       {
         provider: "custom",
-        models: ["llama3.2"],
+        models: [],
       },
       {
         provider: "deepseek",
