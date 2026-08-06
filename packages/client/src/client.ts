@@ -119,10 +119,6 @@ export class ThreadlightClient {
     return this.request("thread/delete", { threadId });
   }
 
-  runningThreads() {
-    return this.request("thread/running");
-  }
-
   listCapabilities(threadId: string) {
     return this.request("capability/list", { threadId });
   }

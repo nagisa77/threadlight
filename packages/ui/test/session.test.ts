@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   initialSessionState,
-  mergeRunningThreadIds,
   newTaskDraftState,
   reduceThreadSession,
   requestNewThreadTurnStart,
@@ -1030,44 +1029,4 @@ describe("sessionReducer", () => {
     ]);
   });
 
-});
-
-describe("mergeRunningThreadIds", () => {
-  it("keeps locally running sessions and adds server-reported live threads", () => {
-    const sessions: Readonly<Record<string, SessionState>> = {
-      "thread-1": {
-        ...initialSessionState,
-        threadId: "thread-1",
-        isRunning: true,
-      },
-      "thread-2": {
-        ...initialSessionState,
-        threadId: "thread-2",
-        isRunning: false,
-      },
-    };
-
-    expect(
-      mergeRunningThreadIds(sessions, ["thread-1", "thread-3"]).sort(),
-    ).toEqual(["thread-1", "thread-3"]);
-  });
-
-  it("drops server reports once a completed session exists locally", () => {
-    const sessions: Readonly<Record<string, SessionState>> = {
-      "thread-1": {
-        ...initialSessionState,
-        threadId: "thread-1",
-        isRunning: false,
-      },
-    };
-
-    expect(mergeRunningThreadIds(sessions, ["thread-1"])).toEqual([]);
-    expect(mergeRunningThreadIds(sessions, ["thread-1", "thread-2"])).toEqual([
-      "thread-2",
-    ]);
-  });
-
-  it("treats an unknown server thread as running without a local session", () => {
-    expect(mergeRunningThreadIds({}, ["thread-9"])).toEqual(["thread-9"]);
-  });
 });

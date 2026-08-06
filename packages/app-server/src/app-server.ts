@@ -306,8 +306,6 @@ export class AppServer {
         return this.resumeThread(params);
       case "thread/delete":
         return this.deleteThread(params);
-      case "thread/running":
-        return this.runningThreads();
       case "thread/suggestions":
         return this.suggestQuestions(params);
       case "capability/list":
@@ -436,16 +434,6 @@ export class AppServer {
     if (thread) await this.disposeThreadRuntime(thread);
     this.threads.delete(threadId);
     return { deleted: !!thread || deletedFromStore };
-  }
-
-  private runningThreads(): { threadIds: readonly string[] } {
-    const threadIds: string[] = [];
-    for (const [threadId, thread] of this.threads) {
-      // Only report turns that are genuinely live; a turn that is already
-      // persisted as assistant history must not keep the sidebar spinning.
-      if (this.activeTurnSnapshot(thread)) threadIds.push(threadId);
-    }
-    return { threadIds };
   }
 
   private async suggestQuestions(
