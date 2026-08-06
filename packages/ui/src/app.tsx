@@ -2190,7 +2190,9 @@ function ThreadlightAppContent({
       }
       let submittedThreadId: string | undefined;
       let submitted = false;
-      if (newTaskDraft) {
+      if (newTaskDraft && !state.threadId) {
+        // The eager thread could not be created (for example while the
+        // runtime was still connecting); fall back to creating one on submit.
         const result = await sendNewThread(
           value,
           stagedAttachments,
@@ -2224,6 +2226,10 @@ function ThreadlightAppContent({
       ) {
         submittedThreadId = state.threadId;
         submitted = true;
+        if (newTaskDraft) {
+          setNewTaskDraft(false);
+          setNewTaskDraftError(undefined);
+        }
       } else {
         restoreComposerDraft(draftInput);
       }
@@ -2300,6 +2306,10 @@ function ThreadlightAppContent({
     closeConversationPanels();
     setNewTaskDraftError(undefined);
     setNewTaskDraft(true);
+    // Create the thread eagerly so the empty state can load suggested
+    // questions, capabilities (the "@" menu), and the access-mode control
+    // before the first message is submitted.
+    await newThread();
     requestAnimationFrame(() => textarea.current?.focus());
   }
 
@@ -2319,6 +2329,10 @@ function ThreadlightAppContent({
       setView("thread");
       setNewTaskDraftError(undefined);
       setNewTaskDraft(true);
+      // Create the thread eagerly on the newly activated project runtime so
+      // suggestions, capabilities, and the access-mode control are available
+      // before the first message is submitted.
+      await newThread();
       requestAnimationFrame(() => textarea.current?.focus());
     } catch (error) {
       setProjectError(errorMessage(error));

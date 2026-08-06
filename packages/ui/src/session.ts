@@ -541,6 +541,11 @@ export function newTaskDraftState(
     ...initialSessionState,
     connection: state.connection,
     connectionError: state.connectionError,
+    // The draft is bound to the eagerly created thread so the empty state
+    // can load suggested questions, capabilities (the "@" menu), and the
+    // conversation access-mode control before the first message is sent.
+    threadId: state.threadId,
+    revision: state.revision,
     submissionError,
   };
 }
@@ -774,6 +779,9 @@ export function useThreadlightSession(
 
   const newThread = useCallback(async () => {
     try {
+      // A freshly switched project runtime requires initialization before
+      // any thread can be created, so initialize unconditionally.
+      await client.initialize();
       const { threadId } = await client.startThread();
       activateThread(threadId);
       updateSession(threadId, { type: "connection.ready", threadId });

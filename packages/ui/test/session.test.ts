@@ -11,11 +11,12 @@ import {
 } from "../src/session.js";
 
 describe("sessionReducer", () => {
-  it("keeps a new task as a local draft until its first turn is submitted", async () => {
+  it("binds a new task draft to its eagerly created thread until the first turn is submitted", async () => {
     const established = {
       ...initialSessionState,
       connection: "ready" as const,
       threadId: "thread-1",
+      revision: 3,
       messages: [
         { id: "message-1", role: "user" as const, text: "Existing task" },
       ],
@@ -24,11 +25,12 @@ describe("sessionReducer", () => {
     const draft = newTaskDraftState(established, "Could not start task");
     expect(draft).toMatchObject({
       connection: "ready",
+      threadId: "thread-1",
+      revision: 3,
       messages: [],
       isRunning: false,
       submissionError: "Could not start task",
     });
-    expect(draft.threadId).toBeUndefined();
 
     const calls: string[] = [];
     const created: string[] = [];
