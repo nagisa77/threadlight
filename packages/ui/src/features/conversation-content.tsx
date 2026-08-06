@@ -430,6 +430,7 @@ export function attachmentHint(
   attachments: readonly PendingAttachment[],
   preparing: boolean,
   isRunning: boolean,
+  submitting: boolean,
   t: Translate,
 ): string {
   if (voiceError || status !== "idle") {
@@ -437,6 +438,7 @@ export function attachmentHint(
   }
   if (attachmentError) return attachmentError;
   if (submissionError) return t("sendFailed", { message: submissionError });
+  if (submitting) return t("sending");
   if (preparing) return t("preparingAttachments");
   if (attachments.length > 0) {
     return t("attachmentsAdded", { count: attachments.length });
