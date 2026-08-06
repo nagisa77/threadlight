@@ -326,6 +326,23 @@ export function reduceThreadSession(
   };
 }
 
+export function mergeRunningThreadIds(
+  sessions: Readonly<Record<string, SessionState>>,
+  serverRunningThreadIds: readonly string[],
+): string[] {
+  const running = new Set<string>();
+  for (const session of Object.values(sessions)) {
+    if (session.isRunning && session.threadId) running.add(session.threadId);
+  }
+  for (const threadId of serverRunningThreadIds) {
+    // A locally completed session overrides a stale server report.
+    const session = sessions[threadId];
+    if (session && !session.isRunning) continue;
+    running.add(threadId);
+  }
+  return [...running];
+}
+
 function reduceAgentEvent(
   state: SessionState,
   event: AgentEventData,
@@ -558,6 +575,9 @@ export function useThreadlightSession(
     Readonly<Record<string, SessionState>>
   >({});
   const sessionsRef = useRef<Readonly<Record<string, SessionState>>>({});
+  const [serverRunningThreadIds, setServerRunningThreadIds] = useState<
+    readonly string[]
+  >([]);
   const [activeThreadIdValue, setActiveThreadIdValue] = useState<
     string | undefined
   >();
@@ -579,10 +599,22 @@ export function useThreadlightSession(
     setActiveThreadIdValue(threadId);
   }, []);
 
+  const syncRunningThreads = useCallback(async () => {
+    try {
+      const { threadIds } = await client.runningThreads();
+      setServerRunningThreadIds(threadIds);
+    } catch {
+      // The runtime may be an older version without live-thread reporting;
+      // running sessions are still hydrated by turn notifications as they
+      // arrive, so the sidebar recovers without this snapshot.
+    }
+  }, [client]);
+
   const openThread = useCallback(async (threadId?: string) => {
     if (threadId && sessionsRef.current[threadId]) {
       try {
         await client.initialize();
+        await syncRunningThreads();
         activateThread(threadId);
         return threadId;
       } catch (error) {
@@ -600,6 +632,7 @@ export function useThreadlightSession(
     }
     try {
       await client.initialize();
+      await syncRunningThreads();
       let opened: {
         threadId: string;
         messages?: readonly ConversationMessageData[];
@@ -639,7 +672,7 @@ export function useThreadlightSession(
       }
       return;
     }
-  }, [activateThread, client, updateSession]);
+  }, [activateThread, client, syncRunningThreads, updateSession]);
 
   useEffect(() => {
     const subscriptions = [
@@ -739,11 +772,8 @@ export function useThreadlightSession(
       ? sessions[activeThreadIdValue]
       : undefined) ?? initialSessionState;
   const runningThreadIds = useMemo(
-    () =>
-      Object.values(sessions)
-        .filter((session) => session.isRunning && session.threadId)
-        .map((session) => session.threadId as string),
-    [sessions],
+    () => mergeRunningThreadIds(sessions, serverRunningThreadIds),
+    [sessions, serverRunningThreadIds],
   );
 
   const runningProcessKey = runningProcessSessionIds(

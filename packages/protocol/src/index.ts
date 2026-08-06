@@ -972,6 +972,10 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: { deleted: boolean };
   };
+  "thread/running": {
+    params: undefined;
+    result: { threadIds: readonly string[] };
+  };
   "thread/suggestions": {
     params: { threadId: string; language: SuggestionLanguage };
     result: { suggestions: readonly [string, string, string] };
@@ -1071,6 +1075,7 @@ export const THREADLIGHT_METHODS = [
   "thread/start",
   "thread/resume",
   "thread/delete",
+  "thread/running",
   "thread/suggestions",
   "capability/list",
   "connector/status",
