@@ -248,8 +248,10 @@ Nginx 配置包含 SPA fallback，因此 `/tasks/:threadId` 地址可以直接�
 
 Host 启动时必须把 Web 地址配置为允许的 Origin，例如
 `--origin https://threadlight.example.com`。可重复传入 `--origin` 以允许多个 Web
-地址。HTTPS Web 页面需要 HTTPS/WSS Host；
-Token 只保存在浏览器的当前标签会话中。完整命令、TLS 反向代理与本地联调方式见
+地址。HTTPS Web 页面需要 HTTPS/WSS Host。
+登录页支持在浏览器中记住多个已连接的主机（含访问令牌），退出登录后仍可快速
+重连，并可在登录页编辑或删除主机记录以清除对应令牌。完整命令、TLS 反向代理与
+本地联调方式见
 [Web 部署文档](./docs/WEB_DEPLOYMENT.zh-CN.md)。
 
 | 服务 | 必需配置 | 可选配置 |
@@ -373,7 +375,7 @@ Threadlight 使用带版本和 SHA-256 hash 的 Prompt Composer，将 Host 规�
 Skills 使用兼容 Agent Skills 的 `SKILL.md` 格式，并按渐进披露加载：
 
 - 项目 Skills：`<project>/.agents/skills/<skill-name>/SKILL.md`
-- 用户 Skills：`~/.agents/skills/<skill-name>/SKILL.md`
+- 用户 Skills：`~/.agents/skills/<skill-name>/SKILL.md`（并只读兼容 `~/.codex/skills/<skill-name>/SKILL.md`；重名时以 `~/.agents/skills` 优先）
 - 显式调用：在请求中写 `$skill-name`
 - 桌面端选择：在输入框中键入 `@`，按“工具 / 技能”分组搜索；仓库级 Skills 与精选能力会直接显示，用户全局和其他长尾 Skills 输入关键词后出现；选择结果以 chip 显示，并仅对当前一轮生效
 - Composer `+` 菜单：集中提供添加文件与 Plan 模式，使用和 `@` 菜单一致的键盘交互

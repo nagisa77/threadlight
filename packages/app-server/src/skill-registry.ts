@@ -134,11 +134,22 @@ export class SkillRegistry {
     const skills: LoadedSkill[] = [];
     const warnings: string[] = [];
     const invocationNames = new Set<string>();
+    const loadedSkillPaths = new Set<string>();
     let snapshotChars = 0;
 
     for (const source of options.sources) {
       const discovered = await discoverSource(source, maxSkillChars, warnings);
       for (const skill of discovered) {
+        // The same canonical SKILL.md can be reachable from several sources
+        // (for example ~/.agents/skills and ~/.codex/skills). Skip the
+        // duplicate silently; the same file may still load under a different
+        // plugin namespace.
+        if (
+          loadedSkillPaths.has(skill.path) &&
+          invocationNames.has(skill.invocationName)
+        ) {
+          continue;
+        }
         if (skills.length >= maxSkills) {
           warnings.push(
             `Skill discovery stopped after reaching the ${maxSkills}-skill limit`,
@@ -158,6 +169,7 @@ export class SkillRegistry {
           continue;
         }
         invocationNames.add(skill.invocationName);
+        loadedSkillPaths.add(skill.path);
         skills.push(skill);
         snapshotChars += skill.source.length;
       }
