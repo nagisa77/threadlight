@@ -249,7 +249,7 @@ Nginx 配置包含 SPA fallback，因此 `/tasks/:threadId` 地址可以直接�
 Host 启动时必须把 Web 地址配置为允许的 Origin，例如
 `--origin https://threadlight.example.com`。可重复传入 `--origin` 以允许多个 Web
 地址。HTTPS Web 页面需要 HTTPS/WSS Host；
-Token 只保存在浏览器的当前标签会话中。完整命令、TLS 反向代理与本地联调方式见
+连接过的 Host 与 Token 会保存在浏览器本地记录中用于下次自动填入，请只在可信设备上使用。完整命令、TLS 反向代理与本地联调方式见
 [Web 部署文档](./docs/WEB_DEPLOYMENT.zh-CN.md)。
 
 | 服务 | 必需配置 | 可选配置 |

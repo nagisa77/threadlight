@@ -325,3 +325,289 @@
     transition: border-color 120ms ease;
   }
 }
+
+/* --- Saved-host selector (connection page) --- */
+
+.web-host-select-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 7px;
+}
+
+.web-host-select {
+  width: 100%;
+  height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--ink);
+  outline: 0;
+  background: var(--panel);
+  font-size: 13px;
+  transition:
+    border-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+.web-host-select:focus {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-soft) 76%, transparent);
+}
+
+.web-host-manage {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--panel);
+  cursor: pointer;
+  transition:
+    transform 120ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+
+.web-host-manage:active {
+  transform: scale(0.97);
+}
+
+/* --- Saved-host manager popover --- */
+
+.web-host-manager {
+  width: min(340px, calc(100vw - 16px));
+  padding: 0;
+  overflow: hidden;
+  animation: web-host-manager-enter 150ms var(--ease-out);
+}
+
+@keyframes web-host-manager-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.web-host-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px 8px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.web-host-empty {
+  margin: 0;
+  padding: 4px 12px 14px;
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.web-host-list {
+  display: grid;
+  gap: 2px;
+  max-height: min(340px, calc(100vh - 150px));
+  margin: 0;
+  padding: 0 5px 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.web-host-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px;
+  border-radius: 8px;
+}
+
+.web-host-row-main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.web-host-row-text {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.web-host-row-text strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-host-row-text small {
+  overflow: hidden;
+  color: var(--subtle);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-host-row-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.web-host-row-actions button {
+  width: 26px;
+  min-height: 26px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.web-host-row-actions button:not(:has(svg)) {
+  width: auto;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.web-host-row-actions button.danger {
+  color: var(--danger);
+}
+
+/* --- Edit form inside the manager popover --- */
+
+.web-host-edit {
+  display: grid;
+  gap: 10px;
+  padding: 6px 10px 10px;
+}
+
+.web-host-edit label {
+  display: grid;
+  gap: 5px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.web-host-edit input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  color: var(--ink);
+  outline: 0;
+  background: var(--panel);
+  font: inherit;
+  font-size: 12px;
+  transition:
+    border-color 160ms var(--ease-out),
+    box-shadow 160ms var(--ease-out);
+}
+
+.web-host-edit input:focus {
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-soft) 76%, transparent);
+}
+
+.web-host-edit-token {
+  position: relative;
+  display: block;
+}
+
+.web-host-edit-token input {
+  padding-right: 36px;
+}
+
+.web-host-edit-token .web-token-toggle {
+  top: 3px;
+  right: 3px;
+}
+
+.web-host-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.web-host-edit-actions button {
+  width: auto;
+  min-height: 30px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 620;
+}
+
+.web-host-edit-actions button.primary {
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
+}
+
+.web-host-edit-actions button.danger {
+  color: var(--danger);
+}
+
+.web-host-edit-actions button:last-child {
+  margin-left: auto;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .web-host-manage:hover:not(:disabled) {
+    color: var(--ink);
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong));
+  }
+
+  .web-host-row:hover {
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
+  }
+
+  .web-host-row-actions button:hover:not(:disabled) {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 7%, transparent);
+  }
+
+  .web-host-row-actions button.danger:hover:not(:disabled) {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+  }
+
+  .web-host-edit-actions .primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 92%, #000);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-host-manager {
+    animation: none;
+  }
+
+  .web-host-select,
+  .web-host-manage,
+  .web-host-edit input {
+    transition: border-color 120ms ease;
+  }
+}

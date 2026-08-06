@@ -65,6 +65,7 @@ export function ActionPopover({
   role = "menu",
   initialFocusRef,
   returnFocusRef,
+  closeOnTab = true,
   onClose,
   children,
 }: {
@@ -74,6 +75,8 @@ export function ActionPopover({
   role?: "menu" | "dialog";
   initialFocusRef?: RefObject<HTMLElement | null>;
   returnFocusRef?: RefObject<HTMLElement | null>;
+  /** Set to false for dialog forms so Tab moves between fields instead of closing. */
+  closeOnTab?: boolean;
   onClose(): void;
   children: ReactNode;
 }) {
@@ -109,7 +112,9 @@ export function ActionPopover({
       return;
     }
     if (event.key === "Tab") {
-      onCloseRef.current();
+      if (closeOnTab) {
+        onCloseRef.current();
+      }
       return;
     }
     if (
