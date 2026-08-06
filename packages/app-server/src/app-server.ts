@@ -371,21 +371,13 @@ export class AppServer {
     queuedTurns: readonly QueuedTurnData[];
     revision: number;
     activeTurn?: ActiveTurnData;
+    provider?: string;
+    model?: string;
   }> {
     const { threadId } = objectParams(params);
     requireString(threadId, "threadId");
 
-    let thread = this.threads.get(threadId);
-    if (!thread) {
-      const conversation = await this.conversationStore.load(threadId);
-      if (conversation) {
-        thread = await this.createThreadState(conversation);
-        this.threads.set(threadId, thread);
-      }
-    }
-    if (!thread) {
-      throw new RpcError(-32001, `Unknown thread: ${threadId}`);
-    }
+    const thread = await this.requireThread(threadId);
     if (
       !thread.activeTurn &&
       (thread.conversation.queuedTurns?.length ?? 0) > 0
@@ -416,7 +408,30 @@ export class AppServer {
       queuedTurns: thread.conversation.queuedTurns ?? [],
       revision: thread.revision,
       ...(activeTurn ? { activeTurn } : {}),
+      ...(thread.conversation.provider
+        ? { provider: thread.conversation.provider }
+        : {}),
+      ...(thread.conversation.model
+        ? { model: thread.conversation.model }
+        : {}),
     };
+  }
+
+  /**
+   * Returns the in-memory thread, lazily restoring it from the conversation
+   * store after a runtime restart. Keeps every thread-scoped RPC working even
+   * when the client skips (or loses) the explicit resume round trip.
+   */
+  private async requireThread(threadId: string): Promise<ThreadState> {
+    const existing = this.threads.get(threadId);
+    if (existing) return existing;
+    const conversation = await this.conversationStore.load(threadId);
+    if (conversation) {
+      const thread = await this.createThreadState(conversation);
+      this.threads.set(threadId, thread);
+      return thread;
+    }
+    throw new RpcError(-32001, `Unknown thread: ${threadId}`);
   }
 
   private async deleteThread(
@@ -443,8 +458,7 @@ export class AppServer {
     requireString(threadId, "threadId");
     const language = requireSuggestionLanguage(languageValue);
 
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
 
     let request = this.suggestionRequests.get(language);
     if (!request) {
@@ -498,13 +512,12 @@ export class AppServer {
     }
   }
 
-  private listCapabilities(
+  private async listCapabilities(
     params: unknown,
-  ): { capabilities: readonly CapabilityDescriptor[] } {
+  ): Promise<{ capabilities: readonly CapabilityDescriptor[] }> {
     const { threadId } = objectParams(params);
     requireString(threadId, "threadId");
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
     return {
       capabilities: (thread.runtime?.capabilities ?? []).map(
         (capability) => ({ ...capability }),
@@ -512,19 +525,21 @@ export class AppServer {
     };
   }
 
-  private connectorStatus(params: unknown): Promise<ConnectorStatusData> {
-    const { runtime, capabilityId } = this.connectorRequest(params);
+  private async connectorStatus(
+    params: unknown,
+  ): Promise<ConnectorStatusData> {
+    const { runtime, capabilityId } = await this.connectorRequest(params);
     if (!runtime.connectorStatus) {
       throw new RpcError(-32040, "Connector management is unavailable");
     }
     return Promise.resolve(runtime.connectorStatus(capabilityId));
   }
 
-  private configureConnector(
+  private async configureConnector(
     params: unknown,
   ): Promise<ConnectorStatusData> {
     const values = objectParams(params);
-    const { runtime, capabilityId } = this.connectorRequest(params);
+    const { runtime, capabilityId } = await this.connectorRequest(params);
     requireString(values.clientId, "clientId");
     requireString(values.clientSecret, "clientSecret");
     if (!runtime.configureConnector) {
@@ -539,10 +554,10 @@ export class AppServer {
     );
   }
 
-  private authorizeConnector(
+  private async authorizeConnector(
     params: unknown,
   ): Promise<ConnectorStatusData> {
-    const { runtime, capabilityId } = this.connectorRequest(params);
+    const { runtime, capabilityId } = await this.connectorRequest(params);
     if (!runtime.authorizeConnector) {
       throw new RpcError(-32040, "Connector management is unavailable");
     }
@@ -554,25 +569,24 @@ export class AppServer {
     );
   }
 
-  private disconnectConnector(
+  private async disconnectConnector(
     params: unknown,
   ): Promise<ConnectorStatusData> {
-    const { runtime, capabilityId } = this.connectorRequest(params);
+    const { runtime, capabilityId } = await this.connectorRequest(params);
     if (!runtime.disconnectConnector) {
       throw new RpcError(-32040, "Connector management is unavailable");
     }
     return Promise.resolve(runtime.disconnectConnector(capabilityId));
   }
 
-  private connectorRequest(params: unknown): {
+  private async connectorRequest(params: unknown): Promise<{
     runtime: ThreadRuntime;
     capabilityId: string;
-  } {
+  }> {
     const { threadId, capabilityId } = objectParams(params);
     requireString(threadId, "threadId");
     requireString(capabilityId, "capabilityId");
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
     if (!thread.runtime) {
       throw new RpcError(-32040, "Connector management is unavailable");
     }
@@ -636,6 +650,8 @@ export class AppServer {
       accessMode: accessModeValue,
       attachments: attachmentValue,
       capabilityRefs: capabilityRefsValue,
+      provider: providerValue,
+      model: modelValue,
     } = objectParams(params);
     requireString(threadId, "threadId");
     if (typeof input !== "string") {
@@ -645,6 +661,8 @@ export class AppServer {
     const capabilityRefs = parseCapabilityRefs(capabilityRefsValue);
     const mode = parseTurnMode(modeValue);
     const accessMode = parseConversationAccessMode(accessModeValue);
+    const provider = parseModelProvider(providerValue);
+    const model = parseModelName(modelValue);
     for (const attachment of attachments) {
       this.requireLocalAttachment(attachment);
     }
@@ -652,8 +670,7 @@ export class AppServer {
       throw new RpcError(-32602, "A turn requires text or an attachment");
     }
 
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
     const availableCapabilities = thread.runtime?.capabilities ?? [];
     const availableCapabilityIds = new Set(
       availableCapabilities.map(({ id }) => id),
@@ -681,6 +698,8 @@ export class AppServer {
       capabilityRefs,
       capabilities,
       thread,
+      provider,
+      model,
     );
   }
 
@@ -693,6 +712,8 @@ export class AppServer {
     capabilityRefs: readonly string[],
     capabilities: readonly MessageCapabilityData[],
     thread: ThreadState,
+    provider?: string,
+    model?: string,
     queuedItem?: QueuedTurnData,
   ): Promise<{ turnId: string }> {
     if (thread.activeTurn) {
@@ -728,6 +749,8 @@ export class AppServer {
           {
             ...conversation,
             accessMode,
+            ...(provider ? { provider } : {}),
+            ...(model ? { model } : {}),
             ...(queuedItem
               ? {
                   queuedTurns: (conversation.queuedTurns ?? []).filter(
@@ -764,6 +787,8 @@ export class AppServer {
         capabilities,
         thread,
         controller,
+        provider,
+        model,
       );
     });
 
@@ -781,8 +806,7 @@ export class AppServer {
     if (delivery !== "inject" && delivery !== "queued") {
       throw new RpcError(-32602, "delivery must be inject or queued");
     }
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
     if (!thread.activeTurn) {
       throw new RpcError(-32004, "Thread does not have an active turn");
     }
@@ -811,8 +835,7 @@ export class AppServer {
     if (beforeItemId === itemId) {
       throw new RpcError(-32602, "An item cannot be placed before itself");
     }
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
     await this.mutateConversation(thread, (conversation) => {
       const queuedTurns = [...(conversation.queuedTurns ?? [])];
       const index = queuedTurns.findIndex(({ id }) => id === itemId);
@@ -845,8 +868,7 @@ export class AppServer {
     const { threadId, itemId } = objectParams(params);
     requireString(threadId, "threadId");
     requireString(itemId, "itemId");
-    const thread = this.threads.get(threadId);
-    if (!thread) throw new RpcError(-32001, `Unknown thread: ${threadId}`);
+    const thread = await this.requireThread(threadId);
     let canceled = false;
     await this.mutateConversation(thread, (conversation) => {
       const queuedTurns = (conversation.queuedTurns ?? []).filter((item) => {
@@ -952,6 +974,8 @@ export class AppServer {
     capabilities: readonly MessageCapabilityData[],
     thread: ThreadState,
     controller: AbortController,
+    provider?: string,
+    model?: string,
   ): Promise<void> {
     this.notify("turn/started", {
       threadId,
@@ -979,7 +1003,12 @@ export class AppServer {
       const attachmentRuntime = createAttachmentRuntime(
         this.attachmentProvider,
         input,
-        attachments,
+        provider
+          ? attachments.map((attachment) => ({
+              ...attachment,
+              provider,
+            }))
+          : attachments,
       );
       const explicitSkillRefs =
         thread.runtime?.explicitSkillRefsForInput
@@ -1079,6 +1108,8 @@ export class AppServer {
       const turnPrompt = composePrompt(turnPromptBlocks);
       const turnAgent = {
         ...thread.agent,
+        ...(provider ? { provider } : {}),
+        ...(model ? { model } : {}),
         instructions: turnPrompt.instructions,
         tools: turnTools,
       };
@@ -1397,6 +1428,8 @@ export class AppServer {
         [],
         [],
         thread,
+        undefined,
+        undefined,
         item,
       );
     } catch (error) {
@@ -1628,10 +1661,24 @@ export class AppServer {
           ]);
       const agent = runtime
         ? attachRuntimeTools(
-            { ...baseAgent, instructions: promptSnapshot.instructions },
+            {
+              ...baseAgent,
+              instructions: promptSnapshot.instructions,
+              ...(conversation.provider
+                ? { provider: conversation.provider }
+                : {}),
+              ...(conversation.model ? { model: conversation.model } : {}),
+            },
             runtime,
           )
-        : { ...baseAgent, instructions: promptSnapshot.instructions };
+        : {
+            ...baseAgent,
+            instructions: promptSnapshot.instructions,
+            ...(conversation.provider
+              ? { provider: conversation.provider }
+              : {}),
+            ...(conversation.model ? { model: conversation.model } : {}),
+          };
       const snapshottedConversation = conversation.agentSnapshot
         ? conversation
         : {
@@ -1920,6 +1967,33 @@ function parseAttachments(value: unknown): readonly AttachmentData[] {
   if (value === undefined) return [];
   if (!Array.isArray(value) || !value.every(isAttachment)) {
     throw new RpcError(-32602, "attachments must contain valid local files");
+  }
+  return value;
+}
+
+const MODEL_PROVIDER_IDS = new Set<string>([
+  "openai",
+  "deepseek",
+  "qwen",
+  "kimi",
+  "doubao",
+  "gemini",
+  "grok",
+  "custom",
+]);
+
+function parseModelProvider(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !MODEL_PROVIDER_IDS.has(value)) {
+    throw new RpcError(-32602, "provider is not supported");
+  }
+  return value;
+}
+
+function parseModelName(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0 || value.length > 256) {
+    throw new RpcError(-32602, "model must be a non-empty string");
   }
   return value;
 }

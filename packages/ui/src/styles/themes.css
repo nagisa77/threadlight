@@ -730,6 +730,7 @@ html[data-theme="dark"] :is(
     .settings-select-option:hover:not(:disabled),
     .project-opener-option:hover:not(:disabled),
     .panel-add-option:hover,
+    .composer-action.model:hover:not(:disabled):not(.active),
     .workspace-tree-row:hover,
     .workspace-tab:hover:not(.active),
     .terminal-tab-close:hover,
@@ -766,7 +767,8 @@ html[data-theme="dark"] :is(
     .project-open-primary:hover:not(:disabled),
     .project-open-menu-trigger:hover:not(:disabled),
     .composer-action.voice:hover:not(:disabled):not(.recording),
-    .composer-action.attach:hover:not(:disabled)
+    .composer-action.attach:hover:not(:disabled),
+    .composer-action.model:hover:not(:disabled):not(.active)
   ) {
     color: var(--ink);
     background: #303135;

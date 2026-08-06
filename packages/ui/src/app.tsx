@@ -171,6 +171,7 @@ import {
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
+import { ModelSelector } from "./model-selector.js";
 
 import {
   ComputerPermissionCard,
@@ -600,6 +601,7 @@ function ThreadlightAppContent({
     deleteThread,
     send,
     sendNewThread,
+    setThreadModel,
     addFollowUp,
     reorderQueuedTurn,
     cancelQueuedTurn,
@@ -2199,6 +2201,8 @@ function ThreadlightAppContent({
           composerMode,
           selectedCapabilities,
           "approval",
+          state.provider,
+          state.model,
         );
         if (result) {
           if ("error" in result) {
@@ -2222,6 +2226,8 @@ function ThreadlightAppContent({
           composerMode,
           selectedCapabilities,
           currentConversation?.accessMode ?? "approval",
+          state.provider,
+          state.model,
         )
       ) {
         submittedThreadId = state.threadId;
@@ -4114,6 +4120,29 @@ function ThreadlightAppContent({
                         )}
                     </div>
                     <div className="composer-toolbar-end">
+                      <ModelSelector
+                        settings={runtimeSettings}
+                        provider={state.provider}
+                        model={state.model}
+                        disabled={
+                          state.connection !== "ready" ||
+                          !providerReady ||
+                          state.isRunning ||
+                          voiceStatus !== "idle" ||
+                          submitting ||
+                          preparingAttachments
+                        }
+                        t={t}
+                        onSelect={(selection) => {
+                          if (state.threadId) {
+                            setThreadModel(
+                              state.threadId,
+                              selection.provider,
+                              selection.model,
+                            );
+                          }
+                        }}
+                      />
                       {voiceInput && !state.isRunning && (
                         <button
                           type="button"

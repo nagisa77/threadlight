@@ -31,6 +31,12 @@ export interface Agent {
   name: string;
   instructions: string;
   model?: string;
+  /**
+   * Provider-neutral routing hint for multi-provider runtimes. Adapters that
+   * are bound to a single vendor ignore it; a routing adapter uses it to
+   * dispatch the model request to the matching backend.
+   */
+  provider?: string;
   tools?: readonly Tool[];
   maxSteps?: number;
 }
@@ -74,11 +80,18 @@ export interface ModelAttachment {
   size: number;
   kind: "image" | "file";
   path: string;
+  /**
+   * Routing hint used by multi-provider runtimes to upload through the same
+   * backend that will consume the attachment.
+   */
+  provider?: string;
   providerReference?: unknown;
 }
 
 export interface ModelRequest {
   model?: string;
+  /** Routing hint forwarded from the agent; see {@link Agent.provider}. */
+  provider?: string;
   instructions: string;
   input?: string;
   attachments?: readonly ModelAttachment[];

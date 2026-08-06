@@ -94,6 +94,7 @@ export class AgentLoop {
       const turn = await this.provider.generate(
         {
           model: agent.model,
+          provider: agent.provider,
           instructions,
           input: modelInput,
           attachments: directive.attachments,

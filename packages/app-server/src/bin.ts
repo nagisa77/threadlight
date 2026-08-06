@@ -3,6 +3,7 @@
 import { AgentLoop } from "@threadlight/agent-loop";
 import {
   createModelProvider,
+  createRoutingModelProvider,
   CUSTOM_DEFAULT_BASE_URL,
   DOUBAO_DEFAULT_BASE_URL,
   GEMINI_DEFAULT_BASE_URL,
@@ -11,6 +12,7 @@ import {
   QWEN_DEFAULT_BASE_URL,
   supportsOpenAINativeComputerTool,
   UnavailableModelProvider,
+  type ConfiguredModelProvider,
   type ModelProviderId,
 } from "@threadlight/model-providers";
 import {
@@ -73,23 +75,52 @@ const MENTIONABLE_TOOL_CAPABILITIES = {
   },
 } satisfies Record<string, MentionableToolCapability>;
 
-const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
-const providerApiKey = apiKeyFor(providerId, process.env);
-const providerConfigured = Boolean(providerApiKey) || providerId === "custom";
+const MODEL_PROVIDER_IDS: readonly ModelProviderId[] = [
+  "openai",
+  "deepseek",
+  "qwen",
+  "kimi",
+  "doubao",
+  "gemini",
+  "grok",
+  "custom",
+];
 
-const providerBaseUrl = baseUrlFor(providerId, process.env);
+const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
 const modelName =
   process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId);
-const provider = providerConfigured
-  ? createModelProvider({
-      provider: providerId,
-      apiKey: providerApiKey,
-      defaultModel: modelName,
-      ...(providerBaseUrl ? { baseURL: providerBaseUrl } : {}),
-    })
-  : new UnavailableModelProvider(
-      `${apiKeyEnvironmentName(providerId)} is required. Configure the model provider in this Host's settings.`,
-    );
+
+// Build one backend per configured vendor so a conversation can route to any
+// provider whose key is present in the environment; the previously selected
+// provider stays the default when its backend is unavailable.
+const providerBackends: Partial<
+  Record<ModelProviderId, ConfiguredModelProvider>
+> = {};
+for (const id of MODEL_PROVIDER_IDS) {
+  const apiKey = apiKeyFor(id, process.env);
+  if (!apiKey && id !== "custom") continue;
+  const baseUrl = baseUrlFor(id, process.env);
+  providerBackends[id] = createModelProvider({
+    provider: id,
+    apiKey,
+    defaultModel: modelName,
+    ...(baseUrl ? { baseURL: baseUrl } : {}),
+  });
+}
+const configuredProviderIds = Object.keys(
+  providerBackends,
+) as ModelProviderId[];
+const provider: ConfiguredModelProvider =
+  configuredProviderIds.length > 0
+    ? createRoutingModelProvider({
+        providers: providerBackends,
+        defaultProvider: configuredProviderIds.includes(providerId)
+          ? providerId
+          : configuredProviderIds[0],
+      })
+    : new UnavailableModelProvider(
+        `${apiKeyEnvironmentName(providerId)} is required. Configure the model provider in this Host's settings.`,
+      );
 
 const loop = new AgentLoop(provider);
 const workspaceRoot = process.cwd();
@@ -120,7 +151,7 @@ const tools = [
   createProcessKillTool({ processManager }),
 ];
 const computerUseEnabled =
-  providerConfigured &&
+  configuredProviderIds.length > 0 &&
   providerId === "openai" &&
   supportsOpenAINativeComputerTool(modelName) &&
   process.platform === "darwin" &&
@@ -152,6 +183,7 @@ if (process.env.BRAVE_SEARCH_API_KEY) {
 const agentFactory = createWorkspaceAgentFactory({
   workspaceRoot,
   includeWorkspaceContext: !standaloneTask,
+  model: modelName,
   baseInstructions: [
     standaloneTask
       ? "Answer directly. Before each group of tool calls, briefly tell the user what you are about to do in the same response; keep it concrete and never return tool calls silently. This task is not associated with a project: do not assume project instructions or project memory, and keep task-created files in the supplied isolated workspace. Use tools when they provide evidence needed for the task. In Plan mode, use workspace_inspect and other read-only tools to research before creating the controlled plan; outside Plan mode, act directly and do not create a plan merely to restate obvious work. Plans belong only to the current user turn. Give every plan step a short display title, concrete implementation details, and observable acceptance criteria so the work can continue without guessing. Use advance_plan with completionEvidence for ordinary step transitions; reserve update_plan for initial creation or structural revision. Use mcp_connect only with an exact MCP command or endpoint supplied by the user or grounded in the task; never invent one. After it returns advertised tool schemas, use mcp_call with the exact connection id, tool name, and matching arguments. exec_command returns an opaque sessionId when a command is still running; use process_status, process_read, process_wait, and process_kill to manage it, and never construct shell background jobs or manage operating-system PIDs directly. Opening known URLs validates selected sources but is not discovery search; never call internet research comprehensive or exhaustive without actual search coverage, and disclose unavailable search or requested media coverage."

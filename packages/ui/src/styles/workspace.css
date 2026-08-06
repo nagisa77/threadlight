@@ -2426,6 +2426,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .composer-action.attach:hover:not(:disabled),
   .composer-action.add:hover:not(:disabled):not(.active),
   .composer-action.plan-mode:hover:not(:disabled):not(.active),
+  .composer-action.model:hover:not(:disabled):not(.active),
   .conversation-access-trigger:hover:not(:disabled):not([aria-expanded="true"]) {
     color: var(--ink);
     background: rgb(239 238 233 / 74%);

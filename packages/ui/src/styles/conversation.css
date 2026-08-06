@@ -1928,10 +1928,139 @@
   background: #edf5fb;
 }
 
+.composer-action.model {
+  display: flex;
+  width: auto;
+  max-width: 148px;
+  min-width: 32px;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.composer-action.model.active {
+  border-color: var(--line);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.composer-action.model .composer-model-label {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 620;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer-action.send {
   border: 1px solid #292824;
   color: white;
   background: #292824;
+}
+
+.model-selector-popover {
+  width: 264px;
+  gap: 1px;
+}
+
+.model-selector-popover button {
+  gap: 10px;
+  padding: 0 10px;
+}
+
+.model-provider-option,
+.model-option {
+  min-height: 42px;
+  align-items: center;
+}
+
+.model-provider-option[aria-checked="true"],
+.model-option[aria-checked="true"] {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.model-provider-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.model-option-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.model-option-copy strong {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 430;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option-copy .model-qualifier {
+  flex: 0 0 auto;
+  color: var(--subtle);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 560;
+}
+
+.model-option-check {
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.model-back-option {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.model-back-option + .model-list {
+  display: grid;
+  gap: 1px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+}
+
+.model-option {
+  min-height: 54px;
+  align-items: flex-start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.model-option .model-option-check {
+  margin-top: 3px;
 }
 
 .composer-action.voice {

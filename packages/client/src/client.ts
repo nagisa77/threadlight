@@ -166,6 +166,8 @@ export class ThreadlightClient {
     mode: TurnMode = "default",
     capabilityRefs: readonly string[] = [],
     accessMode: ConversationAccessMode = "approval",
+    provider?: string,
+    model?: string,
   ) {
     return this.request("turn/start", {
       threadId,
@@ -174,6 +176,8 @@ export class ThreadlightClient {
       ...(accessMode === "full" ? { accessMode } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
     });
   }
 

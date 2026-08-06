@@ -22,3 +22,5 @@ export type {
   ModelProviderConfig,
   ModelProviderId,
 } from "./provider-factory.js";
+export { createRoutingModelProvider } from "./provider-router.js";
+export type { ModelProviderRouterOptions } from "./provider-router.js";

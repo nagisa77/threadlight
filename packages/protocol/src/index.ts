@@ -966,6 +966,9 @@ export interface ThreadlightMethodMap {
       queuedTurns: readonly QueuedTurnData[];
       revision: number;
       activeTurn?: ActiveTurnData;
+      /** Provider/model selected for this conversation, if any. */
+      provider?: string;
+      model?: string;
     };
   };
   "thread/delete": {
@@ -1009,6 +1012,10 @@ export interface ThreadlightMethodMap {
       accessMode?: ConversationAccessMode;
       attachments?: readonly AttachmentData[];
       capabilityRefs?: readonly string[];
+      /** Provider routing hint for this turn; defaults to the conversation's. */
+      provider?: string;
+      /** Model override for this turn; defaults to the conversation's. */
+      model?: string;
     };
     result: { turnId: string };
   };
