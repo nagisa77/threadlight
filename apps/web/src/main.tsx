@@ -20,9 +20,19 @@ import {
 } from "./task-route.js";
 import { installMobileViewportHeight } from "./mobile-viewport.js";
 import { RemoteConnectionPage } from "./connection-page.js";
+import {
+  hostNameForEndpoint,
+  loadHostRecords,
+  migrateLegacyHostRecord,
+  mostRecentHost,
+  removeHostRecord,
+  saveHostRecords,
+  upsertHostRecord,
+  type HostRecord,
+  type HostRecordInput,
+} from "./host-store.js";
 
-const ENDPOINT_STORAGE_KEY = "threadlight:web:host-endpoint";
-const TOKEN_STORAGE_KEY = "threadlight:web:host-token";
+const SESSION_ACTIVE_KEY = "threadlight:web:session-active";
 const loadThreadlightApp = () => import("@threadlight/ui/app");
 const LazyThreadlightApp = lazy(() =>
   loadThreadlightApp().then(({ ThreadlightApp }) => ({
@@ -38,7 +48,12 @@ if (import.meta.hot) {
 
 function WebApp() {
   const [session, setSession] = useState<RemoteWebSession>();
-  const [credentials, setCredentials] = useState(savedCredentials);
+  const [hostRecords, setHostRecords] = useState<HostRecord[]>(() =>
+    initialHostRecords(),
+  );
+  const [credentials, setCredentials] = useState(() =>
+    initialCredentials(hostRecords),
+  );
   const activeSession = useRef<RemoteWebSession | undefined>(undefined);
   const initialThreadId = useRef(
     threadIdFromTaskPath(
@@ -54,21 +69,40 @@ function WebApp() {
     [],
   );
 
-  async function connect(endpoint: string, token: string) {
+  async function connect(endpoint: string, token: string, name?: string) {
     const [next] = await Promise.all([
       createRemoteWebSession({ endpoint, token }),
       loadThreadlightApp(),
     ]);
     activeSession.current?.dispose();
     activeSession.current = next;
-    setCredentials({ endpoint: endpoint.trim(), token });
+    const trimmed = endpoint.trim();
+    setCredentials({ endpoint: trimmed, token });
+    const nextRecords = upsertHostRecord(hostRecords, {
+      name: name?.trim() || hostNameForEndpoint(trimmed),
+      endpoint: trimmed,
+      token,
+    });
+    setHostRecords(nextRecords);
+    saveHostRecords(nextRecords, window.localStorage);
     try {
-      window.localStorage.setItem(ENDPOINT_STORAGE_KEY, endpoint.trim());
-      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+      window.sessionStorage.setItem(SESSION_ACTIVE_KEY, "1");
     } catch {
       // Storage can be unavailable in private or locked-down browsing modes.
     }
     setSession(next);
+  }
+
+  function upsertHost(host: HostRecordInput) {
+    const nextRecords = upsertHostRecord(hostRecords, host);
+    setHostRecords(nextRecords);
+    saveHostRecords(nextRecords, window.localStorage);
+  }
+
+  function deleteHost(id: string) {
+    const nextRecords = removeHostRecord(hostRecords, id);
+    setHostRecords(nextRecords);
+    saveHostRecords(nextRecords, window.localStorage);
   }
 
   function disconnect() {
@@ -76,7 +110,7 @@ function WebApp() {
     activeSession.current = undefined;
     setCredentials((current) => ({ ...current, token: "" }));
     try {
-      window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      window.sessionStorage.removeItem(SESSION_ACTIVE_KEY);
     } catch {
       // The in-memory session is still disconnected.
     }
@@ -89,9 +123,14 @@ function WebApp() {
         initialEndpoint={credentials.endpoint}
         initialToken={credentials.token}
         autoConnect={Boolean(
-          credentials.endpoint && credentials.token,
+          credentials.endpoint &&
+            credentials.token &&
+            isSessionActive(),
         )}
+        savedHosts={hostRecords}
         onConnect={connect}
+        onUpsertHost={upsertHost}
+        onDeleteHost={deleteHost}
       />
     );
   }
@@ -151,19 +190,33 @@ function replaceWebTaskPath(threadId?: string): void {
   window.history.replaceState(null, "", url);
 }
 
-function savedCredentials(): { endpoint: string; token: string } {
+function initialHostRecords(): HostRecord[] {
+  const storage = window.localStorage;
+  const records = loadHostRecords(storage);
+  if (records.length > 0) return records;
+  const migrated = migrateLegacyHostRecord(storage, window.sessionStorage);
+  return migrated ? [migrated] : [];
+}
+
+function initialCredentials(records: HostRecord[]): {
+  endpoint: string;
+  token: string;
+} {
+  const recent = mostRecentHost(records);
   const configuredEndpoint =
     import.meta.env.VITE_THREADLIGHT_HOST_URL?.trim() ?? "";
+  return {
+    // The configured env address is only a fallback when nothing is saved.
+    endpoint: recent?.endpoint || configuredEndpoint || "",
+    token: recent?.token || "",
+  };
+}
+
+function isSessionActive(): boolean {
   try {
-    return {
-      endpoint:
-        configuredEndpoint ||
-        window.localStorage.getItem(ENDPOINT_STORAGE_KEY) ||
-        "",
-      token: window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "",
-    };
+    return window.sessionStorage.getItem(SESSION_ACTIVE_KEY) === "1";
   } catch {
-    return { endpoint: configuredEndpoint, token: "" };
+    return false;
   }
 }
 

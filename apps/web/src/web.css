@@ -325,3 +325,237 @@
     transition: border-color 120ms ease;
   }
 }
+
+/* Saved-host list and connection form sections */
+
+.web-connect-hosts {
+  margin-top: 26px;
+}
+
+.web-connect-section-title {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.web-host-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.web-host-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  transition: border-color 160ms var(--ease-out);
+}
+
+.web-host-row.selected {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent-soft) 55%, transparent);
+}
+
+.web-host-select {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+  padding: 9px 8px 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+}
+
+.web-host-name {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 640;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-host-endpoint {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-host-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.web-host-action {
+  display: grid;
+  width: 28px;
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.web-host-action.armed {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--danger) 26%, transparent);
+}
+
+.web-host-connect {
+  display: inline-flex;
+  height: 32px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 5px 0 2px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
+  font-size: 12px;
+  font-weight: 660;
+  cursor: pointer;
+}
+
+.web-connect-form-section {
+  margin-top: 26px;
+}
+
+.web-connect-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.web-connect-form-heading h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.web-connect-new-link {
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--accent);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.web-connect-form {
+  margin-top: 0;
+}
+
+.web-connect-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.web-connect-actions .web-connect-submit {
+  flex: 1;
+  margin-top: 0;
+}
+
+.web-connect-secondary {
+  height: 42px;
+  padding: 0 15px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--ink);
+  background: var(--panel);
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.web-connect-delete {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 660;
+  cursor: pointer;
+}
+
+.web-connect-delete.armed {
+  width: auto;
+  padding: 0 12px;
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .web-host-select:hover {
+    background: color-mix(in srgb, var(--line) 30%, transparent);
+  }
+
+  .web-host-action:hover {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--line) 46%, transparent);
+  }
+
+  .web-host-action.armed:hover {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+  }
+
+  .web-host-connect:hover:not(:disabled),
+  .web-connect-submit:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 92%, #000);
+  }
+
+  .web-connect-secondary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--line) 40%, transparent);
+  }
+
+  .web-connect-delete:hover {
+    border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+  }
+
+  .web-connect-new-link:hover {
+    background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  }
+}

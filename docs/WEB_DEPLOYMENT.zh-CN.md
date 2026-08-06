@@ -27,9 +27,10 @@ VITE_THREADLIGHT_HOST_URL=http://192.168.50.186:7432 npm run web:dev -- --host 0
 
 电脑打开 `http://localhost:5173`，同一局域网设备打开
 `http://192.168.50.186:5173`，输入上面的 `THREADLIGHT_HOST_TOKEN`。请把示例中的
-局域网 IP 替换为 Host 机器的实际地址。Host 地址会
-保存在 `localStorage`；Token 只保存在当前标签会话的 `sessionStorage`，不会写进
-源码或 production bundle。
+局域网 IP 替换为 Host 机器的实际地址。连接成功后，Host 地址与访问
+Token 会一起保存在浏览器的 `localStorage` 主机记录中（默认保留最近 12 台），
+退出登录不会清除记录，方便下次快速重连；也可以在登录页选择、编辑或删除已保存的
+主机。记录不会写进源码或 production bundle。
 
 ## Production 构建与静态部署
 
