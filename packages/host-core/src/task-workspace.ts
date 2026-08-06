@@ -110,6 +110,7 @@ export class TaskWorkspaceManager {
       ]);
       await this.copyWorkingState(repository.root, worktreeRoot);
       await this.copyIgnoredWorkingState(repository.root, worktreeRoot);
+      await this.initializeSubmodules(worktreeRoot);
     } catch (error) {
       await this.cleanupFailedWorktree(
         repository.root,
@@ -328,6 +329,22 @@ export class TaskWorkspaceManager {
         await copyFile(source, destination, constants.COPYFILE_FICLONE);
       }
     }
+  }
+
+  private async initializeSubmodules(worktreeRoot: string): Promise<void> {
+    // `git worktree add` never checks out submodule content, so a freshly
+    // created task worktree has empty submodule directories. Populate them
+    // so the baseline snapshot and the task see the same state. This is
+    // best effort: submodule content is excluded from change scans and
+    // delivery regardless of whether it is present.
+    await this.runGit(worktreeRoot, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "update",
+      "--init",
+      "--recursive",
+    ]).catch(() => undefined);
   }
 
   private async cleanupFailedWorktree(

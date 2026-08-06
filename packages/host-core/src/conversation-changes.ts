@@ -509,6 +509,7 @@ async function workspaceMatchers(workspacePath: string) {
   const project = ignore();
   const sensitive = workspaceSensitiveMatcher();
   const gitIgnored = await gitIgnoredPaths(root);
+  const submodulePaths = await gitSubmodulePaths(root);
   try {
     project.add(await readFile(join(root, ".gitignore"), "utf8"));
   } catch {
@@ -516,11 +517,21 @@ async function workspaceMatchers(workspacePath: string) {
   }
   const projectIgnores = (path: string) =>
     gitIgnored.has(path.replace(/\/$/, "")) || project.ignores(path);
+  const inSubmodule = (path: string) => {
+    const normalized = path.replace(/\/$/, "");
+    for (const submodule of submodulePaths) {
+      if (normalized === submodule || normalized.startsWith(`${submodule}/`)) {
+        return true;
+      }
+    }
+    return false;
+  };
   return {
     projectIgnores,
     excludes(path: string) {
       return (
         ephemeral.ignores(path) ||
+        inSubmodule(path) ||
         (projectIgnores(path) && sensitive.ignores(path))
       );
     },
@@ -550,6 +561,38 @@ async function gitIgnoredPaths(workspacePath: string): Promise<Set<string>> {
       },
     );
     return new Set(stdout.split("\0").filter(Boolean));
+  } catch {
+    return new Set();
+  }
+}
+
+async function gitSubmodulePaths(
+  workspacePath: string,
+): Promise<ReadonlySet<string>> {
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["ls-files", "-z", "--stage"],
+      {
+        cwd: workspacePath,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          GIT_TERMINAL_PROMPT: "0",
+          LC_ALL: "C",
+        },
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    const paths = new Set<string>();
+    for (const record of stdout.split("\0").filter(Boolean)) {
+      const tab = record.indexOf("\t");
+      if (tab === -1) continue;
+      if (record.slice(0, tab).split(" ")[0] === "160000") {
+        paths.add(record.slice(tab + 1));
+      }
+    }
+    return paths;
   } catch {
     return new Set();
   }

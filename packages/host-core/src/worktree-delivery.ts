@@ -581,9 +581,13 @@ export class WorktreeDeliveryManager {
       request.workspace.repositoryRoot,
       this.runGit,
     );
+    const submodulePaths = await this.gitSubmodulePaths(
+      request.projectPath,
+      request.workspace.repositoryRoot,
+    );
     const operations = await Promise.all(
       files.map((file) =>
-        planFile(file, request.projectPath, this.mergeText),
+        planFile(file, request.projectPath, this.mergeText, submodulePaths),
       ),
     );
     const conflicts = operations.flatMap(({ conflict }) =>
@@ -611,6 +615,36 @@ export class WorktreeDeliveryManager {
         conflicts,
       },
     };
+  }
+
+  private async gitSubmodulePaths(
+    projectPath: string,
+    repositoryRoot: string,
+  ): Promise<ReadonlySet<string>> {
+    try {
+      const { stdout } = await this.runGit(repositoryRoot, [
+        "ls-files",
+        "-z",
+        "--stage",
+        "--full-name",
+      ]);
+      const prefix = relative(repositoryRoot, resolve(projectPath));
+      const paths = new Set<string>();
+      for (const record of stdout.split("\0").filter(Boolean)) {
+        const tab = record.indexOf("\t");
+        if (tab === -1) continue;
+        if (record.slice(0, tab).split(" ")[0] !== "160000") continue;
+        const path = record.slice(tab + 1);
+        if (prefix === "") {
+          paths.add(path);
+        } else if (path.startsWith(`${prefix}/`)) {
+          paths.add(path.slice(prefix.length + 1));
+        }
+      }
+      return paths;
+    } catch {
+      return new Set();
+    }
   }
 
   private async exclusive<Result>(
@@ -1363,9 +1397,13 @@ async function planFile(
   file: ConversationDeliveryFile,
   projectPath: string,
   mergeText: TextMerger,
+  submodulePaths?: ReadonlySet<string>,
 ): Promise<DeliveryOperation> {
   const localOnly = !!file.localOnly;
   const targetPath = safeTargetPath(projectPath, file.path);
+  if (inSubmodule(file.path, submodulePaths)) {
+    return conflict(file.path, targetPath, "unsafe_target", localOnly);
+  }
   const target = await readTarget(projectPath, targetPath);
   if (target.unsafe) {
     return conflict(file.path, targetPath, "unsafe_target", localOnly);
@@ -1727,6 +1765,20 @@ async function runGit(
     maxBuffer: MAX_GIT_OUTPUT_BYTES,
   });
   return { stdout: result.stdout, stderr: result.stderr };
+}
+
+function inSubmodule(
+  path: string,
+  submodulePaths: ReadonlySet<string> | undefined,
+): boolean {
+  if (!submodulePaths || submodulePaths.size === 0) return false;
+  const normalized = path.replace(/\/$/, "");
+  for (const submodule of submodulePaths) {
+    if (normalized === submodule || normalized.startsWith(`${submodule}/`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function conflict(
