@@ -20,9 +20,13 @@ import {
 } from "./task-route.js";
 import { installMobileViewportHeight } from "./mobile-viewport.js";
 import { RemoteConnectionPage } from "./connection-page.js";
+import {
+  loadSavedHosts,
+  persistSavedHosts,
+  upsertSavedHost,
+  type SavedHost,
+} from "./saved-hosts.js";
 
-const ENDPOINT_STORAGE_KEY = "threadlight:web:host-endpoint";
-const TOKEN_STORAGE_KEY = "threadlight:web:host-token";
 const loadThreadlightApp = () => import("@threadlight/ui/app");
 const LazyThreadlightApp = lazy(() =>
   loadThreadlightApp().then(({ ThreadlightApp }) => ({
@@ -39,7 +43,15 @@ if (import.meta.hot) {
 function WebApp() {
   const [session, setSession] = useState<RemoteWebSession>();
   const [credentials, setCredentials] = useState(savedCredentials);
+  const [savedHosts, setSavedHosts] = useState<SavedHost[]>(() => {
+    try {
+      return loadSavedHosts(window.localStorage);
+    } catch {
+      return [];
+    }
+  });
   const activeSession = useRef<RemoteWebSession | undefined>(undefined);
+  const hasConnected = useRef(false);
   const initialThreadId = useRef(
     threadIdFromTaskPath(
       window.location.pathname,
@@ -55,32 +67,40 @@ function WebApp() {
   );
 
   async function connect(endpoint: string, token: string) {
+    const trimmedEndpoint = endpoint.trim();
     const [next] = await Promise.all([
-      createRemoteWebSession({ endpoint, token }),
+      createRemoteWebSession({ endpoint: trimmedEndpoint, token }),
       loadThreadlightApp(),
     ]);
     activeSession.current?.dispose();
     activeSession.current = next;
-    setCredentials({ endpoint: endpoint.trim(), token });
-    try {
-      window.localStorage.setItem(ENDPOINT_STORAGE_KEY, endpoint.trim());
-      window.sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
-    } catch {
-      // Storage can be unavailable in private or locked-down browsing modes.
-    }
+    setCredentials({ endpoint: trimmedEndpoint, token });
+    setSavedHosts((hosts) => {
+      const nextHosts = upsertSavedHost(hosts, {
+        endpoint: trimmedEndpoint,
+        token,
+      });
+      persistSavedHosts(window.localStorage, nextHosts);
+      return nextHosts;
+    });
+    hasConnected.current = true;
     setSession(next);
   }
 
+  /**
+   * Logout only disposes the session and returns to the connection page.
+   * The endpoint and token are kept in memory (and in the saved Host list) so
+   * reconnecting is a single click; there is no auto-reconnect after logout.
+   */
   function disconnect() {
     activeSession.current?.dispose();
     activeSession.current = undefined;
-    setCredentials((current) => ({ ...current, token: "" }));
-    try {
-      window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-    } catch {
-      // The in-memory session is still disconnected.
-    }
     setSession(undefined);
+  }
+
+  function updateSavedHosts(hosts: SavedHost[]) {
+    setSavedHosts(hosts);
+    persistSavedHosts(window.localStorage, hosts);
   }
 
   if (!session) {
@@ -89,8 +109,10 @@ function WebApp() {
         initialEndpoint={credentials.endpoint}
         initialToken={credentials.token}
         autoConnect={Boolean(
-          credentials.endpoint && credentials.token,
+          credentials.endpoint && credentials.token && !hasConnected.current,
         )}
+        initialHosts={savedHosts}
+        onHostsChange={updateSavedHosts}
         onConnect={connect}
       />
     );
@@ -151,17 +173,22 @@ function replaceWebTaskPath(threadId?: string): void {
   window.history.replaceState(null, "", url);
 }
 
+/**
+ * Prefills the connection page from the configured build-time Host URL or,
+ * failing that, from the most recently connected saved Host. Tokens survive
+ * logout and page reloads because they live in the saved Host records.
+ */
 function savedCredentials(): { endpoint: string; token: string } {
   const configuredEndpoint =
     import.meta.env.VITE_THREADLIGHT_HOST_URL?.trim() ?? "";
   try {
-    return {
-      endpoint:
-        configuredEndpoint ||
-        window.localStorage.getItem(ENDPOINT_STORAGE_KEY) ||
-        "",
-      token: window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "",
-    };
+    const hosts = loadSavedHosts(window.localStorage);
+    if (configuredEndpoint) {
+      const host = hosts.find((entry) => entry.endpoint === configuredEndpoint);
+      return { endpoint: configuredEndpoint, token: host?.token ?? "" };
+    }
+    const recent = hosts[0];
+    return { endpoint: recent?.endpoint ?? "", token: recent?.token ?? "" };
   } catch {
     return { endpoint: configuredEndpoint, token: "" };
   }
