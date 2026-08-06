@@ -54,6 +54,9 @@ export interface SessionState {
   connectionError?: string;
   threadId?: string;
   revision: number;
+  /** Provider/model selected for this conversation, if any. */
+  provider?: string;
+  model?: string;
   isRunning: boolean;
   isThinking: boolean;
   messages: readonly ConversationMessage[];
@@ -73,6 +76,8 @@ export type SessionAction =
       queuedTurns?: readonly QueuedTurnData[];
       revision?: number;
       activeTurn?: ActiveTurnData;
+      provider?: string;
+      model?: string;
     }
   | { type: "connection.failed"; error: string }
   | {
@@ -124,7 +129,8 @@ export type SessionAction =
       message: ConversationMessageData;
       precedingAssistantMessage?: ConversationMessageData;
     }
-  | { type: "submission.failed"; error: string };
+  | { type: "submission.failed"; error: string }
+  | { type: "model.selected"; provider: string; model: string };
 
 export const initialSessionState: SessionState = {
   connection: "connecting",
@@ -153,6 +159,8 @@ export function sessionReducer(
           connection: "ready",
           connectionError: undefined,
           threadId: action.threadId,
+          ...(action.provider ? { provider: action.provider } : {}),
+          ...(action.model ? { model: action.model } : {}),
           messages: mergeMessages(action.messages ?? [], state.messages),
         };
       }
@@ -161,6 +169,8 @@ export function sessionReducer(
         connection: "ready",
         threadId: action.threadId,
         revision,
+        ...(action.provider ? { provider: action.provider } : {}),
+        ...(action.model ? { model: action.model } : {}),
         messages: action.messages ?? [],
         queuedTurns: action.queuedTurns ?? [],
         isRunning: action.activeTurn !== undefined,
@@ -306,6 +316,12 @@ export function sessionReducer(
     }
     case "submission.failed":
       return { ...state, submissionError: action.error };
+    case "model.selected":
+      return {
+        ...state,
+        provider: action.provider,
+        model: action.model,
+      };
   }
 }
 
@@ -469,6 +485,8 @@ export async function requestTurnStart(
       mode: TurnMode,
       capabilityRefs: readonly string[],
       accessMode: ConversationAccessMode,
+      provider?: string,
+      model?: string,
     ): Promise<unknown>;
   },
   threadId: string,
@@ -477,6 +495,8 @@ export async function requestTurnStart(
   mode: TurnMode = "default",
   capabilityRefs: readonly string[] = [],
   accessMode: ConversationAccessMode = "approval",
+  provider?: string,
+  model?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
     await client.startTurn(
@@ -486,6 +506,8 @@ export async function requestTurnStart(
       mode,
       capabilityRefs,
       accessMode,
+      provider,
+      model,
     );
     return { ok: true };
   } catch (error) {
@@ -504,6 +526,8 @@ export async function requestNewThreadTurnStart(
       mode: TurnMode,
       capabilityRefs: readonly string[],
       accessMode: ConversationAccessMode,
+      provider?: string,
+      model?: string,
     ): Promise<unknown>;
   },
   text: string,
@@ -511,6 +535,8 @@ export async function requestNewThreadTurnStart(
   mode: TurnMode,
   capabilityRefs: readonly string[],
   accessMode: ConversationAccessMode,
+  provider: string | undefined,
+  model: string | undefined,
   onThreadCreated: (threadId: string) => void,
 ): Promise<{
   threadId: string;
@@ -529,6 +555,8 @@ export async function requestNewThreadTurnStart(
       mode,
       capabilityRefs,
       accessMode,
+      provider,
+      model,
     ),
   };
 }
@@ -546,6 +574,8 @@ export function newTaskDraftState(
     // conversation access-mode control before the first message is sent.
     threadId: state.threadId,
     revision: state.revision,
+    ...(state.provider ? { provider: state.provider } : {}),
+    ...(state.model ? { model: state.model } : {}),
     submissionError,
   };
 }
@@ -583,15 +613,35 @@ export function useThreadlightSession(
     if (threadId && sessionsRef.current[threadId]) {
       try {
         await client.initialize();
-        activateThread(threadId);
-        return threadId;
-      } catch (error) {
+        const resumed = await client.resumeThread(threadId);
         activateThread(threadId);
         updateSession(threadId, {
-          type: "connection.failed",
-          error: errorMessage(error),
+          type: "connection.ready",
+          threadId,
+          messages: resumed.messages,
+          queuedTurns: resumed.queuedTurns,
+          revision: resumed.revision,
+          activeTurn: resumed.activeTurn,
+          provider: resumed.provider,
+          model: resumed.model,
         });
-        return;
+        return threadId;
+      } catch (error) {
+        if (!(error instanceof RpcResponseError) || error.code !== -32001) {
+          activateThread(threadId);
+          updateSession(threadId, {
+            type: "connection.failed",
+            error: errorMessage(error),
+          });
+          return;
+        }
+        const opened = await client.startThread();
+        activateThread(opened.threadId);
+        updateSession(opened.threadId, {
+          type: "connection.ready",
+          threadId: opened.threadId,
+        });
+        return opened.threadId;
       }
     }
     if (threadId) {
@@ -606,6 +656,8 @@ export function useThreadlightSession(
         queuedTurns?: readonly QueuedTurnData[];
         revision?: number;
         activeTurn?: ActiveTurnData;
+        provider?: string;
+        model?: string;
       };
       if (threadId) {
         try {
@@ -627,6 +679,8 @@ export function useThreadlightSession(
         queuedTurns: opened.queuedTurns,
         revision: opened.revision,
         activeTurn: opened.activeTurn,
+        provider: opened.provider,
+        model: opened.model,
       });
       return opened.threadId;
     } catch (error) {
@@ -827,6 +881,8 @@ export function useThreadlightSession(
       mode: TurnMode = "default",
       capabilities: readonly CapabilityDescriptor[] = [],
       accessMode: ConversationAccessMode = "approval",
+      provider?: string,
+      model?: string,
     ) => {
       const text = value.trim();
       if ((!text && attachments.length === 0) || !state.threadId || state.isRunning) {
@@ -864,6 +920,8 @@ export function useThreadlightSession(
         mode,
         capabilities.map(({ id }) => id),
         accessMode,
+        provider,
+        model,
       );
       if (!started.ok) {
         updateSession(threadId, {
@@ -885,6 +943,8 @@ export function useThreadlightSession(
       mode: TurnMode = "default",
       capabilities: readonly CapabilityDescriptor[] = [],
       accessMode: ConversationAccessMode = "approval",
+      provider?: string,
+      model?: string,
     ) => {
       const text = value.trim();
       if (!text && attachments.length === 0) return;
@@ -899,6 +959,8 @@ export function useThreadlightSession(
           mode,
           capabilityRefs,
           accessMode,
+          provider,
+          model,
           (threadId) => {
             activateThread(threadId);
             updateSession(threadId, {
@@ -1027,6 +1089,17 @@ export function useThreadlightSession(
     [client, updateSession],
   );
 
+  const setThreadModel = useCallback(
+    (threadId: string, provider: string, model: string) => {
+      updateSession(threadId, {
+        type: "model.selected",
+        provider,
+        model,
+      });
+    },
+    [updateSession],
+  );
+
   return {
     state,
     sessions,
@@ -1042,5 +1115,6 @@ export function useThreadlightSession(
     cancelQueuedTurn,
     interrupt,
     terminateProcess,
+    setThreadModel,
   };
 }

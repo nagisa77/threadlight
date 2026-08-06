@@ -55,6 +55,8 @@ describe("sessionReducer", () => {
       "default",
       [],
       "approval",
+      undefined,
+      undefined,
       (threadId) => created.push(threadId),
     );
 

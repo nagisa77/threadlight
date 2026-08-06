@@ -33,6 +33,10 @@ export interface StoredConversation {
   titleGeneratedAt?: string;
   titleStatus?: "pending" | "completed";
   accessMode?: ConversationAccessMode;
+  /** Provider selected for this conversation (routing hint). */
+  provider?: string;
+  /** Model selected for this conversation. */
+  model?: string;
   messages: readonly ConversationMessageData[];
   queuedTurns?: readonly QueuedTurnData[];
   modelState?: unknown;
@@ -161,6 +165,10 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     (conversation.accessMode === undefined ||
       conversation.accessMode === "approval" ||
       conversation.accessMode === "full") &&
+    (conversation.provider === undefined ||
+      typeof conversation.provider === "string") &&
+    (conversation.model === undefined ||
+      typeof conversation.model === "string") &&
     Array.isArray(conversation.messages) &&
     conversation.messages.every(isConversationMessage) &&
     (conversation.queuedTurns === undefined ||

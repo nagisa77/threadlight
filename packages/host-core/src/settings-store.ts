@@ -319,51 +319,39 @@ export function runtimeEnvironment(
 ): NodeJS.ProcessEnv {
   return {
     THREADLIGHT_PROVIDER: settings.provider,
-    ...(settings.provider === "openai" && settings.openAIApiKey
+    ...(settings.openAIApiKey
       ? { OPENAI_API_KEY: settings.openAIApiKey }
       : {}),
-    ...(settings.provider === "deepseek" && settings.deepSeekApiKey
+    ...(settings.deepSeekApiKey
       ? { DEEPSEEK_API_KEY: settings.deepSeekApiKey }
       : {}),
-    ...(settings.provider === "qwen" && settings.qwenApiKey
+    ...(settings.qwenApiKey
       ? { DASHSCOPE_API_KEY: settings.qwenApiKey }
       : {}),
-    ...(settings.provider === "kimi" && settings.kimiApiKey
+    ...(settings.kimiApiKey
       ? { MOONSHOT_API_KEY: settings.kimiApiKey }
       : {}),
-    ...(settings.provider === "doubao" && settings.doubaoApiKey
+    ...(settings.doubaoApiKey
       ? { ARK_API_KEY: settings.doubaoApiKey }
       : {}),
-    ...(settings.provider === "gemini" && settings.geminiApiKey
+    ...(settings.geminiApiKey
       ? { GEMINI_API_KEY: settings.geminiApiKey }
       : {}),
-    ...(settings.provider === "grok" && settings.grokApiKey
+    ...(settings.grokApiKey
       ? { XAI_API_KEY: settings.grokApiKey }
       : {}),
-    ...(settings.provider === "custom" && settings.customApiKey
+    ...(settings.customApiKey
       ? { CUSTOM_API_KEY: settings.customApiKey }
       : {}),
     ...(settings.searchApiKey
       ? { BRAVE_SEARCH_API_KEY: settings.searchApiKey }
       : {}),
-    ...(settings.provider === "qwen"
-      ? { DASHSCOPE_BASE_URL: settings.qwenBaseUrl }
-      : {}),
-    ...(settings.provider === "kimi"
-      ? { MOONSHOT_BASE_URL: settings.kimiBaseUrl }
-      : {}),
-    ...(settings.provider === "doubao"
-      ? { ARK_BASE_URL: settings.doubaoBaseUrl }
-      : {}),
-    ...(settings.provider === "gemini"
-      ? { GEMINI_BASE_URL: settings.geminiBaseUrl }
-      : {}),
-    ...(settings.provider === "grok"
-      ? { XAI_BASE_URL: settings.grokBaseUrl }
-      : {}),
-    ...(settings.provider === "custom"
-      ? { CUSTOM_BASE_URL: settings.customBaseUrl }
-      : {}),
+    DASHSCOPE_BASE_URL: settings.qwenBaseUrl,
+    MOONSHOT_BASE_URL: settings.kimiBaseUrl,
+    ARK_BASE_URL: settings.doubaoBaseUrl,
+    GEMINI_BASE_URL: settings.geminiBaseUrl,
+    XAI_BASE_URL: settings.grokBaseUrl,
+    CUSTOM_BASE_URL: settings.customBaseUrl,
     THREADLIGHT_MODEL: settings.model,
   };
 }
