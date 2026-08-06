@@ -744,6 +744,13 @@ function ThreadlightAppContent({
   const currentConversation = currentProject?.conversations.find(
     (conversation) => conversation.id === state.threadId,
   );
+  // Prefer the persisted conversation title (same source the sidebar uses);
+  // fall back to the first user message until a generated title exists, then
+  // to the generic placeholder.
+  const headerTitle =
+    currentConversation?.title && currentConversation.title !== t("task")
+      ? currentConversation.title
+      : state.messages[0]?.text || t("task");
   const automaticDeliveryScope =
     currentProject && state.threadId
       ? `${currentProject.id}\u0000${state.threadId}`
@@ -3621,7 +3628,9 @@ function ThreadlightAppContent({
                   aria-hidden="true"
                 />
                 <div className="workspace-header-title">
-                  <h1>{state.messages[0]?.text || t("task")}</h1>
+                  <h1 key={headerTitle} className="header-title">
+                    {headerTitle}
+                  </h1>
                   <p>
                     {currentProject?.scope === "standalone"
                       ? t("notInProject")
