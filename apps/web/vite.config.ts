@@ -18,13 +18,6 @@ export default defineConfig({
         ),
       },
       {
-        find: "@threadlight/ui/popover",
-        replacement: resolve(
-          import.meta.dirname,
-          "../../packages/ui/src/popover.tsx",
-        ),
-      },
-      {
         find: "@threadlight/ui/i18n",
         replacement: resolve(
           import.meta.dirname,

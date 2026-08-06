@@ -1,16 +1,6 @@
-import { fileURLToPath } from "node:url";
-
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  resolve: {
-    alias: {
-      // Mirrors apps/web/vite.config.ts for offline tests.
-      "@threadlight/ui/popover": fileURLToPath(
-        new URL("./packages/ui/src/popover.tsx", import.meta.url),
-      ),
-    },
-  },
   test: {
     coverage: {
       provider: "v8",

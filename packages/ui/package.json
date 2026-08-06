@@ -18,10 +18,6 @@
       "types": "./dist/i18n.d.ts",
       "import": "./dist/i18n.js"
     },
-    "./popover": {
-      "types": "./dist/popover.d.ts",
-      "import": "./dist/popover.js"
-    },
     "./theme": {
       "types": "./dist/theme.d.ts",
       "import": "./dist/theme.js"
