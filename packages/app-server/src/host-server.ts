@@ -586,6 +586,20 @@ export class ThreadlightHostServer {
     }
     if (
       request.method === "POST" &&
+      url.pathname === "/v1/host/projects/delete"
+    ) {
+      const body = await jsonBody(request);
+      this.writeJson(
+        response,
+        200,
+        this.options.projects.deleteProject(
+          requiredString(body.projectId, "projectId"),
+        ),
+      );
+      return true;
+    }
+    if (
+      request.method === "POST" &&
       url.pathname.startsWith("/v1/host/conversations/")
     ) {
       const body = await jsonBody(request);

@@ -833,6 +833,83 @@ describe("ThreadlightHostServer", () => {
     ]);
   });
 
+  it("deletes a project from the Host index without clearing its .threadlight chats", async () => {
+    const root = temporaryDirectory("threadlight-host-project-delete-");
+    const firstWorkspace = createWorkspace(root, "first", "first");
+    const secondWorkspace = createWorkspace(root, "second", "second");
+    const homePath = join(root, "home");
+    let nextId = 0;
+    const projects = new ProjectStore(join(homePath, "project-map.json"), {
+      createId: () => `project-${++nextId}`,
+    });
+    projects.register(firstWorkspace);
+    projects.register(secondWorkspace);
+    const conversationPath = join(
+      firstWorkspace,
+      ".threadlight",
+      "conversations",
+      "thread-1.json",
+    );
+    mkdirSync(dirname(conversationPath), { recursive: true });
+    writeFileSync(
+      conversationPath,
+      JSON.stringify({
+        version: 1,
+        threadId: "thread-1",
+        createdAt: "2026-07-30T01:00:00.000Z",
+        updatedAt: "2026-07-30T01:05:00.000Z",
+        title: "Kept chat",
+        messages: [],
+      }),
+    );
+    const settings = new SettingsStore(join(homePath, "settings.json"), {
+      encrypt: (value) => value,
+      decrypt: (value) => value,
+    });
+    const peer = new ScriptedRuntimePeer((request, emit) => {
+      emit({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { name: "threadlight", protocolVersion: "0.1" },
+      });
+    });
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Project delete host",
+      homePath,
+      projects,
+      settings,
+      port: 0,
+      createPeer: () => peer,
+    });
+    servers.push(server);
+    const address = await server.start();
+    const webSession = await createRemoteWebSession({
+      endpoint: `http://127.0.0.1:${address.port}`,
+      token: "test-token",
+    });
+
+    const snapshot = await webSession.projects.deleteProject("project-1");
+    expect(snapshot.projects.map(({ id }) => id)).toEqual(["project-2"]);
+    expect(snapshot.activeProjectId).toBe("project-2");
+    expect(existsSync(conversationPath)).toBe(true);
+
+    // Reopening the folder restores the kept conversation from disk.
+    const restored = await webSession.projects.openFolder(firstWorkspace);
+    const firstProject = restored.projects.find(
+      (project) => project.basePath === realpathSync(firstWorkspace),
+    );
+    expect(firstProject?.conversations.map(({ id }) => id)).toEqual([
+      "thread-1",
+    ]);
+    expect(firstProject?.conversations[0]).toMatchObject({
+      title: "Kept chat",
+      createdAt: "2026-07-30T01:00:00.000Z",
+    });
+    webSession.dispose();
+  });
+
   it("stores and runs Host-owned automations for web clients with a scripted runtime", async () => {
     const root = temporaryDirectory("threadlight-host-automation-");
     const projectPath = createWorkspace(root, "project", "automation");

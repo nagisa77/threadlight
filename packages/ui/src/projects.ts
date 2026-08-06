@@ -146,6 +146,8 @@ export interface ProjectsAdapter {
     id: string;
     pinned: boolean;
   }): Promise<ProjectsSnapshot>;
+
+    deleteProject?(projectId: string): Promise<ProjectsSnapshot>;
   upsertConversation(
     update: ConversationSummaryUpdate,
   ): Promise<ProjectsSnapshot>;

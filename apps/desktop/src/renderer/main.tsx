@@ -80,6 +80,9 @@ const projects: ProjectsAdapter = {
     window.threadlightDesktop.activateProject(projectId),
   updateProject: (update) =>
     window.threadlightDesktop.updateProject(update),
+
+  deleteProject: (projectId) =>
+    window.threadlightDesktop.deleteProject(projectId),
   upsertConversation: (update) =>
     window.threadlightDesktop.upsertConversation(update),
   updateConversation: (update) =>

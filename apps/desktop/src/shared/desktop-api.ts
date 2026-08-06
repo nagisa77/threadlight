@@ -26,6 +26,7 @@ export const DESKTOP_STANDALONE_CREATE_CHANNEL =
   "threadlight:standalone:create";
 export const DESKTOP_PROJECT_ACTIVATE_CHANNEL = "threadlight:project:activate";
 export const DESKTOP_PROJECT_UPDATE_CHANNEL = "threadlight:project:update";
+export const DESKTOP_PROJECT_DELETE_CHANNEL = "threadlight:project:delete";
 export const DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL =
   "threadlight:host:connect";
 export const DESKTOP_HOSTS_GET_CHANNEL = "threadlight:hosts:get";
@@ -844,6 +845,8 @@ export interface DesktopApi {
   updateProject(
     update: DesktopProjectMetadataUpdate,
   ): Promise<DesktopProjectsSnapshot>;
+
+    deleteProject(projectId: string): Promise<DesktopProjectsSnapshot>;
   getProjectOpeners(
     projectId?: string,
   ): Promise<readonly DesktopProjectOpenerOption[]>;

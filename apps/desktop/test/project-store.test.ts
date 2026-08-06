@@ -117,6 +117,74 @@ describe("ProjectStore", () => {
     expect(store.activate("project-1").activeProjectId).toBe("project-1");
   });
 
+  it("deletes a project entry without clearing its .threadlight chats and restores them on reopen", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-project-delete-"));
+    directories.push(root);
+    const first = join(root, "first");
+    const second = join(root, "second");
+    mkdirSync(first);
+    mkdirSync(second);
+    const ids = ["project-1", "project-2"];
+    const mapPath = join(root, "project-map.json");
+    const store = new ProjectStore(mapPath, {
+      createId: () => ids.shift() ?? "unexpected",
+    });
+
+    store.register(first);
+    store.register(second);
+    // Persisted conversation files on disk, as written by the app-server.
+    mkdirSync(join(first, ".threadlight", "conversations"), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(first, ".threadlight", "conversations", "thread-1.json"),
+      JSON.stringify({
+        version: 1,
+        threadId: "thread-1",
+        createdAt: "2026-07-21T08:00:00.000Z",
+        updatedAt: "2026-07-21T08:01:00.000Z",
+        title: "Keep me",
+        messages: [],
+      }),
+    );
+    writeFileSync(
+      join(first, ".threadlight", "conversations", "thread-2.json"),
+      JSON.stringify({
+        version: 1,
+        threadId: "thread-2",
+        createdAt: "2026-07-21T08:00:00.000Z",
+        updatedAt: "2026-07-21T08:05:00.000Z",
+        title: "Persisted on disk",
+        messages: [],
+      }),
+    );
+
+    let snapshot = store.deleteProject("project-1");
+
+    expect(snapshot.projects.map(({ id }) => id)).toEqual(["project-2"]);
+    expect(snapshot.activeProjectId).toBe("project-2");
+    expect(
+      existsSync(join(first, ".threadlight", "conversations", "thread-2.json")),
+    ).toBe(true);
+    expect(new ProjectStore(mapPath).snapshot().projects.map(({ id }) => id))
+      .toEqual(["project-2"]);
+
+    // Reopening the folder restores the kept conversations from disk.
+    snapshot = store.register(first);
+    const restored = snapshot.projects.find(
+      (project) => project.basePath === realpathSync(first),
+    );
+    expect(
+      restored?.conversations.map(({ id }) => id).sort(),
+    ).toEqual(["thread-1", "thread-2"]);
+    expect(
+      restored?.conversations.find(({ id }) => id === "thread-2"),
+    ).toMatchObject({
+      title: "Persisted on disk",
+      createdAt: "2026-07-21T08:00:00.000Z",
+    });
+  });
+
   it("persists project pinning and sorts pinned projects first", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-project-pins-"));
     directories.push(root);

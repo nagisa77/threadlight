@@ -211,6 +211,13 @@ export class HttpHostClient {
     });
   }
 
+  deleteProject(projectId: string): Promise<HostProjectsSnapshot> {
+    return this.request("/v1/host/projects/delete", {
+      method: "POST",
+      body: { projectId },
+    });
+  }
+
   upsertConversation(input: {
     projectId: string;
     id: string;

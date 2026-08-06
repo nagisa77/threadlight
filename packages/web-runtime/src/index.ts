@@ -407,6 +407,10 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     return this.sync(await this.host.updateProject(update));
   }
 
+  async deleteProject(projectId: string): Promise<ProjectsSnapshot> {
+    return this.sync(await this.host.deleteProject(projectId));
+  }
+
   async upsertConversation(update: {
     projectId: string;
     id: string;

@@ -140,6 +140,85 @@ export function DeleteConversationDialog({
   );
 }
 
+export function DeleteProjectDialog({
+  project,
+  deleting,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  project: ProjectSummary;
+  deleting: boolean;
+  error?: string;
+  onCancel(): void;
+  onConfirm(): void;
+}) {
+  const { t } = useI18n();
+  const cancelButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelButton.current?.focus();
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !deleting) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [deleting, onCancel]);
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !deleting) onCancel();
+      }}
+    >
+      <section
+        className="delete-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-project-dialog-title"
+        aria-describedby="delete-project-dialog-description"
+      >
+        <span className="delete-dialog-icon" aria-hidden="true">
+          <Trash2 size={18} />
+        </span>
+        <div className="delete-dialog-copy">
+          <h2 id="delete-project-dialog-title">
+            {t("deleteProjectQuestion")}
+          </h2>
+          <p id="delete-project-dialog-description">
+            {t("deleteProjectDescription", { project: project.name })}
+          </p>
+          <p className="delete-dialog-hint">
+            {t("deleteProjectKeepsData")}
+          </p>
+          {error && <p className="delete-dialog-error">{error}</p>}
+        </div>
+        <div className="delete-dialog-actions">
+          <button
+            ref={cancelButton}
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={deleting}
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="button"
+            className="dialog-button danger pressable"
+            disabled={deleting}
+            onClick={onConfirm}
+          >
+            {deleting && <LoaderCircle className="spin" size={14} />}
+            {deleting ? t("deletingProject") : t("deleteProject")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function ProjectEmptyState({
   error,
   opening,

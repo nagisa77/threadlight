@@ -1804,6 +1804,15 @@ button:disabled {
   color: color-mix(in srgb, var(--warning) 74%, var(--ink));
   background: color-mix(in srgb, var(--warning) 7%, var(--panel));
 }
+.delete-dialog-copy .delete-dialog-hint {
+  margin-top: 9px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink));
+  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+}
+
 
 .restore-dialog-icon {
   color: #9b641e;

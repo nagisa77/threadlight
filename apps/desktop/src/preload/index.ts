@@ -44,6 +44,7 @@ import {
   DESKTOP_HOSTS_GET_CHANNEL,
   DESKTOP_PROJECT_ACTIVATE_CHANNEL,
   DESKTOP_PROJECT_UPDATE_CHANNEL,
+  DESKTOP_PROJECT_DELETE_CHANNEL,
   DESKTOP_PROJECT_MEMORY_GET_CHANNEL,
   DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL,
   DESKTOP_SEARCH_CHANNEL,
@@ -147,6 +148,10 @@ const api: DesktopApi = {
   },
   updateProject(update) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_UPDATE_CHANNEL, update);
+  },
+
+  deleteProject(projectId) {
+    return ipcRenderer.invoke(DESKTOP_PROJECT_DELETE_CHANNEL, projectId);
   },
   getProjectOpeners(projectId) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_OPENERS_GET_CHANNEL, projectId);

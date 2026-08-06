@@ -248,6 +248,7 @@ export {
 
 import {
   DeleteConversationDialog,
+  DeleteProjectDialog,
   EmptyState,
   ProjectEmptyState,
   ProjectPickerPopover,
@@ -672,6 +673,11 @@ function ThreadlightAppContent({
   }>();
   const [deleteError, setDeleteError] = useState<string>();
   const [deletingConversation, setDeletingConversation] = useState(false);
+  const [pendingDeleteProject, setPendingDeleteProject] = useState<
+    ProjectSummary | undefined
+  >();
+  const [deleteProjectError, setDeleteProjectError] = useState<string>();
+  const [deletingProject, setDeletingProject] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceInputStatus>("idle");
   const [voiceError, setVoiceError] = useState<string>();
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -2806,6 +2812,34 @@ function ThreadlightAppContent({
     }
   }
 
+  async function confirmDeleteProject() {
+    if (!projects?.deleteProject || !pendingDeleteProject || deletingProject) {
+      return;
+    }
+    const target = pendingDeleteProject;
+    const deletingActiveProject =
+      target.id === projectSnapshot?.activeProjectId;
+    setDeletingProject(true);
+    setDeleteProjectError(undefined);
+    try {
+      if (deletingActiveProject && !(await stopComputerShare())) {
+        return;
+      }
+      const snapshot = await projects.deleteProject(target.id);
+      setProjectSnapshot(snapshot);
+      setPendingDeleteProject(undefined);
+      if (deletingActiveProject) {
+        closeConversationPanels();
+        setView("thread");
+        await connectProject(snapshot);
+      }
+    } catch (error) {
+      setDeleteProjectError(errorMessage(error));
+    } finally {
+      setDeletingProject(false);
+    }
+  }
+
   async function reconnectRuntime() {
     if (currentProject || !projects) await retry();
   }
@@ -3358,6 +3392,14 @@ function ThreadlightAppContent({
                     onOpenDiagnostics={
                       diagnostics
                         ? () => openProjectView(project.id, "diagnostics")
+                        : undefined
+                    }
+                    onDeleteProject={
+                      projects.deleteProject
+                        ? () => {
+                            setDeleteProjectError(undefined);
+                            setPendingDeleteProject(project);
+                          }
                         : undefined
                     }
                     onSelect={(threadId) =>
@@ -4352,6 +4394,18 @@ function ThreadlightAppContent({
             setDeleteError(undefined);
           }}
           onConfirm={() => void confirmDeleteConversation()}
+        />
+      )}
+      {pendingDeleteProject && (
+        <DeleteProjectDialog
+          project={pendingDeleteProject}
+          deleting={deletingProject}
+          error={deleteProjectError}
+          onCancel={() => {
+            setPendingDeleteProject(undefined);
+            setDeleteProjectError(undefined);
+          }}
+          onConfirm={() => void confirmDeleteProject()}
         />
       )}
       {remoteRuntimeOpen && projects?.connectRemote && (
