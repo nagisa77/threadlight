@@ -1,7 +1,6 @@
 :root {
   --web-card-shadow:
-    0 1px 2px rgb(36 36 32 / 5%),
-    0 18px 60px rgb(36 36 32 / 9%);
+    0 1px 2px rgb(36 36 32 / 5%), 0 18px 60px rgb(36 36 32 / 9%);
 }
 
 .web-connect-shell {
@@ -165,8 +164,7 @@
 
 .web-connect-form input:focus {
   border-color: color-mix(in srgb, var(--accent) 68%, var(--line));
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--accent-soft) 76%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft) 76%, transparent);
 }
 
 .web-token-field {
@@ -265,8 +263,7 @@
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--success);
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--success) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 12%, transparent);
 }
 
 .web-session-name {
@@ -361,8 +358,7 @@
 
 .web-host-row.selected {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
-  box-shadow: 0 0 0 3px
-    color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft) 55%, transparent);
 }
 
 .web-host-select {
@@ -419,8 +415,7 @@
 .web-host-action.armed {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, transparent);
-  box-shadow: inset 0 0 0 1px
-    color-mix(in srgb, var(--danger) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 26%, transparent);
 }
 
 .web-host-connect {
@@ -557,5 +552,126 @@
 
   .web-connect-new-link:hover {
     background: color-mix(in srgb, var(--accent-soft) 55%, transparent);
+  }
+}
+
+/* --- Design-engineering polish for the connection page --- */
+
+/* Connecting state: spinner + centered button content */
+.web-connect-submit,
+.web-connect-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Save-changes success state (morphs the button content) */
+.web-connect-secondary {
+  transition:
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+.web-connect-secondary[data-saved] {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--line));
+  color: var(--success);
+}
+
+/* Delete button: fixed width + clip-path confirm fill (no layout jump) */
+.web-connect-delete {
+  position: relative;
+  width: 96px;
+  overflow: hidden;
+}
+
+.web-connect-delete.armed {
+  width: 96px;
+  padding: 0;
+}
+
+.web-connect-delete-fill {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  clip-path: inset(0 100% 0 0);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  transition: clip-path 200ms var(--ease-out);
+}
+
+.web-connect-delete.armed .web-connect-delete-fill {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path 2400ms linear;
+}
+
+.web-connect-delete > svg,
+.web-connect-delete-label {
+  position: relative;
+  z-index: 1;
+}
+
+.web-connect-delete-label {
+  font-size: 11px;
+}
+
+/* Inline field error */
+.web-connect-field-error {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 520;
+  line-height: 1.5;
+}
+
+/* Entry motion: the card first, then saved-host rows stagger in */
+.web-connect-card {
+  animation: web-connect-card-in 220ms var(--ease-out) both;
+}
+
+.web-host-row {
+  animation: web-connect-row-in 200ms var(--ease-out) both;
+  animation-delay: calc(var(--host-index, 0) * 40ms);
+}
+
+.web-connect-error,
+.web-connect-field-error {
+  animation: web-connect-error-in 180ms var(--ease-out);
+}
+
+@keyframes web-connect-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes web-connect-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes web-connect-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-connect-card,
+  .web-host-row {
+    animation: none;
+    opacity: 1;
+  }
+
+  .web-connect-error,
+  .web-connect-field-error {
+    animation: none;
+  }
+
+  .web-connect-delete-fill {
+    transition-duration: 0ms;
   }
 }

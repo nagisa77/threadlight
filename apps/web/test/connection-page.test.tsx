@@ -5,7 +5,7 @@ import {
   connectionPageCopy,
   RemoteConnectionPage,
 } from "../src/connection-page.js";
-import type { HostRecord } from "../src/host-records.js";
+import type { HostRecord } from "../src/host-store.js";
 
 function host(partial: Partial<HostRecord>): HostRecord {
   return {
@@ -31,11 +31,28 @@ describe("remote connection page preferences", () => {
 
     expect(html).toContain("Connect to a remote Host");
     expect(html).toContain("Connect a new Host");
+    expect(html).toContain("WEB CLIENT");
     expect(html).toContain('aria-label="Language"');
     expect(html).toContain('<option value="en" selected="">English</option>');
-    expect(html).toContain('<option value="system" selected="">System</option>');
+    expect(html).toContain(
+      '<option value="system" selected="">System</option>',
+    );
     expect(html).not.toContain("连接远端 Host");
     expect(html).not.toContain("Saved hosts");
+  });
+
+  it("renders the endpoint as a forgiving text input instead of native URL validation", () => {
+    const html = renderToStaticMarkup(
+      <RemoteConnectionPage
+        initialEndpoint=""
+        initialToken=""
+        autoConnect={false}
+        onConnect={async () => {}}
+      />,
+    );
+
+    expect(html).not.toContain('type="url"');
+    expect(html).toContain('inputMode="url"');
   });
 
   it("provides complete connection copy for every interface language", () => {
@@ -64,6 +81,10 @@ describe("remote connection page preferences", () => {
       expect(copy.reconnect.length).toBeGreaterThan(0);
       expect(copy.delete.length).toBeGreaterThan(0);
       expect(copy.deleteConfirm.length).toBeGreaterThan(0);
+      expect(copy.eyebrow.length).toBeGreaterThan(0);
+      expect(copy.saved.length).toBeGreaterThan(0);
+      expect(copy.endpointSchemeError.length).toBeGreaterThan(0);
+      expect(copy.endpointFormatError.length).toBeGreaterThan(0);
     }
   });
 });
@@ -106,6 +127,21 @@ describe("remote connection page saved hosts", () => {
     expect(html.match(/>Reconnect<\/span>/g)).toHaveLength(2);
     expect(html).toContain('aria-label="Edit"');
     expect(html).toContain('aria-label="Delete"');
+  });
+
+  it("staggers saved-host rows with an inline index for the entry animation", () => {
+    const html = renderToStaticMarkup(
+      <RemoteConnectionPage
+        initialEndpoint=""
+        initialToken=""
+        autoConnect={false}
+        savedHosts={hosts}
+        onConnect={async () => {}}
+      />,
+    );
+
+    expect(html).toContain('style="--host-index:0"');
+    expect(html).toContain('style="--host-index:1"');
   });
 
   it("preselects the saved host matching the initial endpoint for editing", () => {

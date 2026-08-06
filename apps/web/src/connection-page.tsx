@@ -2,13 +2,16 @@ import {
   useEffect,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
 } from "react";
 import {
+  Check,
   ChevronDown,
   Eye,
   EyeOff,
   Languages,
+  LoaderCircle,
   MonitorCog,
   Pencil,
   Radio,
@@ -21,10 +24,7 @@ import {
   LANGUAGE_OPTIONS,
   type Language,
 } from "@threadlight/ui/i18n";
-import {
-  isThemePreference,
-  ThemeProvider,
-} from "@threadlight/ui/theme";
+import { isThemePreference, ThemeProvider } from "@threadlight/ui/theme";
 import {
   hostNameForEndpoint,
   normalizeEndpoint,
@@ -43,6 +43,7 @@ interface ConnectionCopy {
   themeDark: string;
   title: string;
   description: string;
+  eyebrow: string;
   savedHosts: string;
   hostName: string;
   newHost: string;
@@ -56,12 +57,15 @@ interface ConnectionCopy {
   connect: string;
   reconnect: string;
   saveChanges: string;
+  saved: string;
   edit: string;
   delete: string;
   deleteConfirm: string;
   tokenNotice: string;
   httpsError: string;
   networkError: string;
+  endpointSchemeError: string;
+  endpointFormatError: string;
 }
 
 const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
@@ -75,6 +79,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     title: "Connect to a remote Host",
     description:
       "The web client connects to an already-running Threadlight Host. It does not start a local Host in your browser or on the deployment server.",
+    eyebrow: "WEB CLIENT",
     savedHosts: "Saved hosts",
     hostName: "Name (optional)",
     newHost: "Connect a new Host",
@@ -88,14 +93,19 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     connect: "Connect to Host",
     reconnect: "Reconnect",
     saveChanges: "Save changes",
+    saved: "Saved",
     edit: "Edit",
     delete: "Delete",
     deleteConfirm: "Delete?",
     tokenNotice:
       "Hosts and tokens are saved in this browser so you can reconnect quickly. Avoid saving sensitive hosts on shared devices.",
-    httpsError: "An HTTPS page cannot connect to an HTTP Host. Configure TLS for the Host.",
+    httpsError:
+      "An HTTPS page cannot connect to an HTTP Host. Configure TLS for the Host.",
     networkError:
       "Unable to connect to the Host. Check the address, TLS, token, and the Host's --origin configuration.",
+    endpointSchemeError:
+      "Enter a full address with http:// or https://, for example https://host.example.com.",
+    endpointFormatError: "That address is not valid. Check the host and port.",
   },
   "zh-CN": {
     preferences: "连接页面偏好设置",
@@ -107,6 +117,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     title: "连接远端 Host",
     description:
       "Web 端只连接已经运行的 Threadlight Host，不会在浏览器或部署服务器上启动本地 Host。",
+    eyebrow: "WEB 客户端",
     savedHosts: "已保存的主机",
     hostName: "名称（可选）",
     newHost: "连接新的 Host",
@@ -120,6 +131,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     connect: "连接 Host",
     reconnect: "重新连接",
     saveChanges: "保存更改",
+    saved: "已保存",
     edit: "编辑",
     delete: "删除",
     deleteConfirm: "确认删除？",
@@ -128,6 +140,9 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     httpsError: "HTTPS 页面不能连接 HTTP Host，请为 Host 配置 TLS。",
     networkError:
       "无法连接 Host。请检查地址、TLS、Token，以及 Host 的 --origin 配置。",
+    endpointSchemeError:
+      "请输入带协议（http:// 或 https://）的完整地址，例如 https://host.example.com。",
+    endpointFormatError: "地址格式不正确，请检查主机与端口。",
   },
   "zh-TW": {
     preferences: "連線頁面偏好設定",
@@ -139,6 +154,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     title: "連線遠端 Host",
     description:
       "Web 端只會連線至已在執行的 Threadlight Host，不會在瀏覽器或部署伺服器上啟動本機 Host。",
+    eyebrow: "WEB 用戶端",
     savedHosts: "已儲存的主機",
     hostName: "名稱（選填）",
     newHost: "連線新的 Host",
@@ -152,6 +168,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     connect: "連線 Host",
     reconnect: "重新連線",
     saveChanges: "儲存變更",
+    saved: "已儲存",
     edit: "編輯",
     delete: "刪除",
     deleteConfirm: "確認刪除？",
@@ -160,6 +177,9 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     httpsError: "HTTPS 頁面無法連線 HTTP Host，請為 Host 設定 TLS。",
     networkError:
       "無法連線 Host。請檢查位址、TLS、Token，以及 Host 的 --origin 設定。",
+    endpointSchemeError:
+      "請輸入帶協定（http:// 或 https://）的完整位址，例如 https://host.example.com。",
+    endpointFormatError: "位址格式不正確，請檢查主機與連接埠。",
   },
   ja: {
     preferences: "接続ページの表示設定",
@@ -171,6 +191,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     title: "リモート Host に接続",
     description:
       "Web クライアントは、すでに実行中の Threadlight Host に接続します。ブラウザーやデプロイ先のサーバーでローカル Host を起動することはありません。",
+    eyebrow: "WEB クライアント",
     savedHosts: "保存済みホスト",
     hostName: "名前（任意）",
     newHost: "新しい Host に接続",
@@ -184,14 +205,20 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     connect: "Host に接続",
     reconnect: "再接続",
     saveChanges: "変更を保存",
+    saved: "保存しました",
     edit: "編集",
     delete: "削除",
     deleteConfirm: "削除しますか？",
     tokenNotice:
       "ホストとトークンはブラウザーに保存され、素早く再接続できます。共有デバイスで機密ホストを保存しないでください。",
-    httpsError: "HTTPS ページから HTTP Host には接続できません。Host に TLS を設定してください。",
+    httpsError:
+      "HTTPS ページから HTTP Host には接続できません。Host に TLS を設定してください。",
     networkError:
       "Host に接続できません。アドレス、TLS、トークン、Host の --origin 設定を確認してください。",
+    endpointSchemeError:
+      "http:// または https:// を含む完全なアドレスを入力してください（例: https://host.example.com）。",
+    endpointFormatError:
+      "アドレスの形式が正しくありません。ホストとポートを確認してください。",
   },
   ko: {
     preferences: "연결 페이지 환경설정",
@@ -203,6 +230,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     title: "원격 Host에 연결",
     description:
       "웹 클라이언트는 이미 실행 중인 Threadlight Host에 연결합니다. 브라우저나 배포 서버에서 로컬 Host를 시작하지 않습니다.",
+    eyebrow: "WEB 클라이언트",
     savedHosts: "저장된 호스트",
     hostName: "이름(선택)",
     newHost: "새 Host에 연결",
@@ -216,16 +244,56 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     connect: "Host에 연결",
     reconnect: "다시 연결",
     saveChanges: "변경 사항 저장",
+    saved: "저장됨",
     edit: "편집",
     delete: "삭제",
     deleteConfirm: "삭제할까요?",
     tokenNotice:
       "호스트와 토큰이 브라우저에 저장되어 빠르게 다시 연결할 수 있습니다. 공유 기기에서는 민감한 호스트를 저장하지 마세요.",
-    httpsError: "HTTPS 페이지에서는 HTTP Host에 연결할 수 없습니다. Host에 TLS를 설정하세요.",
+    httpsError:
+      "HTTPS 페이지에서는 HTTP Host에 연결할 수 없습니다. Host에 TLS를 설정하세요.",
     networkError:
       "Host에 연결할 수 없습니다. 주소, TLS, 토큰, Host의 --origin 설정을 확인하세요.",
+    endpointSchemeError:
+      "http:// 또는 https:// 를 포함한 전체 주소를 입력하세요. 예: https://host.example.com",
+    endpointFormatError:
+      "주소 형식이 올바르지 않습니다. 호스트와 포트를 확인하세요.",
   },
 };
+
+const PREF_STORAGE_KEY = "threadlight:web:connect-prefs";
+
+interface ConnectPrefs {
+  language: Language;
+  theme: ThemePreference;
+}
+
+function loadConnectPrefs(): ConnectPrefs {
+  const fallback: ConnectPrefs = { language: "en", theme: "system" };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(PREF_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return fallback;
+    const entry = parsed as Record<string, unknown>;
+    return {
+      language: isLanguage(entry.language) ? entry.language : fallback.language,
+      theme: isThemePreference(entry.theme) ? entry.theme : fallback.theme,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function persistConnectPrefs(prefs: ConnectPrefs): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(PREF_STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage can be unavailable in private or locked-down browsing modes.
+  }
+}
 
 export function RemoteConnectionPage({
   initialEndpoint,
@@ -244,8 +312,14 @@ export function RemoteConnectionPage({
   onUpsertHost?(host: HostRecordInput): void;
   onDeleteHost?(id: string): void;
 }) {
-  const [language, setLanguage] = useState<Language>("en");
-  const [theme, setTheme] = useState<ThemePreference>("system");
+  const [initialPrefs] = useState<ConnectPrefs>(loadConnectPrefs);
+  const [language, setLanguage] = useState<Language>(initialPrefs.language);
+  const [theme, setTheme] = useState<ThemePreference>(initialPrefs.theme);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    persistConnectPrefs({ language, theme });
+  }, [language, theme]);
 
   return (
     <ThemeProvider preference={theme}>
@@ -307,9 +381,12 @@ function RemoteConnectionContent({
   const [showToken, setShowToken] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [errorReason, setErrorReason] = useState<unknown>();
+  const [endpointError, setEndpointError] = useState<string>();
+  const [savedFlash, setSavedFlash] = useState(false);
   const [armedId, setArmedId] = useState<string | null>(null);
   const attemptedAutoConnect = useRef(false);
   const armedTimer = useRef<number | undefined>(undefined);
+  const savedTimer = useRef<number | undefined>(undefined);
   const endpointInputRef = useRef<HTMLInputElement>(null);
   const copy = CONNECTION_COPY[language];
 
@@ -325,9 +402,22 @@ function RemoteConnectionContent({
   useEffect(
     () => () => {
       window.clearTimeout(armedTimer.current);
+      window.clearTimeout(savedTimer.current);
     },
     [],
   );
+
+  function endpointValidationError(raw: string): string | undefined {
+    const trimmed = raw.trim();
+    if (!trimmed) return undefined; // The submit button is disabled for empty input.
+    if (!/^https?:\/\//i.test(trimmed)) return copy.endpointSchemeError;
+    try {
+      new URL(trimmed);
+    } catch {
+      return copy.endpointFormatError;
+    }
+    return undefined;
+  }
 
   function selectHost(host: HostRecord) {
     setSelectedId(host.id);
@@ -335,6 +425,7 @@ function RemoteConnectionContent({
     setEndpoint(host.endpoint);
     setToken(host.token);
     setErrorReason(undefined);
+    setEndpointError(undefined);
   }
 
   function resetToNewHost() {
@@ -343,6 +434,7 @@ function RemoteConnectionContent({
     setEndpoint("");
     setToken("");
     setErrorReason(undefined);
+    setEndpointError(undefined);
     setArmedId(null);
     endpointInputRef.current?.focus();
   }
@@ -366,22 +458,31 @@ function RemoteConnectionContent({
 
   async function submitCredentials(nameOverride?: string) {
     if (connecting) return;
+    const validationError = endpointValidationError(endpoint);
+    if (validationError) {
+      setEndpointError(validationError);
+      return;
+    }
     setConnecting(true);
     setErrorReason(undefined);
+    setEndpointError(undefined);
+    const normalized = normalizeEndpoint(endpoint);
     try {
+      await onConnect(
+        normalized,
+        token,
+        nameOverride?.trim() || hostName.trim() || undefined,
+      );
+      // Only persist the record (and its "last connected" ordering) after the
+      // connection actually succeeds, so failed attempts do not rewrite history.
       if (selectedHost) {
         onUpsertHost?.({
           id: selectedHost.id,
           name: hostName,
-          endpoint,
+          endpoint: normalized,
           token,
         });
       }
-      await onConnect(
-        endpoint.trim(),
-        token,
-        nameOverride?.trim() || hostName.trim() || undefined,
-      );
     } catch (reason) {
       setErrorReason(() => reason);
     } finally {
@@ -390,13 +491,21 @@ function RemoteConnectionContent({
   }
 
   function saveChanges() {
-    if (!selectedHost) return;
+    if (!selectedHost || savedFlash) return;
+    const validationError = endpointValidationError(endpoint);
+    if (validationError) {
+      setEndpointError(validationError);
+      return;
+    }
     onUpsertHost?.({
       id: selectedHost.id,
       name: hostName,
-      endpoint,
+      endpoint: normalizeEndpoint(endpoint),
       token,
     });
+    setSavedFlash(true);
+    window.clearTimeout(savedTimer.current);
+    savedTimer.current = window.setTimeout(() => setSavedFlash(false), 1200);
   }
 
   async function quickConnect(host: HostRecord) {
@@ -420,10 +529,7 @@ function RemoteConnectionContent({
 
   return (
     <main className="web-connect-shell">
-      <div
-        className="web-connect-preferences"
-        aria-label={copy.preferences}
-      >
+      <div className="web-connect-preferences" aria-label={copy.preferences}>
         <label className="web-connect-preference">
           <Languages size={15} aria-hidden="true" />
           <span className="web-visually-hidden">{copy.language}</span>
@@ -476,7 +582,7 @@ function RemoteConnectionContent({
         </div>
 
         <div className="web-connect-copy">
-          <p className="web-connect-eyebrow">WEB CLIENT</p>
+          <p className="web-connect-eyebrow">{copy.eyebrow}</p>
           <h1 id="connect-title">{copy.title}</h1>
           <p>{copy.description}</p>
         </div>
@@ -485,13 +591,14 @@ function RemoteConnectionContent({
           <div className="web-connect-hosts">
             <h2 className="web-connect-section-title">{copy.savedHosts}</h2>
             <ul className="web-host-list">
-              {savedHosts.map((host) => {
+              {savedHosts.map((host, index) => {
                 const isSelected = host.id === selectedId;
                 const isArmed = armedId === host.id;
                 return (
                   <li
                     key={host.id}
                     className={`web-host-row${isSelected ? " selected" : ""}`}
+                    style={{ "--host-index": index } as CSSProperties}
                   >
                     <button
                       type="button"
@@ -501,9 +608,7 @@ function RemoteConnectionContent({
                       <span className="web-host-name">
                         {host.name || hostNameForEndpoint(host.endpoint)}
                       </span>
-                      <span className="web-host-endpoint">
-                        {host.endpoint}
-                      </span>
+                      <span className="web-host-endpoint">{host.endpoint}</span>
                     </button>
                     <span className="web-host-actions">
                       <button
@@ -557,7 +662,11 @@ function RemoteConnectionContent({
             )}
           </div>
 
-          <form className="web-connect-form" onSubmit={submit}>
+          <form
+            className="web-connect-form"
+            onSubmit={submit}
+            aria-busy={connecting}
+          >
             <label>
               <span>{copy.hostName}</span>
               <input
@@ -568,6 +677,7 @@ function RemoteConnectionContent({
                 placeholder="Production"
                 value={hostName}
                 onChange={(event) => setHostName(event.target.value)}
+                disabled={connecting}
               />
             </label>
 
@@ -575,17 +685,26 @@ function RemoteConnectionContent({
               <span>{copy.endpoint}</span>
               <input
                 ref={endpointInputRef}
-                type="url"
+                type="text"
                 inputMode="url"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
                 placeholder="https://host.example.com"
                 value={endpoint}
-                onChange={(event) => setEndpoint(event.target.value)}
-                required
+                onChange={(event) => {
+                  setEndpoint(event.target.value);
+                  setEndpointError(undefined);
+                }}
+                disabled={connecting}
+                aria-invalid={endpointError ? true : undefined}
                 autoFocus={!endpoint}
               />
+              {endpointError && (
+                <span className="web-connect-field-error" role="alert">
+                  {endpointError}
+                </span>
+              )}
             </label>
 
             <label>
@@ -593,10 +712,10 @@ function RemoteConnectionContent({
               <span className="web-token-field">
                 <input
                   type={showToken ? "text" : "password"}
-                  autoComplete="current-password"
+                  autoComplete="off"
                   value={token}
                   onChange={(event) => setToken(event.target.value)}
-                  required
+                  disabled={connecting}
                   autoFocus={Boolean(endpoint && !token)}
                 />
                 <button
@@ -637,19 +756,33 @@ function RemoteConnectionContent({
                     }
                     onClick={() => handleDelete(selectedHost.id)}
                   >
+                    <span
+                      className="web-connect-delete-fill"
+                      aria-hidden="true"
+                    />
                     {armedId === selectedHost.id ? (
-                      copy.deleteConfirm
+                      <span className="web-connect-delete-label">
+                        {copy.deleteConfirm}
+                      </span>
                     ) : (
-                      <Trash2 size={15} />
+                      <Trash2 size={15} aria-hidden="true" />
                     )}
                   </button>
                   <button
                     type="button"
                     className="web-connect-secondary pressable"
+                    data-saved={savedFlash || undefined}
                     onClick={saveChanges}
                     disabled={!endpoint.trim() || !token}
                   >
-                    {copy.saveChanges}
+                    {savedFlash ? (
+                      <>
+                        <Check size={15} aria-hidden="true" />
+                        {copy.saved}
+                      </>
+                    ) : (
+                      copy.saveChanges
+                    )}
                   </button>
                 </>
               )}
@@ -658,6 +791,9 @@ function RemoteConnectionContent({
                 className="web-connect-submit pressable"
                 disabled={connecting || !endpoint.trim() || !token}
               >
+                {connecting && (
+                  <LoaderCircle className="spin" size={15} aria-hidden="true" />
+                )}
                 {connecting ? copy.connecting : copy.connect}
               </button>
             </div>
@@ -680,8 +816,7 @@ function initialSelectedHost(
   const normalized = normalizeEndpoint(initialEndpoint).toLowerCase();
   if (normalized) {
     return savedHosts.find(
-      (host) =>
-        normalizeEndpoint(host.endpoint).toLowerCase() === normalized,
+      (host) => normalizeEndpoint(host.endpoint).toLowerCase() === normalized,
     );
   }
   return savedHosts[0];
