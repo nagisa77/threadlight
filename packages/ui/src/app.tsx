@@ -39,7 +39,6 @@ import {
   KeyRound,
   LoaderCircle,
   MoreHorizontal,
-  Mic,
   Monitor,
   NotebookText,
   Paperclip,
@@ -56,7 +55,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Square,
   Terminal,
   TriangleAlert,
   Trash2,
@@ -166,6 +164,7 @@ import {
 } from "./popover.js";
 import { ModelSelector } from "./features/composer/model-selector.js";
 import { DevelopmentModeControl } from "./features/composer/development-mode.js";
+import { VoiceInputButton } from "./features/composer/voice-input-button.js";
 import {
   ComposerQueue,
   GuidedMessageReceipt,
@@ -1981,6 +1980,9 @@ function ThreadlightAppContent({
     setVoiceStatus("requesting");
 
     try {
+      if (!window.isSecureContext) {
+        throw new Error(t("microphoneSecureContextRequired"));
+      }
       await voiceInput.prepare?.();
       if (operation !== voiceOperation.current) return;
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -3447,6 +3449,7 @@ function ThreadlightAppContent({
     pendingAttachments.length > 0 ||
     state.queuedTurns.length > 0 ||
     selectedCapabilities.length > 0 ||
+    voiceError ||
     capabilityQuery ||
     addMenuOpen,
   );
@@ -4148,48 +4151,17 @@ function ThreadlightAppContent({
                         }}
                       />
                       {voiceInput && !state.isRunning && (
-                        <button
-                          type="button"
-                          className={`composer-action voice pressable ${voiceStatus === "recording" ? "recording" : ""}`}
-                          onClick={() => {
+                        <VoiceInputButton
+                          status={voiceStatus}
+                          onToggle={() => {
                             if (voiceStatus === "recording") stopVoiceInput();
                             else void startVoiceInput();
                           }}
                           disabled={
-                            state.connection !== "ready" ||
-                            !providerReady ||
-                            voiceStatus === "requesting" ||
-                            voiceStatus === "transcribing"
+                            state.connection !== "ready" || !providerReady
                           }
-                          aria-label={
-                            voiceStatus === "recording"
-                              ? t("stopRecording")
-                              : voiceStatus === "requesting"
-                                ? t("requestingMicrophone")
-                                : voiceStatus === "transcribing"
-                                  ? t("transcribingVoice")
-                                  : t("voiceInput")
-                          }
-                          aria-pressed={voiceStatus === "recording"}
-                          title={
-                            voiceStatus === "recording"
-                              ? t("stopRecording")
-                              : t("voiceInput")
-                          }
-                        >
-                          {voiceStatus === "requesting" ||
-                          voiceStatus === "transcribing" ? (
-                            <LoaderCircle className="spin" size={17} />
-                          ) : voiceStatus === "recording" ? (
-                            <Square
-                              size={12}
-                              fill="currentColor"
-                              strokeWidth={0}
-                            />
-                          ) : (
-                            <Mic size={17} />
-                          )}
-                        </button>
+                          t={t}
+                        />
                       )}
                       {state.isRunning && (
                         <button

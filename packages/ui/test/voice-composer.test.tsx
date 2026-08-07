@@ -9,6 +9,10 @@ import {
   preserveComposerFocusOnPointerDown,
   ThreadlightApp,
 } from "../src/app.js";
+import {
+  activateVoiceInputFromClick,
+  activateVoiceInputFromPointerDown,
+} from "../src/features/composer/voice-input-button.js";
 
 const appSource = readFileSync(
   new URL("../src/app.tsx", import.meta.url),
@@ -66,6 +70,28 @@ describe("voice composer", () => {
     expect(appSource).toContain(
       'voiceStatus !== "idle" ? " is-voice-active" : ""',
     );
+    expect(appSource).toMatch(
+      /selectedCapabilities\.length > 0 \|\|\s*voiceError/,
+    );
+  });
+
+  it("starts voice input during pointerdown before the mobile composer can move", () => {
+    const activate = vi.fn();
+
+    activateVoiceInputFromPointerDown({ button: 0 }, activate);
+    activateVoiceInputFromClick({ detail: 1 }, activate);
+
+    expect(activate).toHaveBeenCalledOnce();
+    expect(appSource).toContain("microphoneSecureContextRequired");
+  });
+
+  it("keeps keyboard activation available without duplicating pointer input", () => {
+    const activate = vi.fn();
+
+    activateVoiceInputFromPointerDown({ button: 2 }, activate);
+    activateVoiceInputFromClick({ detail: 0 }, activate);
+
+    expect(activate).toHaveBeenCalledOnce();
   });
 
   it("exposes a file picker when a local staging adapter is available", () => {

@@ -465,6 +465,8 @@ export const ko: Messages = {
   projectTaskUnread: "{project}에 읽지 않은 작업이 있음",
   microphoneRecordingUnsupported:
     "이 환경에서는 마이크 녹음을 지원하지 않습니다.",
+  microphoneSecureContextRequired:
+    "모바일 음성 입력은 HTTPS를 통해 Threadlight를 열어야 합니다.",
   voiceInputUnsupported: "이 환경에서는 음성 입력을 지원하지 않습니다.",
   recordingInterrupted: "녹음이 예기치 않게 중단되었습니다. 다시 시도하세요.",
   emptyRecording: "녹음된 오디오가 없습니다. 다시 시도하세요.",

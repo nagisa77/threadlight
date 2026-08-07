@@ -425,6 +425,8 @@ export const zh = {
   projectTaskUsingComputer: "{project} 中有任务正在使用电脑",
   projectTaskUnread: "{project} 中有未读任务",
   microphoneRecordingUnsupported: "当前环境不支持麦克风录音。",
+  microphoneSecureContextRequired:
+    "移动端语音输入需要通过 HTTPS 打开 Threadlight。",
   voiceInputUnsupported: "当前环境不支持语音输入。",
   recordingInterrupted: "录音意外中断，请重试。",
   emptyRecording: "没有录到声音，请重试。",

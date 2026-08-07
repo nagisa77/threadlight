@@ -471,6 +471,8 @@ export const en: Messages = {
   projectTaskUnread: "{project} has an unread task",
   microphoneRecordingUnsupported:
     "Microphone recording is not supported in this environment.",
+  microphoneSecureContextRequired:
+    "Voice input on mobile requires opening Threadlight over HTTPS.",
   voiceInputUnsupported: "Voice input is not supported in this environment.",
   recordingInterrupted: "Recording stopped unexpectedly. Please try again.",
   emptyRecording: "No audio was recorded. Please try again.",

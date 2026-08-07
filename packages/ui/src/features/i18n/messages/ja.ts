@@ -466,6 +466,8 @@ export const ja: Messages = {
   projectTaskUsingComputer: "{project} でタスクがコンピューターを使用中",
   projectTaskUnread: "{project} に未読のタスクがあります",
   microphoneRecordingUnsupported: "この環境ではマイク録音を利用できません。",
+  microphoneSecureContextRequired:
+    "モバイルの音声入力には HTTPS で Threadlight を開く必要があります。",
   voiceInputUnsupported: "この環境では音声入力を利用できません。",
   recordingInterrupted: "録音が予期せず終了しました。もう一度お試しください。",
   emptyRecording: "音声が録音されていません。もう一度お試しください。",

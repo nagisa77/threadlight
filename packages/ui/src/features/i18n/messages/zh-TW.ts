@@ -432,6 +432,8 @@ export const zhTW: Messages = {
   projectTaskUsingComputer: "{project} 中有工作正在使用電腦",
   projectTaskUnread: "{project} 中有未讀工作",
   microphoneRecordingUnsupported: "目前環境不支援麥克風錄音。",
+  microphoneSecureContextRequired:
+    "行動裝置語音輸入需要透過 HTTPS 開啟 Threadlight。",
   voiceInputUnsupported: "目前環境不支援語音輸入。",
   recordingInterrupted: "錄音意外中斷，請再試一次。",
   emptyRecording: "未錄到聲音，請再試一次。",
