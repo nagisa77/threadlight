@@ -2721,6 +2721,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .workspace.has-workspace-panel .workspace-split-handle {
     display: none;
   }
+
+  .workspace.has-workspace-panel > .sidebar-reveal-button {
+    display: none;
+  }
 }
 
 @media (max-width: 920px) {

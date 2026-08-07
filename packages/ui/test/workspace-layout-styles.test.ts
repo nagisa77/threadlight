@@ -30,6 +30,12 @@ describe("workspace titlebar hit regions", () => {
       /\.workspace-panel-actions\s*\{[^}]*flex:\s*0 0 auto;/s,
     );
   });
+
+  it("hides the app sidebar trigger when the narrow workspace panel takes over", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 1100px\)[\s\S]*?\.workspace\.has-workspace-panel > \.sidebar-reveal-button\s*\{[^}]*display:\s*none;/s,
+    );
+  });
 });
 
 describe("expanded composer layout", () => {
