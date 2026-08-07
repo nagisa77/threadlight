@@ -14,6 +14,13 @@ import type {
   WorktreeDeliveryHistorySnapshot,
 } from "./workspace-panel.js";
 
+export function shouldShowDeliveryTurnStatus(
+  workspaceMode: string | undefined,
+  isRunning: boolean,
+): boolean {
+  return workspaceMode === "worktree" && !isRunning;
+}
+
 export function DeliveryTurnStatus({
   delivery,
   disabled = false,

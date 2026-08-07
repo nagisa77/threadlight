@@ -1,15 +1,25 @@
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Activity,
   CheckCircle2,
   Clock3,
   Cpu,
   Download,
+  FolderArchive,
   Gauge,
   LoaderCircle,
+  MessageSquare,
   RefreshCw,
+  Search,
   ShieldCheck,
   Wrench,
+  X,
 } from "lucide-react";
 import type { HostProjectDiagnosticBundle } from "@threadlight/protocol";
 
@@ -66,17 +76,28 @@ export interface ProjectDiagnosticsSnapshot {
 
 export interface DiagnosticsAdapter {
   load(projectId: string): Promise<ProjectDiagnosticsSnapshot>;
-  exportBundle(projectId: string): Promise<HostProjectDiagnosticBundle>;
+  exportBundle(
+    projectId: string,
+    conversationIds?: readonly string[],
+  ): Promise<HostProjectDiagnosticBundle>;
+}
+
+export interface DiagnosticConversationOption {
+  id: string;
+  title: string;
+  updatedAt: string;
 }
 
 export function DiagnosticsPage({
   adapter,
   projectId,
   projectName,
+  conversations,
 }: {
   adapter: DiagnosticsAdapter;
   projectId: string;
   projectName: string;
+  conversations: readonly DiagnosticConversationOption[];
 }) {
   const { language, t } = useI18n();
   const [snapshot, setSnapshot] = useState<ProjectDiagnosticsSnapshot>();
@@ -84,6 +105,16 @@ export function DiagnosticsPage({
   const [error, setError] = useState<string>();
   const [refresh, setRefresh] = useState(0);
   const [exporting, setExporting] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportScope, setExportScope] = useState<"project" | "conversations">(
+    "project",
+  );
+  const [selectedConversationIds, setSelectedConversationIds] = useState<
+    readonly string[]
+  >([]);
+  const [conversationQuery, setConversationQuery] = useState("");
+  const [exportError, setExportError] = useState<string>();
+  const exportButton = useRef<HTMLButtonElement>(null);
   const [exportFeedback, setExportFeedback] = useState<{
     status: "success" | "error";
     message: string;
@@ -114,23 +145,45 @@ export function DiagnosticsPage({
   const totals = snapshot?.totals;
   const averageDuration = totals?.turns ? totals.durationMs / totals.turns : 0;
 
-  async function exportBundle() {
+  function openExportDialog() {
+    setExportScope("project");
+    setSelectedConversationIds([]);
+    setConversationQuery("");
+    setExportError(undefined);
+    setExportDialogOpen(true);
+  }
+
+  function closeExportDialog() {
+    setExportDialogOpen(false);
+    requestAnimationFrame(() => exportButton.current?.focus());
+  }
+
+  function toggleConversation(id: string) {
+    setSelectedConversationIds((current) =>
+      current.includes(id)
+        ? current.filter((candidate) => candidate !== id)
+        : [...current, id],
+    );
+  }
+
+  async function exportBundle(conversationIds?: readonly string[]) {
     setExporting(true);
     setExportFeedback(undefined);
+    setExportError(undefined);
     try {
-      const bundle = await adapter.exportBundle(projectId);
+      const bundle = await adapter.exportBundle(projectId, conversationIds);
       downloadDiagnosticBundle(bundle);
+      closeExportDialog();
       setExportFeedback({
         status: "success",
         message: t("diagnosticBundleExported", { filename: bundle.filename }),
       });
     } catch (reason) {
-      setExportFeedback({
-        status: "error",
-        message: t("diagnosticBundleExportFailed", {
-          error: reason instanceof Error ? reason.message : String(reason),
-        }),
+      const message = t("diagnosticBundleExportFailed", {
+        error: reason instanceof Error ? reason.message : String(reason),
       });
+      setExportError(message);
+      setExportFeedback({ status: "error", message });
     } finally {
       setExporting(false);
     }
@@ -145,6 +198,7 @@ export function DiagnosticsPage({
         </div>
         <div className="diagnostics-header-actions">
           <button
+            ref={exportButton}
             type="button"
             className="diagnostics-refresh pressable"
             aria-label={t("refresh")}
@@ -162,7 +216,7 @@ export function DiagnosticsPage({
             type="button"
             className="diagnostics-export pressable"
             disabled={exporting}
-            onClick={() => void exportBundle()}
+            onClick={openExportDialog}
           >
             {exporting ? (
               <LoaderCircle className="spin" size={14} />
@@ -258,7 +312,276 @@ export function DiagnosticsPage({
           </div>
         )}
       </section>
+      {exportDialogOpen && (
+        <DiagnosticExportDialog
+          projectName={projectName}
+          conversations={conversations}
+          scope={exportScope}
+          selectedIds={selectedConversationIds}
+          query={conversationQuery}
+          busy={exporting}
+          error={exportError}
+          onScopeChange={setExportScope}
+          onQueryChange={setConversationQuery}
+          onToggle={toggleConversation}
+          onSelectAll={() =>
+            setSelectedConversationIds((current) =>
+              current.length === conversations.length
+                ? []
+                : conversations.map(({ id }) => id),
+            )
+          }
+          onCancel={() => {
+            if (!exporting) closeExportDialog();
+          }}
+          onExport={() =>
+            void exportBundle(
+              exportScope === "conversations"
+                ? selectedConversationIds
+                : undefined,
+            )
+          }
+        />
+      )}
     </>
+  );
+}
+
+export function DiagnosticExportDialog({
+  projectName,
+  conversations,
+  scope,
+  selectedIds,
+  query,
+  busy,
+  error,
+  onScopeChange,
+  onQueryChange,
+  onToggle,
+  onSelectAll,
+  onCancel,
+  onExport,
+}: {
+  projectName: string;
+  conversations: readonly DiagnosticConversationOption[];
+  scope: "project" | "conversations";
+  selectedIds: readonly string[];
+  query: string;
+  busy: boolean;
+  error?: string;
+  onScopeChange(scope: "project" | "conversations"): void;
+  onQueryChange(query: string): void;
+  onToggle(id: string): void;
+  onSelectAll(): void;
+  onCancel(): void;
+  onExport(): void;
+}) {
+  const { language, t } = useI18n();
+  const dialog = useRef<HTMLElement>(null);
+  const normalizedQuery = query.trim().toLocaleLowerCase(language);
+  const filteredConversations = useMemo(
+    () =>
+      conversations.filter((conversation) =>
+        `${conversation.title} ${conversation.id}`
+          .toLocaleLowerCase(language)
+          .includes(normalizedQuery),
+      ),
+    [conversations, language, normalizedQuery],
+  );
+  const selected = new Set(selectedIds);
+  const canExport = scope === "project" || selectedIds.length > 0;
+
+  useEffect(() => {
+    dialog.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape" && !busy) onCancel();
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [busy, onCancel]);
+
+  return (
+    <div
+      className="dialog-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel();
+      }}
+    >
+      <section
+        ref={dialog}
+        className="diagnostics-export-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="diagnostics-export-title"
+        aria-describedby="diagnostics-export-description"
+        aria-busy={busy}
+        tabIndex={-1}
+      >
+        <header className="diagnostics-export-dialog-header">
+          <span className="diagnostics-export-dialog-icon" aria-hidden="true">
+            <Download size={17} />
+          </span>
+          <div>
+            <h2 id="diagnostics-export-title">{t("exportDiagnosticBundle")}</h2>
+            <p id="diagnostics-export-description">
+              {t("diagnosticExportDialogDescription", {
+                project: projectName,
+              })}
+            </p>
+          </div>
+          <button
+            type="button"
+            className="diagnostics-export-close pressable"
+            aria-label={t("close")}
+            title={t("close")}
+            disabled={busy}
+            onClick={onCancel}
+          >
+            <X size={15} />
+          </button>
+        </header>
+
+        <div
+          className="diagnostics-export-scopes"
+          role="group"
+          aria-label={t("diagnosticExportScope")}
+        >
+          <button
+            type="button"
+            className={scope === "project" ? "active" : undefined}
+            aria-pressed={scope === "project"}
+            disabled={busy}
+            onClick={() => onScopeChange("project")}
+          >
+            <FolderArchive size={16} aria-hidden="true" />
+            <span>
+              <strong>{t("entireProject")}</strong>
+              <small>
+                {t("entireProjectDiagnosticDescription", {
+                  count: conversations.length,
+                })}
+              </small>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={scope === "conversations" ? "active" : undefined}
+            aria-pressed={scope === "conversations"}
+            disabled={busy || conversations.length === 0}
+            onClick={() => onScopeChange("conversations")}
+          >
+            <MessageSquare size={16} aria-hidden="true" />
+            <span>
+              <strong>{t("selectedConversations")}</strong>
+              <small>{t("selectedConversationsDiagnosticDescription")}</small>
+            </span>
+          </button>
+        </div>
+
+        {scope === "conversations" && (
+          <div className="diagnostics-conversation-picker">
+            <div className="diagnostics-conversation-toolbar">
+              <label>
+                <Search size={14} aria-hidden="true" />
+                <input
+                  type="search"
+                  value={query}
+                  placeholder={t("searchConversations")}
+                  aria-label={t("searchConversations")}
+                  disabled={busy}
+                  onChange={(event) => onQueryChange(event.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={busy || conversations.length === 0}
+                onClick={onSelectAll}
+              >
+                {selectedIds.length === conversations.length
+                  ? t("deselectAll")
+                  : t("selectAll")}
+              </button>
+            </div>
+            <div className="diagnostics-conversation-list">
+              {filteredConversations.length ? (
+                filteredConversations.map((conversation) => (
+                  <label
+                    className={selected.has(conversation.id) ? "selected" : undefined}
+                    key={conversation.id}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected.has(conversation.id)}
+                      disabled={busy}
+                      onChange={() => onToggle(conversation.id)}
+                    />
+                    <span>
+                      <strong>{conversation.title}</strong>
+                      <small>
+                        {new Intl.DateTimeFormat(language, {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        }).format(new Date(conversation.updatedAt))}
+                        {" · "}
+                        {conversation.id}
+                      </small>
+                    </span>
+                  </label>
+                ))
+              ) : (
+                <div className="diagnostics-conversation-empty">
+                  {t("noMatchingConversations")}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="diagnostics-export-dialog-notice">
+          <ShieldCheck size={15} aria-hidden="true" />
+          <span>{t("diagnosticCompleteRecordNotice")}</span>
+        </div>
+        {error && (
+          <div className="diagnostics-export-dialog-error" role="alert">
+            {error}
+          </div>
+        )}
+        <footer className="diagnostics-export-dialog-actions">
+          <span>
+            {scope === "conversations"
+              ? t("conversationsSelected", { count: selectedIds.length })
+              : t("allConversationsSelected", { count: conversations.length })}
+          </span>
+          <button
+            type="button"
+            className="diagnostics-export-cancel pressable"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="button"
+            className="diagnostics-export-confirm pressable"
+            disabled={busy || !canExport}
+            onClick={onExport}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" size={14} />
+            ) : (
+              <Download size={14} />
+            )}
+            {busy
+              ? t("exportingDiagnosticBundle")
+              : t("exportDiagnosticBundle")}
+          </button>
+        </footer>
+      </section>
+    </div>
   );
 }
 

@@ -120,8 +120,30 @@ describe("project diagnostics", () => {
         updatedAt: "2026-08-07T01:00:02.000Z",
         provider: "scripted",
         model: "scripted-model",
-        modelState: { never: "include-model-state" },
+        modelState: {
+          never: "include-model-state",
+          token: "provider-state-secret",
+          endpoint: "https://example.test/run?token=query-leak-secret",
+        },
         agentSnapshot: { never: "include-agent-snapshot" },
+        queuedTurns: [
+          {
+            id: "queued-1",
+            input: "Follow up",
+            delivery: "queued",
+            createdAt: "2026-08-07T01:00:01.000Z",
+            attachments: [
+              {
+                id: "queued-attachment",
+                name: "trace.txt",
+                mimeType: "text/plain",
+                size: 12,
+                kind: "file",
+                path: "/Users/alice/private/trace.txt",
+              },
+            ],
+          },
+        ],
         messages: [
           {
             id: "user-1",
@@ -232,11 +254,43 @@ describe("project diagnostics", () => {
       runtime: "desktop",
       platform: "darwin",
     });
-    expect(bundle.conversations[0]?.messages).toHaveLength(2);
-    expect(bundle.conversations[0]?.messages[0]).toMatchObject({
-      text: "Inspect <workspace:thread-1>; Authorization: Bearer [REDACTED]",
-      attachments: [{ name: "badcase.png" }],
+    expect(bundle.project).toMatchObject({
+      exportScope: "project",
+      conversationIds: ["thread-1"],
     });
+    expect(bundle.conversations[0]?.record).toMatchObject({
+      version: 1,
+      threadId: "thread-1",
+      modelState: {
+        never: "include-model-state",
+        token: "[REDACTED]",
+      },
+      agentSnapshot: { never: "include-agent-snapshot" },
+      queuedTurns: [
+        expect.objectContaining({
+          input: "Follow up",
+          attachments: [
+            expect.objectContaining({ path: "<attachment-path>" }),
+          ],
+        }),
+      ],
+      messages: [
+        {
+          text: "Inspect <workspace:thread-1>; Authorization: Bearer [REDACTED]",
+          attachments: [
+            { name: "badcase.png", path: "<attachment-path>" },
+          ],
+        },
+        expect.objectContaining({
+          text: "Tool failed with password=[REDACTED]",
+          progress: expect.any(Array),
+          diagnostics: expect.any(Object),
+        }),
+      ],
+    });
+    expect(bundle.conversations[0]?.source).toBe(
+      ".threadlight/conversations/thread-1.json",
+    );
     expect(bundle.files[0]).toMatchObject({
       path: "src/config.ts",
       oldContent: "export const mode = 'before';\n",
@@ -258,10 +312,85 @@ describe("project diagnostics", () => {
     expect(serialized).not.toContain(root);
     expect(serialized).not.toContain("top-secret-token");
     expect(serialized).not.toContain("hunter2");
+    expect(serialized).not.toContain("provider-state-secret");
+    expect(serialized).not.toContain("query-leak-secret");
     expect(serialized).not.toContain("sk-1234567890abcdefghijkl");
     expect(serialized).not.toContain("/Users/alice/private/badcase.png");
-    expect(serialized).not.toContain("include-model-state");
-    expect(serialized).not.toContain("include-agent-snapshot");
+    expect(serialized).toContain("include-model-state");
+    expect(serialized).toContain("include-agent-snapshot");
+  });
+
+  it("exports only the selected conversations and rejects unknown ids", async () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-bundle-selection-"));
+    const snapshots = mkdtempSync(join(tmpdir(), "threadlight-snapshots-"));
+    directories.push(root, snapshots);
+    const conversationDirectory = join(
+      root,
+      ".threadlight",
+      "conversations",
+    );
+    mkdirSync(conversationDirectory, { recursive: true });
+    for (const id of ["thread-1", "thread-2"]) {
+      writeFileSync(
+        join(conversationDirectory, `${id}.json`),
+        JSON.stringify({
+          version: 1,
+          threadId: id,
+          createdAt: "2026-08-07T01:00:00.000Z",
+          updatedAt: "2026-08-07T01:00:01.000Z",
+          messages: [{ id: `${id}-message`, role: "user", text: id }],
+          modelState: { stateFor: id },
+        }),
+      );
+    }
+    const project = {
+      id: "project-1",
+      name: "Selection",
+      basePath: root,
+      conversations: [
+        { id: "thread-1", title: "First" },
+        { id: "thread-2", title: "Second" },
+      ],
+    };
+    const options = {
+      changes: new ConversationChangeTracker(snapshots),
+      environment: {
+        runtime: "desktop" as const,
+        platform: "darwin",
+        architecture: "arm64",
+        nodeVersion: "v22.0.0",
+      },
+      now: () => new Date("2026-08-07T02:03:04.000Z"),
+    };
+
+    const bundle = await projectDiagnosticBundle(project, {
+      ...options,
+      conversationIds: ["thread-2"],
+    });
+
+    expect(bundle.filename).toBe(
+      "threadlight-diagnostics-selection-1-chats-20260807T020304Z.json",
+    );
+    expect(bundle.project).toMatchObject({
+      exportScope: "conversations",
+      conversationCount: 1,
+      conversationIds: ["thread-2"],
+    });
+    expect(bundle.conversations).toHaveLength(1);
+    expect(bundle.conversations[0]).toMatchObject({
+      threadId: "thread-2",
+      record: {
+        threadId: "thread-2",
+        modelState: { stateFor: "thread-2" },
+      },
+    });
+    expect(JSON.stringify(bundle)).not.toContain('"threadId":"thread-1"');
+    await expect(
+      projectDiagnosticBundle(project, {
+        ...options,
+        conversationIds: ["missing-thread"],
+      }),
+    ).rejects.toThrow("Unknown conversation");
   });
 
   it("does not create a file snapshot while exporting diagnostics", async () => {

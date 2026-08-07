@@ -836,7 +836,10 @@ export interface DesktopApi {
     update: DesktopSettingsUpdate,
   ): Promise<DesktopSettingsSnapshot>;
   getDiagnostics(projectId: string): Promise<DesktopProjectDiagnosticsSnapshot>;
-  exportDiagnostics(projectId: string): Promise<DesktopProjectDiagnosticBundle>;
+  exportDiagnostics(
+    projectId: string,
+    conversationIds?: readonly string[],
+  ): Promise<DesktopProjectDiagnosticBundle>;
   testProvider(
     request: DesktopProviderTestRequest,
   ): Promise<DesktopProviderDiagnostic>;

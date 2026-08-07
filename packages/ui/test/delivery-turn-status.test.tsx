@@ -4,11 +4,31 @@ import { describe, expect, it, vi } from "vitest";
 import {
   automaticDeliveryFromHistory,
   DeliveryTurnStatus,
+  shouldShowDeliveryTurnStatus,
 } from "../src/delivery-turn-status.js";
 import { I18nProvider } from "../src/i18n.js";
 import { projectsWithDeliveryStatus } from "../src/projects.js";
 
 describe("DeliveryTurnStatus", () => {
+  it("is available after every completed worktree turn", () => {
+    expect(shouldShowDeliveryTurnStatus("worktree", false)).toBe(true);
+    expect(shouldShowDeliveryTurnStatus("worktree", true)).toBe(false);
+    expect(shouldShowDeliveryTurnStatus("local", false)).toBe(false);
+  });
+
+  it("keeps the delivery center reachable before the first manual sync", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <DeliveryTurnStatus onOpen={vi.fn()} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('class="turn-delivery-status ready ');
+    expect(html).toContain("尚未手动同步");
+    expect(html).toContain("修改会保留在工作树中；需要时手动同步到本地工作区");
+    expect(html).toContain("查看交付中心");
+  });
+
   it("keeps a successful delivery visible at the end of the turn", () => {
     const html = renderToStaticMarkup(
       <I18nProvider language="zh-CN">

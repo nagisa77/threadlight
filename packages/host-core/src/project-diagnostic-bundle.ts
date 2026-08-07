@@ -2,13 +2,10 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
-  HostDiagnosticAttachment,
   HostDiagnosticConversation,
   HostDiagnosticEnvironment,
   HostDiagnosticError,
   HostDiagnosticFile,
-  HostDiagnosticMessage,
-  HostDiagnosticQueuedTurn,
   HostDiagnosticTimelineEvent,
   HostProjectDiagnosticBundle,
   HostProjectDiagnosticsSnapshot,
@@ -24,6 +21,23 @@ import {
 const REDACTION = "[REDACTED]" as const;
 const DEFAULT_TEXT_FIELD_BYTES = 512 * 1024;
 const DEFAULT_TOTAL_TEXT_BYTES = 20 * 1024 * 1024;
+const SENSITIVE_DIAGNOSTIC_KEYS = new Set([
+  "apikey",
+  "token",
+  "accesstoken",
+  "authtoken",
+  "refreshtoken",
+  "sessiontoken",
+  "clientsecret",
+  "credential",
+  "credentials",
+  "cookie",
+  "setcookie",
+  "secret",
+  "password",
+  "passwd",
+  "authorization",
+]);
 
 export interface DiagnosticBundleProject extends DiagnosticsProject {
   scope?: "project" | "standalone";
@@ -39,6 +53,7 @@ export interface DiagnosticBundleProject extends DiagnosticsProject {
 export interface ProjectDiagnosticBundleOptions {
   environment: HostDiagnosticEnvironment;
   changes: ConversationChangeTracker;
+  conversationIds?: readonly string[];
   now?: () => Date;
   maxTextFieldBytes?: number;
   maxTotalTextBytes?: number;
@@ -69,10 +84,40 @@ interface StoredDiagnostics {
   }[];
 }
 
+interface DiagnosticMessage {
+  id: string;
+  text: string;
+  error: boolean;
+  errorCode?: string;
+}
+
+function diagnosticConversations(
+  project: DiagnosticBundleProject,
+  conversationIds: readonly string[] | undefined,
+): DiagnosticBundleProject["conversations"] {
+  if (conversationIds === undefined) return project.conversations;
+  const selectedIds = new Set(conversationIds);
+  if (selectedIds.size === 0) {
+    throw new Error("Select at least one conversation to export.");
+  }
+  const selected = project.conversations.filter(({ id }) =>
+    selectedIds.has(id),
+  );
+  if (selected.length !== selectedIds.size) {
+    const knownIds = new Set(project.conversations.map(({ id }) => id));
+    const unknownId = conversationIds.find((id) => !knownIds.has(id));
+    throw new Error(
+      `Unknown conversation: ${unknownId ?? "invalid selection"}`,
+    );
+  }
+  return selected;
+}
+
 /**
- * Builds a shareable, task-scoped diagnostic export. It intentionally omits
- * provider state, agent snapshots, environment variables, and attachment
- * paths. Only tracked changed-file bodies are included.
+ * Builds a shareable, task-scoped diagnostic export. Persisted conversation
+ * records retain their complete key structure, while common credentials,
+ * attachment paths, and oversized text are redacted. Only tracked changed-file
+ * bodies are included; the project is never scanned just for this export.
  */
 export async function projectDiagnosticBundle(
   project: DiagnosticBundleProject,
@@ -80,8 +125,16 @@ export async function projectDiagnosticBundle(
 ): Promise<HostProjectDiagnosticBundle> {
   const generatedAt = (options.now ?? (() => new Date()))();
   const warnings: string[] = [];
+  const selectedConversations = diagnosticConversations(
+    project,
+    options.conversationIds,
+  );
+  const scopedProject: DiagnosticBundleProject = {
+    ...project,
+    conversations: selectedConversations,
+  };
   const sanitizer = new DiagnosticTextSanitizer(
-    pathAliases(project),
+    pathAliases(scopedProject),
     options.maxTextFieldBytes ?? DEFAULT_TEXT_FIELD_BYTES,
     options.maxTotalTextBytes ?? DEFAULT_TOTAL_TEXT_BYTES,
   );
@@ -92,118 +145,112 @@ export async function projectDiagnosticBundle(
   let timelineOrder = 0;
   let missingSnapshots = 0;
 
-  for (const conversation of project.conversations) {
+  for (const conversation of selectedConversations) {
     const stored = await readStoredConversation(
       project.basePath,
       conversation.id,
       warnings,
     );
-    const messages = Array.isArray(stored?.messages)
-      ? stored.messages.flatMap((value) => {
-          const message = diagnosticMessage(value, sanitizer);
-          if (!message) return [];
-          const diagnostics = storedDiagnostics(value);
-          if (diagnostics) {
-            const sortAt = diagnostics.startedAt;
+    if (Array.isArray(stored?.messages)) {
+      for (const value of stored.messages) {
+        const message = diagnosticMessage(value, sanitizer);
+        if (!message) continue;
+        const diagnostics = storedDiagnostics(value);
+        if (diagnostics) {
+          const sortAt = diagnostics.startedAt;
+          timeline.push({
+            sortAt,
+            order: timelineOrder++,
+            event: {
+              threadId: conversation.id,
+              messageId: message.id,
+              kind: "turn",
+              name: sanitizer.text(conversation.title).value,
+              status: diagnostics.status,
+              startedAt: diagnostics.startedAt,
+              completedAt: diagnostics.completedAt,
+              durationMs: diagnostics.durationMs,
+              ...(diagnostics.status === "failed"
+                ? { errorCode: "TURN_FAILED" }
+                : {}),
+            },
+          });
+          diagnostics.modelSteps.forEach((step) => {
             timeline.push({
               sortAt,
               order: timelineOrder++,
               event: {
                 threadId: conversation.id,
                 messageId: message.id,
-                kind: "turn",
-                name: sanitizer.text(conversation.title).value,
-                status: diagnostics.status,
-                startedAt: diagnostics.startedAt,
-                completedAt: diagnostics.completedAt,
-                durationMs: diagnostics.durationMs,
-                ...(diagnostics.status === "failed"
-                  ? { errorCode: "TURN_FAILED" }
-                  : {}),
+                kind: "model",
+                name: `model.step.${step.step}`,
+                status: "completed",
+                durationMs: step.durationMs,
               },
             });
-            diagnostics.modelSteps.forEach((step) => {
-              timeline.push({
-                sortAt,
-                order: timelineOrder++,
-                event: {
-                  threadId: conversation.id,
-                  messageId: message.id,
-                  kind: "model",
-                  name: `model.step.${step.step}`,
-                  status: "completed",
-                  durationMs: step.durationMs,
-                },
-              });
+          });
+          diagnostics.toolCalls.forEach((tool) => {
+            const errorCode = tool.isError
+              ? sanitizer.text(tool.errorCode ?? "TOOL_ERROR").value
+              : undefined;
+            timeline.push({
+              sortAt,
+              order: timelineOrder++,
+              event: {
+                threadId: conversation.id,
+                messageId: message.id,
+                kind: "tool",
+                name: sanitizer.text(tool.name).value,
+                status: tool.isError ? "failed" : "completed",
+                durationMs: tool.durationMs,
+                ...(errorCode ? { errorCode } : {}),
+              },
             });
-            diagnostics.toolCalls.forEach((tool) => {
-              const errorCode = tool.isError
-                ? sanitizer.text(tool.errorCode ?? "TOOL_ERROR").value
-                : undefined;
-              timeline.push({
-                sortAt,
-                order: timelineOrder++,
-                event: {
-                  threadId: conversation.id,
-                  messageId: message.id,
-                  kind: "tool",
-                  name: sanitizer.text(tool.name).value,
-                  status: tool.isError ? "failed" : "completed",
-                  durationMs: tool.durationMs,
-                  ...(errorCode ? { errorCode } : {}),
-                },
-              });
-              if (errorCode) {
-                errors.push({
-                  threadId: conversation.id,
-                  messageId: message.id,
-                  source: "tool",
-                  code: errorCode,
-                  message: sanitizer.text(tool.name).value,
-                  occurredAt: diagnostics.completedAt,
-                });
-              }
-            });
-            if (diagnostics.status === "failed") {
+            if (errorCode) {
               errors.push({
                 threadId: conversation.id,
                 messageId: message.id,
-                source: "turn",
-                code: "TURN_FAILED",
-                message: message.text,
+                source: "tool",
+                code: errorCode,
+                message: sanitizer.text(tool.name).value,
                 occurredAt: diagnostics.completedAt,
               });
             }
-          } else if (message.error) {
+          });
+          if (diagnostics.status === "failed") {
             errors.push({
               threadId: conversation.id,
               messageId: message.id,
               source: "turn",
-              code: message.errorCode ?? "TURN_FAILED",
+              code: "TURN_FAILED",
               message: message.text,
+              occurredAt: diagnostics.completedAt,
             });
           }
-          collectProcessEvents(
-            value,
-            conversation.id,
-            message.id,
-            sanitizer,
-            timeline,
-            errors,
-            () => timelineOrder++,
-          );
-          return [message];
-        })
-      : [];
-    const queuedTurns = Array.isArray(stored?.queuedTurns)
-      ? stored.queuedTurns.flatMap((value) => {
-          const turn = diagnosticQueuedTurn(value, sanitizer);
-          return turn ? [turn] : [];
-        })
-      : [];
+        } else if (message.error) {
+          errors.push({
+            threadId: conversation.id,
+            messageId: message.id,
+            source: "turn",
+            code: message.errorCode ?? "TURN_FAILED",
+            message: message.text,
+          });
+        }
+        collectProcessEvents(
+          value,
+          conversation.id,
+          message.id,
+          sanitizer,
+          timeline,
+          errors,
+          () => timelineOrder++,
+        );
+      }
+    }
     conversations.push({
       threadId: conversation.id,
       title: sanitizer.text(conversation.title).value,
+      source: `.threadlight/conversations/${conversation.id}.json`,
       ...((stringValue(stored?.createdAt) ?? conversation.createdAt)
         ? {
             createdAt: stringValue(stored?.createdAt) ?? conversation.createdAt,
@@ -223,8 +270,9 @@ export async function projectDiagnosticBundle(
       ...(conversation.workspace
         ? { workspaceMode: conversation.workspace.mode }
         : {}),
-      messages,
-      queuedTurns,
+      ...(stored
+        ? { record: sanitizedConversationRecord(stored, sanitizer) }
+        : {}),
     });
 
     const workspacePath = conversation.workspace?.path ?? project.basePath;
@@ -278,7 +326,7 @@ export async function projectDiagnosticBundle(
 
   const sanitizedProjectName = sanitizer.text(project.name).value;
   const summary = sanitizedDiagnosticsSnapshot(
-    projectDiagnostics(project, () => generatedAt),
+    projectDiagnostics(scopedProject, () => generatedAt),
     sanitizer,
     sanitizedProjectName,
   );
@@ -308,13 +356,19 @@ export async function projectDiagnosticBundle(
 
   return {
     schemaVersion: 1,
-    filename: diagnosticBundleFilename(sanitizedProjectName, generatedAt),
+    filename: diagnosticBundleFilename(
+      sanitizedProjectName,
+      generatedAt,
+      options.conversationIds ? selectedConversations.length : undefined,
+    ),
     generatedAt: generatedAt.toISOString(),
     project: {
       id: project.id,
       name: sanitizedProjectName,
       ...(project.scope ? { scope: project.scope } : {}),
-      conversationCount: project.conversations.length,
+      exportScope: options.conversationIds ? "conversations" : "project",
+      conversationCount: selectedConversations.length,
+      conversationIds: selectedConversations.map(({ id }) => id),
     },
     environment: options.environment,
     summary,
@@ -358,6 +412,7 @@ function sanitizedDiagnosticsSnapshot(
 export function diagnosticBundleFilename(
   projectName: string,
   generatedAt: Date,
+  selectionCount?: number,
 ): string {
   const projectSlug =
     projectName
@@ -370,7 +425,8 @@ export function diagnosticBundleFilename(
     .toISOString()
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z");
-  return `threadlight-diagnostics-${projectSlug}-${timestamp}.json`;
+  const scopeSuffix = selectionCount ? `-${selectionCount}-chats` : "";
+  return `threadlight-diagnostics-${projectSlug}${scopeSuffix}-${timestamp}.json`;
 }
 
 class DiagnosticTextSanitizer {
@@ -386,6 +442,11 @@ class DiagnosticTextSanitizer {
     private readonly maxTextFieldBytes: number,
     private readonly maxTotalTextBytes: number,
   ) {}
+
+  secret(): typeof REDACTION {
+    this.redactionCount += 1;
+    return REDACTION;
+  }
 
   text(value: string): { value: string; truncated: boolean } {
     let next = value;
@@ -428,6 +489,14 @@ class DiagnosticTextSanitizer {
       (_match, prefix) => `${prefix}${REDACTION}`,
     );
     replace(
+      /([?&](?:api[_-]?key|token|access[_-]?token|secret|signature|key)=)[^&#\s]+/gi,
+      (_match, prefix) => `${prefix}${REDACTION}`,
+    );
+    replace(
+      /\b((?:https?|postgres(?:ql)?|mysql|mongodb(?:\+srv)?):\/\/[^:\s/@]+:)[^@\s/]+@/gi,
+      (_match, prefix) => `${prefix}${REDACTION}@`,
+    );
+    replace(
       /((?:"|')?(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)(?:"|')?\s*:\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}\r\n]+)/gi,
       (_match, prefix) => `${prefix}"${REDACTION}"`,
     );
@@ -448,6 +517,10 @@ class DiagnosticTextSanitizer {
     );
     replace(
       /\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,})\b/g,
+      REDACTION,
+    );
+    replace(
+      /\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{16,}\b/g,
       REDACTION,
     );
     return next;
@@ -483,7 +556,7 @@ async function readStoredConversation(
 function diagnosticMessage(
   value: unknown,
   sanitizer: DiagnosticTextSanitizer,
-): HostDiagnosticMessage | undefined {
+): DiagnosticMessage | undefined {
   if (!isRecord(value)) return;
   if (
     typeof value.id !== "string" ||
@@ -492,77 +565,68 @@ function diagnosticMessage(
   ) {
     return;
   }
-  const attachments = diagnosticAttachments(value.attachments, sanitizer);
   return {
     id: value.id,
-    role: value.role,
     text: sanitizer.text(value.text).value,
-    ...(attachments.length > 0 ? { attachments } : {}),
-    ...(value.followUpDelivery === "inject" ||
-    value.followUpDelivery === "queued"
-      ? { followUpDelivery: value.followUpDelivery }
-      : {}),
-    ...(typeof value.error === "boolean" ? { error: value.error } : {}),
+    error: value.error === true,
     ...(typeof value.errorCode === "string"
       ? { errorCode: sanitizer.text(value.errorCode).value }
       : value.error === true
         ? { errorCode: "TURN_FAILED" }
         : {}),
-    ...(value.mode === "default" || value.mode === "plan"
-      ? { mode: value.mode }
-      : {}),
   };
 }
 
-function diagnosticQueuedTurn(
+function sanitizedConversationRecord(
+  value: Record<string, unknown>,
+  sanitizer: DiagnosticTextSanitizer,
+): Readonly<Record<string, unknown>> {
+  return sanitizedJsonValue(value, sanitizer) as Readonly<
+    Record<string, unknown>
+  >;
+}
+
+function sanitizedJsonValue(
   value: unknown,
   sanitizer: DiagnosticTextSanitizer,
-): HostDiagnosticQueuedTurn | undefined {
-  if (
-    !isRecord(value) ||
-    typeof value.id !== "string" ||
-    typeof value.input !== "string" ||
-    (value.delivery !== "inject" && value.delivery !== "queued") ||
-    typeof value.createdAt !== "string"
-  ) {
-    return;
+  key?: string,
+  parent?: Readonly<Record<string, unknown>>,
+): unknown {
+  if (key && sensitiveDiagnosticKey(key)) {
+    return sanitizer.secret();
   }
-  const attachments = diagnosticAttachments(value.attachments, sanitizer);
-  return {
-    id: value.id,
-    text: sanitizer.text(value.input).value,
-    delivery: value.delivery,
-    createdAt: value.createdAt,
-    ...(attachments.length > 0 ? { attachments } : {}),
-  };
+  if (typeof value === "string") {
+    if (key === "path" && parent && isAttachmentRecord(parent)) {
+      return "<attachment-path>";
+    }
+    return sanitizer.text(value).value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizedJsonValue(item, sanitizer));
+  }
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([entryKey, entryValue]) => [
+        entryKey,
+        sanitizedJsonValue(entryValue, sanitizer, entryKey, value),
+      ]),
+    );
+  }
+  return value;
 }
 
-function diagnosticAttachments(
-  value: unknown,
-  sanitizer: DiagnosticTextSanitizer,
-): readonly HostDiagnosticAttachment[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    if (
-      !isRecord(item) ||
-      typeof item.id !== "string" ||
-      typeof item.name !== "string" ||
-      typeof item.mimeType !== "string" ||
-      typeof item.size !== "number" ||
-      (item.kind !== "image" && item.kind !== "file")
-    ) {
-      return [];
-    }
-    return [
-      {
-        id: item.id,
-        name: sanitizer.text(item.name).value,
-        mimeType: item.mimeType,
-        size: item.size,
-        kind: item.kind,
-      },
-    ];
-  });
+function sensitiveDiagnosticKey(key: string): boolean {
+  const normalized = key.replace(/[-_]/g, "").toLocaleLowerCase("en-US");
+  return SENSITIVE_DIAGNOSTIC_KEYS.has(normalized);
+}
+
+function isAttachmentRecord(value: Readonly<Record<string, unknown>>): boolean {
+  return (
+    typeof value.name === "string" &&
+    typeof value.mimeType === "string" &&
+    typeof value.size === "number" &&
+    (value.kind === "image" || value.kind === "file")
+  );
 }
 
 function storedDiagnostics(value: unknown): StoredDiagnostics | undefined {

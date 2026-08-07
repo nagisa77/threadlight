@@ -133,6 +133,40 @@ interface WorkspaceTab {
   branch?: string;
 }
 
+export interface WorkspacePanelRequestSnapshot {
+  scope: string;
+  reviewRequest: number;
+  deliveryRequest: number;
+  fileOpenRequest?: number;
+}
+
+export function workspacePanelRequestSteps(
+  previous: WorkspacePanelRequestSnapshot | undefined,
+  next: WorkspacePanelRequestSnapshot,
+): readonly ("reset" | "review" | "delivery" | "file")[] {
+  const steps: ("reset" | "review" | "delivery" | "file")[] = [];
+  if (!previous || previous.scope !== next.scope) steps.push("reset");
+  if (
+    next.reviewRequest !== 0 &&
+    previous?.reviewRequest !== next.reviewRequest
+  ) {
+    steps.push("review");
+  }
+  if (
+    next.deliveryRequest !== 0 &&
+    previous?.deliveryRequest !== next.deliveryRequest
+  ) {
+    steps.push("delivery");
+  }
+  if (
+    next.fileOpenRequest !== undefined &&
+    previous?.fileOpenRequest !== next.fileOpenRequest
+  ) {
+    steps.push("file");
+  }
+  return steps;
+}
+
 export function WorkspacePanel({
   adapter,
   terminal,
@@ -207,98 +241,120 @@ export function WorkspacePanel({
   const [diffLayout, setDiffLayout] = useState<"unified" | "split">("unified");
   const [remoteFilePickerOpen, setRemoteFilePickerOpen] = useState(false);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
+  const requestSnapshot = {
+    scope: `${projectId}\u0000${remoteFileRoot ?? ""}\u0000${threadId ?? ""}`,
+    reviewRequest,
+    deliveryRequest,
+    fileOpenRequest: fileOpenRequest?.id,
+  };
+  const previousRequestSnapshot = useRef<
+    WorkspacePanelRequestSnapshot | undefined
+  >(undefined);
 
   useEffect(() => {
-    setTabs([createFileTab(t)]);
-    setActiveTabId("");
-    setDiffLayout("unified");
-    setRemoteFilePickerOpen(false);
-  }, [projectId, remoteFileRoot, threadId]);
+    const steps = workspacePanelRequestSteps(
+      previousRequestSnapshot.current,
+      requestSnapshot,
+    );
+    previousRequestSnapshot.current = requestSnapshot;
 
-  useEffect(() => {
-    if (reviewRequest === 0) return;
-    setTabs((current) => {
-      const review = current.find((tab) => tab.kind === "review");
-      if (review) {
-        setActiveTabId(review.id);
-        return current;
+    for (const step of steps) {
+      if (step === "reset") {
+        setTabs([createFileTab(t)]);
+        setActiveTabId("");
+        setDiffLayout("unified");
+        setRemoteFilePickerOpen(false);
+        continue;
       }
-      const next = createReviewTab(t);
-      setActiveTabId(next.id);
-      return [...current, next];
-    });
-  }, [reviewRequest]);
-
-  useEffect(() => {
-    if (!fileOpenRequest) return;
-    setTabs((current) => {
-      const existing = current.find(
-        (tab) =>
-          tab.kind === "file" &&
-          tab.path === fileOpenRequest.path &&
-          (tab.source ?? "workspace") ===
-            (fileOpenRequest.source ?? "workspace"),
-      );
-      if (existing) {
-        if (fileOpenRequest.activate !== false) {
-          setActiveTabId(existing.id);
-        }
-        return current.map((tab) =>
-          tab.id === existing.id
-            ? {
-                ...tab,
-                source: fileOpenRequest.source,
-                line: fileOpenRequest.line,
-                column: fileOpenRequest.column,
-                revealRequest: fileOpenRequest.id,
-              }
-            : tab,
+      if (step === "review") {
+        setTabs((current) => {
+          const review = current.find((tab) => tab.kind === "review");
+          if (review) {
+            setActiveTabId(review.id);
+            return current;
+          }
+          const next = createReviewTab(t);
+          setActiveTabId(next.id);
+          return [...current, next];
+        });
+        continue;
+      }
+      if (step === "delivery") {
+        openDeliveryCenter();
+        continue;
+      }
+      if (!fileOpenRequest) continue;
+      setTabs((current) => {
+        const existing = current.find(
+          (tab) =>
+            tab.kind === "file" &&
+            tab.path === fileOpenRequest.path &&
+            (tab.source ?? "workspace") ===
+              (fileOpenRequest.source ?? "workspace"),
         );
-      }
-
-      const empty =
-        current.find(
-          (tab) => tab.kind === "file" && !tab.path && tab.id === activeTabId,
-        ) ?? current.find((tab) => tab.kind === "file" && !tab.path);
-      if (empty) {
-        if (fileOpenRequest.activate !== false) {
-          setActiveTabId(empty.id);
+        if (existing) {
+          if (fileOpenRequest.activate !== false) {
+            setActiveTabId(existing.id);
+          }
+          return current.map((tab) =>
+            tab.id === existing.id
+              ? {
+                  ...tab,
+                  source: fileOpenRequest.source,
+                  line: fileOpenRequest.line,
+                  column: fileOpenRequest.column,
+                  revealRequest: fileOpenRequest.id,
+                }
+              : tab,
+          );
         }
-        return current.map((tab) =>
-          tab.id === empty.id
-            ? {
-                ...tab,
-                path: fileOpenRequest.path,
-                source: fileOpenRequest.source,
-                title: fileName(fileOpenRequest.path),
-                line: fileOpenRequest.line,
-                column: fileOpenRequest.column,
-                revealRequest: fileOpenRequest.id,
-              }
-            : tab,
-        );
-      }
 
-      const next: WorkspaceTab = {
-        ...createFileTab(t),
-        path: fileOpenRequest.path,
-        source: fileOpenRequest.source,
-        title: fileName(fileOpenRequest.path),
-        line: fileOpenRequest.line,
-        column: fileOpenRequest.column,
-        revealRequest: fileOpenRequest.id,
-      };
-      if (fileOpenRequest.activate !== false) {
-        setActiveTabId(next.id);
-      }
-      return [...current, next];
-    });
-  }, [fileOpenRequest?.id]);
+        const empty =
+          current.find(
+            (tab) => tab.kind === "file" && !tab.path && tab.id === activeTabId,
+          ) ?? current.find((tab) => tab.kind === "file" && !tab.path);
+        if (empty) {
+          if (fileOpenRequest.activate !== false) {
+            setActiveTabId(empty.id);
+          }
+          return current.map((tab) =>
+            tab.id === empty.id
+              ? {
+                  ...tab,
+                  path: fileOpenRequest.path,
+                  source: fileOpenRequest.source,
+                  title: fileName(fileOpenRequest.path),
+                  line: fileOpenRequest.line,
+                  column: fileOpenRequest.column,
+                  revealRequest: fileOpenRequest.id,
+                }
+              : tab,
+          );
+        }
 
-  useEffect(() => {
-    if (deliveryRequest === 0) return;
-    openDeliveryCenter();
-  }, [deliveryRequest]);
+        const next: WorkspaceTab = {
+          ...createFileTab(t),
+          path: fileOpenRequest.path,
+          source: fileOpenRequest.source,
+          title: fileName(fileOpenRequest.path),
+          line: fileOpenRequest.line,
+          column: fileOpenRequest.column,
+          revealRequest: fileOpenRequest.id,
+        };
+        if (fileOpenRequest.activate !== false) {
+          setActiveTabId(next.id);
+        }
+        return [...current, next];
+      });
+    }
+  }, [
+    deliveryRequest,
+    fileOpenRequest?.id,
+    projectId,
+    remoteFileRoot,
+    reviewRequest,
+    threadId,
+  ]);
 
   useEffect(() => {
     setTabs((current) =>

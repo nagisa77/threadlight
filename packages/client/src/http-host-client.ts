@@ -71,10 +71,18 @@ export class HttpHostClient {
     );
   }
 
-  diagnosticBundle(projectId: string): Promise<HostProjectDiagnosticBundle> {
-    return this.request(
-      `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics/bundle`,
-    );
+  diagnosticBundle(
+    projectId: string,
+    conversationIds?: readonly string[],
+  ): Promise<HostProjectDiagnosticBundle> {
+    const path =
+      `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics/bundle`;
+    return conversationIds === undefined
+      ? this.request(path)
+      : this.request(path, {
+          method: "POST",
+          body: { conversationIds },
+        });
   }
 
   automations(projectId: string): Promise<HostAutomationsSnapshot> {

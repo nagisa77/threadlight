@@ -111,8 +111,11 @@ const api: DesktopApi = {
   getDiagnostics(projectId) {
     return ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_GET_CHANNEL, projectId);
   },
-  exportDiagnostics(projectId) {
-    return ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL, projectId);
+  exportDiagnostics(projectId, conversationIds) {
+    return ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL, {
+      projectId,
+      ...(conversationIds ? { conversationIds } : {}),
+    });
   },
   testProvider(request) {
     return ipcRenderer.invoke(DESKTOP_PROVIDER_TEST_CHANNEL, request);

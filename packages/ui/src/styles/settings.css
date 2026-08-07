@@ -321,6 +321,361 @@
   background: color-mix(in srgb, var(--danger) 6%, var(--panel));
 }
 
+.diagnostics-export-dialog {
+  display: grid;
+  width: min(570px, 100%);
+  max-height: min(680px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 86%, transparent);
+  border-radius: 14px;
+  outline: none;
+  background: var(--panel);
+  box-shadow:
+    0 22px 64px rgb(35 33 29 / 20%),
+    0 4px 14px rgb(35 33 29 / 8%);
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+@starting-style {
+  .diagnostics-export-dialog {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.diagnostics-export-dialog-header {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  align-items: start;
+  gap: 11px;
+  padding: 18px 18px 14px;
+}
+
+.diagnostics-export-dialog-icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+  background: var(--accent-soft);
+}
+
+.diagnostics-export-dialog-header h2 {
+  margin: 1px 0 0;
+  font-size: 14px;
+  font-weight: 680;
+  letter-spacing: -0.015em;
+}
+
+.diagnostics-export-dialog-header p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.diagnostics-export-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.diagnostics-export-scopes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 18px 14px;
+}
+
+.diagnostics-export-scopes > button {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 54%, var(--panel));
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diagnostics-export-scopes > button > svg {
+  margin: 1px auto 0;
+}
+
+.diagnostics-export-scopes > button span,
+.diagnostics-conversation-list label span {
+  min-width: 0;
+}
+
+.diagnostics-export-scopes strong,
+.diagnostics-export-scopes small {
+  display: block;
+}
+
+.diagnostics-export-scopes strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.diagnostics-export-scopes small {
+  margin-top: 3px;
+  color: var(--subtle);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.diagnostics-export-scopes > button.active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.diagnostics-export-scopes > button:disabled,
+.diagnostics-export-close:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
+.diagnostics-conversation-picker {
+  min-height: 0;
+  margin: 0 18px 14px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.diagnostics-conversation-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 48%, var(--panel));
+}
+
+.diagnostics-conversation-toolbar label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 7px;
+  color: var(--subtle);
+}
+
+.diagnostics-conversation-toolbar input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  background: transparent;
+  font: inherit;
+  font-size: 10px;
+}
+
+.diagnostics-conversation-toolbar > button {
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 6px;
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+  background: transparent;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 630;
+  cursor: pointer;
+}
+
+.diagnostics-conversation-list {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.diagnostics-conversation-list label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.diagnostics-conversation-list label:last-child {
+  border-bottom: 0;
+}
+
+.diagnostics-conversation-list label.selected {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.diagnostics-conversation-list label:has(input:disabled) {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.diagnostics-conversation-list input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.diagnostics-conversation-list strong,
+.diagnostics-conversation-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-conversation-list strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.diagnostics-conversation-list small {
+  margin-top: 2px;
+  color: var(--subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 8px;
+}
+
+.diagnostics-conversation-empty {
+  padding: 26px 12px;
+  color: var(--subtle);
+  font-size: 10px;
+  text-align: center;
+}
+
+.diagnostics-export-dialog-notice,
+.diagnostics-export-dialog-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 18px 14px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.diagnostics-export-dialog-notice svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink));
+}
+
+.diagnostics-export-dialog-error {
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 7%, var(--panel));
+}
+
+.diagnostics-export-dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface) 48%, var(--panel));
+}
+
+.diagnostics-export-dialog-actions > span {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--subtle);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostics-export-cancel,
+.diagnostics-export-confirm {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 630;
+  cursor: pointer;
+}
+
+.diagnostics-export-cancel {
+  color: var(--ink);
+  background: var(--panel);
+}
+
+.diagnostics-export-confirm {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line-strong));
+  color: var(--panel);
+  background: color-mix(in srgb, var(--accent) 76%, var(--ink));
+}
+
+.diagnostics-export-cancel:disabled,
+.diagnostics-export-confirm:disabled {
+  cursor: default;
+  opacity: 0.54;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .diagnostics-export-close:hover:not(:disabled),
+  .diagnostics-conversation-toolbar > button:hover:not(:disabled),
+  .diagnostics-export-cancel:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+  }
+
+  .diagnostics-export-scopes > button:hover:not(:disabled),
+  .diagnostics-conversation-list label:hover {
+    border-color: color-mix(in srgb, var(--accent) 26%, var(--line));
+    background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  }
+
+  .diagnostics-export-confirm:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 68%, var(--ink));
+  }
+}
+
+@media (max-width: 640px) {
+  .diagnostics-export-scopes {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .diagnostics-export-dialog {
+    transform: none;
+    transition-duration: 0ms;
+  }
+}
+
 .diagnostics-metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

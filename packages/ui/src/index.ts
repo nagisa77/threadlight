@@ -34,7 +34,11 @@ export {
   CommandPalette,
   paletteEntryMatches,
 } from "./command-palette.js";
-export { DiagnosticsPage, formatDuration } from "./diagnostics.js";
+export {
+  DiagnosticExportDialog,
+  DiagnosticsPage,
+  formatDuration,
+} from "./diagnostics.js";
 export { AutomationsPage } from "./automations.js";
 export {
   initialSessionState,
@@ -144,6 +148,7 @@ export type {
   SearchResult,
 } from "./command-palette.js";
 export type {
+  DiagnosticConversationOption,
   DiagnosticsAdapter,
   ProjectDiagnosticsSnapshot,
 } from "./diagnostics.js";

@@ -42,8 +42,11 @@ export class RemoteHostConnection {
     return this.client.diagnostics(projectId);
   }
 
-  diagnosticBundle(projectId: string): Promise<HostProjectDiagnosticBundle> {
-    return this.client.diagnosticBundle(projectId);
+  diagnosticBundle(
+    projectId: string,
+    conversationIds?: readonly string[],
+  ): Promise<HostProjectDiagnosticBundle> {
+    return this.client.diagnosticBundle(projectId, conversationIds);
   }
 
   automations(projectId: string): Promise<HostAutomationsSnapshot> {

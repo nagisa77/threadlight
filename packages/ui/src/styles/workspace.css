@@ -450,6 +450,46 @@ body.is-resizing-workspace .workspace-split-handle::after {
   font-style: normal;
 }
 
+.delivery-sync-card {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+}
+
+.delivery-sync-card > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.delivery-sync-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.delivery-sync-card strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 670;
+}
+
+.delivery-sync-card small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
 .delivery-recovery-card,
 .delivery-conflict-card,
 .delivery-history-card {
@@ -730,6 +770,15 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
   .delivery-recovery-card {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .delivery-sync-card {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+
+  .delivery-sync-card > .github-delivery-button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .delivery-recovery-buttons {

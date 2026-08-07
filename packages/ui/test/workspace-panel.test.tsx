@@ -14,6 +14,7 @@ import {
   ReviewView,
   reviewDiffStylesForLayout,
   WorkspacePanel,
+  workspacePanelRequestSteps,
   type WorkspaceAdapter,
 } from "../src/workspace-panel.js";
 import type { TerminalAdapter } from "../src/terminal.js";
@@ -537,6 +538,40 @@ describe("FileSource", () => {
 });
 
 describe("WorkspacePanel", () => {
+  it("resets a newly mounted panel before activating its requested view", () => {
+    expect(
+      workspacePanelRequestSteps(undefined, {
+        scope: "project-1\u0000\u0000thread-1",
+        reviewRequest: 1,
+        deliveryRequest: 0,
+      }),
+    ).toEqual(["reset", "review"]);
+    expect(
+      workspacePanelRequestSteps(undefined, {
+        scope: "project-1\u0000\u0000thread-1",
+        reviewRequest: 0,
+        deliveryRequest: 0,
+        fileOpenRequest: 1,
+      }),
+    ).toEqual(["reset", "file"]);
+    expect(
+      workspacePanelRequestSteps(
+        {
+          scope: "project-1\u0000\u0000thread-1",
+          reviewRequest: 1,
+          deliveryRequest: 0,
+          fileOpenRequest: 1,
+        },
+        {
+          scope: "project-1\u0000\u0000thread-2",
+          reviewRequest: 1,
+          deliveryRequest: 0,
+          fileOpenRequest: 1,
+        },
+      ),
+    ).toEqual(["reset"]);
+  });
+
   it("defaults to a file tab and offers file or terminal views from add", () => {
     const adapter: WorkspaceAdapter = {
       getChanges: vi.fn(),
@@ -658,6 +693,8 @@ describe("WorkspacePanel", () => {
     const adapter: WorkspaceAdapter = {
       getChanges: vi.fn(),
       getDeliveryHistory: vi.fn(),
+      preflightDelivery: vi.fn(),
+      applyDelivery: vi.fn(),
       list: vi.fn(async () => []),
       read: vi.fn(),
     };
@@ -690,6 +727,9 @@ describe("WorkspacePanel", () => {
     expect(panel).toContain(">交付中心</span>");
     expect(center).toContain("管理手动同步、恢复点与 GitHub 发布状态");
     expect(center).toContain("目标分支");
+    expect(center).toContain("修改会保留在工作树中");
+    expect(center).toContain("应用到原分支");
+    expect(center).toContain('class="delivery-sync-card"');
     expect(center).toContain("同步历史");
     expect(center).toContain("<details");
   });

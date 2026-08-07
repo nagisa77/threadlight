@@ -242,43 +242,21 @@ export interface HostDiagnosticEnvironment {
   electronVersion?: string;
 }
 
-export interface HostDiagnosticAttachment {
-  id: string;
-  name: string;
-  mimeType: string;
-  size: number;
-  kind: "image" | "file";
-}
-
-export interface HostDiagnosticMessage {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  attachments?: readonly HostDiagnosticAttachment[];
-  followUpDelivery?: FollowUpDelivery;
-  error?: boolean;
-  errorCode?: string;
-  mode?: TurnMode;
-}
-
-export interface HostDiagnosticQueuedTurn {
-  id: string;
-  text: string;
-  delivery: FollowUpDelivery;
-  createdAt: string;
-  attachments?: readonly HostDiagnosticAttachment[];
-}
-
 export interface HostDiagnosticConversation {
   threadId: string;
   title: string;
+  source: string;
   createdAt?: string;
   updatedAt?: string;
   provider?: string;
   model?: string;
   workspaceMode?: HostTaskWorkspace["mode"];
-  messages: readonly HostDiagnosticMessage[];
-  queuedTurns: readonly HostDiagnosticQueuedTurn[];
+  /**
+   * A recursively redacted copy of the persisted conversation JSON. The key
+   * structure is preserved so model state, plans, progress, process output,
+   * citations, and queued turns remain available to badcase tooling.
+   */
+  record?: Readonly<Record<string, unknown>>;
 }
 
 export interface HostDiagnosticFile {
@@ -330,7 +308,9 @@ export interface HostProjectDiagnosticBundle {
     id: string;
     name: string;
     scope?: "project" | "standalone";
+    exportScope: "project" | "conversations";
     conversationCount: number;
+    conversationIds: readonly string[];
   };
   environment: HostDiagnosticEnvironment;
   summary: HostProjectDiagnosticsSnapshot;

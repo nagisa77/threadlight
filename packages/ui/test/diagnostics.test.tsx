@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DiagnosticExportDialog,
   DiagnosticsPage,
   formatDuration,
 } from "../src/diagnostics.js";
@@ -19,6 +20,7 @@ describe("diagnostics center", () => {
         adapter={{ load: vi.fn(), exportBundle: vi.fn() }}
         projectId="project-1"
         projectName="Threadlight"
+        conversations={[]}
       />,
     );
 
@@ -27,5 +29,42 @@ describe("diagnostics center", () => {
     expect(html).toContain("正在读取诊断数据");
     expect(html).toContain("导出诊断包");
     expect(html).toContain('type="button"');
+  });
+
+  it("renders a searchable multi-conversation export scope", () => {
+    const html = renderToStaticMarkup(
+      <DiagnosticExportDialog
+        projectName="Threadlight"
+        conversations={[
+          {
+            id: "thread-1",
+            title: "登录失败",
+            updatedAt: "2026-08-07T01:00:00.000Z",
+          },
+          {
+            id: "thread-2",
+            title: "工具超时",
+            updatedAt: "2026-08-07T02:00:00.000Z",
+          },
+        ]}
+        scope="conversations"
+        selectedIds={["thread-2"]}
+        query=""
+        busy={false}
+        onScopeChange={vi.fn()}
+        onQueryChange={vi.fn()}
+        onToggle={vi.fn()}
+        onSelectAll={vi.fn()}
+        onCancel={vi.fn()}
+        onExport={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('role="dialog"');
+    expect(html).toContain("登录失败");
+    expect(html).toContain("工具超时");
+    expect(html).toContain("已选择 1 个聊天");
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain("完整字段结构");
   });
 });

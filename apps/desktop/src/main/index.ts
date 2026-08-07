@@ -1339,16 +1339,20 @@ async function handleDiagnosticsExport(
   value: unknown,
 ) {
   requireTrustedSender(event);
-  const project = requireProject(value);
+  const request = parseDiagnosticExportRequest(value);
+  const project = requireProject(request.projectId);
   if (isRemoteHost()) {
     if (!remoteHost) throw new Error("Remote Host is not connected.");
-    return remoteHost.diagnosticBundle(project.id);
+    return remoteHost.diagnosticBundle(project.id, request.conversationIds);
   }
   if (!conversationChangeTracker) {
     throw new Error("Conversation changes are not available.");
   }
   return projectDiagnosticBundle(project, {
     changes: conversationChangeTracker,
+    ...(request.conversationIds
+      ? { conversationIds: request.conversationIds }
+      : {}),
     environment: {
       runtime: "desktop",
       appVersion: app.getVersion(),
@@ -3096,6 +3100,37 @@ function parseConversationTarget(value: unknown): DesktopConversationTarget {
     throw new Error("Invalid conversation target");
   }
   return { projectId: target.projectId, id: target.id };
+}
+
+function parseDiagnosticExportRequest(value: unknown): {
+  projectId: string;
+  conversationIds?: readonly string[];
+} {
+  if (typeof value === "string" && value) return { projectId: value };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid diagnostic export request");
+  }
+  const request = value as Record<string, unknown>;
+  if (typeof request.projectId !== "string" || !request.projectId) {
+    throw new Error("Invalid diagnostic project id");
+  }
+  if (request.conversationIds === undefined) {
+    return { projectId: request.projectId };
+  }
+  if (
+    !Array.isArray(request.conversationIds) ||
+    request.conversationIds.length === 0 ||
+    request.conversationIds.length > 500 ||
+    request.conversationIds.some(
+      (id) => typeof id !== "string" || !/^[\w-]+$/.test(id),
+    )
+  ) {
+    throw new Error("Invalid diagnostic conversation selection");
+  }
+  return {
+    projectId: request.projectId,
+    conversationIds: [...new Set(request.conversationIds as string[])],
+  };
 }
 
 function parseConversationChangesRequest(

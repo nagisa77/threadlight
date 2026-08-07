@@ -394,7 +394,9 @@ describe("ThreadlightHostServer", () => {
       conversations: [
         {
           threadId: "usage-thread",
-          messages: [{ text: "private response content" }],
+          record: {
+            messages: [{ text: "private response content" }],
+          },
         },
       ],
       timeline: [
@@ -405,6 +407,15 @@ describe("ThreadlightHostServer", () => {
         expect.objectContaining({ kind: "model", durationMs: 900 }),
         expect.objectContaining({ kind: "tool", durationMs: 200 }),
       ],
+    });
+    await expect(
+      hostClient.diagnosticBundle("project-1", ["usage-thread"]),
+    ).resolves.toMatchObject({
+      project: {
+        exportScope: "conversations",
+        conversationIds: ["usage-thread"],
+      },
+      conversations: [{ threadId: "usage-thread" }],
     });
     await expect(
       hostClient.search({

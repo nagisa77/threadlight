@@ -434,7 +434,10 @@ export class ThreadlightHostServer {
     const diagnosticBundleProjectId = hostDiagnosticBundleProjectId(
       url.pathname,
     );
-    if (request.method === "GET" && diagnosticBundleProjectId) {
+    if (
+      (request.method === "GET" || request.method === "POST") &&
+      diagnosticBundleProjectId
+    ) {
       const project = this.options.projects.project(diagnosticBundleProjectId);
       if (!project) {
         throw new Error(`Unknown project: ${diagnosticBundleProjectId}`);
@@ -444,6 +447,13 @@ export class ThreadlightHostServer {
         200,
         await projectDiagnosticBundle(project, {
           changes: this.conversationChanges,
+          ...(request.method === "POST"
+            ? {
+                conversationIds: parseDiagnosticBundleRequest(
+                  await jsonBody(request),
+                ),
+              }
+            : {}),
           environment: {
             runtime: "host",
             platform: process.platform,
@@ -2369,6 +2379,24 @@ function hostDiagnosticBundleProjectId(
     throw new Error("Invalid project id");
   }
   return projectId;
+}
+
+function parseDiagnosticBundleRequest(value: unknown): readonly string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid diagnostic bundle request");
+  }
+  const conversationIds = (value as Record<string, unknown>).conversationIds;
+  if (
+    !Array.isArray(conversationIds) ||
+    conversationIds.length === 0 ||
+    conversationIds.length > 500 ||
+    conversationIds.some(
+      (id) => typeof id !== "string" || !/^[\w-]+$/.test(id),
+    )
+  ) {
+    throw new Error("Invalid diagnostic conversation selection");
+  }
+  return [...new Set(conversationIds as string[])];
 }
 
 function hostAutomationsProjectId(pathname: string): string | undefined {

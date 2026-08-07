@@ -157,6 +157,7 @@ import {
 import {
   automaticDeliveryFromHistory,
   DeliveryTurnStatus,
+  shouldShowDeliveryTurnStatus,
 } from "./delivery-turn-status.js";
 import {
   ProjectOpenControl,
@@ -3664,6 +3665,7 @@ function ThreadlightAppContent({
               adapter={diagnostics}
               projectId={currentProject.id}
               projectName={currentProject.name}
+              conversations={currentProject.conversations}
             />
           ) : view === "automations" && automations && currentProject ? (
             <Suspense fallback={<DeferredView label={t("loading")} />}>
@@ -3924,13 +3926,15 @@ function ThreadlightAppContent({
                         </div>
                       )}
 
-                      {currentConversation?.workspace?.mode === "worktree" &&
-                        !state.isRunning && (
+                      {shouldShowDeliveryTurnStatus(
+                        currentConversation?.workspace?.mode,
+                        state.isRunning,
+                      ) && (
                         <DeliveryTurnStatus
                           delivery={automaticDelivery}
                           disabled={
-                            automaticDelivery.status === "syncing" ||
-                            automaticDelivery.status === "undoing"
+                            automaticDelivery?.status === "syncing" ||
+                            automaticDelivery?.status === "undoing"
                           }
                           onOpen={openDeliveryCenter}
                           onRetry={
@@ -3944,7 +3948,7 @@ function ThreadlightAppContent({
                               : undefined
                           }
                         />
-                        )}
+                      )}
                     </div>
                   )}
                 </div>
