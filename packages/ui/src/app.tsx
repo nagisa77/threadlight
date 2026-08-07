@@ -266,7 +266,12 @@ import {
   storedSidebarVisibility,
   useNavigationController,
 } from "./features/navigation/controller.js";
-import { useTaskSessionController } from "./features/task-session/controller.js";
+import {
+  suggestionScopeKey,
+  useTaskSessionController,
+} from "./features/task-session/controller.js";
+import { useInitialViewReady } from "./features/task-session/initial-view.js";
+import { restoredThreadRoute } from "./features/navigation/startup.js";
 import { useDeliveryController } from "./features/delivery/controller.js";
 import type {
   AttachmentPreviewAdapter,
@@ -288,6 +293,7 @@ export {
   preserveComposerFocusOnPointerDown,
   shouldIgnoreComposerKey,
 } from "./features/composer/controller.js";
+export { restoredThreadRoute } from "./features/navigation/startup.js";
 export type {
   PendingAttachment,
   VoiceInputStatus,
@@ -380,6 +386,9 @@ export interface ThreadlightAppProps {
   client: ThreadlightClient;
   initialThreadId?: string;
   initialLanguage?: Language;
+  initialSettings?: SettingsSnapshot;
+  initialProjects?: ProjectsSnapshot;
+  onInitialViewReady?(): void;
   onThreadChange?(threadId?: string): void;
   onLanguageChange?(language: Language): void;
   clipboard?: ClipboardAdapter;
@@ -422,11 +431,21 @@ const MAX_COMPOSER_ATTACHMENTS = 10;
 
 export function ThreadlightApp(props: ThreadlightAppProps) {
   const [language, setLanguage] = useState<Language>(
-    () => props.initialLanguage ?? "zh-CN",
+    () =>
+      (isLanguage(props.initialSettings?.language)
+        ? props.initialSettings.language
+        : props.initialLanguage) ?? "zh-CN",
   );
-  const [theme, setTheme] = useState<ThemePreference>("system");
+  const [theme, setTheme] = useState<ThemePreference>(
+    () =>
+      (isThemePreference(props.initialSettings?.theme)
+        ? props.initialSettings.theme
+        : undefined) ?? "system",
+  );
   const [preferredProjectOpener, setPreferredProjectOpener] =
-    useState<ProjectOpenerId>("");
+    useState<ProjectOpenerId>(
+      () => props.initialSettings?.preferredProjectOpener ?? "",
+    );
 
   const changeLanguage = useCallback(
     (nextLanguage: Language) => {
@@ -437,6 +456,7 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
   );
 
   useEffect(() => {
+    if (props.initialSettings) return;
     let active = true;
     void props.settings
       ?.load()
@@ -454,7 +474,7 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
     return () => {
       active = false;
     };
-  }, [changeLanguage, props.settings]);
+  }, [changeLanguage, props.initialSettings, props.settings]);
 
   return (
     <ThemeProvider preference={theme}>
@@ -491,6 +511,9 @@ function ThreadlightAppContent({
   projectOpener,
   executionPolicy,
   initialThreadId,
+  initialSettings,
+  initialProjects,
+  onInitialViewReady,
   onThreadChange,
   onLanguageChange,
   onThemeChange,
@@ -561,7 +584,10 @@ function ThreadlightAppContent({
     projectSnapshotRef,
     activeThreadIdRef,
     viewRef,
-  } = useNavigationController();
+  } = useNavigationController({
+    projects: initialProjects,
+    settings: initialSettings,
+  });
   const {
     state: activeState,
     retry,
@@ -665,6 +691,10 @@ function ThreadlightAppContent({
     useState<string>();
   const [showingComputerShare, setShowingComputerShare] = useState(false);
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
+  const [initialRestoreComplete, setInitialRestoreComplete] = useState(
+    () => !projects,
+  );
+  const initialProjectSnapshot = useRef(initialProjects);
   const {
     terminalOpen,
     setTerminalOpen,
@@ -694,6 +724,15 @@ function ThreadlightAppContent({
     workspaceRoot,
   } = useDeliveryController();
   const currentProject = activeProject(projectSnapshot);
+  useInitialViewReady({
+    onReady: onInitialViewReady,
+    restoreComplete: initialRestoreComplete,
+    hasCurrentProject: Boolean(currentProject),
+    connection: state.connection,
+    messagesLength: state.messages.length,
+    conversation,
+    followOutput,
+  });
   const currentHost = hostSnapshot?.hosts.find(
     (host) => host.id === hostSnapshot.activeHostId,
   );
@@ -776,7 +815,7 @@ function ThreadlightAppContent({
   }, [state.recovery?.threadId]);
 
   useEffect(() => {
-    if (!settings) return;
+    if (!settings || initialSettings) return;
     let active = true;
     void settings
       .load()
@@ -789,7 +828,7 @@ function ThreadlightAppContent({
     return () => {
       active = false;
     };
-  }, [settings]);
+  }, [initialSettings, settings]);
 
   useEffect(() => {
     if (!projectSnapshot || observedInitialProjects.current) return;
@@ -987,18 +1026,18 @@ function ThreadlightAppContent({
 
   useEffect(() => {
     if (!onThreadChange || !projectSnapshot) return;
-    const navigableThreadId =
-      !newTaskDraft &&
-      activeState.threadId &&
-      currentProject?.conversations.some(
-        (item) => item.id === activeState.threadId,
-      )
-        ? activeState.threadId
-        : undefined;
-    onThreadChange(navigableThreadId);
+    const route = restoredThreadRoute({
+      restoreComplete: initialRestoreComplete,
+      newTaskDraft,
+      activeThreadId: activeState.threadId,
+      conversations: currentProject?.conversations,
+    });
+    if (!route.ready) return;
+    onThreadChange(route.threadId);
   }, [
     activeState.threadId,
     currentProject?.conversations,
+    initialRestoreComplete,
     newTaskDraft,
     onThreadChange,
     projectSnapshot,
@@ -1019,9 +1058,12 @@ function ThreadlightAppContent({
     conversationChanges &&
     conversationChanges.files.length > 0,
   );
-  const suggestionKey = state.threadId
-    ? `${state.threadId}\u0000${language}`
-    : "";
+  const suggestionKey = suggestionScopeKey({
+    threadId: state.threadId,
+    projectId: currentProject?.id,
+    newTaskDraft,
+    language,
+  });
   const selectedCapabilityIds = new Set(
     selectedCapabilities.flatMap(({ id, connectorRef }) =>
       connectorRef ? [id, connectorRef] : [id],
@@ -1368,16 +1410,15 @@ function ThreadlightAppContent({
   useEffect(() => {
     if (
       state.connection !== "ready" ||
-      !state.threadId ||
+      !suggestionKey ||
       state.messages.length > 0
     ) {
       return;
     }
 
-    const key = `${state.threadId}\u0000${language}`;
     let active = true;
     setSuggestedQuestions({
-      key,
+      key: suggestionKey,
       status: "loading",
       suggestions: [],
     });
@@ -1386,7 +1427,7 @@ function ThreadlightAppContent({
       .then(({ suggestions }) => {
         if (active) {
           setSuggestedQuestions({
-            key,
+            key: suggestionKey,
             status: "ready",
             suggestions,
           });
@@ -1395,7 +1436,7 @@ function ThreadlightAppContent({
       .catch(() => {
         if (active) {
           setSuggestedQuestions({
-            key,
+            key: suggestionKey,
             status: "error",
             suggestions: [],
           });
@@ -1410,6 +1451,7 @@ function ThreadlightAppContent({
     state.connection,
     state.messages.length,
     state.threadId,
+    suggestionKey,
     suggestionRetry,
   ]);
 
@@ -1841,7 +1883,10 @@ function ThreadlightAppContent({
   );
 
   useEffect(() => {
-    if (!projects) return;
+    if (!projects) {
+      setInitialRestoreComplete(true);
+      return;
+    }
     let active = true;
     void projects
       .loadHosts?.()
@@ -1851,8 +1896,11 @@ function ThreadlightAppContent({
       .catch(() => {
         // The project error below still leaves the connect form available.
       });
-    void projects
-      .load()
+    const prefetchedSnapshot = initialProjectSnapshot.current;
+    initialProjectSnapshot.current = undefined;
+    void (
+      prefetchedSnapshot ? Promise.resolve(prefetchedSnapshot) : projects.load()
+    )
       .then(async (snapshot) => {
         if (!active) return;
         let nextSnapshot = snapshot;
@@ -1873,6 +1921,9 @@ function ThreadlightAppContent({
       })
       .catch((error) => {
         if (active) setProjectError(errorMessage(error));
+      })
+      .finally(() => {
+        if (active) setInitialRestoreComplete(true);
       });
     return () => {
       active = false;
@@ -3651,7 +3702,7 @@ function ThreadlightAppContent({
                           : []
                       }
                       suggestionsLoading={
-                        Boolean(state.threadId) &&
+                        Boolean(suggestionKey) &&
                         state.connection === "ready" &&
                         (suggestedQuestions?.key !== suggestionKey ||
                           suggestedQuestions.status === "loading")

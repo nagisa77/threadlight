@@ -495,15 +495,45 @@
   font-size: 11px;
 }
 
-.web-app-loading {
+.web-runtime {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.web-runtime.is-restoring {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.web-bootstrap {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
   display: flex;
-  min-height: 100vh;
   align-items: center;
   justify-content: center;
-  gap: 9px;
-  color: var(--muted);
+  gap: 10px;
+  color: var(--ink);
   background: var(--surface);
-  font-size: 12px;
+}
+
+.web-bootstrap-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgb(36 36 32 / 4%);
+}
+
+.web-bootstrap-wordmark {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .app-shell.sidebar-hidden + .web-session-indicator {

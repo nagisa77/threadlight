@@ -87,4 +87,73 @@ describe("remote Web protocol handshake", () => {
     expect(error.message).toContain("Host protocol version: 3");
     expect(error.message).toContain("Update this Threadlight Web client");
   });
+
+  it("prefetches one coherent project and settings snapshot for first paint", async () => {
+    const requests: string[] = [];
+    const settings = {
+      language: "zh-CN",
+      theme: "dark",
+      preferredProjectOpener: "",
+      provider: "openai",
+      openAIApiKeyConfigured: true,
+      deepSeekApiKeyConfigured: false,
+      qwenApiKeyConfigured: false,
+      kimiApiKeyConfigured: false,
+      doubaoApiKeyConfigured: false,
+      geminiApiKeyConfigured: false,
+      grokApiKeyConfigured: false,
+      customApiKeyConfigured: false,
+      searchApiKeyConfigured: false,
+      qwenBaseUrl: "https://dashscope.example/v1",
+      kimiBaseUrl: "https://kimi.example/v1",
+      doubaoBaseUrl: "https://doubao.example/v1",
+      geminiBaseUrl: "https://gemini.example/v1",
+      grokBaseUrl: "https://grok.example/v1",
+      customBaseUrl: "http://localhost:11434/v1",
+      customModel: "llama3.2",
+      model: "gpt-5.6-sol",
+    } as const;
+    const fetcher: typeof globalThis.fetch = async (input) => {
+      const url = String(input);
+      requests.push(url);
+      const payload = url.endsWith("/v1/health")
+        ? {
+            ok: true,
+            protocolVersion: 2,
+            hostId: "host-current",
+            name: "Current Host",
+            homePath: "/host",
+          }
+        : url.endsWith("/v1/host/projects")
+          ? snapshot
+          : settings;
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    const session = await createRemoteWebSession({
+      endpoint: "https://host.example.com",
+      token: "test-token",
+      fetch: fetcher,
+      storage: { getItem: () => null, setItem: () => undefined },
+    });
+    const startupRequestCount = requests.length;
+
+    expect(session.bootstrap.settings.language).toBe("zh-CN");
+    expect(session.bootstrap.projects.activeProjectId).toBe("host-active");
+    expect(await session.settings.load()).toEqual(session.bootstrap.settings);
+    expect(requests).toHaveLength(startupRequestCount);
+    expect(await session.projects.load()).toEqual(session.bootstrap.projects);
+    expect(requests).toHaveLength(startupRequestCount + 1);
+    expect(requests).toEqual(
+      expect.arrayContaining([
+        "https://host.example.com/v1/health",
+        "https://host.example.com/v1/host/projects",
+        "https://host.example.com/v1/host/settings",
+      ]),
+    );
+    session.dispose();
+  });
 });

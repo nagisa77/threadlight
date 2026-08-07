@@ -22,6 +22,7 @@ import {
   ProjectListHeading,
   RecentTasksGroup,
   RemoteRuntimeDialog,
+  restoredThreadRoute,
   RuntimeStatusControl,
   showsProjectLevelActivity,
   TaskSearchDialog,
@@ -30,6 +31,7 @@ import {
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
 } from "../src/app.js";
 import { I18nProvider } from "../src/i18n.js";
+import type { SettingsSnapshot } from "../src/settings.js";
 
 describe("ThreadlightApp", () => {
   it("shows both required computer permissions with direct actions", () => {
@@ -99,12 +101,7 @@ describe("ThreadlightApp", () => {
       documentPath: ".threadlight/plans/run-1.md",
       documentVersion: "0123456789abcdef",
     };
-    const first = planDocumentOpenRequest(
-      plan,
-      "thread-1",
-      undefined,
-      1,
-    );
+    const first = planDocumentOpenRequest(plan, "thread-1", undefined, 1);
     const refresh = planDocumentOpenRequest(
       { ...plan, documentVersion: "fedcba9876543210" },
       "thread-1",
@@ -168,9 +165,7 @@ describe("ThreadlightApp", () => {
     expect(html).toContain(
       'class="sidebar-collapse-button pressable" aria-label="隐藏侧边栏"',
     );
-    expect(html).toContain(
-      'class="new-thread-button project-row pressable"',
-    );
+    expect(html).toContain('class="new-thread-button project-row pressable"');
     expect(html).not.toContain('class="brand"');
     client.dispose();
   });
@@ -190,6 +185,75 @@ describe("ThreadlightApp", () => {
     client.dispose();
   });
 
+  it("uses the prefetched settings and project snapshot on the first render", () => {
+    const client = new ThreadlightClient({
+      send: vi.fn(),
+      onMessage: () => () => undefined,
+    });
+    const initialSettings = {
+      language: "zh-CN",
+      theme: "system",
+      preferredProjectOpener: "",
+    } as SettingsSnapshot;
+    const initialProjects = {
+      activeProjectId: "project-a",
+      projects: [
+        {
+          id: "project-a",
+          name: "已恢复项目",
+          basePath: "/project-a",
+          lastOpenedAt: "2026-08-07T00:00:00.000Z",
+          conversations: [],
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      <ThreadlightApp
+        client={client}
+        initialLanguage="en"
+        initialSettings={initialSettings}
+        initialProjects={initialProjects}
+      />,
+    );
+
+    expect(html).toContain('aria-label="隐藏侧边栏"');
+    expect(html).toContain("/project-a · —");
+    expect(html).toContain("正在连接 Host…");
+    expect(html).not.toContain("Connecting to Host");
+    expect(html).not.toContain("Open a project");
+    client.dispose();
+  });
+
+  it("does not clear a task URL while the initial task is still restoring", () => {
+    const conversations = [{ id: "thread-a" }];
+
+    expect(
+      restoredThreadRoute({
+        restoreComplete: false,
+        newTaskDraft: false,
+        activeThreadId: undefined,
+        conversations,
+      }),
+    ).toEqual({ ready: false });
+    expect(
+      restoredThreadRoute({
+        restoreComplete: true,
+        newTaskDraft: false,
+        activeThreadId: "thread-a",
+        conversations,
+      }),
+    ).toEqual({ ready: true, threadId: "thread-a" });
+    expect(
+      restoredThreadRoute({
+        restoreComplete: true,
+        newTaskDraft: true,
+        activeThreadId: "thread-a",
+        conversations,
+      }),
+    ).toEqual({ ready: true });
+  });
+
   it("combines runtime status and remote entry into one compact row", () => {
     const html = renderToStaticMarkup(
       <RuntimeStatusControl
@@ -201,16 +265,12 @@ describe("ThreadlightApp", () => {
       />,
     );
 
-    expect(html).toContain(
-      'class="runtime-status-control pressable"',
-    );
+    expect(html).toContain('class="runtime-status-control pressable"');
     expect(html).toContain("运行时已连接");
     expect(html).toContain("本地");
     expect(html).toContain("status-dot ready");
     expect(html).toContain("runtime-status-chevron");
-    expect(html).toContain(
-      'class="runtime-status-label" title="运行时已连接"',
-    );
+    expect(html).toContain('class="runtime-status-label" title="运行时已连接"');
     expect(html).not.toContain("lucide-server");
   });
 
@@ -430,9 +490,7 @@ describe("conversation change refresh tools", () => {
         output: "command completed",
       },
     });
-    expect(conversationChangesRefreshKey(progress)).toBe(
-      "write-1:completed:",
-    );
+    expect(conversationChangesRefreshKey(progress)).toBe("write-1:completed:");
   });
 
   it("keeps direct file and managed-process tools in one explicit list", () => {
@@ -844,16 +902,19 @@ describe("ProjectGroup", () => {
     ];
 
     expect(
-      filterProjectsForTaskList(projects, "", "running", ["running"])[0]
-        ?.conversations.map(({ id }) => id),
+      filterProjectsForTaskList(projects, "", "running", [
+        "running",
+      ])[0]?.conversations.map(({ id }) => id),
     ).toEqual(["running"]);
     expect(
-      filterProjectsForTaskList(projects, "发布", "completed", ["running"])[0]
-        ?.conversations.map(({ id }) => id),
+      filterProjectsForTaskList(projects, "发布", "completed", [
+        "running",
+      ])[0]?.conversations.map(({ id }) => id),
     ).toEqual(["completed"]);
     expect(
-      filterProjectsForTaskList(projects, "", "archived", ["running"])[0]
-        ?.conversations.map(({ id }) => id),
+      filterProjectsForTaskList(projects, "", "archived", [
+        "running",
+      ])[0]?.conversations.map(({ id }) => id),
     ).toEqual(["archived"]);
   });
 

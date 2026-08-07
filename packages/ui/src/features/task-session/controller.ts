@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type {
   ConversationAccessMode,
+  SuggestionLanguage,
   TaskDevelopmentMode,
 } from "@threadlight/protocol";
 
@@ -8,6 +9,23 @@ export interface SuggestedQuestionsState {
   key: string;
   status: "loading" | "ready" | "error";
   suggestions: readonly string[];
+}
+
+export function suggestionScopeKey({
+  threadId,
+  projectId,
+  newTaskDraft,
+  language,
+}: {
+  threadId?: string;
+  projectId?: string;
+  newTaskDraft: boolean;
+  language: SuggestionLanguage;
+}): string {
+  if (threadId) return `thread:${threadId}\u0000${language}`;
+  return newTaskDraft && projectId
+    ? `project:${projectId}\u0000${language}`
+    : "";
 }
 
 export function useTaskSessionController() {

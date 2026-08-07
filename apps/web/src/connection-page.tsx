@@ -338,6 +338,7 @@ export function RemoteConnectionPage({
   onUpsertHost,
   onDeleteHost,
   onLanguageChange,
+  initialErrorReason,
 }: {
   initialEndpoint: string;
   initialToken: string;
@@ -347,6 +348,7 @@ export function RemoteConnectionPage({
   onUpsertHost?(host: HostRecordInput): void;
   onDeleteHost?(id: string): void;
   onLanguageChange?(language: Language): void;
+  initialErrorReason?: unknown;
 }) {
   const [initialPrefs] = useState<ConnectPrefs>(loadConnectPrefs);
   const [language, setLanguage] = useState<Language>(initialPrefs.language);
@@ -373,6 +375,7 @@ export function RemoteConnectionPage({
           onConnect={onConnect}
           onUpsertHost={onUpsertHost}
           onDeleteHost={onDeleteHost}
+          initialErrorReason={initialErrorReason}
           language={language}
           theme={theme}
           onLanguageChange={changeLanguage}
@@ -391,6 +394,7 @@ function RemoteConnectionContent({
   onConnect,
   onUpsertHost,
   onDeleteHost,
+  initialErrorReason,
   language,
   theme,
   onLanguageChange,
@@ -403,6 +407,7 @@ function RemoteConnectionContent({
   onConnect(endpoint: string, token: string, name?: string): Promise<void>;
   onUpsertHost?(host: HostRecordInput): void;
   onDeleteHost?(id: string): void;
+  initialErrorReason?: unknown;
   language: Language;
   theme: ThemePreference;
   onLanguageChange(language: Language): void;
@@ -421,7 +426,7 @@ function RemoteConnectionContent({
   const [token, setToken] = useState(initialToken || preselected?.token || "");
   const [showToken, setShowToken] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [errorReason, setErrorReason] = useState<unknown>();
+  const [errorReason, setErrorReason] = useState<unknown>(initialErrorReason);
   const [endpointError, setEndpointError] = useState<string>();
   const [savedFlash, setSavedFlash] = useState(false);
   const [armedId, setArmedId] = useState<string | null>(null);
@@ -860,7 +865,11 @@ export function connectionError(
   copy: ConnectionCopy = CONNECTION_COPY.en,
 ): string {
   const message = reason instanceof Error ? reason.message : String(reason);
-  if (window.location.protocol === "https:" && /^http:\/\//i.test(message)) {
+  if (
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    /^http:\/\//i.test(message)
+  ) {
     return copy.httpsError;
   }
   if (message === "Failed to fetch" || /network/i.test(message)) {

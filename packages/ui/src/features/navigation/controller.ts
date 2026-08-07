@@ -67,7 +67,10 @@ export function completeFirstRun(
   setCompleted(true);
 }
 
-export function useNavigationController() {
+export function useNavigationController(initial?: {
+  projects?: ProjectsSnapshot;
+  settings?: SettingsSnapshot;
+}) {
   const initialMobileSidebar = isMobileSidebarViewport();
   const [mobileSidebar, setMobileSidebar] = useState(initialMobileSidebar);
   const [sidebarOpen, setSidebarOpen] = useState(() =>
@@ -76,8 +79,12 @@ export function useNavigationController() {
   const sidebarCloseButton = useRef<HTMLButtonElement>(null);
   const sidebarOpenButton = useRef<HTMLButtonElement>(null);
   const [view, setView] = useState<AppView>("thread");
-  const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
-  const [runtimeSettings, setRuntimeSettings] = useState<SettingsSnapshot>();
+  const [projectSnapshot, setProjectSnapshot] = useState<
+    ProjectsSnapshot | undefined
+  >(() => initial?.projects);
+  const [runtimeSettings, setRuntimeSettings] = useState<
+    SettingsSnapshot | undefined
+  >(() => initial?.settings);
   const [firstRunCompleted, setFirstRunCompleted] = useState(
     storedFirstRunComplete,
   );

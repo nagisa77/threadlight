@@ -1098,7 +1098,7 @@ export interface ThreadlightMethodMap {
     result: { deleted: boolean };
   };
   "thread/suggestions": {
-    params: { threadId: string; language: SuggestionLanguage };
+    params: { threadId?: string; language: SuggestionLanguage };
     result: { suggestions: readonly [string, string, string] };
   };
   "delivery/pull-request-description": {

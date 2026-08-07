@@ -694,7 +694,7 @@ describe("AppServer", () => {
     expect(requests).toHaveLength(5);
   });
 
-  it("generates three cached opening questions with a scripted model without changing the conversation", async () => {
+  it("generates cached opening questions for a draft without creating a thread", async () => {
     const requests: ModelRequest[] = [];
     const messages: JsonRpcOutgoing[] = [];
     const provider: ModelProvider = {
@@ -730,26 +730,14 @@ describe("AppServer", () => {
     });
 
     await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
-    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
-    const threadId = (
-      messages.find((message) => "id" in message && message.id === 2)
-        ?.result as { threadId: string }
-    ).threadId;
-
-    for (const id of [3, 4]) {
+    for (const id of [2, 3]) {
       await server.receive({
         jsonrpc: "2.0",
         id,
         method: "thread/suggestions",
-        params: { threadId, language: "zh-CN" },
+        params: { language: "zh-CN" },
       });
     }
-    await server.receive({
-      jsonrpc: "2.0",
-      id: 5,
-      method: "thread/resume",
-      params: { threadId },
-    });
 
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
@@ -758,6 +746,17 @@ describe("AppServer", () => {
       instructions: expect.stringContaining(
         "Workspace context: a local TypeScript agent runtime",
       ),
+    });
+    expect(
+      messages.find((message) => "id" in message && message.id === 2),
+    ).toMatchObject({
+      result: {
+        suggestions: [
+          "这个项目最值得先解决的架构风险是什么？",
+          "哪些测试缺口最可能导致回归？",
+          "下一步最有价值的功能改进是什么？",
+        ],
+      },
     });
     expect(
       messages.find((message) => "id" in message && message.id === 3),
@@ -770,20 +769,6 @@ describe("AppServer", () => {
         ],
       },
     });
-    expect(
-      messages.find((message) => "id" in message && message.id === 4),
-    ).toMatchObject({
-      result: {
-        suggestions: [
-          "这个项目最值得先解决的架构风险是什么？",
-          "哪些测试缺口最可能导致回归？",
-          "下一步最有价值的功能改进是什么？",
-        ],
-      },
-    });
-    expect(
-      messages.find((message) => "id" in message && message.id === 5),
-    ).toMatchObject({ result: { messages: [] } });
   });
 
   it("generates structured PR copy with an offline scripted provider", async () => {

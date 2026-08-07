@@ -459,14 +459,19 @@ export class AppServer {
     params: unknown,
   ): Promise<{ suggestions: readonly [string, string, string] }> {
     const { threadId, language: languageValue } = objectParams(params);
-    requireString(threadId, "threadId");
+    if (threadId !== undefined) requireString(threadId, "threadId");
     const language = requireSuggestionLanguage(languageValue);
-
-    const thread = await this.requireThread(threadId);
+    const threadAgent =
+      threadId === undefined
+        ? undefined
+        : (await this.requireThread(threadId)).agent;
 
     let request = this.suggestionRequests.get(language);
     if (!request) {
-      request = this.resolveSuggestedQuestions(thread.agent, language);
+      request = this.resolveSuggestedQuestions(
+        threadAgent ? async () => threadAgent : this.agentFactory,
+        language,
+      );
       this.suggestionRequests.set(language, request);
     }
 
@@ -533,7 +538,7 @@ export class AppServer {
   }
 
   private async resolveSuggestedQuestions(
-    agent: Agent,
+    createAgent: AgentFactory,
     language: SuggestionLanguage,
   ): Promise<SuggestedQuestions> {
     const claim = await this.suggestionStore.claimRefresh(
@@ -551,6 +556,7 @@ export class AppServer {
     }
 
     try {
+      const agent = await createAgent();
       const suggestions = await this.generateSuggestedQuestions(
         agent,
         language,

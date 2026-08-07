@@ -160,8 +160,11 @@ export class ThreadlightClient {
     });
   }
 
-  suggestQuestions(threadId: string, language: SuggestionLanguage) {
-    return this.request("thread/suggestions", { threadId, language });
+  suggestQuestions(threadId: string | undefined, language: SuggestionLanguage) {
+    return this.request("thread/suggestions", {
+      ...(threadId === undefined ? {} : { threadId }),
+      language,
+    });
   }
 
   generatePullRequestDescription(

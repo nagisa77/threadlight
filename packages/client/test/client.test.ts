@@ -424,6 +424,29 @@ describe("ThreadlightClient", () => {
     });
   });
 
+  it("requests project suggestions before a runtime thread exists", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const suggested = client.suggestQuestions(undefined, "en");
+    expect(transport.sent[0]).toMatchObject({
+      method: "thread/suggestions",
+      params: { language: "en" },
+    });
+    expect(transport.sent[0]?.params).not.toHaveProperty("threadId");
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        suggestions: ["Question one?", "Question two?", "Question three?"],
+      },
+    });
+
+    await expect(suggested).resolves.toEqual({
+      suggestions: ["Question one?", "Question two?", "Question three?"],
+    });
+  });
+
   it("requests a model-generated pull request description", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

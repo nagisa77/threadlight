@@ -27,6 +27,7 @@ import type {
   ProjectsSnapshot,
   SearchAdapter,
   SettingsAdapter,
+  SettingsSnapshot,
   TerminalAdapter,
   TerminalEvent,
   VoiceInputAdapter,
@@ -40,6 +41,7 @@ export interface RemoteWebCredentials {
 
 export interface RemoteWebSession {
   health: ThreadlightHostHealth;
+  bootstrap: RemoteWebBootstrap;
   client: ThreadlightClient;
   clipboard: ClipboardAdapter;
   projects: ProjectsAdapter;
@@ -56,6 +58,11 @@ export interface RemoteWebSession {
   terminal?: TerminalAdapter;
   executionPolicy: ExecutionPolicyAdapter;
   dispose(): void;
+}
+
+export interface RemoteWebBootstrap {
+  projects: ProjectsSnapshot;
+  settings: SettingsSnapshot;
 }
 
 export interface CreateRemoteWebSessionOptions extends RemoteWebCredentials {
@@ -131,7 +138,10 @@ export async function createRemoteWebSession(
   if (health.protocolVersion !== THREADLIGHT_HOST_PROTOCOL_VERSION) {
     throw new IncompatibleHostProtocolError(health.protocolVersion);
   }
-  const initialProjects = await host.projects();
+  const [initialProjects, initialSettings] = await Promise.all([
+    host.projects(),
+    host.settings(),
+  ]);
   const transport = new SwitchableHttpRuntimeTransport({
     endpoint: options.endpoint,
     token: options.token,
@@ -147,8 +157,15 @@ export async function createRemoteWebSession(
     options.endpoint,
     initialProjects,
   );
+  let initialSettingsAvailable = true;
   const settings: SettingsAdapter = {
-    load: () => host.settings(),
+    load: () => {
+      if (initialSettingsAvailable) {
+        initialSettingsAvailable = false;
+        return Promise.resolve(initialSettings);
+      }
+      return host.settings();
+    },
     save: (update) => host.updateSettings(update),
     testProvider: (request) => host.testProvider(request),
   };
@@ -180,9 +197,7 @@ export async function createRemoteWebSession(
     async prepare() {
       const snapshot = await host.settings();
       if (!snapshot.openAIApiKeyConfigured) {
-        throw new Error(
-          "请先在设置中配置 OpenAI API Key，再使用语音输入。",
-        );
+        throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
       }
     },
     transcribe: (recording) => host.transcribeAudio(recording),
@@ -211,6 +226,10 @@ export async function createRemoteWebSession(
 
   return {
     health,
+    bootstrap: {
+      projects: projects.bootstrapSnapshot(),
+      settings: initialSettings,
+    },
     client,
     clipboard: {
       writeText: (text) => writeClipboardText(text),
@@ -261,14 +280,10 @@ function remoteConnectorAuthorization(
           try {
             const authorizationUrl = new URL(url);
             if (authorizationUrl.protocol !== "https:") {
-              throw new Error(
-                "OAuth authorization URL must use HTTPS.",
-              );
+              throw new Error("OAuth authorization URL must use HTTPS.");
             }
             if (popup.closed) {
-              throw new Error(
-                "OAuth 授权窗口已关闭，请重新连接。",
-              );
+              throw new Error("OAuth 授权窗口已关闭，请重新连接。");
             }
             popup.location.replace(authorizationUrl.toString());
             navigated = true;
@@ -279,10 +294,7 @@ function remoteConnectorAuthorization(
         },
       );
       try {
-        const result = await Promise.race([
-          action(),
-          navigationFailure,
-        ]);
+        const result = await Promise.race([action(), navigationFailure]);
         popup.close();
         return result;
       } catch (error) {
@@ -347,10 +359,7 @@ function remoteAttachmentAdapters(
           content: await file.arrayBuffer(),
         });
         if (attachment.kind === "image") {
-          remember(
-            `${project.id}:${attachment.id}`,
-            URL.createObjectURL(file),
-          );
+          remember(`${project.id}:${attachment.id}`, URL.createObjectURL(file));
         }
         return attachment;
       },
@@ -412,6 +421,10 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     return this.sync(await this.host.projects());
   }
 
+  bootstrapSnapshot(): ProjectsSnapshot {
+    return this.toClientSnapshot();
+  }
+
   async openFolder(path?: string): Promise<ProjectsSnapshot> {
     if (!path?.trim()) {
       throw new Error("Enter an absolute project path on the remote Host.");
@@ -439,8 +452,7 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     });
   }
 
-  listRemoteDirectories = (path: string) =>
-    this.host.directories(path);
+  listRemoteDirectories = (path: string) => this.host.directories(path);
 
   async activate(projectId: string): Promise<ProjectsSnapshot> {
     const snapshot = await this.host.projects();
@@ -519,9 +531,7 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
   }
 
   activeProject(): HostProjectSummary | undefined {
-    return this.snapshot.projects.find(
-      ({ id }) => id === this.activeProjectId,
-    );
+    return this.snapshot.projects.find(({ id }) => id === this.activeProjectId);
   }
 
   private sync(
@@ -529,16 +539,17 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     preferredProjectId = this.activeProjectId,
   ): ProjectsSnapshot {
     this.snapshot = snapshot;
-    this.activeProjectId = clientActiveProjectId(
-      snapshot,
-      preferredProjectId,
-    );
+    this.activeProjectId = clientActiveProjectId(snapshot, preferredProjectId);
     this.activateRuntime();
+    return this.toClientSnapshot();
+  }
+
+  private toClientSnapshot(): ProjectsSnapshot {
     return {
       ...(this.activeProjectId
         ? { activeProjectId: this.activeProjectId }
         : {}),
-      projects: snapshot.projects.map((project) => ({
+      projects: this.snapshot.projects.map((project) => ({
         ...project,
         runtime: {
           kind: "remote" as const,
@@ -569,9 +580,7 @@ export function clientActiveProjectId(
   }
   if (
     snapshot.activeProjectId &&
-    snapshot.projects.some(
-      (project) => project.id === snapshot.activeProjectId,
-    )
+    snapshot.projects.some((project) => project.id === snapshot.activeProjectId)
   ) {
     return snapshot.activeProjectId;
   }
@@ -582,8 +591,7 @@ function remoteWorkspaceAdapter(
   host: HttpHostClient,
   transport: SwitchableHttpRuntimeTransport,
 ): WorkspaceAdapter {
-  const activate = (projectId: string) =>
-    transport.activateProject(projectId);
+  const activate = (projectId: string) => transport.activateProject(projectId);
   return {
     async getChanges(projectId, threadId) {
       activate(projectId);
@@ -604,12 +612,7 @@ function remoteWorkspaceAdapter(
     undoDelivery: (projectId, threadId, revision) =>
       host.undoWorktreeDelivery(projectId, threadId, revision),
     commitDelivery: (projectId, threadId, revision, message) =>
-      host.commitWorktreeDelivery(
-        projectId,
-        threadId,
-        revision,
-        message,
-      ),
+      host.commitWorktreeDelivery(projectId, threadId, revision, message),
     getCodeHostStatus: (projectId, threadId, revision) =>
       host.codeHostDeliveryStatus(projectId, threadId, revision),
     commitAndPush: (projectId, threadId, revision, message) =>
@@ -619,30 +622,12 @@ function remoteWorkspaceAdapter(
         revision,
         message,
       ),
-    createPullRequest: (
-      projectId,
-      threadId,
-      revision,
-      title,
-      body,
-      draft,
-    ) =>
-      host.createPullRequest(
-        projectId,
-        threadId,
-        revision,
-        title,
-        body,
-        draft,
-      ),
+    createPullRequest: (projectId, threadId, revision, title, body, draft) =>
+      host.createPullRequest(projectId, threadId, revision, title, body, draft),
     async list(projectId, path, threadId) {
       activate(projectId);
       if (threadId) {
-        return host.conversationWorkspaceList(
-          projectId,
-          threadId,
-          path,
-        );
+        return host.conversationWorkspaceList(projectId, threadId, path);
       }
       const entries = await transport.workspaceList(path);
       return entries.map((entry) => ({
@@ -654,11 +639,7 @@ function remoteWorkspaceAdapter(
     async read(projectId, path, threadId) {
       activate(projectId);
       if (threadId) {
-        return host.conversationWorkspaceFile(
-          projectId,
-          threadId,
-          path,
-        );
+        return host.conversationWorkspaceFile(projectId, threadId, path);
       }
       const file = await transport.workspaceFile(path);
       return {
@@ -726,10 +707,7 @@ function remoteMemoryAdapter(
 }
 
 function remoteTerminalAdapter(
-  options: Omit<
-    ConstructorParameters<typeof BrowserTerminalClient>[0],
-    "send"
-  >,
+  options: Omit<ConstructorParameters<typeof BrowserTerminalClient>[0], "send">,
 ): TerminalAdapter & { dispose(): void } {
   const listeners = new Set<(event: TerminalEvent) => void>();
   const client = new BrowserTerminalClient({
@@ -741,8 +719,7 @@ function remoteTerminalAdapter(
   return {
     create: (request) => client.create(request),
     write: ({ sessionId, data }) => client.write(sessionId, data),
-    resize: ({ sessionId, cols, rows }) =>
-      client.resize(sessionId, cols, rows),
+    resize: ({ sessionId, cols, rows }) => client.resize(sessionId, cols, rows),
     async close(sessionId) {
       client.close(sessionId);
     },
@@ -792,9 +769,7 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
     ];
   }
 
-  subscribe(
-    listener: (request: ExecutionApprovalRequest) => void,
-  ): () => void {
+  subscribe(listener: (request: ExecutionApprovalRequest) => void): () => void {
     this.requests.add(listener);
     for (const request of this.pending.values()) listener(request);
     return () => this.requests.delete(listener);
@@ -857,8 +832,7 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
   ): Promise<ExecutionPolicySnapshot> {
     this.grants = this.grants.filter(
       (grant) =>
-        grant.projectId !== projectId ||
-        grant.permissionKey !== permissionKey,
+        grant.projectId !== projectId || grant.permissionKey !== permissionKey,
     );
     this.save();
     return Promise.resolve(this.snapshot(projectId));
@@ -948,8 +922,7 @@ class RemoteExecutionPolicyAdapter implements ExecutionPolicyAdapter {
   }
 }
 
-const EXECUTION_GRANTS_STORAGE_KEY =
-  "threadlight:web:execution-policy:v1";
+const EXECUTION_GRANTS_STORAGE_KEY = "threadlight:web:execution-policy:v1";
 
 function readExecutionGrants(
   storage?: Pick<Storage, "getItem" | "setItem">,
@@ -965,9 +938,7 @@ function readExecutionGrants(
   }
 }
 
-function isStoredExecutionGrant(
-  value: unknown,
-): value is StoredExecutionGrant {
+function isStoredExecutionGrant(value: unknown): value is StoredExecutionGrant {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -1006,9 +977,7 @@ async function writeClipboardText(text: string): Promise<void> {
   if (!copied) throw new Error("Clipboard access is unavailable.");
 }
 
-function safeLocalStorage():
-  | Pick<Storage, "getItem" | "setItem">
-  | undefined {
+function safeLocalStorage(): Pick<Storage, "getItem" | "setItem"> | undefined {
   try {
     return globalThis.localStorage;
   } catch {

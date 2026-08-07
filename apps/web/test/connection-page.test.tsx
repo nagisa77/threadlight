@@ -111,6 +111,21 @@ describe("remote connection page preferences", () => {
     expect(html).toContain('inputMode="url"');
   });
 
+  it("shows an automatic restore failure on the connection page", () => {
+    const html = renderToStaticMarkup(
+      <RemoteConnectionPage
+        initialEndpoint="https://host.example.com"
+        initialToken="token"
+        autoConnect={false}
+        initialErrorReason={new Error("Host is offline")}
+        onConnect={async () => {}}
+      />,
+    );
+
+    expect(html).toContain('class="web-connect-error" role="alert"');
+    expect(html).toContain("Host is offline");
+  });
+
   it("provides complete connection copy for every interface language", () => {
     const titles = [
       connectionPageCopy("en").title,
