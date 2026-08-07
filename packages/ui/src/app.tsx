@@ -124,7 +124,7 @@ import {
   type ThemePreference,
 } from "./theme.js";
 import type { TerminalAdapter } from "./terminal.js";
-import { terminalWorkspaceContextLabel } from "./terminal-context.js";
+import { scopeFor, terminalWorkspaceContextLabel } from "./terminal-context.js";
 import type {
   AutomaticDeliveryState,
   ConversationChangesSnapshot,
@@ -785,13 +785,14 @@ function ThreadlightAppContent({
     (currentConversation?.workspace?.mode === "worktree"
       ? currentConversation.workspace.sourceBranch
       : undefined);
-  const defaultTerminalWorkspace =
-    currentConversation?.workspace?.mode === "worktree" ? "task" : "original";
+  const terminalScope = scopeFor({
+    projectScope: currentProject?.scope,
+    threadId: state.threadId,
+    workspaceMode: currentConversation?.workspace?.mode,
+  });
   const defaultTerminalContext = terminalWorkspaceContextLabel(
-    defaultTerminalWorkspace,
-    defaultTerminalWorkspace === "task"
-      ? taskTerminalBranch
-      : originalTerminalBranch,
+    terminalScope,
+    terminalScope === "task" ? taskTerminalBranch : originalTerminalBranch,
     t,
   );
   projectSnapshotRef.current = projectSnapshot;
@@ -813,7 +814,6 @@ function ThreadlightAppContent({
     setConversationRecoveryBusy(false);
     setConversationRecoveryError(undefined);
   }, [state.recovery?.threadId]);
-
   useEffect(() => {
     if (!settings || initialSettings) return;
     let active = true;
@@ -4339,7 +4339,7 @@ function ThreadlightAppContent({
               automaticDelivery={automaticDelivery}
               taskBranch={taskTerminalBranch}
               originalBranch={originalTerminalBranch}
-              taskWorkspaceAvailable={defaultTerminalWorkspace === "task"}
+              taskWorkspaceAvailable={terminalScope === "task"}
               generatePullRequestDescription={
                 state.threadId && conversationChanges
                   ? () =>
@@ -4385,8 +4385,8 @@ function ThreadlightAppContent({
               projectName={currentProject.name}
               taskBranch={taskTerminalBranch}
               originalBranch={originalTerminalBranch}
-              defaultWorkspace={defaultTerminalWorkspace}
-              taskWorkspaceAvailable={defaultTerminalWorkspace === "task"}
+              defaultWorkspace={terminalScope}
+              taskWorkspaceAvailable={terminalScope === "task"}
               onClose={() => setTerminalOpen(false)}
             />
           </Suspense>
