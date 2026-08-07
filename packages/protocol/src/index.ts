@@ -680,9 +680,11 @@ export interface HostCodeHostCommitPushResult {
   status: HostCodeHostDeliveryStatus;
 }
 
+export const THREADLIGHT_HOST_PROTOCOL_VERSION = 2 as const;
+
 export interface ThreadlightHostHealth {
   ok: true;
-  protocolVersion: 2;
+  protocolVersion: typeof THREADLIGHT_HOST_PROTOCOL_VERSION;
   hostId: string;
   name: string;
   homePath: string;

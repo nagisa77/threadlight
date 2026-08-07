@@ -4,10 +4,11 @@ import {
   SwitchableHttpRuntimeTransport,
   ThreadlightClient,
 } from "@threadlight/client";
-import type {
-  HostProjectsSnapshot,
-  HostProjectSummary,
-  ThreadlightHostHealth,
+import {
+  THREADLIGHT_HOST_PROTOCOL_VERSION,
+  type HostProjectsSnapshot,
+  type HostProjectSummary,
+  type ThreadlightHostHealth,
 } from "@threadlight/protocol";
 import type {
   AttachmentPreviewAdapter,
@@ -72,6 +73,52 @@ export interface OAuthWindowHandle {
   close(): void;
 }
 
+function displayProtocolVersion(value: unknown): string {
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : "unknown";
+}
+
+function numericProtocolVersion(value: unknown): number | undefined {
+  const version =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  return Number.isFinite(version) ? version : undefined;
+}
+
+export class IncompatibleHostProtocolError extends Error {
+  readonly name = "IncompatibleHostProtocolError";
+  readonly clientProtocolVersion = THREADLIGHT_HOST_PROTOCOL_VERSION;
+  readonly hostProtocolVersion: unknown;
+  readonly upgradeTarget: "host" | "web" | "both";
+
+  constructor(hostProtocolVersion: unknown) {
+    const hostVersion = displayProtocolVersion(hostProtocolVersion);
+    const hostVersionNumber = numericProtocolVersion(hostProtocolVersion);
+    const upgradeTarget =
+      hostVersionNumber === undefined ||
+      hostVersionNumber === THREADLIGHT_HOST_PROTOCOL_VERSION
+        ? "both"
+        : hostVersionNumber < THREADLIGHT_HOST_PROTOCOL_VERSION
+          ? "host"
+          : "web";
+    const advice =
+      upgradeTarget === "host"
+        ? `Update the Threadlight Host to a release that supports protocol ${THREADLIGHT_HOST_PROTOCOL_VERSION}, then reconnect.`
+        : upgradeTarget === "web"
+          ? `Update this Threadlight Web client to a release that supports protocol ${hostVersion}, then reconnect.`
+          : "Update the Threadlight Web client and Host to compatible releases, then reconnect.";
+    super(
+      `Incompatible Threadlight protocol. Web client protocol version: ${THREADLIGHT_HOST_PROTOCOL_VERSION}. Host protocol version: ${hostVersion}. ${advice}`,
+    );
+    this.hostProtocolVersion = hostProtocolVersion;
+    this.upgradeTarget = upgradeTarget;
+  }
+}
+
 export async function createRemoteWebSession(
   options: CreateRemoteWebSessionOptions,
 ): Promise<RemoteWebSession> {
@@ -80,10 +127,11 @@ export async function createRemoteWebSession(
     token: options.token,
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
-  const [health, initialProjects] = await Promise.all([
-    host.health(),
-    host.projects(),
-  ]);
+  const health = await host.health();
+  if (health.protocolVersion !== THREADLIGHT_HOST_PROTOCOL_VERSION) {
+    throw new IncompatibleHostProtocolError(health.protocolVersion);
+  }
+  const initialProjects = await host.projects();
   const transport = new SwitchableHttpRuntimeTransport({
     endpoint: options.endpoint,
     token: options.token,

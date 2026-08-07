@@ -48,6 +48,7 @@ import {
 import type {
   TerminalSessionController,
 } from "@threadlight/terminal-core";
+import { THREADLIGHT_HOST_PROTOCOL_VERSION } from "@threadlight/protocol";
 import type {
   AttachmentData,
   HostAutomation,
@@ -359,7 +360,7 @@ export class ThreadlightHostServer {
       if (request.method === "GET" && url.pathname === "/v1/health") {
         this.writeJson(response, 200, {
           ok: true,
-          protocolVersion: 2,
+          protocolVersion: THREADLIGHT_HOST_PROTOCOL_VERSION,
           hostId: this.options.hostId,
           name: this.options.name,
           homePath: this.options.homePath,
