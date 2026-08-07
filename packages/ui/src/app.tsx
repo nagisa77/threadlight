@@ -333,6 +333,12 @@ export function shouldIgnoreComposerKey(
   return composing || nativeEvent.isComposing || nativeEvent.keyCode === 229;
 }
 
+export function preserveComposerFocusOnPointerDown(event: {
+  preventDefault(): void;
+}) {
+  event.preventDefault();
+}
+
 /**
  * Atomic guard that keeps a single composer submission in flight. The submit
  * flow spans several awaits (attachment staging, thread creation, turn start),
@@ -3462,6 +3468,17 @@ function ThreadlightAppContent({
   const globalActionsInPanel = Boolean(
     workspacePanelOpen && workspace && currentProject,
   );
+  const composerHasContext = Boolean(
+    (computerPermissionSnapshot?.required &&
+      (!computerPermissionSnapshot.ownerThreadId ||
+        computerPermissionSnapshot.ownerThreadId === state.threadId)) ||
+    ownsActiveComputerShare(computerShareSnapshot, state.threadId) ||
+    pendingAttachments.length > 0 ||
+    state.queuedTurns.length > 0 ||
+    selectedCapabilities.length > 0 ||
+    capabilityQuery ||
+    addMenuOpen,
+  );
 
   return (
     <div
@@ -4114,7 +4131,7 @@ function ThreadlightAppContent({
                 )}
                 <div
                   ref={composerRoot}
-                  className={`composer ${voiceStatus === "recording" ? "is-recording" : ""}`}
+                  className={`composer ${voiceStatus === "recording" ? "is-recording" : ""} ${composerHasContext ? "has-context" : ""}`}
                 >
                   <input
                     ref={fileInput}
@@ -4393,6 +4410,7 @@ function ThreadlightAppContent({
                         <button
                           type="button"
                           className="composer-action send pressable"
+                          onPointerDown={preserveComposerFocusOnPointerDown}
                           onClick={() => void submit(input, "queued")}
                           disabled={
                             submitting ||
@@ -4423,6 +4441,7 @@ function ThreadlightAppContent({
                         <button
                           type="button"
                           className="composer-action send pressable"
+                          onPointerDown={preserveComposerFocusOnPointerDown}
                           onClick={() => void submit()}
                           disabled={
                             submitting ||
@@ -4449,6 +4468,17 @@ function ThreadlightAppContent({
                 <p
                   id="composer-hint"
                   className={`composer-hint ${voiceError || attachmentError || state.submissionError ? "error" : ""}`}
+                  data-mobile-instruction={
+                    voiceStatus === "idle" &&
+                    !voiceError &&
+                    !attachmentError &&
+                    !state.submissionError &&
+                    !submitting &&
+                    !preparingAttachments &&
+                    pendingAttachments.length === 0
+                      ? "true"
+                      : undefined
+                  }
                   aria-live="polite"
                 >
                   {attachmentHint(

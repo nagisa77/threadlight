@@ -998,6 +998,7 @@
   min-width: 0;
   padding: 10px 30px 15px;
   background: linear-gradient(to bottom, rgb(247 246 242 / 0%), var(--surface) 24%);
+  container: composer-shell / inline-size;
 }
 
 .composer-provider-gate {

@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Check,
   ChevronDown,
@@ -13,7 +7,6 @@ import {
   Languages,
   LoaderCircle,
   MonitorCog,
-  Pencil,
   Radio,
   ShieldCheck,
   Trash2,
@@ -574,235 +567,223 @@ function RemoteConnectionContent({
       </div>
 
       <section className="web-connect-card" aria-labelledby="connect-title">
-        <div className="web-connect-brand">
-          <span className="web-connect-mark" aria-hidden="true">
-            <Radio size={18} />
-          </span>
-          <span>Threadlight</span>
-        </div>
+        <aside className="web-connect-intro">
+          <div className="web-connect-brand">
+            <span className="web-connect-mark" aria-hidden="true">
+              <Radio size={18} />
+            </span>
+            <span>Threadlight</span>
+          </div>
 
-        <div className="web-connect-copy">
-          <p className="web-connect-eyebrow">{copy.eyebrow}</p>
-          <h1 id="connect-title">{copy.title}</h1>
-          <p>{copy.description}</p>
-        </div>
+          <div className="web-connect-copy">
+            <p className="web-connect-eyebrow">{copy.eyebrow}</p>
+            <h1 id="connect-title">{copy.title}</h1>
+            <p>{copy.description}</p>
+          </div>
 
-        {savedHosts.length > 0 && (
-          <div className="web-connect-hosts">
-            <h2 className="web-connect-section-title">{copy.savedHosts}</h2>
-            <ul className="web-host-list">
-              {savedHosts.map((host, index) => {
-                const isSelected = host.id === selectedId;
-                const isArmed = armedId === host.id;
-                return (
-                  <li
-                    key={host.id}
-                    className={`web-host-row${isSelected ? " selected" : ""}`}
-                    style={{ "--host-index": index } as CSSProperties}
-                  >
-                    <button
-                      type="button"
-                      className="web-host-select pressable"
-                      onClick={() => selectHost(host)}
+          <div className="web-connect-security">
+            <ShieldCheck size={14} aria-hidden="true" />
+            <span>{copy.tokenNotice}</span>
+          </div>
+        </aside>
+
+        <div className="web-connect-content">
+          {savedHosts.length > 0 && (
+            <div className="web-connect-hosts">
+              <h2 className="web-connect-section-title">{copy.savedHosts}</h2>
+              <ul className="web-host-list">
+                {savedHosts.map((host) => {
+                  const isSelected = host.id === selectedId;
+                  return (
+                    <li
+                      key={host.id}
+                      className={`web-host-row${isSelected ? " selected" : ""}`}
                     >
-                      <span className="web-host-name">
-                        {host.name || hostNameForEndpoint(host.endpoint)}
-                      </span>
-                      <span className="web-host-endpoint">{host.endpoint}</span>
-                    </button>
-                    <span className="web-host-actions">
                       <button
                         type="button"
-                        className="web-host-action pressable"
-                        aria-label={copy.edit}
-                        title={copy.edit}
+                        className="web-host-select pressable"
                         onClick={() => selectHost(host)}
                       >
-                        <Pencil size={13} />
+                        <span className="web-host-name">
+                          {host.name || hostNameForEndpoint(host.endpoint)}
+                        </span>
+                        <span className="web-host-endpoint">
+                          {host.endpoint}
+                        </span>
                       </button>
                       <button
                         type="button"
-                        className={`web-host-action pressable${
-                          isArmed ? " armed" : ""
-                        }`}
-                        aria-label={isArmed ? copy.deleteConfirm : copy.delete}
-                        title={isArmed ? copy.deleteConfirm : copy.delete}
-                        onClick={() => handleDelete(host.id)}
+                        className="web-host-connect pressable"
+                        disabled={connecting}
+                        onClick={() => void quickConnect(host)}
                       >
-                        <Trash2 size={13} />
+                        <Radio size={12} aria-hidden="true" />
+                        <span>{copy.reconnect}</span>
                       </button>
-                    </span>
-                    <button
-                      type="button"
-                      className="web-host-connect pressable"
-                      disabled={connecting}
-                      onClick={() => void quickConnect(host)}
-                    >
-                      <Radio size={12} aria-hidden="true" />
-                      <span>{copy.reconnect}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
-        <div className="web-connect-form-section">
-          <div className="web-connect-form-heading">
-            <h2>{editingSaved ? copy.editHost : copy.newHost}</h2>
-            {editingSaved && (
-              <button
-                type="button"
-                className="web-connect-new-link pressable"
-                onClick={resetToNewHost}
-              >
-                {copy.newHostLink}
-              </button>
-            )}
-          </div>
-
-          <form
-            className="web-connect-form"
-            onSubmit={submit}
-            aria-busy={connecting}
-          >
-            <label>
-              <span>{copy.hostName}</span>
-              <input
-                type="text"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder="Production"
-                value={hostName}
-                onChange={(event) => setHostName(event.target.value)}
-                disabled={connecting}
-              />
-            </label>
-
-            <label>
-              <span>{copy.endpoint}</span>
-              <input
-                ref={endpointInputRef}
-                type="text"
-                inputMode="url"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder="https://host.example.com"
-                value={endpoint}
-                onChange={(event) => {
-                  setEndpoint(event.target.value);
-                  setEndpointError(undefined);
-                }}
-                disabled={connecting}
-                aria-invalid={endpointError ? true : undefined}
-                autoFocus={!endpoint}
-              />
-              {endpointError && (
-                <span className="web-connect-field-error" role="alert">
-                  {endpointError}
-                </span>
-              )}
-            </label>
-
-            <label>
-              <span>{copy.token}</span>
-              <span className="web-token-field">
-                <input
-                  type={showToken ? "text" : "password"}
-                  autoComplete="off"
-                  value={token}
-                  onChange={(event) => setToken(event.target.value)}
-                  disabled={connecting}
-                  autoFocus={Boolean(endpoint && !token)}
-                />
+          <div className="web-connect-form-section">
+            <div className="web-connect-form-heading">
+              <h2>{editingSaved ? copy.editHost : copy.newHost}</h2>
+              {editingSaved && (
                 <button
                   type="button"
-                  className="web-token-toggle pressable"
-                  aria-label={showToken ? copy.hideToken : copy.showToken}
-                  title={showToken ? copy.hideToken : copy.showToken}
-                  onClick={() => setShowToken((visible) => !visible)}
+                  className="web-connect-new-link pressable"
+                  onClick={resetToNewHost}
                 >
-                  {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
+                  {copy.newHostLink}
                 </button>
-              </span>
-            </label>
+              )}
+            </div>
 
-            {errorReason !== undefined && (
-              <div className="web-connect-error" role="alert">
-                {connectionError(errorReason, copy)}
+            <form
+              className="web-connect-form"
+              onSubmit={submit}
+              aria-busy={connecting}
+            >
+              <div className="web-connect-fields">
+                <label>
+                  <span>{copy.hostName}</span>
+                  <input
+                    type="text"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder="Production"
+                    value={hostName}
+                    onChange={(event) => setHostName(event.target.value)}
+                    disabled={connecting}
+                  />
+                </label>
+
+                <label>
+                  <span>{copy.endpoint}</span>
+                  <input
+                    ref={endpointInputRef}
+                    type="text"
+                    inputMode="url"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder="https://host.example.com"
+                    value={endpoint}
+                    onChange={(event) => {
+                      setEndpoint(event.target.value);
+                      setEndpointError(undefined);
+                    }}
+                    disabled={connecting}
+                    aria-invalid={endpointError ? true : undefined}
+                    autoFocus={!endpoint}
+                  />
+                  {endpointError && (
+                    <span className="web-connect-field-error" role="alert">
+                      {endpointError}
+                    </span>
+                  )}
+                </label>
+
+                <label className="web-connect-token-label">
+                  <span>{copy.token}</span>
+                  <span className="web-token-field">
+                    <input
+                      type={showToken ? "text" : "password"}
+                      autoComplete="off"
+                      value={token}
+                      onChange={(event) => setToken(event.target.value)}
+                      disabled={connecting}
+                      autoFocus={Boolean(endpoint && !token)}
+                    />
+                    <button
+                      type="button"
+                      className="web-token-toggle pressable"
+                      aria-label={showToken ? copy.hideToken : copy.showToken}
+                      title={showToken ? copy.hideToken : copy.showToken}
+                      onClick={() => setShowToken((visible) => !visible)}
+                    >
+                      {showToken ? <EyeOff size={15} /> : <Eye size={15} />}
+                    </button>
+                  </span>
+                </label>
               </div>
-            )}
 
-            <div className="web-connect-actions">
-              {editingSaved && (
-                <>
-                  <button
-                    type="button"
-                    className={`web-connect-delete pressable${
-                      armedId === selectedHost.id ? " armed" : ""
-                    }`}
-                    aria-label={
-                      armedId === selectedHost.id
-                        ? copy.deleteConfirm
-                        : copy.delete
-                    }
-                    title={
-                      armedId === selectedHost.id
-                        ? copy.deleteConfirm
-                        : copy.delete
-                    }
-                    onClick={() => handleDelete(selectedHost.id)}
-                  >
-                    <span
-                      className="web-connect-delete-fill"
+              {errorReason !== undefined && (
+                <div className="web-connect-error" role="alert">
+                  {connectionError(errorReason, copy)}
+                </div>
+              )}
+
+              <div className="web-connect-actions">
+                {editingSaved && (
+                  <>
+                    <button
+                      type="button"
+                      className={`web-connect-delete pressable${
+                        armedId === selectedHost.id ? " armed" : ""
+                      }`}
+                      aria-label={
+                        armedId === selectedHost.id
+                          ? copy.deleteConfirm
+                          : copy.delete
+                      }
+                      title={
+                        armedId === selectedHost.id
+                          ? copy.deleteConfirm
+                          : copy.delete
+                      }
+                      onClick={() => handleDelete(selectedHost.id)}
+                    >
+                      <span
+                        className="web-connect-delete-fill"
+                        aria-hidden="true"
+                      />
+                      {armedId === selectedHost.id ? (
+                        <span className="web-connect-delete-label">
+                          {copy.deleteConfirm}
+                        </span>
+                      ) : (
+                        <Trash2 size={15} aria-hidden="true" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className="web-connect-secondary pressable"
+                      data-saved={savedFlash || undefined}
+                      onClick={saveChanges}
+                      disabled={!endpoint.trim() || !token}
+                    >
+                      {savedFlash ? (
+                        <>
+                          <Check size={15} aria-hidden="true" />
+                          {copy.saved}
+                        </>
+                      ) : (
+                        copy.saveChanges
+                      )}
+                    </button>
+                  </>
+                )}
+                <button
+                  type="submit"
+                  className="web-connect-submit pressable"
+                  disabled={connecting || !endpoint.trim() || !token}
+                >
+                  {connecting && (
+                    <LoaderCircle
+                      className="spin"
+                      size={15}
                       aria-hidden="true"
                     />
-                    {armedId === selectedHost.id ? (
-                      <span className="web-connect-delete-label">
-                        {copy.deleteConfirm}
-                      </span>
-                    ) : (
-                      <Trash2 size={15} aria-hidden="true" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="web-connect-secondary pressable"
-                    data-saved={savedFlash || undefined}
-                    onClick={saveChanges}
-                    disabled={!endpoint.trim() || !token}
-                  >
-                    {savedFlash ? (
-                      <>
-                        <Check size={15} aria-hidden="true" />
-                        {copy.saved}
-                      </>
-                    ) : (
-                      copy.saveChanges
-                    )}
-                  </button>
-                </>
-              )}
-              <button
-                type="submit"
-                className="web-connect-submit pressable"
-                disabled={connecting || !endpoint.trim() || !token}
-              >
-                {connecting && (
-                  <LoaderCircle className="spin" size={15} aria-hidden="true" />
-                )}
-                {connecting ? copy.connecting : copy.connect}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <div className="web-connect-security">
-          <ShieldCheck size={14} />
-          <span>{copy.tokenNotice}</span>
+                  )}
+                  {connecting ? copy.connecting : copy.connect}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       </section>
     </main>

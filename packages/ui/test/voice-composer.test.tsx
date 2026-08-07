@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   composerSubmitDelivery,
   MessageAttachments,
+  preserveComposerFocusOnPointerDown,
   ThreadlightApp,
 } from "../src/app.js";
 
@@ -41,12 +42,21 @@ describe("voice composer", () => {
     expect(html).toContain('aria-label="发送消息"');
     expect(html).toContain('aria-describedby="composer-hint"');
     expect(html).toContain('rows="2"');
+    expect(html).toContain('data-mobile-instruction="true"');
     expect(html).toContain('class="composer-toolbar-start"');
     expect(html).toContain('class="composer-toolbar-end"');
     expect(html.indexOf("<textarea")).toBeLessThan(
       html.indexOf('class="composer-toolbar"'),
     );
     client.dispose();
+  });
+
+  it("keeps pointer submission from moving focus before the send click", () => {
+    const preventDefault = vi.fn();
+
+    preserveComposerFocusOnPointerDown({ preventDefault });
+
+    expect(preventDefault).toHaveBeenCalledOnce();
   });
 
   it("exposes a file picker when a local staging adapter is available", () => {

@@ -1,20 +1,20 @@
 :root {
   --web-card-shadow:
-    0 1px 2px rgb(36 36 32 / 5%), 0 18px 60px rgb(36 36 32 / 9%);
+    0 1px 2px rgb(36 36 32 / 4%), 0 22px 56px rgb(36 36 32 / 8%);
 }
 
 .web-connect-shell {
   position: relative;
   display: grid;
-  min-height: 100%;
-  padding: 28px;
+  min-height: 100dvh;
+  padding: 72px 28px 32px;
   place-items: center;
   overflow-y: auto;
   background:
     radial-gradient(
-      circle at 50% -20%,
-      color-mix(in srgb, var(--accent-soft) 72%, transparent),
-      transparent 46%
+      circle at 50% -18%,
+      color-mix(in srgb, var(--accent-soft) 58%, transparent),
+      transparent 44%
     ),
     var(--surface);
 }
@@ -22,7 +22,7 @@
 .web-connect-preferences {
   position: absolute;
   z-index: 1;
-  top: 22px;
+  top: 20px;
   right: 24px;
   display: flex;
   align-items: center;
@@ -31,16 +31,16 @@
 
 .web-connect-preference {
   display: grid;
-  height: 34px;
+  height: 36px;
   grid-template-columns: auto minmax(0, auto) auto;
   align-items: center;
   gap: 7px;
-  padding: 0 8px;
+  padding: 0 9px;
   border: 1px solid color-mix(in srgb, var(--line) 90%, transparent);
-  border-radius: 9px;
+  border-radius: 10px;
   color: var(--muted);
-  background: color-mix(in srgb, var(--panel) 86%, transparent);
-  box-shadow: 0 1px 2px rgb(36 36 32 / 5%);
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  box-shadow: 0 1px 2px rgb(36 36 32 / 4%);
   backdrop-filter: blur(12px);
 }
 
@@ -77,12 +77,27 @@
 }
 
 .web-connect-card {
-  width: min(100%, 430px);
-  padding: 22px;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  display: grid;
+  width: min(100%, 820px);
+  grid-template-columns: minmax(230px, 0.78fr) minmax(0, 1.42fr);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 94%, transparent);
+  border-radius: 20px;
+  background: var(--panel);
   box-shadow: var(--web-card-shadow);
+}
+
+.web-connect-intro {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  padding: 26px;
+  border-right: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--accent-soft) 38%, var(--panel)),
+    var(--panel) 72%
+  );
 }
 
 .web-connect-brand {
@@ -107,11 +122,11 @@
 }
 
 .web-connect-copy {
-  margin-top: 34px;
+  margin-top: 46px;
 }
 
 .web-connect-eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 7px;
   color: var(--accent);
   font-size: 10px;
   font-weight: 760;
@@ -121,36 +136,194 @@
 .web-connect-copy h1 {
   margin: 0;
   color: var(--ink);
-  font-size: 27px;
+  font-size: clamp(23px, 2.6vw, 27px);
   font-weight: 720;
   letter-spacing: -0.035em;
+  line-height: 1.12;
 }
 
 .web-connect-copy > p:last-child {
   margin: 10px 0 0;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.65;
+  font-size: 12.5px;
+  line-height: 1.58;
+}
+
+.web-connect-security {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 28px;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.web-connect-security svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.web-connect-content {
+  min-width: 0;
+  padding: 24px 26px 26px;
+}
+
+.web-connect-hosts {
+  margin: 0;
+}
+
+.web-connect-section-title,
+.web-connect-form-heading h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.web-connect-section-title {
+  margin-bottom: 10px;
+}
+
+.web-host-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.web-host-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--surface));
+  transition:
+    border-color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+.web-host-row.selected {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 24%, var(--panel));
+}
+
+.web-host-select {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+}
+
+.web-host-name {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-host-endpoint {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-host-connect {
+  display: inline-flex;
+  height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0 6px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
+  font-size: 12px;
+  font-weight: 660;
+  cursor: pointer;
+}
+
+.web-connect-form-section {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+}
+
+.web-connect-content > .web-connect-form-section:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.web-connect-form-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 13px;
+}
+
+.web-connect-new-link {
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--accent);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 620;
+  cursor: pointer;
 }
 
 .web-connect-form {
   display: grid;
-  gap: 16px;
-  margin-top: 28px;
+  gap: 14px;
+  margin: 0;
+}
+
+.web-connect-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 0.72fr) minmax(0, 1.28fr);
+  gap: 12px;
 }
 
 .web-connect-form label {
   display: grid;
+  min-width: 0;
   gap: 7px;
+  align-content: start;
   color: var(--ink);
   font-size: 12px;
   font-weight: 620;
 }
 
+.web-connect-token-label {
+  grid-column: 1 / -1;
+}
+
 .web-connect-form input {
   width: 100%;
-  height: 42px;
-  padding: 0 12px;
+  height: 40px;
+  padding: 0 11px;
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   color: var(--ink);
@@ -178,31 +351,25 @@
 
 .web-token-toggle {
   position: absolute;
-  top: 7px;
-  right: 7px;
+  top: 4px;
+  right: 4px;
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--muted);
   background: transparent;
   cursor: pointer;
 }
 
-.web-connect-submit {
-  height: 42px;
-  margin-top: 2px;
-  border: 0;
-  border-radius: 10px;
-  color: #fff;
-  background: var(--accent);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
-  font-size: 13px;
-  font-weight: 680;
-  cursor: pointer;
+.web-connect-field-error {
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 520;
+  line-height: 1.45;
 }
 
 .web-connect-error {
@@ -215,12 +382,94 @@
   line-height: 1.5;
 }
 
-.web-connect-security {
+.web-connect-actions {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 18px;
+  gap: 8px;
+}
+
+.web-connect-submit,
+.web-connect-secondary {
+  display: inline-flex;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 660;
+  cursor: pointer;
+}
+
+.web-connect-submit {
+  flex: 1;
+  border: 0;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
+}
+
+.web-connect-secondary {
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: var(--panel);
+  transition:
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out),
+    background-color 160ms var(--ease-out);
+}
+
+.web-connect-secondary[data-saved] {
+  border-color: color-mix(in srgb, var(--success) 46%, var(--line));
+  color: var(--success);
+}
+
+.web-connect-delete {
+  position: relative;
+  display: grid;
+  width: 44px;
+  height: 42px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
   color: var(--muted);
+  background: var(--panel);
+  font-size: 12px;
+  font-weight: 660;
+  cursor: pointer;
+}
+
+.web-connect-delete.armed {
+  width: 96px;
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
+  color: var(--danger);
+}
+
+.web-connect-delete-fill {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  clip-path: inset(0 100% 0 0);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  transition: clip-path 200ms var(--ease-out);
+}
+
+.web-connect-delete.armed .web-connect-delete-fill {
+  clip-path: inset(0 0 0 0);
+  transition: clip-path 2400ms linear;
+}
+
+.web-connect-delete > svg,
+.web-connect-delete-label {
+  position: relative;
+  z-index: 1;
+}
+
+.web-connect-delete-label {
   font-size: 11px;
 }
 
@@ -296,243 +545,8 @@
     background: color-mix(in srgb, var(--line) 46%, transparent);
   }
 
-  .web-connect-submit:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 92%, #000);
-  }
-}
-
-@media (max-width: 560px) {
-  .web-connect-shell {
-    padding: 62px 14px 14px;
-  }
-
-  .web-connect-preferences {
-    top: 14px;
-    right: 14px;
-  }
-
-  .web-connect-card {
-    padding: 19px;
-    border-radius: 15px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .web-connect-form input {
-    transition: border-color 120ms ease;
-  }
-}
-
-/* Saved-host list and connection form sections */
-
-.web-connect-hosts {
-  margin-top: 26px;
-}
-
-.web-connect-section-title {
-  margin: 0 0 10px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.web-host-list {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.web-host-row {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  transition: border-color 160ms var(--ease-out);
-}
-
-.web-host-row.selected {
-  border-color: color-mix(in srgb, var(--accent) 52%, var(--line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-soft) 55%, transparent);
-}
-
-.web-host-select {
-  display: grid;
-  min-width: 0;
-  flex: 1;
-  gap: 2px;
-  padding: 9px 8px 9px 11px;
-  border: 0;
-  border-radius: 10px;
-  text-align: left;
-  color: var(--ink);
-  background: transparent;
-  cursor: pointer;
-}
-
-.web-host-name {
-  overflow: hidden;
-  font-size: 12.5px;
-  font-weight: 640;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.web-host-endpoint {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.web-host-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.web-host-action {
-  display: grid;
-  width: 28px;
-  height: 32px;
-  flex: 0 0 auto;
-  padding: 0;
-  place-items: center;
-  border: 0;
-  border-radius: 8px;
-  color: var(--muted);
-  background: transparent;
-  cursor: pointer;
-}
-
-.web-host-action.armed {
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--danger) 26%, transparent);
-}
-
-.web-host-connect {
-  display: inline-flex;
-  height: 32px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  margin: 0 5px 0 2px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: 8px;
-  color: #fff;
-  background: var(--accent);
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 8%);
-  font-size: 12px;
-  font-weight: 660;
-  cursor: pointer;
-}
-
-.web-connect-form-section {
-  margin-top: 26px;
-}
-
-.web-connect-form-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.web-connect-form-heading h2 {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.web-connect-new-link {
-  padding: 2px 4px;
-  border: 0;
-  border-radius: 6px;
-  color: var(--accent);
-  background: transparent;
-  font-size: 12px;
-  font-weight: 620;
-  cursor: pointer;
-}
-
-.web-connect-form {
-  margin-top: 0;
-}
-
-.web-connect-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-}
-
-.web-connect-actions .web-connect-submit {
-  flex: 1;
-  margin-top: 0;
-}
-
-.web-connect-secondary {
-  height: 42px;
-  padding: 0 15px;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  color: var(--ink);
-  background: var(--panel);
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.web-connect-delete {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  flex: 0 0 auto;
-  padding: 0;
-  place-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  color: var(--muted);
-  background: var(--panel);
-  font-size: 12px;
-  font-weight: 660;
-  cursor: pointer;
-}
-
-.web-connect-delete.armed {
-  width: auto;
-  padding: 0 12px;
-  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
-  color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
-}
-
-@media (hover: hover) and (pointer: fine) {
   .web-host-select:hover {
-    background: color-mix(in srgb, var(--line) 30%, transparent);
-  }
-
-  .web-host-action:hover {
-    color: var(--ink);
-    background: color-mix(in srgb, var(--line) 46%, transparent);
-  }
-
-  .web-host-action.armed:hover {
-    color: var(--danger);
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    background: color-mix(in srgb, var(--line) 28%, transparent);
   }
 
   .web-host-connect:hover:not(:disabled),
@@ -555,122 +569,158 @@
   }
 }
 
-/* --- Design-engineering polish for the connection page --- */
+@media (max-width: 700px) {
+  .web-connect-shell {
+    min-height: 100dvh;
+    padding: 64px 10px 12px;
+    place-items: start center;
+  }
 
-/* Connecting state: spinner + centered button content */
-.web-connect-submit,
-.web-connect-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
+  .web-connect-preferences {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    justify-content: flex-end;
+  }
 
-/* Save-changes success state (morphs the button content) */
-.web-connect-secondary {
-  transition:
-    border-color 160ms var(--ease-out),
-    color 160ms var(--ease-out),
-    background-color 160ms var(--ease-out);
-}
+  .web-connect-preference {
+    height: 40px;
+  }
 
-.web-connect-secondary[data-saved] {
-  border-color: color-mix(in srgb, var(--success) 46%, var(--line));
-  color: var(--success);
-}
+  .web-connect-preference select {
+    max-width: 94px;
+  }
 
-/* Delete button: fixed width + clip-path confirm fill (no layout jump) */
-.web-connect-delete {
-  position: relative;
-  width: 96px;
-  overflow: hidden;
-}
+  .web-connect-card {
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 16px;
+  }
 
-.web-connect-delete.armed {
-  width: 96px;
-  padding: 0;
-}
+  .web-connect-intro {
+    padding: 18px;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  }
 
-.web-connect-delete-fill {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  clip-path: inset(0 100% 0 0);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
-  transition: clip-path 200ms var(--ease-out);
-}
+  .web-connect-copy {
+    margin-top: 20px;
+  }
 
-.web-connect-delete.armed .web-connect-delete-fill {
-  clip-path: inset(0 0 0 0);
-  transition: clip-path 2400ms linear;
-}
+  .web-connect-copy h1 {
+    font-size: 22px;
+  }
 
-.web-connect-delete > svg,
-.web-connect-delete-label {
-  position: relative;
-  z-index: 1;
-}
+  .web-connect-copy > p:last-child {
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
 
-.web-connect-delete-label {
-  font-size: 11px;
-}
+  .web-connect-security {
+    margin-top: 16px;
+    padding-top: 15px;
+    border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  }
 
-/* Inline field error */
-.web-connect-field-error {
-  color: var(--danger);
-  font-size: 11px;
-  font-weight: 520;
-  line-height: 1.5;
-}
+  .web-connect-content {
+    padding: 16px;
+  }
 
-/* Entry motion: the card first, then saved-host rows stagger in */
-.web-connect-card {
-  animation: web-connect-card-in 220ms var(--ease-out) both;
-}
+  .web-connect-form-section {
+    margin-top: 17px;
+    padding-top: 17px;
+  }
 
-.web-host-row {
-  animation: web-connect-row-in 200ms var(--ease-out) both;
-  animation-delay: calc(var(--host-index, 0) * 40ms);
-}
+  .web-connect-fields {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 13px;
+  }
 
-.web-connect-error,
-.web-connect-field-error {
-  animation: web-connect-error-in 180ms var(--ease-out);
-}
+  .web-connect-token-label {
+    grid-column: auto;
+  }
 
-@keyframes web-connect-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
+  .web-connect-form input {
+    height: 44px;
+  }
+
+  .web-token-toggle {
+    top: 2px;
+    right: 2px;
+    width: 40px;
+    height: 40px;
+  }
+
+  .web-host-select {
+    min-height: 48px;
+    padding: 8px 10px;
+  }
+
+  .web-host-connect {
+    min-height: 40px;
+    margin: 4px;
+    padding: 0 10px;
+  }
+
+  .web-connect-new-link {
+    min-height: 40px;
+  }
+
+  .web-connect-actions {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .web-connect-submit {
+    min-height: 44px;
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .web-connect-secondary,
+  .web-connect-delete {
+    min-height: 44px;
+  }
+
+  .web-connect-secondary {
+    width: 100%;
   }
 }
 
-@keyframes web-connect-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
+@media (max-width: 380px) {
+  .web-connect-preference {
+    gap: 5px;
+    padding: 0 7px;
   }
-}
 
-@keyframes web-connect-error-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
+  .web-connect-preference select {
+    max-width: 74px;
+    font-size: 11px;
+  }
+
+  .web-connect-intro {
+    padding: 16px;
+  }
+
+  .web-connect-content {
+    padding: 14px;
+  }
+
+  .web-host-connect span {
+    display: none;
+  }
+
+  .web-host-connect {
+    width: 40px;
+    justify-content: center;
+    padding: 0;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .web-connect-card,
-  .web-host-row {
-    animation: none;
-    opacity: 1;
-  }
-
-  .web-connect-error,
-  .web-connect-field-error {
-    animation: none;
-  }
-
+  .web-connect-form input,
+  .web-host-row,
+  .web-connect-secondary,
   .web-connect-delete-fill {
     transition-duration: 0ms;
   }

@@ -2929,6 +2929,58 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 }
 
+@container composer-shell (max-width: 720px) {
+  .composer {
+    min-height: 0;
+    gap: 4px;
+    padding: 7px 8px 6px;
+    border-radius: 14px;
+  }
+
+  .composer:not(:focus-within):not(.is-recording):not(.has-context) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--composer-control-size);
+    align-items: center;
+    gap: 4px;
+    padding: 5px 7px 5px 11px;
+  }
+
+  .composer:not(:focus-within):not(.is-recording):not(.has-context) textarea {
+    height: 24px !important;
+    min-height: 24px;
+    max-height: 24px;
+    padding-block: 0;
+    overflow: hidden;
+    line-height: 24px;
+  }
+
+  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+    .composer-toolbar {
+    width: var(--composer-control-size);
+    margin: 0;
+    gap: 0;
+  }
+
+  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+    .composer-toolbar-start,
+  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+    .composer-toolbar-end
+    > :not(.send) {
+    display: none;
+  }
+
+  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+    .composer-toolbar-end {
+    width: 100%;
+    margin: 0;
+    gap: 0;
+  }
+
+  .composer-hint[data-mobile-instruction="true"] {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pressable,
   .message-action,

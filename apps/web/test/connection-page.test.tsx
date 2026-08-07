@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -123,13 +124,15 @@ describe("remote connection page saved hosts", () => {
     expect(html).toContain("https://prod.example.com");
     expect(html).toContain("Dev");
     expect(html).toContain("https://dev.example.com");
-    // Two reconnect buttons with visible labels, plus per-row edit/delete.
+    // Host rows keep the two useful actions: select for editing and reconnect.
     expect(html.match(/>Reconnect<\/span>/g)).toHaveLength(2);
-    expect(html).toContain('aria-label="Edit"');
-    expect(html).toContain('aria-label="Delete"');
+    expect(html).not.toContain("web-host-actions");
+    expect(html).not.toContain('aria-label="Edit"');
+    // Destructive editing is centralized in the selected Host form.
+    expect(html.match(/aria-label="Delete"/g)).toHaveLength(1);
   });
 
-  it("staggers saved-host rows with an inline index for the entry animation", () => {
+  it("separates context from connection controls without staged row animation", () => {
     const html = renderToStaticMarkup(
       <RemoteConnectionPage
         initialEndpoint=""
@@ -140,8 +143,9 @@ describe("remote connection page saved hosts", () => {
       />,
     );
 
-    expect(html).toContain('style="--host-index:0"');
-    expect(html).toContain('style="--host-index:1"');
+    expect(html).toContain('<aside class="web-connect-intro">');
+    expect(html).toContain('<div class="web-connect-content">');
+    expect(html).not.toContain("--host-index");
   });
 
   it("preselects the saved host matching the initial endpoint for editing", () => {
@@ -175,5 +179,33 @@ describe("remote connection page saved hosts", () => {
 
     expect(html).toContain("Edit saved Host");
     expect(html).toContain('value="https://prod.example.com"');
+  });
+});
+
+describe("remote connection page responsive layout", () => {
+  const styles = readFileSync(
+    new URL("../src/web.css", import.meta.url),
+    "utf8",
+  );
+
+  it("uses a two-column card on wide screens and a single column on mobile", () => {
+    expect(styles).toMatch(
+      /\.web-connect-card\s*{[^}]*grid-template-columns:\s*minmax\(230px, 0\.78fr\) minmax\(0, 1\.42fr\)/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 700px\)[\s\S]*?\.web-connect-card\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    );
+  });
+
+  it("stacks form fields and preserves touch-sized controls on mobile", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 700px\)[\s\S]*?\.web-connect-fields\s*{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 700px\)[\s\S]*?\.web-connect-form input\s*{[^}]*height:\s*44px/,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 700px\)[\s\S]*?\.web-connect-submit\s*{[^}]*min-height:\s*44px/,
+    );
   });
 });
