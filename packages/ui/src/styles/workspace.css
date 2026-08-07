@@ -2932,6 +2932,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .pressable,
   .message-action,
   .connection-error,
+  .missing-thread-recovery,
   .activity-heading,
   .activity-chevron,
   .plan-status-popover,
@@ -2957,6 +2958,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .connection-error {
+    transform: none;
+  }
+
+  .missing-thread-recovery {
     transform: none;
   }
 

@@ -115,6 +115,11 @@ export interface ConversationSummaryTarget {
   id: string;
 }
 
+export interface ConversationRecoveryRequest
+  extends ConversationSummaryTarget {
+  replacementId?: string;
+}
+
 export interface ConversationMetadataUpdate extends ConversationSummaryTarget {
   title?: string;
   pinned?: boolean;
@@ -156,6 +161,9 @@ export interface ProjectsAdapter {
   ): Promise<ProjectsSnapshot>;
   markConversationRead?(
     target: ConversationSummaryTarget,
+  ): Promise<ProjectsSnapshot>;
+  recoverConversation?(
+    request: ConversationRecoveryRequest,
   ): Promise<ProjectsSnapshot>;
   deleteConversation(
     target: ConversationSummaryTarget,

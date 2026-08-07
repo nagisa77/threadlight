@@ -33,6 +33,7 @@ import {
   DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL,
   DESKTOP_MESSAGE_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
+  DESKTOP_CONVERSATION_RECOVER_CHANNEL,
   DESKTOP_CONVERSATION_READ_CHANNEL,
   DESKTOP_CONVERSATION_UPDATE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
@@ -174,6 +175,9 @@ const api: DesktopApi = {
   },
   markConversationRead(target) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_READ_CHANNEL, target);
+  },
+  recoverConversation(request) {
+    return ipcRenderer.invoke(DESKTOP_CONVERSATION_RECOVER_CHANNEL, request);
   },
   deleteConversation(target) {
     return ipcRenderer.invoke(DESKTOP_CONVERSATION_DELETE_CHANNEL, target);

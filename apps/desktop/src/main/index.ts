@@ -152,6 +152,7 @@ import {
   DESKTOP_CODE_HOST_DELIVERY_COMMIT_PUSH_CHANNEL,
   DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL,
   DESKTOP_CONVERSATION_DELETE_CHANNEL,
+  DESKTOP_CONVERSATION_RECOVER_CHANNEL,
   DESKTOP_CONVERSATION_READ_CHANNEL,
   DESKTOP_CONVERSATION_UPDATE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
@@ -204,6 +205,7 @@ import {
   type DesktopAutomationTarget,
   type DesktopAutomationUpdateRequest,
   type DesktopConversationTarget,
+  type DesktopConversationRecoveryRequest,
   type DesktopConversationMetadataUpdate,
   type DesktopConversationUpdate,
   type DesktopConversationChangesRequest,
@@ -1947,6 +1949,29 @@ async function handleConversationUpdate(
   return projectStore.updateConversation(update);
 }
 
+async function handleConversationRecover(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  if (!projectStore) throw new Error("Projects are not available");
+  const request = parseConversationRecoveryRequest(value);
+  let snapshot;
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    snapshot = syncRemoteProjects(
+      await remoteHost.client.recoverConversation(request),
+    );
+  } else {
+    snapshot = projectStore.recoverConversation(request);
+  }
+  threadProjects.delete(request.id);
+  if (request.replacementId) {
+    threadProjects.set(request.replacementId, request.projectId);
+  }
+  return snapshot;
+}
+
 async function handleConversationDelete(
   event: IpcMainInvokeEvent,
   value: unknown,
@@ -3102,6 +3127,27 @@ function parseConversationTarget(value: unknown): DesktopConversationTarget {
   return { projectId: target.projectId, id: target.id };
 }
 
+function parseConversationRecoveryRequest(
+  value: unknown,
+): DesktopConversationRecoveryRequest {
+  const target = parseConversationTarget(value);
+  const request = value as Record<string, unknown>;
+  const replacementId =
+    typeof request.replacementId === "string"
+      ? request.replacementId.trim()
+      : undefined;
+  if (
+    request.replacementId !== undefined &&
+    (!replacementId || typeof request.replacementId !== "string")
+  ) {
+    throw new Error("Invalid conversation recovery request");
+  }
+  return {
+    ...target,
+    ...(replacementId ? { replacementId } : {}),
+  };
+}
+
 function parseDiagnosticExportRequest(value: unknown): {
   projectId: string;
   conversationIds?: readonly string[];
@@ -4254,6 +4300,10 @@ app.whenReady().then(async () => {
     handleConversationUpdate,
   );
   ipcMain.handle(DESKTOP_CONVERSATION_READ_CHANNEL, handleConversationRead);
+  ipcMain.handle(
+    DESKTOP_CONVERSATION_RECOVER_CHANNEL,
+    handleConversationRecover,
+  );
   ipcMain.handle(
     DESKTOP_CONVERSATION_DELETE_CHANNEL,
     handleConversationDelete,

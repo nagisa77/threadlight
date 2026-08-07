@@ -1,13 +1,16 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { AttachmentData } from "@threadlight/protocol";
 import {
   Check,
   ChevronRight,
   CircleStop,
   FileText,
+  Link2,
   LoaderCircle,
   Terminal,
+  Trash2,
   TriangleAlert,
+  Wrench,
   X,
 } from "lucide-react";
 
@@ -245,6 +248,123 @@ export function ConnectionError({
         </div>
       </div>
     </div>
+  );
+}
+
+export function MissingThreadRecovery({
+  threadId,
+  busy,
+  error,
+  onRepair,
+  onRelink,
+  onDeleteMetadata,
+}: {
+  threadId: string;
+  busy: boolean;
+  error?: string;
+  onRepair(): void;
+  onRelink(threadId: string): void;
+  onDeleteMetadata(): void;
+}) {
+  const { t } = useI18n();
+  const [showRelink, setShowRelink] = useState(false);
+  const [replacementId, setReplacementId] = useState("");
+  const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showRelink) input.current?.focus();
+  }, [showRelink]);
+
+  return (
+    <section
+      className="missing-thread-recovery"
+      aria-labelledby="missing-thread-title"
+    >
+      <span className="missing-thread-icon" aria-hidden="true">
+        <TriangleAlert size={18} />
+      </span>
+      <div className="missing-thread-copy">
+        <h2 id="missing-thread-title">{t("missingThreadTitle")}</h2>
+        <p>{t("missingThreadDescription")}</p>
+        <code className="missing-thread-id">{threadId}</code>
+        <p className="missing-thread-help">{t("missingThreadHelp")}</p>
+
+        {showRelink && (
+          <form
+            className="missing-thread-relink"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const candidate = replacementId.trim();
+              if (candidate) onRelink(candidate);
+            }}
+          >
+            <label htmlFor="missing-thread-replacement">
+              {t("replacementThreadId")}
+            </label>
+            <div>
+              <input
+                ref={input}
+                id="missing-thread-replacement"
+                value={replacementId}
+                disabled={busy}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={t("replacementThreadIdPlaceholder")}
+                onChange={(event) => setReplacementId(event.target.value)}
+              />
+              <button
+                type="submit"
+                className="primary pressable"
+                disabled={busy || !replacementId.trim()}
+              >
+                {busy && <LoaderCircle className="spin" size={13} />}
+                {t("verifyAndRelink")}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {error && (
+          <p className="missing-thread-error" role="status">
+            {error}
+          </p>
+        )}
+
+        <div className="missing-thread-actions">
+          <button
+            type="button"
+            className="primary pressable"
+            disabled={busy}
+            onClick={onRepair}
+          >
+            {busy ? (
+              <LoaderCircle className="spin" size={13} />
+            ) : (
+              <Wrench size={13} />
+            )}
+            {t("repairMissingThread")}
+          </button>
+          <button
+            type="button"
+            className="secondary pressable"
+            disabled={busy}
+            onClick={() => setShowRelink((visible) => !visible)}
+          >
+            <Link2 size={13} />
+            {t("relinkThread")}
+          </button>
+          <button
+            type="button"
+            className="missing-thread-delete pressable"
+            disabled={busy}
+            onClick={onDeleteMetadata}
+          >
+            <Trash2 size={13} />
+            {t("deleteTaskMetadata")}
+          </button>
+        </div>
+      </div>
+    </section>
   );
 }
 

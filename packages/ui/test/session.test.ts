@@ -1,16 +1,105 @@
 import { describe, expect, it } from "vitest";
+import { RpcResponseError } from "@threadlight/client";
+import type { ProcessSnapshotData } from "@threadlight/protocol";
 
 import {
   initialSessionState,
   newTaskDraftState,
+  pollOwnedProcess,
   reduceThreadSession,
   requestNewThreadTurnStart,
+  requestThreadOpen,
   requestTurnStart,
+  runningProcessSessionOwners,
   sessionReducer,
+  terminateOwnedProcess,
   type SessionState,
 } from "../src/session.js";
 
+function processSnapshot(
+  sessionId: string,
+  status: ProcessSnapshotData["status"] = "running",
+): ProcessSnapshotData {
+  return {
+    sessionId,
+    command: "sleep 1000",
+    cwd: "/workspace",
+    status,
+    exitCode: status === "completed" ? 0 : null,
+    signal: status === "terminated" ? "SIGTERM" : null,
+    stdout: "started\n",
+    stderr: "",
+    truncated: false,
+    startedAt: "2026-07-22T08:00:00.000Z",
+    ...(status === "running"
+      ? {}
+      : { completedAt: "2026-07-22T08:00:01.000Z" }),
+  };
+}
+
+function sessionWithRunningProcess(
+  threadId: string,
+  sessionId: string,
+): SessionState {
+  return {
+    ...initialSessionState,
+    connection: "ready",
+    threadId,
+    isRunning: true,
+    progress: [
+      {
+        text: "Running command",
+        activities: [
+          {
+            id: `call-${threadId}`,
+            name: "exec_command",
+            status: "running",
+            process: processSnapshot(sessionId),
+          },
+        ],
+      },
+    ],
+  };
+}
+
 describe("sessionReducer", () => {
+  it("keeps a missing stored task explicit instead of silently starting another task", async () => {
+    let starts = 0;
+    const result = await requestThreadOpen(
+      {
+        initialize: async () => undefined,
+        resumeThread: async () => {
+          throw new RpcResponseError(-32001, "Unknown thread");
+        },
+        startThread: async () => {
+          starts += 1;
+          return { threadId: "hidden-replacement" };
+        },
+      },
+      "missing-thread",
+    );
+
+    expect(result).toEqual({
+      status: "missing",
+      threadId: "missing-thread",
+    });
+    expect(starts).toBe(0);
+
+    const recovery = sessionReducer(initialSessionState, {
+      type: "connection.missing_thread",
+      threadId: "missing-thread",
+    });
+    expect(recovery).toMatchObject({
+      connection: "error",
+      threadId: "missing-thread",
+      recovery: { kind: "missing_thread", threadId: "missing-thread" },
+    });
+    expect(newTaskDraftState(recovery)).toMatchObject({
+      connection: "ready",
+      messages: [],
+    });
+  });
+
   it("keeps a new task as a workspace-free draft until the first turn is submitted", async () => {
     const established = {
       ...initialSessionState,
@@ -326,6 +415,88 @@ describe("sessionReducer", () => {
     });
     expect(sessions["thread-1"]?.isRunning).toBe(false);
     expect(sessions["thread-2"]?.isRunning).toBe(true);
+  });
+
+  it("maps every running process session to its owner thread", () => {
+    const owners = runningProcessSessionOwners({
+      "thread-1": sessionWithRunningProcess("thread-1", "session-1"),
+      "thread-2": sessionWithRunningProcess("thread-2", "session-2"),
+    });
+
+    expect([...owners]).toEqual([
+      ["session-1", "thread-1"],
+      ["session-2", "thread-2"],
+    ]);
+  });
+
+  it("keeps an in-flight process poll on its owner after switching tasks", async () => {
+    let resolveStatus!: (process: ProcessSnapshotData) => void;
+    const client = {
+      processStatus: () =>
+        new Promise<ProcessSnapshotData>((resolve) => {
+          resolveStatus = resolve;
+        }),
+    };
+    const owners = runningProcessSessionOwners({
+      "thread-1": sessionWithRunningProcess("thread-1", "session-1"),
+      "thread-2": sessionWithRunningProcess("thread-2", "session-2"),
+    });
+    const updates: Array<{ threadId: string; process: ProcessSnapshotData }> =
+      [];
+    let activeThreadId = "thread-1";
+
+    const pending = pollOwnedProcess(
+      client,
+      "session-1",
+      owners.get("session-1")!,
+      (threadId, action) => updates.push({ threadId, process: action.process }),
+    );
+    activeThreadId = "thread-2";
+    resolveStatus(processSnapshot("session-1", "completed"));
+    await pending;
+
+    expect(activeThreadId).toBe("thread-2");
+    expect(updates).toEqual([
+      {
+        threadId: "thread-1",
+        process: processSnapshot("session-1", "completed"),
+      },
+    ]);
+  });
+
+  it("keeps an in-flight process termination on its owner after switching tasks", async () => {
+    let resolveTermination!: (process: ProcessSnapshotData) => void;
+    const client = {
+      killProcess: () =>
+        new Promise<ProcessSnapshotData>((resolve) => {
+          resolveTermination = resolve;
+        }),
+    };
+    const owners = runningProcessSessionOwners({
+      "thread-1": sessionWithRunningProcess("thread-1", "session-1"),
+      "thread-2": sessionWithRunningProcess("thread-2", "session-2"),
+    });
+    const updates: Array<{ threadId: string; process: ProcessSnapshotData }> =
+      [];
+    let activeThreadId = "thread-1";
+
+    const pending = terminateOwnedProcess(
+      client,
+      "session-1",
+      owners.get("session-1"),
+      (threadId, action) => updates.push({ threadId, process: action.process }),
+    );
+    activeThreadId = "thread-2";
+    resolveTermination(processSnapshot("session-1", "terminated"));
+    await pending;
+
+    expect(activeThreadId).toBe("thread-2");
+    expect(updates).toEqual([
+      {
+        threadId: "thread-1",
+        process: processSnapshot("session-1", "terminated"),
+      },
+    ]);
   });
 
   it("hydrates an in-flight turn after the display client refreshes", () => {

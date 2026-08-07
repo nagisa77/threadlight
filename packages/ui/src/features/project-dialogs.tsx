@@ -48,6 +48,7 @@ import { errorMessage } from "./conversation-content.js";
 export function DeleteConversationDialog({
   conversation,
   discard = false,
+  metadataOnly = false,
   localDataFiles = 0,
   deleting,
   error,
@@ -56,6 +57,7 @@ export function DeleteConversationDialog({
 }: {
   conversation: ConversationSummary;
   discard?: boolean;
+  metadataOnly?: boolean;
   localDataFiles?: number;
   deleting: boolean;
   error?: string;
@@ -93,14 +95,22 @@ export function DeleteConversationDialog({
         </span>
         <div className="delete-dialog-copy">
           <h2 id="delete-dialog-title">
-            {discard ? t("discardTaskQuestion") : t("deleteTaskQuestion")}
+            {metadataOnly
+              ? t("deleteTaskMetadataQuestion")
+              : discard
+                ? t("discardTaskQuestion")
+                : t("deleteTaskQuestion")}
           </h2>
           <p id="delete-dialog-description">
-            {discard
-              ? t("discardTaskConfirmDescription", {
+            {metadataOnly
+              ? t("deleteTaskMetadataDescription", {
                   title: conversation.title,
                 })
-              : t("deleteTaskDescription", { title: conversation.title })}
+              : discard
+                ? t("discardTaskConfirmDescription", {
+                    title: conversation.title,
+                  })
+                : t("deleteTaskDescription", { title: conversation.title })}
           </p>
           {discard && localDataFiles > 0 && (
             <p className="delete-dialog-warning">
@@ -127,12 +137,16 @@ export function DeleteConversationDialog({
           >
             {deleting && <LoaderCircle className="spin" size={14} />}
             {deleting
-              ? discard
-                ? t("discardingTask")
-                : t("deleting")
-              : discard
-                ? t("discardTask")
-                : t("deleteTask")}
+              ? metadataOnly
+                ? t("deletingTaskMetadata")
+                : discard
+                  ? t("discardingTask")
+                  : t("deleting")
+              : metadataOnly
+                ? t("deleteTaskMetadata")
+                : discard
+                  ? t("discardTask")
+                  : t("deleteTask")}
           </button>
         </div>
       </section>

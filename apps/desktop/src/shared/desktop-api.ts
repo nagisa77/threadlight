@@ -48,6 +48,8 @@ export const DESKTOP_CONVERSATION_UPDATE_CHANNEL =
   "threadlight:conversation:update";
 export const DESKTOP_CONVERSATION_READ_CHANNEL =
   "threadlight:conversation:read";
+export const DESKTOP_CONVERSATION_RECOVER_CHANNEL =
+  "threadlight:conversation:recover";
 export const DESKTOP_CONVERSATION_DELETE_CHANNEL =
   "threadlight:conversation:delete";
 export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
@@ -405,6 +407,11 @@ export interface DesktopConversationMetadataUpdate {
 export interface DesktopConversationTarget {
   projectId: string;
   id: string;
+}
+
+export interface DesktopConversationRecoveryRequest
+  extends DesktopConversationTarget {
+  replacementId?: string;
 }
 
 export interface DesktopProjectMemorySnapshot {
@@ -872,6 +879,9 @@ export interface DesktopApi {
   ): Promise<DesktopProjectsSnapshot>;
   markConversationRead(
     target: DesktopConversationTarget,
+  ): Promise<DesktopProjectsSnapshot>;
+  recoverConversation(
+    request: DesktopConversationRecoveryRequest,
   ): Promise<DesktopProjectsSnapshot>;
   deleteConversation(
     target: DesktopConversationTarget,

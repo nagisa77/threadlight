@@ -830,6 +830,169 @@
   gap: 7px;
 }
 
+.missing-thread-recovery {
+  display: flex;
+  width: min(100%, 560px);
+  margin: 72px auto 0;
+  gap: 13px;
+  padding: 18px;
+  border: 1px solid #e1c994;
+  border-radius: 12px;
+  background: #fff9eb;
+  box-shadow: 0 10px 34px rgb(80 59 42 / 6%);
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: center;
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+
+@starting-style {
+  .missing-thread-recovery {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+.missing-thread-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: #8b6118;
+  background: #f5e5bb;
+}
+
+.missing-thread-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.missing-thread-copy h2 {
+  margin: 1px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 670;
+  letter-spacing: -0.01em;
+}
+
+.missing-thread-copy p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.missing-thread-id {
+  display: block;
+  max-width: 100%;
+  margin-top: 10px;
+  padding: 7px 9px;
+  overflow: hidden;
+  border: 1px solid rgb(111 92 50 / 16%);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: rgb(255 255 255 / 54%);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.missing-thread-copy .missing-thread-help {
+  color: var(--subtle);
+}
+
+.missing-thread-relink {
+  margin-top: 15px;
+  padding-top: 14px;
+  border-top: 1px solid rgb(111 92 50 / 14%);
+}
+
+.missing-thread-relink label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.missing-thread-relink > div {
+  display: flex;
+  gap: 7px;
+}
+
+.missing-thread-relink input {
+  min-width: 0;
+  height: 31px;
+  flex: 1;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  outline: none;
+  color: var(--text);
+  background: rgb(255 255 255 / 76%);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.missing-thread-relink input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(173 83 45 / 12%);
+}
+
+.missing-thread-relink button,
+.missing-thread-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.missing-thread-copy .missing-thread-error {
+  color: var(--danger);
+}
+
+.missing-thread-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 15px;
+  gap: 7px;
+}
+
+.missing-thread-delete {
+  height: 30px;
+  margin-left: auto;
+  padding: 0 8px;
+  border: 0;
+  color: var(--danger);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 580;
+  cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .missing-thread-recovery {
+    margin-top: 32px;
+    padding: 15px;
+  }
+
+  .missing-thread-relink > div,
+  .missing-thread-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .missing-thread-delete {
+    margin-left: 0;
+  }
+}
+
 .composer-wrap {
   position: relative;
   min-width: 0;

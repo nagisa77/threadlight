@@ -342,6 +342,23 @@ html[data-theme="dark"] :is(
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
+html[data-theme="dark"] .missing-thread-recovery {
+  border-color: color-mix(in srgb, #d5a94c 36%, var(--line));
+  background: color-mix(in srgb, #d5a94c 8%, var(--panel));
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .missing-thread-icon {
+  color: #e4bd68;
+  background: color-mix(in srgb, #d5a94c 15%, transparent);
+}
+
+html[data-theme="dark"] .missing-thread-id,
+html[data-theme="dark"] .missing-thread-relink input {
+  border-color: var(--line);
+  background: rgb(255 255 255 / 4%);
+}
+
 html[data-theme="dark"] .process-terminate-button {
   border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
   color: #e69a83;

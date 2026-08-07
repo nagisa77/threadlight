@@ -91,6 +91,8 @@ const projects: ProjectsAdapter = {
     window.threadlightDesktop.updateConversation(update),
   markConversationRead: (target) =>
     window.threadlightDesktop.markConversationRead(target),
+  recoverConversation: (request) =>
+    window.threadlightDesktop.recoverConversation(request),
   deleteConversation: (target) =>
     window.threadlightDesktop.deleteConversation(target),
 };

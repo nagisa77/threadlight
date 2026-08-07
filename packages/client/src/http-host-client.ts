@@ -268,6 +268,17 @@ export class HttpHostClient {
     });
   }
 
+  recoverConversation(input: {
+    projectId: string;
+    id: string;
+    replacementId?: string;
+  }): Promise<HostProjectsSnapshot> {
+    return this.request("/v1/host/conversations/recover", {
+      method: "POST",
+      body: input,
+    });
+  }
+
   deleteConversation(input: {
     projectId: string;
     id: string;

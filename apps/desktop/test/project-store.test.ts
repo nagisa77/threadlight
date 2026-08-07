@@ -360,6 +360,114 @@ describe("ProjectStore", () => {
       .projects[0].conversations).toEqual([]);
   });
 
+  it("recovers missing task metadata without deleting conversation data", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    const taskWorkspace = join(root, "task-workspace");
+    mkdirSync(projectPath);
+    mkdirSync(taskWorkspace);
+    const store = new ProjectStore(join(root, "project-map.json"), {
+      createId: () => "project-1",
+      now: () => new Date("2026-08-07T08:00:00.000Z"),
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "missing-thread",
+      title: "Recover this task",
+    });
+    store.setConversationWorkspace(
+      { projectId: "project-1", id: "missing-thread" },
+      {
+        mode: "worktree",
+        path: taskWorkspace,
+        root: taskWorkspace,
+        repositoryRoot: projectPath,
+        branch: "threadlight/missing-thread",
+        baseCommit: "base-commit",
+      },
+    );
+    const conversationPath = join(
+      projectPath,
+      ".threadlight",
+      "conversations",
+      "missing-thread.json",
+    );
+    writeFileSync(conversationPath, "{\"threadId\":\"missing-thread\"}\n");
+
+    const snapshot = store.recoverConversation({
+      projectId: "project-1",
+      id: "missing-thread",
+    });
+
+    expect(snapshot.projects[0]?.conversations).toEqual([]);
+    expect(existsSync(conversationPath)).toBe(true);
+    expect(existsSync(taskWorkspace)).toBe(true);
+  });
+
+  it("atomically moves missing task metadata to a verified replacement", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
+    directories.push(root);
+    const projectPath = join(root, "sample-project");
+    const replacementWorkspace = join(root, "replacement-workspace");
+    mkdirSync(projectPath);
+    mkdirSync(replacementWorkspace);
+    const store = new ProjectStore(join(root, "project-map.json"), {
+      createId: () => "project-1",
+      now: () => new Date("2026-08-07T08:00:00.000Z"),
+    });
+    store.register(projectPath);
+    store.upsertConversation({
+      projectId: "project-1",
+      id: "missing-thread",
+      title: "Original title",
+    });
+    store.updateConversation({
+      projectId: "project-1",
+      id: "missing-thread",
+      pinned: true,
+      accessMode: "full",
+    });
+    store.setConversationWorkspace(
+      { projectId: "project-1", id: "replacement-thread" },
+      { mode: "folder", path: replacementWorkspace },
+    );
+    const oldConversationPath = join(
+      projectPath,
+      ".threadlight",
+      "conversations",
+      "missing-thread.json",
+    );
+    const replacementConversationPath = join(
+      projectPath,
+      ".threadlight",
+      "conversations",
+      "replacement-thread.json",
+    );
+    writeFileSync(oldConversationPath, "{}\n");
+    writeFileSync(replacementConversationPath, "{}\n");
+
+    const snapshot = store.recoverConversation({
+      projectId: "project-1",
+      id: "missing-thread",
+      replacementId: "replacement-thread",
+    });
+
+    expect(snapshot.projects[0]?.conversations).toHaveLength(1);
+    expect(snapshot.projects[0]?.conversations[0]).toMatchObject({
+      id: "replacement-thread",
+      title: "Original title",
+      status: "pending",
+      unread: false,
+      accessMode: "full",
+      workspace: { mode: "folder", path: replacementWorkspace },
+    });
+    expect(snapshot.projects[0]?.conversations[0]?.pinnedAt).toBeDefined();
+    expect(existsSync(oldConversationPath)).toBe(true);
+    expect(existsSync(replacementConversationPath)).toBe(true);
+  });
+
   it("persists completion unread state until the task is opened", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-projects-"));
     directories.push(root);

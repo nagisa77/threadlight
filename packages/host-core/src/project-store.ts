@@ -26,6 +26,10 @@ interface DesktopConversationTarget {
   projectId: string;
   id: string;
 }
+interface DesktopConversationRecoveryRequest
+  extends DesktopConversationTarget {
+  replacementId?: string;
+}
 interface DesktopConversationUpdate extends DesktopConversationTarget {
   title: string;
 }
@@ -466,6 +470,78 @@ export class ProjectStore {
     project.conversations = project.conversations.filter(
       (conversation) => conversation.id !== target.id,
     );
+    this.write(stored);
+    return this.snapshot();
+  }
+
+  /**
+   * Repairs only the project-map entry. Conversation files and task
+   * workspaces are deliberately left untouched for manual recovery.
+   */
+  recoverConversation(
+    request: DesktopConversationRecoveryRequest,
+  ): DesktopProjectsSnapshot {
+    const stored = this.read();
+    const project = stored.projects.find(
+      (candidate) => candidate.id === request.projectId,
+    );
+    if (!project) throw new Error(`Unknown project: ${request.projectId}`);
+    const conversation = findConversation(stored, request);
+    const replacementId = request.replacementId?.trim();
+    if (request.replacementId !== undefined && !replacementId) {
+      throw new Error("Replacement conversation id cannot be empty");
+    }
+    if (replacementId === request.id) {
+      throw new Error("Replacement conversation id must be different");
+    }
+
+    project.conversations = project.conversations.filter(
+      (candidate) => candidate.id !== request.id,
+    );
+    if (replacementId) {
+      const replacement = project.conversations.find(
+        (candidate) => candidate.id === replacementId,
+      );
+      const timestamp = this.now().toISOString();
+      if (replacement) {
+        replacement.title = conversation.title;
+        replacement.createdAt = conversation.createdAt;
+        replacement.updatedAt = timestamp;
+        replacement.status = "pending";
+        replacement.unread = false;
+        if (conversation.renamedAt) {
+          replacement.renamedAt = conversation.renamedAt;
+        } else {
+          delete replacement.renamedAt;
+        }
+        if (conversation.titleGeneratedAt) {
+          replacement.titleGeneratedAt = conversation.titleGeneratedAt;
+        } else {
+          delete replacement.titleGeneratedAt;
+        }
+        if (conversation.pinnedAt) {
+          replacement.pinnedAt = conversation.pinnedAt;
+        } else {
+          delete replacement.pinnedAt;
+        }
+        if (conversation.accessMode) {
+          replacement.accessMode = conversation.accessMode;
+        } else {
+          delete replacement.accessMode;
+        }
+        replacement.workspace ??= conversation.workspace;
+        delete replacement.archivedAt;
+      } else {
+        const { archivedAt: _archivedAt, ...unarchived } = conversation;
+        project.conversations.push({
+          ...unarchived,
+          id: replacementId,
+          updatedAt: timestamp,
+          status: "pending",
+          unread: false,
+        });
+      }
+    }
     this.write(stored);
     return this.snapshot();
   }

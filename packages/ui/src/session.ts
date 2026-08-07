@@ -54,6 +54,10 @@ export interface ConversationMessage {
 export interface SessionState {
   connection: "connecting" | "ready" | "error";
   connectionError?: string;
+  recovery?: {
+    kind: "missing_thread";
+    threadId: string;
+  };
   threadId?: string;
   revision: number;
   /** Provider/model selected for this conversation, if any. */
@@ -82,6 +86,7 @@ export type SessionAction =
       model?: string;
     }
   | { type: "connection.failed"; error: string }
+  | { type: "connection.missing_thread"; threadId: string }
   | {
       type: "message.sent";
       id: string;
@@ -151,7 +156,12 @@ export function sessionReducer(
 ): SessionState {
   switch (action.type) {
     case "connection.connecting":
-      return { ...state, connection: "connecting", connectionError: undefined };
+      return {
+        ...state,
+        connection: "connecting",
+        connectionError: undefined,
+        recovery: undefined,
+      };
     case "connection.ready": {
       const revision =
         action.revision ?? action.activeTurn?.revision ?? 0;
@@ -160,6 +170,7 @@ export function sessionReducer(
           ...state,
           connection: "ready",
           connectionError: undefined,
+          recovery: undefined,
           threadId: action.threadId,
           ...(action.provider ? { provider: action.provider } : {}),
           ...(action.model ? { model: action.model } : {}),
@@ -187,6 +198,17 @@ export function sessionReducer(
         ...state,
         connection: "error",
         connectionError: action.error,
+        recovery: undefined,
+        isRunning: false,
+        isThinking: false,
+      };
+    case "connection.missing_thread":
+      return {
+        ...state,
+        connection: "error",
+        connectionError: undefined,
+        threadId: action.threadId,
+        recovery: { kind: "missing_thread", threadId: action.threadId },
         isRunning: false,
         isThinking: false,
       };
@@ -478,6 +500,85 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+type ProcessSessionUpdate = (
+  threadId: string,
+  action: Extract<SessionAction, { type: "process.updated" }>,
+) => void;
+
+export function runningProcessSessionOwners(
+  sessions: Readonly<Record<string, SessionState>>,
+): ReadonlyMap<string, string> {
+  const owners = new Map<string, string>();
+  for (const [threadId, session] of Object.entries(sessions)) {
+    for (const sessionId of runningProcessSessionIds(
+      session.progress,
+      session.messages,
+    )) {
+      owners.set(sessionId, threadId);
+    }
+  }
+  return owners;
+}
+
+export async function pollOwnedProcess(
+  client: Pick<ThreadlightClient, "processStatus">,
+  sessionId: string,
+  ownerThreadId: string,
+  updateSession: ProcessSessionUpdate,
+): Promise<ProcessSnapshotData> {
+  const process = await client.processStatus(sessionId);
+  updateSession(ownerThreadId, { type: "process.updated", process });
+  return process;
+}
+
+export async function terminateOwnedProcess(
+  client: Pick<ThreadlightClient, "killProcess">,
+  sessionId: string,
+  ownerThreadId: string | undefined,
+  updateSession: ProcessSessionUpdate,
+): Promise<ProcessSnapshotData> {
+  const process = await client.killProcess(sessionId);
+  if (ownerThreadId) {
+    updateSession(ownerThreadId, { type: "process.updated", process });
+  }
+  return process;
+}
+
+export interface OpenedThread {
+  threadId: string;
+  messages?: readonly ConversationMessageData[];
+  queuedTurns?: readonly QueuedTurnData[];
+  revision?: number;
+  activeTurn?: ActiveTurnData;
+  provider?: string;
+  model?: string;
+}
+
+export type ThreadOpenResult =
+  | { status: "opened"; thread: OpenedThread }
+  | { status: "missing"; threadId: string };
+
+export async function requestThreadOpen(
+  client: Pick<
+    ThreadlightClient,
+    "initialize" | "resumeThread" | "startThread"
+  >,
+  threadId?: string,
+): Promise<ThreadOpenResult> {
+  await client.initialize();
+  if (!threadId) {
+    return { status: "opened", thread: await client.startThread() };
+  }
+  try {
+    return { status: "opened", thread: await client.resumeThread(threadId) };
+  } catch (error) {
+    if (error instanceof RpcResponseError && error.code === -32001) {
+      return { status: "missing", threadId };
+    }
+    throw error;
+  }
+}
+
 export async function requestTurnStart(
   client: {
     startTurn(
@@ -575,8 +676,16 @@ export function newTaskDraftState(
     // A draft has no runtime-owned thread or workspace until the first send,
     // so the user can still choose Local or Worktree without creating and
     // discarding hidden checkouts.
-    connection: state.connection === "error" ? "error" : "ready",
-    connectionError: state.connectionError,
+    connection:
+      state.recovery?.kind === "missing_thread"
+        ? "ready"
+        : state.connection === "error"
+          ? "error"
+          : "ready",
+    connectionError:
+      state.recovery?.kind === "missing_thread"
+        ? undefined
+        : state.connectionError,
     ...(state.provider ? { provider: state.provider } : {}),
     ...(state.model ? { model: state.model } : {}),
     submissionError,
@@ -613,67 +722,21 @@ export function useThreadlightSession(
   }, []);
 
   const openThread = useCallback(async (threadId?: string) => {
-    if (threadId && sessionsRef.current[threadId]) {
-      try {
-        await client.initialize();
-        const resumed = await client.resumeThread(threadId);
-        activateThread(threadId);
-        updateSession(threadId, {
-          type: "connection.ready",
-          threadId,
-          messages: resumed.messages,
-          queuedTurns: resumed.queuedTurns,
-          revision: resumed.revision,
-          activeTurn: resumed.activeTurn,
-          provider: resumed.provider,
-          model: resumed.model,
-        });
-        return threadId;
-      } catch (error) {
-        if (!(error instanceof RpcResponseError) || error.code !== -32001) {
-          activateThread(threadId);
-          updateSession(threadId, {
-            type: "connection.failed",
-            error: errorMessage(error),
-          });
-          return;
-        }
-        const opened = await client.startThread();
-        activateThread(opened.threadId);
-        updateSession(opened.threadId, {
-          type: "connection.ready",
-          threadId: opened.threadId,
-        });
-        return opened.threadId;
-      }
-    }
     if (threadId) {
       activateThread(threadId);
       updateSession(threadId, { type: "connection.connecting" });
     }
     try {
-      await client.initialize();
-      let opened: {
-        threadId: string;
-        messages?: readonly ConversationMessageData[];
-        queuedTurns?: readonly QueuedTurnData[];
-        revision?: number;
-        activeTurn?: ActiveTurnData;
-        provider?: string;
-        model?: string;
-      };
-      if (threadId) {
-        try {
-          opened = await client.resumeThread(threadId);
-        } catch (error) {
-          if (!(error instanceof RpcResponseError) || error.code !== -32001) {
-            throw error;
-          }
-          opened = await client.startThread();
-        }
-      } else {
-        opened = await client.startThread();
+      const result = await requestThreadOpen(client, threadId);
+      if (result.status === "missing") {
+        activateThread(result.threadId);
+        updateSession(result.threadId, {
+          type: "connection.missing_thread",
+          threadId: result.threadId,
+        });
+        return;
       }
+      const opened = result.thread;
       activateThread(opened.threadId);
       updateSession(opened.threadId, {
         type: "connection.ready",
@@ -803,28 +866,29 @@ export function useThreadlightSession(
     [sessions],
   );
 
-  const runningProcessKey = runningProcessSessionIds(
-    state.progress,
-    state.messages,
-  ).join("\u0000");
+  const runningProcessOwnerKey = useMemo(
+    () => JSON.stringify([...runningProcessSessionOwners(sessions)]),
+    [sessions],
+  );
   useEffect(() => {
-    if (!runningProcessKey) return;
-    const sessionIds = runningProcessKey.split("\u0000");
+    const processOwners = JSON.parse(
+      runningProcessOwnerKey,
+    ) as readonly (readonly [string, string])[];
+    if (processOwners.length === 0) return;
     let active = true;
     const poll = (): void => {
-      for (const sessionId of sessionIds) {
-        void client
-          .processStatus(sessionId)
-          .then((process) => {
-            const threadId = activeThreadId.current;
-            if (active && threadId) {
-              updateSession(threadId, { type: "process.updated", process });
-            }
-          })
-          .catch(() => {
-            // A runtime restart invalidates in-memory process sessions. The
-            // stored execution record remains available for inspection.
-          });
+      for (const [sessionId, ownerThreadId] of processOwners) {
+        void pollOwnedProcess(
+          client,
+          sessionId,
+          ownerThreadId,
+          (threadId, action) => {
+            if (active) updateSession(threadId, action);
+          },
+        ).catch(() => {
+          // A runtime restart invalidates in-memory process sessions. The
+          // stored execution record remains available for inspection.
+        });
       }
     };
     const timer = setInterval(poll, 1_000);
@@ -832,7 +896,7 @@ export function useThreadlightSession(
       active = false;
       clearInterval(timer);
     };
-  }, [client, runningProcessKey, updateSession]);
+  }, [client, runningProcessOwnerKey, updateSession]);
 
   const newThread = useCallback(async (
     developmentMode?: TaskDevelopmentMode,
@@ -1118,12 +1182,15 @@ export function useThreadlightSession(
 
   const terminateProcess = useCallback(
     async (sessionId: string) => {
-      const process = await client.killProcess(sessionId);
-      const threadId = activeThreadId.current;
-      if (threadId) {
-        updateSession(threadId, { type: "process.updated", process });
-      }
-      return process;
+      const ownerThreadId =
+        runningProcessSessionOwners(sessionsRef.current).get(sessionId) ??
+        activeThreadId.current;
+      return terminateOwnedProcess(
+        client,
+        sessionId,
+        ownerThreadId,
+        updateSession,
+      );
     },
     [client, updateSession],
   );

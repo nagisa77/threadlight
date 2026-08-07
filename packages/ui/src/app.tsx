@@ -85,6 +85,7 @@ import {
 } from "./capabilities.js";
 import {
   newTaskDraftState,
+  requestThreadOpen,
   useThreadlightSession,
   type ConversationProgress,
   type ToolActivity,
@@ -201,6 +202,7 @@ import {
   ActivityList,
   ComposerAttachments,
   ConnectionError,
+  MissingThreadRecovery,
   MessageAttachments,
   ProgressList,
   attachmentHint,
@@ -687,10 +689,14 @@ function ThreadlightAppContent({
   const [pendingDelete, setPendingDelete] = useState<{
     projectId: string;
     conversation: ConversationSummary;
-    mode?: "delete" | "discard";
+    mode?: "delete" | "discard" | "metadata";
   }>();
   const [deleteError, setDeleteError] = useState<string>();
   const [deletingConversation, setDeletingConversation] = useState(false);
+  const [conversationRecoveryBusy, setConversationRecoveryBusy] =
+    useState(false);
+  const [conversationRecoveryError, setConversationRecoveryError] =
+    useState<string>();
   const [pendingDeleteProject, setPendingDeleteProject] = useState<
     ProjectSummary | undefined
   >();
@@ -837,6 +843,11 @@ function ThreadlightAppContent({
   const showFirstRunGuide = Boolean(
     firstRunRequired && !firstRunDemoThreadId && view === "thread",
   );
+
+  useEffect(() => {
+    setConversationRecoveryBusy(false);
+    setConversationRecoveryError(undefined);
+  }, [state.recovery?.threadId]);
 
   useEffect(() => {
     if (!settings) return;
@@ -2373,7 +2384,10 @@ function ThreadlightAppContent({
     if (!currentProject || voiceStatus !== "idle") return;
     closeSidebarForNavigation();
     setView("thread");
-    if (newTaskDraft || !hasUserInput(activeState.messages)) {
+    if (
+      newTaskDraft ||
+      (!activeState.recovery && !hasUserInput(activeState.messages))
+    ) {
       textarea.current?.focus();
       return;
     }
@@ -2829,6 +2843,95 @@ function ThreadlightAppContent({
     }
   }
 
+  async function repairMissingThread() {
+    if (
+      !projects?.recoverConversation ||
+      !currentProject ||
+      !currentConversation ||
+      !state.recovery ||
+      conversationRecoveryBusy
+    ) {
+      return;
+    }
+    setConversationRecoveryBusy(true);
+    setConversationRecoveryError(undefined);
+    try {
+      await client.initialize();
+      const { threadId: replacementId } = await client.startThread(
+        currentConversation.workspace?.mode === "worktree"
+          ? "worktree"
+          : "local",
+      );
+      const snapshot = await projects.recoverConversation({
+        projectId: currentProject.id,
+        id: state.recovery.threadId,
+        replacementId,
+      });
+      setProjectSnapshot(snapshot);
+      setNewTaskDraft(false);
+      await openThread(replacementId);
+    } catch (error) {
+      setConversationRecoveryError(errorMessage(error));
+    } finally {
+      setConversationRecoveryBusy(false);
+    }
+  }
+
+  async function relinkMissingThread(replacementId: string) {
+    if (
+      !projects?.recoverConversation ||
+      !currentProject ||
+      !state.recovery ||
+      conversationRecoveryBusy
+    ) {
+      return;
+    }
+    if (replacementId === state.recovery.threadId) {
+      setConversationRecoveryError(t("replacementThreadSame"));
+      return;
+    }
+    if (
+      currentProject.conversations.some(
+        (conversation) => conversation.id === replacementId,
+      )
+    ) {
+      setConversationRecoveryError(t("replacementThreadAlreadyTracked"));
+      return;
+    }
+
+    setConversationRecoveryBusy(true);
+    setConversationRecoveryError(undefined);
+    try {
+      const result = await requestThreadOpen(client, replacementId);
+      if (result.status === "missing") {
+        setConversationRecoveryError(t("replacementThreadNotFound"));
+        return;
+      }
+      const openedThreadId = result.thread.threadId;
+      const snapshot = await projects.recoverConversation({
+        projectId: currentProject.id,
+        id: state.recovery.threadId,
+        replacementId: openedThreadId,
+      });
+      setProjectSnapshot(snapshot);
+      setNewTaskDraft(false);
+      await openThread(openedThreadId);
+    } catch (error) {
+      setConversationRecoveryError(errorMessage(error));
+    } finally {
+      setConversationRecoveryBusy(false);
+    }
+  }
+
+  function requestMissingThreadMetadataDelete() {
+    if (!currentProject || !currentConversation) return;
+    setPendingDelete({
+      projectId: currentProject.id,
+      conversation: currentConversation,
+      mode: "metadata",
+    });
+  }
+
   async function confirmDeleteConversation() {
     if (!projects || !pendingDelete || deletingConversation) return;
     const target = pendingDelete;
@@ -2841,6 +2944,23 @@ function ThreadlightAppContent({
 
     try {
       if (deletingActiveConversation && !(await stopComputerShare())) {
+        return;
+      }
+      if (target.mode === "metadata") {
+        if (!projects.recoverConversation) {
+          throw new Error(t("metadataRecoveryUnavailable"));
+        }
+        const snapshot = await projects.recoverConversation({
+          projectId: target.projectId,
+          id: target.conversation.id,
+        });
+        setProjectSnapshot(snapshot);
+        setPendingDelete(undefined);
+        if (deletingActiveConversation) {
+          closeConversationPanels();
+          setView("thread");
+          await connectProject(snapshot);
+        }
         return;
       }
       if (target.mode === "discard" && !target.conversation.archivedAt) {
@@ -3753,7 +3873,18 @@ function ThreadlightAppContent({
                 }}
               >
                 <div className="conversation-inner">
-                  {state.connection === "error" && (
+                  {state.recovery?.kind === "missing_thread" ? (
+                    <MissingThreadRecovery
+                      threadId={state.recovery.threadId}
+                      busy={conversationRecoveryBusy}
+                      error={conversationRecoveryError}
+                      onRepair={() => void repairMissingThread()}
+                      onRelink={(threadId) =>
+                        void relinkMissingThread(threadId)
+                      }
+                      onDeleteMetadata={requestMissingThreadMetadataDelete}
+                    />
+                  ) : state.connection === "error" ? (
                     <ConnectionError
                       message={
                         state.connectionError ?? t("appServerConnectionFailed")
@@ -3763,7 +3894,7 @@ function ThreadlightAppContent({
                         settings ? () => setView("settings") : undefined
                       }
                     />
-                  )}
+                  ) : null}
 
                   {state.messages.length === 0 &&
                   state.connection !== "error" ? (
@@ -4463,6 +4594,7 @@ function ThreadlightAppContent({
         <DeleteConversationDialog
           conversation={pendingDelete.conversation}
           discard={pendingDelete.mode === "discard"}
+          metadataOnly={pendingDelete.mode === "metadata"}
           localDataFiles={
             pendingDelete.mode === "discard" &&
             pendingDelete.conversation.id === state.threadId

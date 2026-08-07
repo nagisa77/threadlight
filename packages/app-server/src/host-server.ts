@@ -664,6 +664,19 @@ export class ThreadlightHostServer {
         });
       } else if (url.pathname.endsWith("/read")) {
         snapshot = this.options.projects.markConversationRead(target);
+      } else if (url.pathname.endsWith("/recover")) {
+        if (
+          body.replacementId !== undefined &&
+          typeof body.replacementId !== "string"
+        ) {
+          throw new Error("Invalid replacementId");
+        }
+        snapshot = this.options.projects.recoverConversation({
+          ...target,
+          ...(typeof body.replacementId === "string"
+            ? { replacementId: body.replacementId }
+            : {}),
+        });
       } else if (url.pathname.endsWith("/delete")) {
         const workspace = this.options.projects
           .project(target.projectId)
