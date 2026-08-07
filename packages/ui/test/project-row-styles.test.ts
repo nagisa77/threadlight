@@ -24,4 +24,11 @@ describe("project row activity layout", () => {
       /\.thread-item:has\(> \.thread-actions\) > \.thread-item-select \{[\s\S]*?padding-right: 30px;[\s\S]*?\}/,
     );
   });
+
+  it("keeps portaled project menus above the mobile sidebar", () => {
+    expect(styles).toMatch(/\.action-popover\s*\{[^}]*z-index:\s*90;/s);
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.sidebar\s*\{[^}]*z-index:\s*80;/s,
+    );
+  });
 });

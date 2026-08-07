@@ -518,7 +518,7 @@ button:disabled {
 
 .action-popover {
   position: fixed;
-  z-index: 40;
+  z-index: 90;
   display: grid;
   width: 218px;
   gap: 2px;
@@ -3061,4 +3061,3 @@ html[data-platform="desktop"][data-os="macos"]
     }
   }
 }
-
