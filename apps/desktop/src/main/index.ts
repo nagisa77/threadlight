@@ -29,6 +29,7 @@ import {
   type TerminalSessionEvent,
   type ThreadlightMethod,
 } from "@threadlight/protocol";
+import { RunningThreadRegistry } from "@threadlight/host-core";
 import { ProjectMemoryStore } from "@threadlight/project-memory";
 import { TerminalSessionManager } from "@threadlight/terminal-core";
 
@@ -51,9 +52,7 @@ import {
   computerPreviewHtml,
 } from "./computer-preview.js";
 import { DesktopComputerService } from "./computer-service.js";
-import {
-  ComputerPermissionService,
-} from "./computer-permissions.js";
+import { ComputerPermissionService } from "./computer-permissions.js";
 import { requestMacOSScreenCaptureAccess } from "./computer-input.js";
 import {
   createAttachmentReference,
@@ -102,15 +101,9 @@ import {
   type AutomationAlert,
   type AutomationExecutionResult,
 } from "./automation-scheduler.js";
-import {
-  projectDiagnosticBundle,
-  projectDiagnostics,
-} from "./diagnostics.js";
+import { projectDiagnosticBundle, projectDiagnostics } from "./diagnostics.js";
 import { testProviderConnection } from "./provider-diagnostics.js";
-import {
-  openProjectWith,
-  projectOpeners,
-} from "./project-opener.js";
+import { openProjectWith, projectOpeners } from "./project-opener.js";
 import {
   completedTaskTarget,
   deliveryAttentionBody,
@@ -118,10 +111,7 @@ import {
   handleTaskCompletion,
   type TaskCompletionNotification,
 } from "./task-completion.js";
-import {
-  readSystemFile,
-  resolveSystemFilePath,
-} from "./system-files.js";
+import { readSystemFile, resolveSystemFilePath } from "./system-files.js";
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
   DESKTOP_ATTACHMENT_REFERENCE_CHANNEL,
@@ -183,6 +173,7 @@ import {
   DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL,
   DESKTOP_SYSTEM_FILE_LIST_CHANNEL,
   DESKTOP_SYSTEM_FILE_GET_CHANNEL,
+  DESKTOP_SYSTEM_FILE_DOWNLOAD_CHANNEL,
   DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL,
   DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL,
   DESKTOP_EXECUTION_APPROVAL_RESOLVED_CHANNEL,
@@ -196,6 +187,7 @@ import {
   DESKTOP_TERMINAL_RESIZE_CHANNEL,
   DESKTOP_TERMINAL_WRITE_CHANNEL,
   DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
+  DESKTOP_WORKSPACE_FILE_DOWNLOAD_CHANNEL,
   DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
   DESKTOP_WORKSPACE_LIST_CHANNEL,
   DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL,
@@ -269,6 +261,7 @@ interface AppServerRuntime {
   workspace: DesktopTaskWorkspace;
 }
 const appServers = new Map<string, AppServerRuntime>();
+const runningThreads = new RunningThreadRegistry();
 const threadProjects = new Map<string, string>();
 const deliveryAttentionCompletions = new Set<string>();
 const pendingThreadStarts = new Map<
@@ -338,7 +331,18 @@ function isRemoteHost(): boolean {
 
 function currentProjectsSnapshot(): DesktopProjectsSnapshot {
   if (!projectStore) throw new Error("Projects are not available");
-  return projectStore.snapshotForHost(activeHostId());
+  return withRunningThreads(projectStore.snapshotForHost(activeHostId()));
+}
+
+function withRunningThreads(
+  snapshot: DesktopProjectsSnapshot,
+): DesktopProjectsSnapshot {
+  return {
+    ...snapshot,
+    runningThreadIds: runningThreads.threadIds(
+      snapshot.projects.map(({ id }) => id),
+    ),
+  };
 }
 
 function currentProject(projectId: string) {
@@ -361,7 +365,7 @@ function syncRemoteProjects(
   if (!projectStore || !remoteHost) {
     throw new Error("Remote Host is not connected.");
   }
-  return projectStore.replaceRemoteHostProjects(
+  const next = projectStore.replaceRemoteHostProjects(
     {
       hostId: activeHostId(),
       endpoint: remoteHost.endpoint,
@@ -370,6 +374,12 @@ function syncRemoteProjects(
     },
     snapshot,
   ) as DesktopProjectsSnapshot;
+  runningThreads.replaceProjects(
+    snapshot.projects,
+    snapshot.runningThreadIds ?? [],
+    `remote-host:${activeHostId()}`,
+  );
+  return withRunningThreads(next);
 }
 
 if (process.defaultApp && process.argv[1]) {
@@ -473,7 +483,9 @@ function createWindow(): void {
   if (developmentUrl) {
     void window.loadURL(developmentUrl);
   } else {
-    void window.loadFile(resolve(import.meta.dirname, "../renderer/index.html"));
+    void window.loadFile(
+      resolve(import.meta.dirname, "../renderer/index.html"),
+    );
   }
 }
 
@@ -508,11 +520,7 @@ function ensureAppServer(
           return;
         }
         const rendererWindow = mainWindow ?? window;
-        await recordProjectMessage(
-          projectId,
-          messageWorkspace,
-          message,
-        );
+        await recordProjectMessage(projectId, messageWorkspace, message);
         if (rendererWindow && !rendererWindow.isDestroyed()) {
           sendToRenderer(rendererWindow, message);
         }
@@ -535,40 +543,40 @@ function ensureAppServer(
           send,
         })
       : new AppServerProcess({
-    entry: resolveAppServerEntry({
-      appPath: app.getAppPath(),
-      isPackaged: app.isPackaged,
-      override: process.env.THREADLIGHT_APP_SERVER_PATH,
-    }),
-    cwd: workspace.path,
-    environment: appServerEnvironment(
-      projectRoot,
-      settingsStore?.runtimeSettings() ?? {
-        provider: "openai",
-        qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
-        kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
-        doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
-        geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
-        grokBaseUrl: DEFAULT_GROK_BASE_URL,
-        customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
-        model: DEFAULT_MODEL,
-      },
-      project?.scope,
-    ),
-    send,
-    handleComputerRequest: (request) => {
-      if (!computerService) {
-        throw new Error("Desktop computer service is not available");
-      }
-      return computerService.handle(request);
-    },
-    handleConnectionRequest: (request) => {
-      if (!connectionService) {
-        throw new Error("Desktop connection service is not available");
-      }
-      return connectionService.handle(request);
-    },
-  });
+          entry: resolveAppServerEntry({
+            appPath: app.getAppPath(),
+            isPackaged: app.isPackaged,
+            override: process.env.THREADLIGHT_APP_SERVER_PATH,
+          }),
+          cwd: workspace.path,
+          environment: appServerEnvironment(
+            projectRoot,
+            settingsStore?.runtimeSettings() ?? {
+              provider: "openai",
+              qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+              kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
+              doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
+              geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
+              grokBaseUrl: DEFAULT_GROK_BASE_URL,
+              customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
+              model: DEFAULT_MODEL,
+            },
+            project?.scope,
+          ),
+          send,
+          handleComputerRequest: (request) => {
+            if (!computerService) {
+              throw new Error("Desktop computer service is not available");
+            }
+            return computerService.handle(request);
+          },
+          handleConnectionRequest: (request) => {
+            if (!connectionService) {
+              throw new Error("Desktop connection service is not available");
+            }
+            return connectionService.handle(request);
+          },
+        });
   appServers.set(key, {
     process: appServer,
     projectId,
@@ -598,6 +606,7 @@ function stopAppServers(): void {
   taskExecutionGrants.clear();
   for (const runtime of appServers.values()) runtime.process.stop();
   appServers.clear();
+  runningThreads.clear();
   for (const [threadId, waiter] of automationTurnWaiters) {
     waiter.resolve({
       threadId,
@@ -626,7 +635,9 @@ function stopProjectRuntimes(projectId: string): void {
   for (const [key, runtime] of runtimes) {
     runtime.process.stop();
     appServers.delete(key);
+    runningThreads.clearRuntime(key);
   }
+  runningThreads.clearProject(projectId);
   for (const [threadId, ownerProjectId] of threadProjects) {
     if (ownerProjectId === projectId) threadProjects.delete(threadId);
   }
@@ -668,9 +679,8 @@ function workspaceForRuntimeMessage(
     if (pending?.projectId === projectId) return pending.workspace;
   }
   if ("method" in message) {
-    const threadId = (
-      message.params as { threadId?: unknown } | undefined
-    )?.threadId;
+    const threadId = (message.params as { threadId?: unknown } | undefined)
+      ?.threadId;
     if (typeof threadId === "string") {
       const workspace = currentProject(projectId)?.conversations.find(
         (conversation) => conversation.id === threadId,
@@ -690,6 +700,11 @@ async function recordProjectMessage(
     const threadId = (message.params as { threadId?: unknown } | undefined)
       ?.threadId;
     if (typeof threadId === "string") threadProjects.set(threadId, projectId);
+    runningThreads.record(
+      projectId,
+      runtimeKeyForProject(projectId, workspace.path),
+      message,
+    );
     const incomingDelivery = deliveryStateFromNotification(message);
     if (typeof threadId === "string" && incomingDelivery) {
       recordDeliveryConversationState(
@@ -739,10 +754,10 @@ async function recordProjectMessage(
     }
     const suppressCompletionNotification = Boolean(
       message.method === "turn/completed" &&
-        typeof threadId === "string" &&
-        deliveryAttentionCompletions.delete(
-          deliveryConversationKey(projectId, threadId),
-        ),
+      typeof threadId === "string" &&
+      deliveryAttentionCompletions.delete(
+        deliveryConversationKey(projectId, threadId),
+      ),
     );
     const automationId =
       typeof threadId === "string"
@@ -751,8 +766,7 @@ async function recordProjectMessage(
     if (
       automationId &&
       typeof threadId === "string" &&
-      (message.method === "turn/completed" ||
-        message.method === "turn/failed")
+      (message.method === "turn/completed" || message.method === "turn/failed")
     ) {
       try {
         projectStore?.markConversationUnread({ projectId, id: threadId });
@@ -761,8 +775,7 @@ async function recordProjectMessage(
       }
       const params = message.params as Record<string, unknown>;
       const diagnostics = params.diagnostics as
-        | { toolCalls?: readonly { isError?: boolean }[] }
-        | undefined;
+        { toolCalls?: readonly { isError?: boolean }[] } | undefined;
       automationTurnWaiters.get(threadId)?.resolve(
         message.method === "turn/failed"
           ? {
@@ -774,11 +787,8 @@ async function recordProjectMessage(
             }
           : {
               threadId,
-              output:
-                typeof params.output === "string" ? params.output : "",
-              toolError: diagnostics?.toolCalls?.some(
-                (tool) => tool.isError,
-              ),
+              output: typeof params.output === "string" ? params.output : "",
+              toolError: diagnostics?.toolCalls?.some((tool) => tool.isError),
             },
       );
       automationTurnWaiters.delete(threadId);
@@ -855,10 +865,7 @@ function handleExecutionApprovalNotification(
   workspace: DesktopTaskWorkspace,
   message: JsonRpcOutgoing,
 ): boolean {
-  if (
-    "method" in message &&
-    message.method === "execution/approval-resolved"
-  ) {
+  if ("method" in message && message.method === "execution/approval-resolved") {
     const requestId = (message.params as { requestId?: unknown } | undefined)
       ?.requestId;
     if (typeof requestId === "string") {
@@ -879,10 +886,7 @@ function handleExecutionApprovalNotification(
   ) {
     return false;
   }
-  const request = parseExecutionApprovalRequest(
-    projectId,
-    message.params,
-  );
+  const request = parseExecutionApprovalRequest(projectId, message.params);
   if (!request) return true;
   const key = taskExecutionGrantKey(request);
   const granted =
@@ -961,10 +965,7 @@ function handleExecutionApprovalRespond(
   const response = parseExecutionApprovalResponse(value);
   const pending = pendingExecutionApprovals.get(response.requestId);
   if (!pending) throw new Error("This approval request is no longer pending.");
-  if (
-    response.scope === "project" &&
-    !pending.request.projectScopeAvailable
-  ) {
+  if (response.scope === "project" && !pending.request.projectScopeAvailable) {
     throw new Error(
       "Permanent project approval is unavailable outside a project.",
     );
@@ -1012,10 +1013,7 @@ function parseExecutionApprovalResponse(
   };
 }
 
-function handleExecutionPolicyGet(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleExecutionPolicyGet(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (typeof value !== "string") throw new TypeError("projectId is required");
   requireProject(value);
@@ -1040,10 +1038,7 @@ function handleExecutionPolicyRevoke(
   }
   requireProject(request.projectId);
   if (!executionPolicyStore) throw new Error("Execution policy is unavailable");
-  return executionPolicyStore.revoke(
-    request.projectId,
-    request.permissionKey,
-  );
+  return executionPolicyStore.revoke(request.projectId, request.permissionKey);
 }
 
 function projectForRequest(request: JsonRpcRequest) {
@@ -1077,8 +1072,7 @@ function workspaceForRequest(
     if (workspacePath) {
       return (
         project.conversations.find(
-          (conversation) =>
-            conversation.workspace?.path === workspacePath,
+          (conversation) => conversation.workspace?.path === workspacePath,
         )?.workspace ?? folderWorkspace(workspacePath)
       );
     }
@@ -1109,7 +1103,10 @@ function developmentModeForThreadStart(
   throw new Error("Invalid task development mode");
 }
 
-async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void> {
+async function handleRequest(
+  event: IpcMainEvent,
+  value: unknown,
+): Promise<void> {
   if (
     !mainWindow ||
     event.sender !== mainWindow.webContents ||
@@ -1286,10 +1283,7 @@ async function handleSettingsGet(event: IpcMainInvokeEvent) {
   return settingsStore.snapshot();
 }
 
-async function handleSettingsUpdate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleSettingsUpdate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!settingsStore) throw new Error("Settings are not available");
 
@@ -1308,8 +1302,9 @@ async function handleSettingsUpdate(
       JSON.stringify(nextRuntimeSettings)
   ) {
     const environment = runtimeEnvironment(nextRuntimeSettings);
-    for (const runtime of appServers.values()) {
+    for (const [runtimeId, runtime] of appServers) {
       if (runtime.process instanceof AppServerProcess) {
+        runningThreads.clearRuntime(runtimeId);
         runtime.process.restart({
           ...environment,
           THREADLIGHT_PROJECT_ROOT: runtime.projectRoot,
@@ -1323,10 +1318,7 @@ async function handleSettingsUpdate(
   return snapshot;
 }
 
-function handleDiagnosticsGet(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleDiagnosticsGet(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const project = requireProject(value);
   if (isRemoteHost()) {
@@ -1366,10 +1358,7 @@ async function handleDiagnosticsExport(
   });
 }
 
-function handleProviderTest(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleProviderTest(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!settingsStore) throw new Error("Settings are not available");
   const request = parseProviderTestRequest(value);
@@ -1377,10 +1366,7 @@ function handleProviderTest(
     if (!remoteHost) throw new Error("Remote Host is not connected.");
     return remoteHost.testProvider(request);
   }
-  return testProviderConnection(
-    request,
-    settingsStore.runtimeSettings(),
-  );
+  return testProviderConnection(request, settingsStore.runtimeSettings());
 }
 
 async function handleProjectsGet(event: IpcMainInvokeEvent) {
@@ -1393,10 +1379,7 @@ async function handleProjectsGet(event: IpcMainInvokeEvent) {
   return currentProjectsSnapshot();
 }
 
-function handleAutomationsGet(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleAutomationsGet(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const project = requireProject(value);
   if (isRemoteHost()) {
@@ -1407,10 +1390,7 @@ function handleAutomationsGet(
   return automationStore.snapshot(project.id);
 }
 
-function handleAutomationCreate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleAutomationCreate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const request = parseAutomationRequest(value);
   requireProject(request.projectId);
@@ -1424,10 +1404,7 @@ function handleAutomationCreate(
   return snapshot;
 }
 
-function handleAutomationUpdate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleAutomationUpdate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const request = parseAutomationRequest(value, true);
   requireProject(request.projectId);
@@ -1441,10 +1418,7 @@ function handleAutomationUpdate(
   return snapshot;
 }
 
-function handleAutomationDelete(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleAutomationDelete(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const target = parseAutomationTarget(value);
   requireProject(target.projectId);
@@ -1458,10 +1432,7 @@ function handleAutomationDelete(
   return snapshot;
 }
 
-function handleAutomationRun(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleAutomationRun(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const target = parseAutomationTarget(value);
   requireProject(target.projectId);
@@ -1480,10 +1451,7 @@ function handleAutomationRun(
   return automationStore.snapshot(target.projectId);
 }
 
-async function handleProjectOpen(
-  event: IpcMainInvokeEvent,
-  value?: unknown,
-) {
+async function handleProjectOpen(event: IpcMainInvokeEvent, value?: unknown) {
   requireTrustedSender(event);
   if (!projectStore || !mainWindow) {
     throw new Error("Projects are not available");
@@ -1529,7 +1497,7 @@ async function handleProjectOpen(
       folderWorkspace(activeProject.basePath),
     );
   }
-  return snapshot;
+  return withRunningThreads(snapshot);
 }
 
 async function handleStandaloneCreate(event: IpcMainInvokeEvent) {
@@ -1545,7 +1513,7 @@ async function handleStandaloneCreate(event: IpcMainInvokeEvent) {
       remoteSnapshot.activeProjectId,
     );
   } else {
-    snapshot = projectStore.activateStandalone();
+    snapshot = withRunningThreads(projectStore.activateStandalone());
   }
   const activeProject = currentActiveProject();
   if (activeProject) {
@@ -1564,12 +1532,7 @@ async function handleRemoteRuntimeConnect(
   value: unknown,
 ) {
   requireTrustedSender(event);
-  if (
-    !projectStore ||
-    !hostStore ||
-    !hostCredentials ||
-    !mainWindow
-  ) {
+  if (!projectStore || !hostStore || !hostCredentials || !mainWindow) {
     throw new Error("Threadlight Host is not available.");
   }
   const request = parseRemoteRuntimeConnectRequest(value);
@@ -1601,10 +1564,7 @@ function handleHostsGet(event: IpcMainInvokeEvent) {
   return hostStore.snapshot();
 }
 
-async function handleHostActivate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleHostActivate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!hostStore || !projectStore || !hostCredentials) {
     throw new Error("Hosts are not available.");
@@ -1635,16 +1595,9 @@ async function handleHostActivate(
   return hostStore.snapshot();
 }
 
-async function handleHostUpdate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleHostUpdate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
-  if (
-    !hostStore ||
-    !hostCredentials ||
-    !remoteProjectStore
-  ) {
+  if (!hostStore || !hostCredentials || !remoteProjectStore) {
     throw new Error("Hosts are not available.");
   }
   const request = parseHostUpdateRequest(value);
@@ -1697,10 +1650,7 @@ async function handleHostUpdate(
   return snapshot;
 }
 
-function handleHostDelete(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+function handleHostDelete(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!hostStore || !hostCredentials || !remoteProjectStore) {
     throw new Error("Hosts are not available.");
@@ -1746,11 +1696,14 @@ async function handleProjectActivate(
   if (!projectStore || !mainWindow) {
     throw new Error("Projects are not available");
   }
-  if (typeof value !== "string" || !value) throw new Error("Invalid project id");
+  if (typeof value !== "string" || !value)
+    throw new Error("Invalid project id");
 
   const snapshot = isRemoteHost()
     ? syncRemoteProjects(await remoteHost!.client.projects(), value)
-    : (projectStore.activate(value) as DesktopProjectsSnapshot);
+    : withRunningThreads(
+        projectStore.activate(value) as DesktopProjectsSnapshot,
+      );
   const activeProject = currentActiveProject();
   if (activeProject) {
     ensureAppServer(
@@ -1763,29 +1716,22 @@ async function handleProjectActivate(
   return snapshot;
 }
 
-async function handleProjectUpdate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleProjectUpdate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!projectStore) throw new Error("Projects are not available");
   const update = parseProjectMetadataUpdate(value);
   if (isRemoteHost()) {
     if (!remoteHost) throw new Error("Remote Host is not connected.");
-    return syncRemoteProjects(
-      await remoteHost.client.updateProject(update),
-    );
+    return syncRemoteProjects(await remoteHost.client.updateProject(update));
   }
-  return projectStore.updateProject(update);
+  return withRunningThreads(projectStore.updateProject(update));
 }
 
-async function handleProjectDelete(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleProjectDelete(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!projectStore) throw new Error("Projects are not available");
-  if (typeof value !== "string" || !value) throw new Error("Invalid project id");
+  if (typeof value !== "string" || !value)
+    throw new Error("Invalid project id");
   const deletingActive = currentActiveProject()?.id === value;
   const project = currentProject(value);
   const deletedThreadIds = new Set(
@@ -1820,7 +1766,7 @@ async function handleProjectDelete(
       );
     }
   }
-  return snapshot;
+  return withRunningThreads(snapshot);
 }
 
 async function handleProjectOpenersGet(
@@ -1914,7 +1860,7 @@ async function handleConversationUpsert(
       await remoteHost.client.upsertConversation(update),
     );
   }
-  return projectStore.upsertConversation(update);
+  return withRunningThreads(projectStore.upsertConversation(update));
 }
 
 async function handleConversationRead(
@@ -1930,7 +1876,7 @@ async function handleConversationRead(
       await remoteHost.client.markConversationRead(target),
     );
   }
-  return projectStore.markConversationRead(target);
+  return withRunningThreads(projectStore.markConversationRead(target));
 }
 
 async function handleConversationUpdate(
@@ -1946,7 +1892,7 @@ async function handleConversationUpdate(
       await remoteHost.client.updateConversation(update),
     );
   }
-  return projectStore.updateConversation(update);
+  return withRunningThreads(projectStore.updateConversation(update));
 }
 
 async function handleConversationRecover(
@@ -1969,7 +1915,7 @@ async function handleConversationRecover(
   if (request.replacementId) {
     threadProjects.set(request.replacementId, request.projectId);
   }
-  return snapshot;
+  return withRunningThreads(snapshot);
 }
 
 async function handleConversationDelete(
@@ -1997,14 +1943,12 @@ async function handleConversationDelete(
       .catch(() => undefined);
   }
   const snapshot = isRemoteHost()
-    ? syncRemoteProjects(
-        await remoteHost!.client.deleteConversation(target),
-      )
+    ? syncRemoteProjects(await remoteHost!.client.deleteConversation(target))
     : projectStore.deleteConversation(target);
   if (workspace) {
     await disposeTaskWorkspace(workspace).catch(() => undefined);
   }
-  return snapshot;
+  return withRunningThreads(snapshot);
 }
 
 async function handleConversationChangesGet(
@@ -2020,10 +1964,7 @@ async function handleConversationChangesGet(
   const workspace = workspaceForThread(project, request.threadId);
   if (project.runtime?.kind === "remote") {
     if (!remoteHost) throw new Error("Remote Host is not connected.");
-    return remoteHost.client.conversationChanges(
-      project.id,
-      request.threadId,
-    );
+    return remoteHost.client.conversationChanges(project.id, request.threadId);
   }
   return conversationChangeTracker.changes(
     project.id,
@@ -2284,10 +2225,7 @@ function requireCodeHostDelivery(request: DesktopWorktreeDeliveryRequest) {
   };
 }
 
-async function handleWorkspaceList(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleWorkspaceList(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!conversationChangeTracker) {
     throw new Error("Workspace browsing is not available");
@@ -2314,10 +2252,7 @@ async function handleWorkspaceList(
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
     : folderWorkspace(project.basePath);
-  return conversationChangeTracker.listWorkspace(
-    workspace.path,
-    request.path,
-  );
+  return conversationChangeTracker.listWorkspace(workspace.path, request.path);
 }
 
 async function handleWorkspaceFileGet(
@@ -2369,7 +2304,9 @@ async function handleWorkspaceFileReveal(
   const request = parseWorkspaceFileRequest(value);
   const project = requireProject(request.projectId);
   if (project.runtime?.kind === "remote") {
-    throw new Error("Remote files cannot be revealed in the local file manager.");
+    throw new Error(
+      "Remote files cannot be revealed in the local file manager.",
+    );
   }
   const workspace = request.threadId
     ? workspaceForThread(project, request.threadId)
@@ -2379,6 +2316,28 @@ async function handleWorkspaceFileReveal(
     request.path,
   );
   shell.showItemInFolder(absolutePath);
+}
+
+async function handleWorkspaceFileDownload(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): Promise<ArrayBuffer> {
+  requireTrustedSender(event);
+  const request = parseWorkspaceFileRequest(value);
+  const project = requireProject(request.projectId);
+  if (project.runtime?.kind !== "remote") {
+    throw new Error(
+      "Local workspace files should be opened in the file manager.",
+    );
+  }
+  if (request.threadId && remoteHost) {
+    return remoteHost.client.downloadConversationWorkspaceFile(
+      project.id,
+      request.threadId,
+      request.path,
+    );
+  }
+  return requireRemoteRuntime(project.id).downloadWorkspaceFile(request.path);
 }
 
 async function handleSystemFileChoose(
@@ -2397,10 +2356,7 @@ async function handleSystemFileChoose(
   return resolveSystemFilePath(path);
 }
 
-async function handleSystemFileGet(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleSystemFileGet(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   const request = parseSystemFileRequest(value);
   if (isRemoteHost()) {
@@ -2410,10 +2366,7 @@ async function handleSystemFileGet(
   return readSystemFile(request.path);
 }
 
-async function handleSystemFileList(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleSystemFileList(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!isRemoteHost() || !remoteHost) {
     throw new Error("Remote Host file browsing is not active.");
@@ -2433,6 +2386,17 @@ async function handleSystemFileReveal(
     parseSystemFileRequest(value).path,
   );
   shell.showItemInFolder(absolutePath);
+}
+
+async function handleSystemFileDownload(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+): Promise<ArrayBuffer> {
+  requireTrustedSender(event);
+  if (!isRemoteHost() || !remoteHost) {
+    throw new Error("Local system files should be opened in the file manager.");
+  }
+  return remoteHost.client.downloadFile(parseSystemFileRequest(value).path);
 }
 
 async function handleProjectMemoryGet(
@@ -2539,10 +2503,8 @@ async function handleAttachmentReference(
   if (isRemoteHost()) {
     const connection = remoteHost;
     if (!connection) throw new Error("Remote Host is not connected.");
-    return uploadAttachmentReference(
-      request,
-      activeProject.id,
-      (upload) => connection.uploadAttachment(upload),
+    return uploadAttachmentReference(request, activeProject.id, (upload) =>
+      connection.uploadAttachment(upload),
     );
   }
   return createAttachmentReference(request);
@@ -2662,10 +2624,7 @@ function normalizeRemoteRuntimeEndpoint(value: string): string {
   return url.toString().replace(/\/$/, "");
 }
 
-async function handleTerminalCreate(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-) {
+async function handleTerminalCreate(event: IpcMainInvokeEvent, value: unknown) {
   requireTrustedSender(event);
   if (!terminalService) throw new Error("Terminal is not available");
   const request = parseTerminalCreateRequest(value);
@@ -2719,10 +2678,7 @@ function handleTerminalResize(event: IpcMainEvent, value: unknown): void {
   }
 }
 
-function handleTerminalClose(
-  event: IpcMainInvokeEvent,
-  value: unknown,
-): void {
+function handleTerminalClose(event: IpcMainInvokeEvent, value: unknown): void {
   requireTrustedSender(event);
   if (!terminalService) return;
   if (typeof value !== "string" || !value) {
@@ -2753,10 +2709,7 @@ function handleComputerPreviewResize(
   computerService.resizePictureInPicture(value);
 }
 
-function handleComputerPreviewDrag(
-  event: IpcMainEvent,
-  value: unknown,
-): void {
+function handleComputerPreviewDrag(event: IpcMainEvent, value: unknown): void {
   if (
     !computerService?.ownsPreviewWebContents(event.sender) ||
     !value ||
@@ -2767,9 +2720,7 @@ function handleComputerPreviewDrag(
   }
   const drag = value as Record<string, unknown>;
   if (
-    (drag.phase !== "start" &&
-      drag.phase !== "move" &&
-      drag.phase !== "end") ||
+    (drag.phase !== "start" && drag.phase !== "move" && drag.phase !== "end") ||
     typeof drag.x !== "number" ||
     typeof drag.y !== "number"
   ) {
@@ -2780,7 +2731,8 @@ function handleComputerPreviewDrag(
 
 function requireProject(value: unknown) {
   if (!projectStore) throw new Error("Projects are not available");
-  if (typeof value !== "string" || !value) throw new Error("Invalid project id");
+  if (typeof value !== "string" || !value)
+    throw new Error("Invalid project id");
   const project = currentProject(value);
   if (!project) throw new Error(`Unknown project: ${value}`);
   return project;
@@ -2792,9 +2744,7 @@ function requireTrustedSender(event: IpcMainInvokeEvent): void {
   }
 }
 
-function isTrustedSender(
-  event: IpcMainEvent | IpcMainInvokeEvent,
-): boolean {
+function isTrustedSender(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   return (
     !!mainWindow &&
     event.sender === mainWindow.webContents &&
@@ -2929,9 +2879,7 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   } as DesktopSettingsUpdate;
 }
 
-function parseProviderTestRequest(
-  value: unknown,
-): DesktopProviderTestRequest {
+function parseProviderTestRequest(value: unknown): DesktopProviderTestRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Invalid provider test request");
   }
@@ -2987,9 +2935,7 @@ function isTheme(
 
 function isProjectOpener(value: unknown): value is DesktopProjectOpener {
   return (
-    typeof value === "string" &&
-    value.trim().length > 0 &&
-    value.length <= 255
+    typeof value === "string" && value.trim().length > 0 && value.length <= 255
   );
 }
 
@@ -3062,9 +3008,7 @@ function parseConversationMetadataUpdate(
     projectId: update.projectId,
     id: update.id,
     ...(typeof update.title === "string" ? { title: update.title } : {}),
-    ...(typeof update.pinned === "boolean"
-      ? { pinned: update.pinned }
-      : {}),
+    ...(typeof update.pinned === "boolean" ? { pinned: update.pinned } : {}),
     ...(typeof update.archived === "boolean"
       ? { archived: update.archived }
       : {}),
@@ -3101,8 +3045,7 @@ function parseProjectOpenWithRequest(
   if (
     typeof request.projectId !== "string" ||
     !request.projectId ||
-    (request.threadId !== undefined &&
-      typeof request.threadId !== "string") ||
+    (request.threadId !== undefined && typeof request.threadId !== "string") ||
     !isProjectOpener(request.opener)
   ) {
     throw new Error("Invalid project opener request");
@@ -3293,8 +3236,7 @@ function parseWorkspaceListRequest(
   const request = value as Record<string, unknown>;
   if (
     typeof request.projectId !== "string" ||
-    (request.threadId !== undefined &&
-      typeof request.threadId !== "string") ||
+    (request.threadId !== undefined && typeof request.threadId !== "string") ||
     (request.path !== undefined && typeof request.path !== "string")
   ) {
     throw new Error("Invalid workspace list request");
@@ -3317,8 +3259,7 @@ function parseWorkspaceFileRequest(
   const request = value as Record<string, unknown>;
   if (
     typeof request.projectId !== "string" ||
-    (request.threadId !== undefined &&
-      typeof request.threadId !== "string") ||
+    (request.threadId !== undefined && typeof request.threadId !== "string") ||
     typeof request.path !== "string"
   ) {
     throw new Error("Invalid workspace file request");
@@ -3332,9 +3273,7 @@ function parseWorkspaceFileRequest(
   };
 }
 
-function parseSystemFileRequest(
-  value: unknown,
-): DesktopSystemFileRequest {
+function parseSystemFileRequest(value: unknown): DesktopSystemFileRequest {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Invalid system file request");
   }
@@ -3376,9 +3315,7 @@ function parseSearchRequest(value: unknown): DesktopSearchRequest {
   };
 }
 
-function parseAutomationRequest(
-  value: unknown,
-): DesktopAutomationCreateRequest;
+function parseAutomationRequest(value: unknown): DesktopAutomationCreateRequest;
 function parseAutomationRequest(
   value: unknown,
   update: true,
@@ -3436,9 +3373,7 @@ function parseAutomationRequest(
         : {}),
     },
   };
-  return update
-    ? { ...parsed, id: request.id as string }
-    : parsed;
+  return update ? { ...parsed, id: request.id as string } : parsed;
 }
 
 function parseAutomationTarget(value: unknown): DesktopAutomationTarget {
@@ -3489,8 +3424,7 @@ function parseTerminalCreateRequest(
   const request = value as Record<string, unknown>;
   if (
     typeof request.projectId !== "string" ||
-    (request.threadId !== undefined &&
-      typeof request.threadId !== "string") ||
+    (request.threadId !== undefined && typeof request.threadId !== "string") ||
     (request.workspace !== undefined &&
       request.workspace !== "task" &&
       request.workspace !== "original") ||
@@ -3615,9 +3549,7 @@ function deliveryFailedNotification(
   };
 }
 
-function deliveryStateFromNotification(
-  message: JsonRpcOutgoing,
-):
+function deliveryStateFromNotification(message: JsonRpcOutgoing):
   | {
       status: "syncing" | "synced" | "conflict" | "failed";
       source: HostDeliverySource;
@@ -3637,10 +3569,7 @@ function deliveryStateFromNotification(
   if (params?.source !== "lifecycle" && params?.source !== "retry") return;
   return {
     status: message.method.slice("delivery/".length) as
-      | "syncing"
-      | "synced"
-      | "conflict"
-      | "failed",
+      "syncing" | "synced" | "conflict" | "failed",
     source: params.source,
     ...(typeof params.error === "string" ? { error: params.error } : {}),
   };
@@ -3919,7 +3848,8 @@ function isJsonRpcRequest(value: unknown): value is JsonRpcRequest {
 function extractId(value: unknown): string | number | null | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return;
   const id = (value as Record<string, unknown>).id;
-  if (id === null || typeof id === "string" || typeof id === "number") return id;
+  if (id === null || typeof id === "string" || typeof id === "number")
+    return id;
 }
 
 function requestKey(id: JsonRpcId): string {
@@ -3966,9 +3896,7 @@ function appServerEnvironment(
   return {
     ...runtimeEnvironment(settings),
     THREADLIGHT_PROJECT_ROOT: projectRoot,
-    ...(scope === "standalone"
-      ? { THREADLIGHT_TASK_SCOPE: "standalone" }
-      : {}),
+    ...(scope === "standalone" ? { THREADLIGHT_TASK_SCOPE: "standalone" } : {}),
   };
 }
 
@@ -3996,9 +3924,7 @@ function processSessionIdFromMessage(
     const output = JSON.parse(event.result.output) as {
       sessionId?: unknown;
     };
-    return typeof output.sessionId === "string"
-      ? output.sessionId
-      : undefined;
+    return typeof output.sessionId === "string" ? output.sessionId : undefined;
   } catch {
     return;
   }
@@ -4074,14 +4000,10 @@ app.whenReady().then(async () => {
     join(threadlightHome, "worktrees"),
     { standaloneRoot: join(threadlightHome, "standalone", "workspaces") },
   );
-  settingsStore = new SettingsStore(
-    join(threadlightHome, "settings.json"),
-    {
-      encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
-      decrypt: (value) =>
-        safeStorage.decryptString(Buffer.from(value, "base64")),
-    },
-  );
+  settingsStore = new SettingsStore(join(threadlightHome, "settings.json"), {
+    encrypt: (value) => safeStorage.encryptString(value).toString("base64"),
+    decrypt: (value) => safeStorage.decryptString(Buffer.from(value, "base64")),
+  });
   connectionStore = new ConnectionStore(
     join(threadlightHome, "connection-store.json"),
     {
@@ -4132,10 +4054,7 @@ app.whenReady().then(async () => {
     const savedHost = hostStore.remote(savedHostId);
     const savedToken = hostCredentials.get(savedHostId);
     if (savedHost && savedToken) {
-      remoteHost = new RemoteHostConnection(
-        savedHost.endpoint,
-        savedToken,
-      );
+      remoteHost = new RemoteHostConnection(savedHost.endpoint, savedToken);
       projectStore = remoteProjectStore;
     } else {
       hostStore.activate(LOCAL_HOST_ID);
@@ -4180,9 +4099,7 @@ app.whenReady().then(async () => {
     if (!window || window.isDestroyed()) return;
     window.webContents.send(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, snapshot);
   }, computerPermissionService);
-  terminalService = new TerminalSessionManager(
-    sendTerminalEvent,
-  );
+  terminalService = new TerminalSessionManager(sendTerminalEvent);
   protocol.handle("threadlight-computer", (request) => {
     if (request.url === COMPUTER_CAPTURE_URL) {
       return new Response(computerCaptureHtml(), {
@@ -4241,15 +4158,12 @@ app.whenReady().then(async () => {
     void handleRequest(event, value);
   });
   ipcMain.handle(DESKTOP_SETTINGS_GET_CHANNEL, handleSettingsGet);
-  ipcMain.handle(
-    DESKTOP_CLIPBOARD_WRITE_CHANNEL,
-    (_event, value: unknown) => {
-      if (typeof value !== "string") {
-        throw new TypeError("Clipboard text must be a string");
-      }
-      clipboard.writeText(value);
-    },
-  );
+  ipcMain.handle(DESKTOP_CLIPBOARD_WRITE_CHANNEL, (_event, value: unknown) => {
+    if (typeof value !== "string") {
+      throw new TypeError("Clipboard text must be a string");
+    }
+    clipboard.writeText(value);
+  });
   ipcMain.handle(
     DESKTOP_EXTERNAL_OPEN_CHANNEL,
     async (event, value: unknown) => {
@@ -4266,10 +4180,7 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);
   ipcMain.handle(DESKTOP_DIAGNOSTICS_GET_CHANNEL, handleDiagnosticsGet);
-  ipcMain.handle(
-    DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL,
-    handleDiagnosticsExport,
-  );
+  ipcMain.handle(DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL, handleDiagnosticsExport);
   ipcMain.handle(DESKTOP_PROVIDER_TEST_CHANNEL, handleProviderTest);
   ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
   ipcMain.handle(DESKTOP_HOSTS_GET_CHANNEL, handleHostsGet);
@@ -4278,10 +4189,7 @@ app.whenReady().then(async () => {
   ipcMain.handle(DESKTOP_HOST_DELETE_CHANNEL, handleHostDelete);
   ipcMain.handle(DESKTOP_HOST_DIRECTORIES_CHANNEL, handleHostDirectories);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_CHANNEL, handleProjectOpen);
-  ipcMain.handle(
-    DESKTOP_STANDALONE_CREATE_CHANNEL,
-    handleStandaloneCreate,
-  );
+  ipcMain.handle(DESKTOP_STANDALONE_CREATE_CHANNEL, handleStandaloneCreate);
   ipcMain.handle(
     DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
     handleRemoteRuntimeConnect,
@@ -4291,39 +4199,21 @@ app.whenReady().then(async () => {
   ipcMain.handle(DESKTOP_PROJECT_DELETE_CHANNEL, handleProjectDelete);
   ipcMain.handle(DESKTOP_PROJECT_OPENERS_GET_CHANNEL, handleProjectOpenersGet);
   ipcMain.handle(DESKTOP_PROJECT_OPEN_WITH_CHANNEL, handleProjectOpenWith);
-  ipcMain.handle(
-    DESKTOP_CONVERSATION_UPSERT_CHANNEL,
-    handleConversationUpsert,
-  );
-  ipcMain.handle(
-    DESKTOP_CONVERSATION_UPDATE_CHANNEL,
-    handleConversationUpdate,
-  );
+  ipcMain.handle(DESKTOP_CONVERSATION_UPSERT_CHANNEL, handleConversationUpsert);
+  ipcMain.handle(DESKTOP_CONVERSATION_UPDATE_CHANNEL, handleConversationUpdate);
   ipcMain.handle(DESKTOP_CONVERSATION_READ_CHANNEL, handleConversationRead);
   ipcMain.handle(
     DESKTOP_CONVERSATION_RECOVER_CHANNEL,
     handleConversationRecover,
   );
-  ipcMain.handle(
-    DESKTOP_CONVERSATION_DELETE_CHANNEL,
-    handleConversationDelete,
-  );
+  ipcMain.handle(DESKTOP_CONVERSATION_DELETE_CHANNEL, handleConversationDelete);
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_GET_CHANNEL, handleProjectMemoryGet);
   ipcMain.handle(DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL, handleProjectMemoryOpen);
   ipcMain.handle(DESKTOP_SEARCH_CHANNEL, handleSearch);
   ipcMain.handle(DESKTOP_AUTOMATIONS_GET_CHANNEL, handleAutomationsGet);
-  ipcMain.handle(
-    DESKTOP_AUTOMATIONS_CREATE_CHANNEL,
-    handleAutomationCreate,
-  );
-  ipcMain.handle(
-    DESKTOP_AUTOMATIONS_UPDATE_CHANNEL,
-    handleAutomationUpdate,
-  );
-  ipcMain.handle(
-    DESKTOP_AUTOMATIONS_DELETE_CHANNEL,
-    handleAutomationDelete,
-  );
+  ipcMain.handle(DESKTOP_AUTOMATIONS_CREATE_CHANNEL, handleAutomationCreate);
+  ipcMain.handle(DESKTOP_AUTOMATIONS_UPDATE_CHANNEL, handleAutomationUpdate);
+  ipcMain.handle(DESKTOP_AUTOMATIONS_DELETE_CHANNEL, handleAutomationDelete);
   ipcMain.handle(DESKTOP_AUTOMATIONS_RUN_CHANNEL, handleAutomationRun);
   ipcMain.handle(DESKTOP_AUDIO_TRANSCRIBE_CHANNEL, handleAudioTranscription);
   ipcMain.handle(
@@ -4392,12 +4282,20 @@ app.whenReady().then(async () => {
   ipcMain.handle(DESKTOP_WORKSPACE_LIST_CHANNEL, handleWorkspaceList);
   ipcMain.handle(DESKTOP_WORKSPACE_FILE_GET_CHANNEL, handleWorkspaceFileGet);
   ipcMain.handle(
+    DESKTOP_WORKSPACE_FILE_DOWNLOAD_CHANNEL,
+    handleWorkspaceFileDownload,
+  );
+  ipcMain.handle(
     DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
     handleWorkspaceFileReveal,
   );
   ipcMain.handle(DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL, handleSystemFileChoose);
   ipcMain.handle(DESKTOP_SYSTEM_FILE_LIST_CHANNEL, handleSystemFileList);
   ipcMain.handle(DESKTOP_SYSTEM_FILE_GET_CHANNEL, handleSystemFileGet);
+  ipcMain.handle(
+    DESKTOP_SYSTEM_FILE_DOWNLOAD_CHANNEL,
+    handleSystemFileDownload,
+  );
   ipcMain.handle(DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL, handleSystemFileReveal);
   ipcMain.handle(
     DESKTOP_EXECUTION_APPROVAL_RESPOND_CHANNEL,
@@ -4419,10 +4317,7 @@ app.whenReady().then(async () => {
     DESKTOP_COMPUTER_PREVIEW_RESIZE_CHANNEL,
     handleComputerPreviewResize,
   );
-  ipcMain.on(
-    DESKTOP_COMPUTER_PREVIEW_DRAG_CHANNEL,
-    handleComputerPreviewDrag,
-  );
+  ipcMain.on(DESKTOP_COMPUTER_PREVIEW_DRAG_CHANNEL, handleComputerPreviewDrag);
   createWindow();
   automationScheduler.start();
 

@@ -1,7 +1,5 @@
-export {
-  ProjectStore,
-  type ProjectStoreOptions,
-} from "./project-store.js";
+export { ProjectStore, type ProjectStoreOptions } from "./project-store.js";
+export { RunningThreadRegistry } from "./running-thread-registry.js";
 export {
   DEFAULT_CUSTOM_BASE_URL,
   DEFAULT_CUSTOM_MODEL,
@@ -49,10 +47,7 @@ export {
   matchingSnippet,
   type SearchRequest,
 } from "./project-search.js";
-export {
-  isBinaryFileContent,
-  MAX_FILE_PREVIEW_BYTES,
-} from "./file-preview.js";
+export { isBinaryFileContent, MAX_FILE_PREVIEW_BYTES } from "./file-preview.js";
 export {
   ConversationChangeTracker,
   ConversationRestoreConflictError,

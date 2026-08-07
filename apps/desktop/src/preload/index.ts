@@ -63,6 +63,7 @@ import {
   DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL,
   DESKTOP_SYSTEM_FILE_LIST_CHANNEL,
   DESKTOP_SYSTEM_FILE_GET_CHANNEL,
+  DESKTOP_SYSTEM_FILE_DOWNLOAD_CHANNEL,
   DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL,
   DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL,
   DESKTOP_EXECUTION_APPROVAL_RESOLVED_CHANNEL,
@@ -75,6 +76,7 @@ import {
   DESKTOP_TERMINAL_RESIZE_CHANNEL,
   DESKTOP_TERMINAL_WRITE_CHANNEL,
   DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
+  DESKTOP_WORKSPACE_FILE_DOWNLOAD_CHANNEL,
   DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
   DESKTOP_WORKSPACE_LIST_CHANNEL,
   type DesktopApi,
@@ -91,7 +93,10 @@ const api: DesktopApi = {
     ipcRenderer.send(DESKTOP_REQUEST_CHANNEL, message);
   },
   onMessage(listener) {
-    const handler = (_event: Electron.IpcRendererEvent, message: JsonRpcOutgoing) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      message: JsonRpcOutgoing,
+    ) => {
       listener(message);
     };
     ipcRenderer.on(DESKTOP_MESSAGE_CHANNEL, handler);
@@ -134,10 +139,7 @@ const api: DesktopApi = {
     return ipcRenderer.invoke(DESKTOP_HOSTS_GET_CHANNEL);
   },
   connectRemoteRuntime(request) {
-    return ipcRenderer.invoke(
-      DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL,
-      request,
-    );
+    return ipcRenderer.invoke(DESKTOP_REMOTE_RUNTIME_CONNECT_CHANNEL, request);
   },
   activateHost(hostId) {
     return ipcRenderer.invoke(DESKTOP_HOST_ACTIVATE_CHANNEL, hostId);
@@ -237,10 +239,8 @@ const api: DesktopApi = {
       );
   },
   onExecutionApprovalResolved(listener) {
-    const handler = (
-      _event: Electron.IpcRendererEvent,
-      requestId: string,
-    ) => listener(requestId);
+    const handler = (_event: Electron.IpcRendererEvent, requestId: string) =>
+      listener(requestId);
     ipcRenderer.on(DESKTOP_EXECUTION_APPROVAL_RESOLVED_CHANNEL, handler);
     return () =>
       ipcRenderer.removeListener(
@@ -340,7 +340,10 @@ const api: DesktopApi = {
       ipcRenderer.removeListener(DESKTOP_TERMINAL_EVENT_CHANNEL, handler);
   },
   getConversationChanges(request) {
-    return ipcRenderer.invoke(DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL, request);
+    return ipcRenderer.invoke(
+      DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL,
+      request,
+    );
   },
   restoreConversationChanges(request) {
     return ipcRenderer.invoke(
@@ -361,16 +364,10 @@ const api: DesktopApi = {
     );
   },
   applyWorktreeDelivery(request) {
-    return ipcRenderer.invoke(
-      DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL,
-      request,
-    );
+    return ipcRenderer.invoke(DESKTOP_WORKTREE_DELIVERY_APPLY_CHANNEL, request);
   },
   undoWorktreeDelivery(request) {
-    return ipcRenderer.invoke(
-      DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL,
-      request,
-    );
+    return ipcRenderer.invoke(DESKTOP_WORKTREE_DELIVERY_UNDO_CHANNEL, request);
   },
   commitWorktreeDelivery(request) {
     return ipcRenderer.invoke(
@@ -402,6 +399,9 @@ const api: DesktopApi = {
   getWorkspaceFile(request) {
     return ipcRenderer.invoke(DESKTOP_WORKSPACE_FILE_GET_CHANNEL, request);
   },
+  downloadWorkspaceFile(request) {
+    return ipcRenderer.invoke(DESKTOP_WORKSPACE_FILE_DOWNLOAD_CHANNEL, request);
+  },
   revealWorkspaceFile(request) {
     return ipcRenderer.invoke(DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL, request);
   },
@@ -413,6 +413,9 @@ const api: DesktopApi = {
   },
   getSystemFile(request) {
     return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_GET_CHANNEL, request);
+  },
+  downloadSystemFile(request) {
+    return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_DOWNLOAD_CHANNEL, request);
   },
   revealSystemFile(request) {
     return ipcRenderer.invoke(DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL, request);

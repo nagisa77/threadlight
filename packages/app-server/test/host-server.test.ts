@@ -21,19 +21,14 @@ import {
   type CodeHostPullRequest,
   type CodeHostProvider,
 } from "@threadlight/host-core";
-import {
-  browserTerminalProtocols,
-  HttpHostClient,
-} from "@threadlight/client";
+import { browserTerminalProtocols, HttpHostClient } from "@threadlight/client";
 import { createRemoteWebSession } from "@threadlight/web-runtime";
 import type {
   JsonRpcOutgoing,
   JsonRpcRequest,
   TerminalSessionEvent,
 } from "@threadlight/protocol";
-import type {
-  TerminalSessionController,
-} from "@threadlight/terminal-core";
+import type { TerminalSessionController } from "@threadlight/terminal-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket, { type RawData } from "ws";
 
@@ -140,13 +135,10 @@ describe("ThreadlightHostServer", () => {
       createId: () => "project-1",
     });
     projects.register(workspace);
-    const settings = new SettingsStore(
-      join(root, "home", "settings.json"),
-      {
-        encrypt: (value) => value,
-        decrypt: (value) => value,
-      },
-    );
+    const settings = new SettingsStore(join(root, "home", "settings.json"), {
+      encrypt: (value) => value,
+      decrypt: (value) => value,
+    });
     const peer = new ScriptedRuntimePeer((request, emit) => {
       emit({
         jsonrpc: "2.0",
@@ -183,27 +175,104 @@ describe("ThreadlightHostServer", () => {
     await expect(events.nextFrame()).resolves.toBe(": ping");
     await expect(events.nextFrame()).resolves.toBe(": ping");
 
-    await authenticatedJson(
-      `${endpoint}/v1/projects/project-1/runtime/rpc`,
-      {
-        method: "POST",
-        body: {
-          jsonrpc: "2.0",
-          id: 1,
-          method: "initialize",
-        },
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
       },
-    );
+    });
     const notification = {
       jsonrpc: "2.0",
       method: "turn/completed",
       params: { threadId: "thread-1", output: "done" },
     } satisfies JsonRpcOutgoing;
     peer.emit(notification);
-    await expect(events.nextData()).resolves.toBe(
-      JSON.stringify(notification),
-    );
+    await expect(events.nextData()).resolves.toBe(JSON.stringify(notification));
     await events.cancel();
+  });
+
+  it("reports live threads after a display client refreshes", async () => {
+    const root = temporaryDirectory("threadlight-host-running-threads-");
+    const workspace = createWorkspace(root, "project", "running threads");
+    const projects = new ProjectStore(join(root, "home", "project-map.json"), {
+      createId: () => "project-1",
+    });
+    projects.register(workspace);
+    projects.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Long running task",
+    });
+    const peer = new ScriptedRuntimePeer((request, emit) => {
+      emit({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { name: "threadlight", protocolVersion: "0.1" },
+      });
+    });
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Running thread host",
+      homePath: join(root, "home"),
+      projects,
+      settings: new SettingsStore(join(root, "home", "settings.json"), {
+        encrypt: (value) => value,
+        decrypt: (value) => value,
+      }),
+      port: 0,
+      createPeer: () => peer,
+    });
+    servers.push(server);
+    const address = await server.start();
+    const endpoint = `http://127.0.0.1:${address.port}`;
+    const hostClient = new HttpHostClient({
+      endpoint,
+      token: "test-token",
+    });
+
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: { jsonrpc: "2.0", id: 1, method: "initialize" },
+    });
+    peer.emit({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        revision: 1,
+        mode: "default",
+        activeTurn: {
+          turnId: "turn-1",
+          revision: 1,
+          mode: "default",
+          isThinking: true,
+          streamingText: "",
+          progress: [],
+        },
+      },
+    });
+
+    await expect(hostClient.projects()).resolves.toMatchObject({
+      runningThreadIds: ["thread-1"],
+    });
+
+    peer.emit({
+      jsonrpc: "2.0",
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        revision: 2,
+        output: "done",
+      },
+    });
+    await expect(hostClient.projects()).resolves.toMatchObject({
+      runningThreadIds: [],
+    });
   });
 
   it("serves multiple projects and host-owned settings with scripted peers", async () => {
@@ -282,13 +351,10 @@ describe("ThreadlightHostServer", () => {
         ],
       }),
     );
-    const settings = new SettingsStore(
-      join(root, "home", "settings.json"),
-      {
-        encrypt: (value) => `sealed:${value}`,
-        decrypt: (value) => value.replace(/^sealed:/, ""),
-      },
-    );
+    const settings = new SettingsStore(join(root, "home", "settings.json"), {
+      encrypt: (value) => `sealed:${value}`,
+      decrypt: (value) => value.replace(/^sealed:/, ""),
+    });
     const peers = new Map<string, ScriptedRuntimePeer>();
     const oauthCallbackPrefixes = new Map<string, string | undefined>();
     const providerTests: Array<{
@@ -388,7 +454,9 @@ describe("ThreadlightHostServer", () => {
     expect(
       JSON.stringify(await hostClient.diagnostics("project-1")),
     ).not.toContain("private response content");
-    await expect(hostClient.diagnosticBundle("project-1")).resolves.toMatchObject({
+    await expect(
+      hostClient.diagnosticBundle("project-1"),
+    ).resolves.toMatchObject({
       schemaVersion: 1,
       environment: { runtime: "host" },
       conversations: [
@@ -479,15 +547,10 @@ describe("ThreadlightHostServer", () => {
     expect(dirname(uploadedAttachment.path)).toBe(
       join(realpathSync(firstWorkspace), ".threadlight", "uploads"),
     );
-    expect([...readFileSync(uploadedAttachment.path)]).toEqual([
-      1, 2, 3, 4, 5,
-    ]);
+    expect([...readFileSync(uploadedAttachment.path)]).toEqual([1, 2, 3, 4, 5]);
     expect([
       ...new Uint8Array(
-        await hostClient.downloadAttachment(
-          "project-1",
-          uploadedAttachment.id,
-        ),
+        await hostClient.downloadAttachment("project-1", uploadedAttachment.id),
       ),
     ]).toEqual([1, 2, 3, 4, 5]);
 
@@ -575,6 +638,11 @@ describe("ThreadlightHostServer", () => {
       binary: false,
       size: 13,
     });
+    expect(
+      Buffer.from(
+        await hostClient.downloadFile(join(systemFiles, "notes.txt")),
+      ).toString("utf8"),
+    ).toBe("remote notes\n");
 
     const firstFile = await authenticatedJson(
       `${endpoint}/v1/projects/project-1/runtime/workspace/file?path=src%2Findex.ts`,
@@ -582,8 +650,19 @@ describe("ThreadlightHostServer", () => {
     const secondFile = await authenticatedJson(
       `${endpoint}/v1/projects/project-2/runtime/workspace/file?path=src%2Findex.ts`,
     );
-    expect(firstFile).toMatchObject({ content: "export const value = 'first';\n" });
-    expect(secondFile).toMatchObject({ content: "export const value = 'second';\n" });
+    expect(firstFile).toMatchObject({
+      content: "export const value = 'first';\n",
+    });
+    expect(secondFile).toMatchObject({
+      content: "export const value = 'second';\n",
+    });
+    const runtimeDownload = await fetch(
+      `${endpoint}/v1/projects/project-1/runtime/workspace/download?path=src%2Findex.ts`,
+      { headers: { Authorization: "Bearer test-token" } },
+    );
+    expect(await runtimeDownload.text()).toBe(
+      "export const value = 'first';\n",
+    );
     expect(oauthCallbackPrefixes.get("project-1")).toBe(
       `${endpoint}/v1/host/oauth/callback`,
     );
@@ -609,9 +688,9 @@ describe("ThreadlightHostServer", () => {
         peer.requests.some(({ method }) => method === "thread/start"),
       )?.requests[0]?.id,
     ).toMatch(/^host:/);
-    expect(
-      [...peers.keys()].some((key) => key.startsWith("project-2:")),
-    ).toBe(true);
+    expect([...peers.keys()].some((key) => key.startsWith("project-2:"))).toBe(
+      true,
+    );
 
     const oauthLocation = vi.fn();
     const closeOAuthWindow = vi.fn();
@@ -633,11 +712,8 @@ describe("ThreadlightHostServer", () => {
         workspacePath: realpathSync(firstWorkspace),
       },
     });
-    const listRemoteDirectories =
-      webSession.projects.listRemoteDirectories;
-    await expect(
-      listRemoteDirectories?.(join(root, "f")),
-    ).resolves.toEqual({
+    const listRemoteDirectories = webSession.projects.listRemoteDirectories;
+    await expect(listRemoteDirectories?.(join(root, "f"))).resolves.toEqual({
       path: root,
       directories: [
         {
@@ -701,20 +777,17 @@ describe("ThreadlightHostServer", () => {
         threadId: "usage-thread",
       }),
     );
-    const loadedPreview = await webSession.attachmentPreview.loadImageUrl?.(
-      uploadedAttachment,
-    );
+    const loadedPreview =
+      await webSession.attachmentPreview.loadImageUrl?.(uploadedAttachment);
     expect(loadedPreview).toMatch(/^blob:/);
     expect([
       ...new Uint8Array(await (await fetch(loadedPreview!)).arrayBuffer()),
     ]).toEqual([1, 2, 3, 4, 5]);
 
     const webAttachment = await webSession.attachmentStage.stage(
-      new File(
-        [Uint8Array.from([6, 7, 8, 9])],
-        "web-diagram.png",
-        { type: "image/png" },
-      ),
+      new File([Uint8Array.from([6, 7, 8, 9])], "web-diagram.png", {
+        type: "image/png",
+      }),
     );
     expect(webAttachment).toMatchObject({
       name: "web-diagram.png",
@@ -725,9 +798,9 @@ describe("ThreadlightHostServer", () => {
     expect(dirname(webAttachment.path)).toBe(
       join(realpathSync(firstWorkspace), ".threadlight", "uploads"),
     );
-    expect(
-      webSession.attachmentPreview.imageUrl(webAttachment),
-    ).toMatch(/^blob:/);
+    expect(webSession.attachmentPreview.imageUrl(webAttachment)).toMatch(
+      /^blob:/,
+    );
     await expect(
       webSession.workspace.list("project-1", "src"),
     ).resolves.toContainEqual({
@@ -735,6 +808,18 @@ describe("ThreadlightHostServer", () => {
       path: "src/index.ts",
       type: "file",
     });
+    expect(
+      Buffer.from(
+        await webSession.workspace.download?.("project-1", "src/index.ts")!,
+      ).toString("utf8"),
+    ).toBe("export const value = 'first';\n");
+    expect(
+      Buffer.from(
+        await webSession.workspace.downloadSystemFile?.(
+          join(systemFiles, "notes.txt"),
+        )!,
+      ).toString("utf8"),
+    ).toBe("remote notes\n");
     await webSession.client.initialize();
     expect(
       [...peers.values()]
@@ -809,7 +894,9 @@ describe("ThreadlightHostServer", () => {
       endpoint,
       token: "test-token",
     });
-    await expect(voiceWebSession.voiceInput.prepare?.()).resolves.toBeUndefined();
+    await expect(
+      voiceWebSession.voiceInput.prepare?.(),
+    ).resolves.toBeUndefined();
     await expect(
       voiceWebSession.voiceInput.transcribe({
         audio: Uint8Array.from([20, 21]).buffer,
@@ -981,8 +1068,7 @@ describe("ThreadlightHostServer", () => {
             params: {
               threadId: "automation-thread",
               turnId: "automation-turn",
-              output:
-                "All scripted checks passed.\n\nAUTOMATION_STATUS: ok",
+              output: "All scripted checks passed.\n\nAUTOMATION_STATUS: ok",
               diagnostics: {
                 toolCalls: [{ name: "exec_command", isError: false }],
               },
@@ -1073,10 +1159,7 @@ describe("ThreadlightHostServer", () => {
   it("owns remote local/worktree selection and keeps completed worktree changes isolated", async () => {
     const root = temporaryDirectory("threadlight-host-delivery-");
     const projectPath = createWorkspace(root, "project", "baseline");
-    writeFileSync(
-      join(projectPath, ".gitignore"),
-      ".venv/\ndata/library.db\n",
-    );
+    writeFileSync(join(projectPath, ".gitignore"), ".venv/\ndata/library.db\n");
     mkdirSync(join(projectPath, ".venv", "bin"), { recursive: true });
     writeFileSync(join(projectPath, ".venv", "bin", "python"), "runtime\n");
     mkdirSync(join(projectPath, "data"), { recursive: true });
@@ -1193,20 +1276,17 @@ describe("ThreadlightHostServer", () => {
     const endpoint = `http://127.0.0.1:${address.port}`;
     const host = new HttpHostClient({ endpoint, token: "test-token" });
 
-    await authenticatedJson(
-      `${endpoint}/v1/projects/project-1/runtime/rpc`,
-      {
-        method: "POST",
-        body: {
-          jsonrpc: "2.0",
-          id: 0,
-          method: "initialize",
-          params: {
-            capabilities: { executionApprovals: true },
-          },
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: {
+        jsonrpc: "2.0",
+        id: 0,
+        method: "initialize",
+        params: {
+          capabilities: { executionApprovals: true },
         },
       },
-    );
+    });
     await expect(
       authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
         method: "POST",
@@ -1221,9 +1301,9 @@ describe("ThreadlightHostServer", () => {
       result: { threadId: "thread-1" },
     });
 
-    const conversation = (await host.projects()).projects[0]?.conversations.find(
-      ({ id }) => id === "thread-1",
-    );
+    const conversation = (
+      await host.projects()
+    ).projects[0]?.conversations.find(({ id }) => id === "thread-1");
     expect(conversation?.workspace).toMatchObject({
       mode: "worktree",
       branch: expect.stringMatching(/^threadlight\//),
@@ -1234,8 +1314,9 @@ describe("ThreadlightHostServer", () => {
     }
     const taskPath = conversation.workspace.path;
     expect(
-      peers.find(({ root: peerRoot }) => peerRoot === taskPath)?.peer.requests
-        .map(({ method }) => method),
+      peers
+        .find(({ root: peerRoot }) => peerRoot === taskPath)
+        ?.peer.requests.map(({ method }) => method),
     ).toEqual(["initialize", "thread/start"]);
     expect(
       peers.find(({ root: peerRoot }) => peerRoot === taskPath)?.basePath,
@@ -1261,14 +1342,19 @@ describe("ThreadlightHostServer", () => {
       }),
     );
     await expect(
-      host.conversationWorkspaceFile(
-        "project-1",
-        "thread-1",
-        "src/index.ts",
-      ),
+      host.conversationWorkspaceFile("project-1", "thread-1", "src/index.ts"),
     ).resolves.toMatchObject({
       content: "export const value = 'task change';\n",
     });
+    expect(
+      Buffer.from(
+        await host.downloadConversationWorkspaceFile(
+          "project-1",
+          "thread-1",
+          "src/index.ts",
+        ),
+      ).toString("utf8"),
+    ).toBe("export const value = 'task change';\n");
 
     const restoreWebSession = await createRemoteWebSession({
       endpoint,
@@ -1282,7 +1368,9 @@ describe("ThreadlightHostServer", () => {
         ["src/index.ts"],
       ),
     ).resolves.toMatchObject({
-      files: [expect.objectContaining({ path: "data/library.db", localOnly: true })],
+      files: [
+        expect.objectContaining({ path: "data/library.db", localOnly: true }),
+      ],
     });
     restoreWebSession.dispose();
     expect(readFileSync(join(taskPath, "src", "index.ts"), "utf8")).toBe(
@@ -1293,10 +1381,7 @@ describe("ThreadlightHostServer", () => {
       join(taskPath, "src", "index.ts"),
       "export const value = 'delivered';\n",
     );
-    const reviewed = await host.conversationChanges(
-      "project-1",
-      "thread-1",
-    );
+    const reviewed = await host.conversationChanges("project-1", "thread-1");
     const webSession = await createRemoteWebSession({
       endpoint,
       token: "test-token",
@@ -1328,10 +1413,7 @@ describe("ThreadlightHostServer", () => {
       ),
     ).resolves.toMatchObject({ appliedFiles: 2 });
     await expect(
-      webSession.workspace.getDeliveryHistory?.(
-        "project-1",
-        "thread-1",
-      ),
+      webSession.workspace.getDeliveryHistory?.("project-1", "thread-1"),
     ).resolves.toMatchObject({
       synchronizedFiles: 2,
       undoPoint: {
@@ -1584,13 +1666,10 @@ describe("ThreadlightHostServer", () => {
       createId: () => "project-1",
     });
     projects.register(workspace);
-    const settings = new SettingsStore(
-      join(root, "home", "settings.json"),
-      {
-        encrypt: (value) => value,
-        decrypt: (value) => value,
-      },
-    );
+    const settings = new SettingsStore(join(root, "home", "settings.json"), {
+      encrypt: (value) => value,
+      decrypt: (value) => value,
+    });
     let peer: ScriptedRuntimePeer;
     peer = new ScriptedRuntimePeer(() => {
       peer.exit(new Error("Runtime configuration is unavailable."));
@@ -1648,13 +1727,10 @@ describe("ThreadlightHostServer", () => {
       { projectId: "project-1", id: "thread-1" },
       { mode: "folder", path: taskWorkspace },
     );
-    const settings = new SettingsStore(
-      join(root, "home", "settings.json"),
-      {
-        encrypt: (value) => value,
-        decrypt: (value) => value,
-      },
-    );
+    const settings = new SettingsStore(join(root, "home", "settings.json"), {
+      encrypt: (value) => value,
+      decrypt: (value) => value,
+    });
     const terminalSessions: ScriptedTerminalSessions[] = [];
     const server = new ThreadlightHostServer({
       token: "test-token",
@@ -1890,8 +1966,7 @@ describe("ThreadlightHostServer", () => {
     const { threadId } = await webSession.client.startThread();
     const workspace = projects
       .project("standalone")
-      ?.conversations.find(({ id }) => id === threadId)
-      ?.workspace;
+      ?.conversations.find(({ id }) => id === threadId)?.workspace;
     expect(workspace).toMatchObject({ mode: "standalone" });
 
     const approval = Promise.withResolvers<{
@@ -1908,19 +1983,15 @@ describe("ThreadlightHostServer", () => {
     });
     unsubscribe();
     const replayed = Promise.withResolvers<string>();
-    const unsubscribeReplay = webSession.executionPolicy.subscribe(
-      (request) => replayed.resolve(request.requestId),
+    const unsubscribeReplay = webSession.executionPolicy.subscribe((request) =>
+      replayed.resolve(request.requestId),
     );
     await expect(replayed.promise).resolves.toBe("approval-1");
-    await webSession.executionPolicy.respond(
-      "approval-1",
-      "allow",
-      "task",
-    );
+    await webSession.executionPolicy.respond("approval-1", "allow", "task");
 
     expect(
-      peers.find(({ root: peerRoot }) => peerRoot === workspace?.path)
-        ?.peer.requests,
+      peers.find(({ root: peerRoot }) => peerRoot === workspace?.path)?.peer
+        .requests,
     ).toContainEqual(
       expect.objectContaining({
         method: "execution/approval/respond",
@@ -1942,11 +2013,7 @@ class ScriptedCodeHostProvider implements CodeHostProvider {
   }> = [];
   private pullRequest?: CodeHostPullRequest;
 
-  status(
-    _repositoryRoot: string,
-    headBranch: string,
-    baseBranch: string,
-  ) {
+  status(_repositoryRoot: string, headBranch: string, baseBranch: string) {
     return Promise.resolve({
       provider: "github" as const,
       available: true,
@@ -1998,9 +2065,7 @@ class ScriptedTerminalSessions implements TerminalSessionController {
   readonly closed: string[] = [];
   disposed = false;
 
-  constructor(
-    private readonly send: (event: TerminalSessionEvent) => void,
-  ) {}
+  constructor(private readonly send: (event: TerminalSessionEvent) => void) {}
 
   create(cwd: string, cols: number, rows: number) {
     this.creates.push({ cwd, cols, rows });
@@ -2106,11 +2171,7 @@ function temporaryDirectory(prefix: string): string {
   return directory;
 }
 
-function createWorkspace(
-  root: string,
-  name: string,
-  value: string,
-): string {
+function createWorkspace(root: string, name: string, value: string): string {
   const workspace = join(root, name);
   mkdirSync(join(workspace, "src"), { recursive: true });
   execFileSync("git", ["init", "-q"], { cwd: workspace });

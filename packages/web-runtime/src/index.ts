@@ -549,6 +549,9 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
       ...(this.activeProjectId
         ? { activeProjectId: this.activeProjectId }
         : {}),
+      ...(this.snapshot.runningThreadIds
+        ? { runningThreadIds: this.snapshot.runningThreadIds }
+        : {}),
       projects: this.snapshot.projects.map((project) => ({
         ...project,
         runtime: {
@@ -650,6 +653,12 @@ function remoteWorkspaceAdapter(
         size: file.size,
       };
     },
+    async download(projectId, path, threadId) {
+      activate(projectId);
+      return threadId
+        ? host.downloadConversationWorkspaceFile(projectId, threadId, path)
+        : transport.downloadWorkspaceFile(path);
+    },
     listSystemFiles: (path) => host.files(path),
     async readSystemFile(path) {
       const file = await host.file(path);
@@ -661,6 +670,7 @@ function remoteWorkspaceAdapter(
         size: file.size,
       };
     },
+    downloadSystemFile: (path) => host.downloadFile(path),
   };
 }
 

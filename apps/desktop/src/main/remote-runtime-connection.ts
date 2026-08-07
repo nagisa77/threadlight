@@ -92,6 +92,10 @@ export class RemoteRuntimeConnection {
     return this.transport.workspaceFile(path);
   }
 
+  downloadWorkspaceFile(path: string) {
+    return this.transport.downloadWorkspaceFile(path);
+  }
+
   getWorkspaceChanges(): Promise<RemoteRuntimeWorkspaceChanges> {
     return this.transport.workspaceChanges();
   }

@@ -15,12 +15,10 @@ export const DESKTOP_REQUEST_CHANNEL = "threadlight:request";
 export const DESKTOP_MESSAGE_CHANNEL = "threadlight:message";
 export const DESKTOP_SETTINGS_GET_CHANNEL = "threadlight:settings:get";
 export const DESKTOP_SETTINGS_UPDATE_CHANNEL = "threadlight:settings:update";
-export const DESKTOP_DIAGNOSTICS_GET_CHANNEL =
-  "threadlight:diagnostics:get";
+export const DESKTOP_DIAGNOSTICS_GET_CHANNEL = "threadlight:diagnostics:get";
 export const DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL =
   "threadlight:diagnostics:export";
-export const DESKTOP_PROVIDER_TEST_CHANNEL =
-  "threadlight:provider:test";
+export const DESKTOP_PROVIDER_TEST_CHANNEL = "threadlight:provider:test";
 export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
 export const DESKTOP_EXTERNAL_OPEN_CHANNEL = "threadlight:external:open";
 export const DESKTOP_PROJECTS_GET_CHANNEL = "threadlight:projects:get";
@@ -36,8 +34,7 @@ export const DESKTOP_HOSTS_GET_CHANNEL = "threadlight:hosts:get";
 export const DESKTOP_HOST_ACTIVATE_CHANNEL = "threadlight:host:activate";
 export const DESKTOP_HOST_UPDATE_CHANNEL = "threadlight:host:update";
 export const DESKTOP_HOST_DELETE_CHANNEL = "threadlight:host:delete";
-export const DESKTOP_HOST_DIRECTORIES_CHANNEL =
-  "threadlight:host:directories";
+export const DESKTOP_HOST_DIRECTORIES_CHANNEL = "threadlight:host:directories";
 export const DESKTOP_PROJECT_OPENERS_GET_CHANNEL =
   "threadlight:project-openers:get";
 export const DESKTOP_PROJECT_OPEN_WITH_CHANNEL =
@@ -57,22 +54,18 @@ export const DESKTOP_PROJECT_MEMORY_GET_CHANNEL =
 export const DESKTOP_PROJECT_MEMORY_OPEN_CHANNEL =
   "threadlight:project-memory:open";
 export const DESKTOP_SEARCH_CHANNEL = "threadlight:search";
-export const DESKTOP_AUTOMATIONS_GET_CHANNEL =
-  "threadlight:automations:get";
+export const DESKTOP_AUTOMATIONS_GET_CHANNEL = "threadlight:automations:get";
 export const DESKTOP_AUTOMATIONS_CREATE_CHANNEL =
   "threadlight:automations:create";
 export const DESKTOP_AUTOMATIONS_UPDATE_CHANNEL =
   "threadlight:automations:update";
 export const DESKTOP_AUTOMATIONS_DELETE_CHANNEL =
   "threadlight:automations:delete";
-export const DESKTOP_AUTOMATIONS_RUN_CHANNEL =
-  "threadlight:automations:run";
+export const DESKTOP_AUTOMATIONS_RUN_CHANNEL = "threadlight:automations:run";
 export const DESKTOP_AUTOMATIONS_CHANGED_CHANNEL =
   "threadlight:automations:changed";
-export const DESKTOP_AUTOMATION_OPEN_CHANNEL =
-  "threadlight:automation:open";
-export const DESKTOP_AUDIO_TRANSCRIBE_CHANNEL =
-  "threadlight:audio:transcribe";
+export const DESKTOP_AUTOMATION_OPEN_CHANNEL = "threadlight:automation:open";
+export const DESKTOP_AUDIO_TRANSCRIBE_CHANNEL = "threadlight:audio:transcribe";
 export const DESKTOP_ATTACHMENT_REFERENCE_CHANNEL =
   "threadlight:attachment:reference";
 export const DESKTOP_COMPUTER_SHARE_GET_CHANNEL =
@@ -119,14 +112,16 @@ export const DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL =
 export const DESKTOP_WORKSPACE_LIST_CHANNEL = "threadlight:workspace:list";
 export const DESKTOP_WORKSPACE_FILE_GET_CHANNEL =
   "threadlight:workspace-file:get";
+export const DESKTOP_WORKSPACE_FILE_DOWNLOAD_CHANNEL =
+  "threadlight:workspace-file:download";
 export const DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL =
   "threadlight:workspace-file:reveal";
 export const DESKTOP_SYSTEM_FILE_CHOOSE_CHANNEL =
   "threadlight:system-file:choose";
-export const DESKTOP_SYSTEM_FILE_LIST_CHANNEL =
-  "threadlight:system-file:list";
-export const DESKTOP_SYSTEM_FILE_GET_CHANNEL =
-  "threadlight:system-file:get";
+export const DESKTOP_SYSTEM_FILE_LIST_CHANNEL = "threadlight:system-file:list";
+export const DESKTOP_SYSTEM_FILE_GET_CHANNEL = "threadlight:system-file:get";
+export const DESKTOP_SYSTEM_FILE_DOWNLOAD_CHANNEL =
+  "threadlight:system-file:download";
 export const DESKTOP_SYSTEM_FILE_REVEAL_CHANNEL =
   "threadlight:system-file:reveal";
 export const DESKTOP_EXECUTION_APPROVAL_REQUIRED_CHANNEL =
@@ -348,6 +343,7 @@ export interface DesktopProjectRuntime {
 export interface DesktopProjectsSnapshot {
   activeProjectId?: string;
   projects: readonly DesktopProject[];
+  runningThreadIds?: readonly string[];
 }
 
 export interface DesktopRemoteRuntimeConnectRequest {
@@ -409,8 +405,7 @@ export interface DesktopConversationTarget {
   id: string;
 }
 
-export interface DesktopConversationRecoveryRequest
-  extends DesktopConversationTarget {
+export interface DesktopConversationRecoveryRequest extends DesktopConversationTarget {
   replacementId?: string;
 }
 
@@ -446,15 +441,10 @@ export interface DesktopComputerShareSnapshot {
 }
 
 export type DesktopComputerPermissionCapability =
-  | "screen_recording"
-  | "accessibility";
+  "screen_recording" | "accessibility";
 
 export type DesktopComputerPermissionStatus =
-  | "not-determined"
-  | "granted"
-  | "denied"
-  | "restricted"
-  | "unknown";
+  "not-determined" | "granted" | "denied" | "restricted" | "unknown";
 
 export interface DesktopComputerPermissionSnapshot {
   required: boolean;
@@ -493,19 +483,16 @@ export interface DesktopConversationChangesRequest {
   threadId: string;
 }
 
-export interface DesktopConversationChangesRestoreRequest
-  extends DesktopConversationChangesRequest {
+export interface DesktopConversationChangesRestoreRequest extends DesktopConversationChangesRequest {
   revision: string;
   paths?: readonly string[];
 }
 
-export interface DesktopWorktreeDeliveryRequest
-  extends DesktopConversationChangesRequest {
+export interface DesktopWorktreeDeliveryRequest extends DesktopConversationChangesRequest {
   revision: string;
 }
 
-export interface DesktopWorktreeDeliveryCommitRequest
-  extends DesktopWorktreeDeliveryRequest {
+export interface DesktopWorktreeDeliveryCommitRequest extends DesktopWorktreeDeliveryRequest {
   message: string;
 }
 
@@ -531,8 +518,7 @@ export interface DesktopWorktreeDeliveryPreflight {
   conflicts: readonly DesktopWorktreeDeliveryConflict[];
 }
 
-export interface DesktopWorktreeDeliveryResult
-  extends DesktopWorktreeDeliveryPreflight {
+export interface DesktopWorktreeDeliveryResult extends DesktopWorktreeDeliveryPreflight {
   appliedFiles: number;
   commit?: string;
   undoAvailable?: boolean;
@@ -627,8 +613,7 @@ export interface DesktopCodeHostDeliveryStatus {
   pullRequest?: DesktopCodeHostPullRequest;
 }
 
-export interface DesktopCodeHostCommitPushRequest
-  extends DesktopWorktreeDeliveryRequest {
+export interface DesktopCodeHostCommitPushRequest extends DesktopWorktreeDeliveryRequest {
   message: string;
 }
 
@@ -637,8 +622,7 @@ export interface DesktopCodeHostCommitPushResult {
   status: DesktopCodeHostDeliveryStatus;
 }
 
-export interface DesktopCodeHostCreatePullRequest
-  extends DesktopWorktreeDeliveryRequest {
+export interface DesktopCodeHostCreatePullRequest extends DesktopWorktreeDeliveryRequest {
   title: string;
   body?: string;
   draft: boolean;
@@ -717,15 +701,9 @@ export interface DesktopSearchResult {
 }
 
 export type DesktopAutomationKind =
-  | "custom"
-  | "tests"
-  | "dependencies"
-  | "issue-triage";
+  "custom" | "tests" | "dependencies" | "issue-triage";
 
-export type DesktopAutomationCadence =
-  | "daily"
-  | "weekdays"
-  | "weekly";
+export type DesktopAutomationCadence = "daily" | "weekdays" | "weekly";
 
 export interface DesktopAutomationSchedule {
   cadence: DesktopAutomationCadence;
@@ -734,10 +712,7 @@ export interface DesktopAutomationSchedule {
 }
 
 export type DesktopAutomationRunStatus =
-  | "running"
-  | "succeeded"
-  | "attention"
-  | "failed";
+  "running" | "succeeded" | "attention" | "failed";
 
 export interface DesktopAutomationRun {
   status: DesktopAutomationRunStatus;
@@ -777,8 +752,7 @@ export interface DesktopAutomationCreateRequest {
   schedule: DesktopAutomationSchedule;
 }
 
-export interface DesktopAutomationUpdateRequest
-  extends DesktopAutomationCreateRequest {
+export interface DesktopAutomationUpdateRequest extends DesktopAutomationCreateRequest {
   id: string;
 }
 
@@ -866,7 +840,7 @@ export interface DesktopApi {
     update: DesktopProjectMetadataUpdate,
   ): Promise<DesktopProjectsSnapshot>;
 
-    deleteProject(projectId: string): Promise<DesktopProjectsSnapshot>;
+  deleteProject(projectId: string): Promise<DesktopProjectsSnapshot>;
   getProjectOpeners(
     projectId?: string,
   ): Promise<readonly DesktopProjectOpenerOption[]>;
@@ -888,7 +862,9 @@ export interface DesktopApi {
   ): Promise<DesktopProjectsSnapshot>;
   getProjectMemory(projectId: string): Promise<DesktopProjectMemorySnapshot>;
   openProjectMemory(projectId: string): Promise<void>;
-  search(request: DesktopSearchRequest): Promise<readonly DesktopSearchResult[]>;
+  search(
+    request: DesktopSearchRequest,
+  ): Promise<readonly DesktopSearchResult[]>;
   getAutomations(projectId: string): Promise<DesktopAutomationsSnapshot>;
   createAutomation(
     request: DesktopAutomationCreateRequest,
@@ -923,9 +899,7 @@ export interface DesktopApi {
   revokeExecutionPolicyGrant(
     request: DesktopExecutionPolicyRevokeRequest,
   ): Promise<DesktopExecutionPolicySnapshot>;
-  transcribeAudio(
-    request: DesktopAudioTranscriptionRequest,
-  ): Promise<string>;
+  transcribeAudio(request: DesktopAudioTranscriptionRequest): Promise<string>;
   createAttachmentReference(file: File): Promise<AttachmentData>;
   getComputerShare(): Promise<DesktopComputerShareSnapshot>;
   showComputerShare(): Promise<DesktopComputerShareSnapshot>;
@@ -947,9 +921,7 @@ export interface DesktopApi {
   writeTerminal(request: DesktopTerminalWriteRequest): void;
   resizeTerminal(request: DesktopTerminalResizeRequest): void;
   closeTerminal(sessionId: string): Promise<void>;
-  onTerminalEvent(
-    listener: (event: DesktopTerminalEvent) => void,
-  ): () => void;
+  onTerminalEvent(listener: (event: DesktopTerminalEvent) => void): () => void;
   getConversationChanges(
     request: DesktopConversationChangesRequest,
   ): Promise<DesktopConversationChangesSnapshot>;
@@ -986,9 +958,15 @@ export interface DesktopApi {
   getWorkspaceFile(
     request: DesktopWorkspaceFileRequest,
   ): Promise<DesktopWorkspaceFile>;
+  downloadWorkspaceFile(
+    request: DesktopWorkspaceFileRequest,
+  ): Promise<ArrayBuffer>;
   revealWorkspaceFile(request: DesktopWorkspaceFileRequest): Promise<void>;
   chooseSystemFile(): Promise<string | undefined>;
   listSystemFiles(path: string): Promise<HostFileListing>;
-  getSystemFile(request: DesktopSystemFileRequest): Promise<DesktopWorkspaceFile>;
+  getSystemFile(
+    request: DesktopSystemFileRequest,
+  ): Promise<DesktopWorkspaceFile>;
+  downloadSystemFile(request: DesktopSystemFileRequest): Promise<ArrayBuffer>;
   revealSystemFile(request: DesktopSystemFileRequest): Promise<void>;
 }

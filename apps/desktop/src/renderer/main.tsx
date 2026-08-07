@@ -70,18 +70,13 @@ const projects: ProjectsAdapter = {
   loadHosts: () => window.threadlightDesktop.getHosts(),
   connectRemote: (request) =>
     window.threadlightDesktop.connectRemoteRuntime(request),
-  activateHost: (hostId) =>
-    window.threadlightDesktop.activateHost(hostId),
-  updateRemoteHost: (request) =>
-    window.threadlightDesktop.updateHost(request),
-  deleteRemoteHost: (hostId) =>
-    window.threadlightDesktop.deleteHost(hostId),
+  activateHost: (hostId) => window.threadlightDesktop.activateHost(hostId),
+  updateRemoteHost: (request) => window.threadlightDesktop.updateHost(request),
+  deleteRemoteHost: (hostId) => window.threadlightDesktop.deleteHost(hostId),
   listRemoteDirectories: (path) =>
     window.threadlightDesktop.listRemoteDirectories(path),
-  activate: (projectId) =>
-    window.threadlightDesktop.activateProject(projectId),
-  updateProject: (update) =>
-    window.threadlightDesktop.updateProject(update),
+  activate: (projectId) => window.threadlightDesktop.activateProject(projectId),
+  updateProject: (update) => window.threadlightDesktop.updateProject(update),
 
   deleteProject: (projectId) =>
     window.threadlightDesktop.deleteProject(projectId),
@@ -142,8 +137,7 @@ const executionPolicy: ExecutionPolicyAdapter = {
       decision,
       scope,
     }),
-  load: (projectId) =>
-    window.threadlightDesktop.getExecutionPolicy(projectId),
+  load: (projectId) => window.threadlightDesktop.getExecutionPolicy(projectId),
   revoke: (projectId, permissionKey) =>
     window.threadlightDesktop.revokeExecutionPolicyGrant({
       projectId,
@@ -184,8 +178,7 @@ const computerPermissions: ComputerPermissionAdapter = {
   load: () => window.threadlightDesktop.getComputerPermissions(),
   request: (capability) =>
     window.threadlightDesktop.requestComputerPermission(capability),
-  relaunch: () =>
-    window.threadlightDesktop.relaunchForComputerPermissions(),
+  relaunch: () => window.threadlightDesktop.relaunchForComputerPermissions(),
   subscribe: (listener) =>
     window.threadlightDesktop.onComputerPermissionChanged(listener),
 };
@@ -194,8 +187,7 @@ const terminal: TerminalAdapter = {
   write: (request) => window.threadlightDesktop.writeTerminal(request),
   resize: (request) => window.threadlightDesktop.resizeTerminal(request),
   close: (sessionId) => window.threadlightDesktop.closeTerminal(sessionId),
-  subscribe: (listener) =>
-    window.threadlightDesktop.onTerminalEvent(listener),
+  subscribe: (listener) => window.threadlightDesktop.onTerminalEvent(listener),
 };
 const workspace: WorkspaceAdapter = {
   getChanges: (projectId, threadId) =>
@@ -250,14 +242,7 @@ const workspace: WorkspaceAdapter = {
       revision,
       message,
     }),
-  createPullRequest: (
-    projectId,
-    threadId,
-    revision,
-    title,
-    body,
-    draft,
-  ) =>
+  createPullRequest: (projectId, threadId, revision, title, body, draft) =>
     window.threadlightDesktop.createPullRequest({
       projectId,
       threadId,
@@ -278,6 +263,12 @@ const workspace: WorkspaceAdapter = {
       path,
       ...(threadId ? { threadId } : {}),
     }),
+  download: (projectId, path, threadId) =>
+    window.threadlightDesktop.downloadWorkspaceFile({
+      projectId,
+      path,
+      ...(threadId ? { threadId } : {}),
+    }),
   reveal: (projectId, path, threadId) =>
     window.threadlightDesktop.revealWorkspaceFile({
       projectId,
@@ -285,10 +276,10 @@ const workspace: WorkspaceAdapter = {
       ...(threadId ? { threadId } : {}),
     }),
   chooseSystemFile: () => window.threadlightDesktop.chooseSystemFile(),
-  listSystemFiles: (path) =>
-    window.threadlightDesktop.listSystemFiles(path),
-  readSystemFile: (path) =>
-    window.threadlightDesktop.getSystemFile({ path }),
+  listSystemFiles: (path) => window.threadlightDesktop.listSystemFiles(path),
+  readSystemFile: (path) => window.threadlightDesktop.getSystemFile({ path }),
+  downloadSystemFile: (path) =>
+    window.threadlightDesktop.downloadSystemFile({ path }),
   revealSystemFile: (path) =>
     window.threadlightDesktop.revealSystemFile({ path }),
 };

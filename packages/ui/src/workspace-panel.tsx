@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   Columns2,
+  Download,
   ExternalLink,
   File,
   FileCode2,
@@ -948,6 +949,8 @@ export function FileView({
   const [choosingSystemFile, setChoosingSystemFile] = useState(false);
   const [revealing, setRevealing] = useState(false);
   const [revealError, setRevealError] = useState<string>();
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string>();
 
   useEffect(() => {
     if (!path) {
@@ -955,12 +958,14 @@ export function FileView({
       setLoading(false);
       setError(undefined);
       setRevealError(undefined);
+      setDownloadError(undefined);
       return;
     }
     let active = true;
     setLoading(true);
     setError(undefined);
     setRevealError(undefined);
+    setDownloadError(undefined);
     const read =
       source === "system"
         ? adapter.readSystemFile
@@ -1003,9 +1008,13 @@ export function FileView({
 
   const canReveal = Boolean(
     path &&
-    (source === "system"
-      ? !remoteSystemFiles && adapter.revealSystemFile
-      : adapter.reveal),
+    !remoteSystemFiles &&
+    (source === "system" ? adapter.revealSystemFile : adapter.reveal),
+  );
+  const canDownload = Boolean(
+    path &&
+    remoteSystemFiles &&
+    (source === "system" ? adapter.downloadSystemFile : adapter.download),
   );
 
   async function revealFile() {
@@ -1022,6 +1031,26 @@ export function FileView({
       setRevealError(t("revealFileFailed", { message: errorMessage(reason) }));
     } finally {
       setRevealing(false);
+    }
+  }
+
+  async function downloadFile() {
+    if (!path || !canDownload || downloading) return;
+    setDownloading(true);
+    setDownloadError(undefined);
+    try {
+      const content =
+        source === "system"
+          ? await adapter.downloadSystemFile?.(path)
+          : await adapter.download?.(projectId, path, threadId);
+      if (!content) throw new Error(t("fileDownloadUnavailable"));
+      saveDownloadedFile(file?.name ?? fileName(path), content);
+    } catch (reason) {
+      setDownloadError(
+        t("downloadFileFailed", { message: errorMessage(reason) }),
+      );
+    } finally {
+      setDownloading(false);
     }
   }
 
@@ -1126,7 +1155,22 @@ export function FileView({
                   {t("fileSize", { size: formatFileSize(file.size) })}
                 </span>
               )}
-              {canReveal && (
+              {canDownload ? (
+                <button
+                  type="button"
+                  className="panel-empty-action pressable"
+                  aria-label={t("downloadFile")}
+                  disabled={downloading}
+                  onClick={() => void downloadFile()}
+                >
+                  {downloading ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <Download size={14} />
+                  )}
+                  {t("downloadFile")}
+                </button>
+              ) : canReveal ? (
                 <button
                   type="button"
                   className="panel-empty-action pressable"
@@ -1140,10 +1184,10 @@ export function FileView({
                   )}
                   {t("revealInFinder")}
                 </button>
-              )}
-              {revealError && (
+              ) : null}
+              {(downloadError || revealError) && (
                 <span className="workspace-panel-inline-error" role="status">
-                  {revealError}
+                  {downloadError ?? revealError}
                 </span>
               )}
             </PanelState>
@@ -1175,6 +1219,20 @@ export function FileView({
       </div>
     </div>
   );
+}
+
+function saveDownloadedFile(name: string, content: ArrayBuffer): void {
+  const url = URL.createObjectURL(
+    new Blob([new Uint8Array(content)], { type: "application/octet-stream" }),
+  );
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 export function PlanDocument({ content }: { content: string }) {

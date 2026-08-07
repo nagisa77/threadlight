@@ -273,10 +273,7 @@ export interface HostDiagnosticFile {
 }
 
 export type HostDiagnosticTimelineEventKind =
-  | "turn"
-  | "model"
-  | "tool"
-  | "process";
+  "turn" | "model" | "tool" | "process";
 
 export interface HostDiagnosticTimelineEvent {
   sequence: number;
@@ -328,15 +325,9 @@ export interface HostProjectDiagnosticBundle {
 }
 
 export type HostAutomationKind =
-  | "custom"
-  | "tests"
-  | "dependencies"
-  | "issue-triage";
+  "custom" | "tests" | "dependencies" | "issue-triage";
 
-export type HostAutomationCadence =
-  | "daily"
-  | "weekdays"
-  | "weekly";
+export type HostAutomationCadence = "daily" | "weekdays" | "weekly";
 
 export interface HostAutomationSchedule {
   cadence: HostAutomationCadence;
@@ -345,10 +336,7 @@ export interface HostAutomationSchedule {
 }
 
 export type HostAutomationRunStatus =
-  | "running"
-  | "succeeded"
-  | "attention"
-  | "failed";
+  "running" | "succeeded" | "attention" | "failed";
 
 export interface HostAutomationRun {
   status: HostAutomationRunStatus;
@@ -388,8 +376,7 @@ export interface HostAutomationCreateRequest {
   schedule: HostAutomationSchedule;
 }
 
-export interface HostAutomationUpdateRequest
-  extends HostAutomationCreateRequest {
+export interface HostAutomationUpdateRequest extends HostAutomationCreateRequest {
   id: string;
 }
 
@@ -474,6 +461,7 @@ export interface HostProjectSummary {
 export interface HostProjectsSnapshot {
   activeProjectId?: string;
   projects: readonly HostProjectSummary[];
+  runningThreadIds?: readonly string[];
 }
 
 export interface HostDirectoryEntry {
@@ -552,8 +540,7 @@ export interface HostWorktreeDeliveryPreflight {
   conflicts: readonly HostWorktreeDeliveryConflict[];
 }
 
-export interface HostWorktreeDeliveryResult
-  extends HostWorktreeDeliveryPreflight {
+export interface HostWorktreeDeliveryResult extends HostWorktreeDeliveryPreflight {
   appliedFiles: number;
   commit?: string;
   undoAvailable?: boolean;
@@ -761,8 +748,7 @@ export const DESKTOP_COMPUTER_METHODS = [
   "computer/execute",
 ] as const;
 
-export type DesktopComputerMethod =
-  (typeof DESKTOP_COMPUTER_METHODS)[number];
+export type DesktopComputerMethod = (typeof DESKTOP_COMPUTER_METHODS)[number];
 
 export type DesktopComputerRequest = JsonRpcRequest<
   DesktopComputerMethod,
@@ -902,9 +888,7 @@ export interface ActiveTurnData {
 export type CapabilityKind = "skill" | "tool";
 export type CapabilityVisibility = "featured" | "search" | "hidden";
 export type CapabilityStatus =
-  | "ready"
-  | "needs_configuration"
-  | "needs_authorization";
+  "ready" | "needs_configuration" | "needs_authorization";
 
 export interface CapabilityDescriptor {
   id: string;
@@ -1311,8 +1295,7 @@ export interface ThreadlightNotificationMap {
   };
 }
 
-export type ThreadlightNotificationMethod =
-  keyof ThreadlightNotificationMap;
+export type ThreadlightNotificationMethod = keyof ThreadlightNotificationMap;
 
 export type ThreadlightNotification = {
   [Method in ThreadlightNotificationMethod]: JsonRpcNotification<

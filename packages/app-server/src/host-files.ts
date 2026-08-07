@@ -1,11 +1,6 @@
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { open, readFile, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-} from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 
 import type {
   HostFileEntry,
@@ -80,10 +75,7 @@ export async function readHostFile(path: string): Promise<HostSystemFile> {
   const absolutePath = await resolveHostPath(path);
   const metadata = await stat(absolutePath);
   if (!metadata.isFile()) throw new Error("Host path is not a file.");
-  const bytesToRead = Math.min(
-    metadata.size,
-    MAX_FILE_PREVIEW_BYTES + 1,
-  );
+  const bytesToRead = Math.min(metadata.size, MAX_FILE_PREVIEW_BYTES + 1);
   const buffer = Buffer.alloc(bytesToRead);
   const file = await open(absolutePath, "r");
   let bytesRead = 0;
@@ -103,6 +95,13 @@ export async function readHostFile(path: string): Promise<HostSystemFile> {
       ? { content: content.toString("utf8") }
       : {}),
   };
+}
+
+export async function readHostFileContents(path: string): Promise<Buffer> {
+  const absolutePath = await resolveHostPath(path);
+  const metadata = await stat(absolutePath);
+  if (!metadata.isFile()) throw new Error("Host path is not a file.");
+  return readFile(absolutePath);
 }
 
 async function resolveHostPath(path: string): Promise<string> {

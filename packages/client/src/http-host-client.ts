@@ -75,8 +75,7 @@ export class HttpHostClient {
     projectId: string,
     conversationIds?: readonly string[],
   ): Promise<HostProjectDiagnosticBundle> {
-    const path =
-      `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics/bundle`;
+    const path = `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics/bundle`;
     return conversationIds === undefined
       ? this.request(path)
       : this.request(path, {
@@ -129,9 +128,7 @@ export class HttpHostClient {
     });
   }
 
-  search(
-    request: HostSearchRequest,
-  ): Promise<readonly HostSearchResult[]> {
+  search(request: HostSearchRequest): Promise<readonly HostSearchResult[]> {
     return this.request("/v1/host/search", {
       method: "POST",
       body: request,
@@ -145,14 +142,16 @@ export class HttpHostClient {
   }
 
   files(path: string): Promise<HostFileListing> {
-    return this.request(
-      `/v1/host/files?path=${encodeURIComponent(path)}`,
-    );
+    return this.request(`/v1/host/files?path=${encodeURIComponent(path)}`);
   }
 
   file(path: string): Promise<HostSystemFile> {
-    return this.request(
-      `/v1/host/file?path=${encodeURIComponent(path)}`,
+    return this.request(`/v1/host/file?path=${encodeURIComponent(path)}`);
+  }
+
+  downloadFile(path: string): Promise<ArrayBuffer> {
+    return this.download(
+      `/v1/host/file/download?path=${encodeURIComponent(path)}`,
     );
   }
 
@@ -182,18 +181,9 @@ export class HttpHostClient {
     projectId: string,
     attachmentId: string,
   ): Promise<ArrayBuffer> {
-    const response = await this.fetcher(
-      `${this.endpoint}/v1/host/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
-      {
-        headers: {
-          Authorization: `Bearer ${this.options.token}`,
-        },
-      },
+    return this.download(
+      `/v1/host/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(attachmentId)}`,
     );
-    if (!response.ok) {
-      await this.throwResponseError(response);
-    }
-    return response.arrayBuffer();
   }
 
   registerProject(path: string): Promise<HostProjectsSnapshot> {
@@ -293,7 +283,9 @@ export class HttpHostClient {
     projectId: string,
     threadId: string,
   ): Promise<HostConversationChangesSnapshot> {
-    return this.request(this.conversationAction(projectId, threadId, "changes"));
+    return this.request(
+      this.conversationAction(projectId, threadId, "changes"),
+    );
   }
 
   conversationWorkspaceList(
@@ -327,6 +319,17 @@ export class HttpHostClient {
     const query = new URLSearchParams({ path });
     return this.request(
       `${this.conversationAction(projectId, threadId, "workspace/file")}?${query}`,
+    );
+  }
+
+  downloadConversationWorkspaceFile(
+    projectId: string,
+    threadId: string,
+    path: string,
+  ): Promise<ArrayBuffer> {
+    const query = new URLSearchParams({ path });
+    return this.download(
+      `${this.conversationAction(projectId, threadId, "workspace/download")}?${query}`,
     );
   }
 
@@ -439,9 +442,7 @@ export class HttpHostClient {
     return this.request("/v1/host/settings");
   }
 
-  updateSettings(
-    update: HostSettingsUpdate,
-  ): Promise<HostSettingsSnapshot> {
+  updateSettings(update: HostSettingsUpdate): Promise<HostSettingsSnapshot> {
     return this.request("/v1/host/settings", {
       method: "PUT",
       body: update,
@@ -507,6 +508,16 @@ export class HttpHostClient {
     action: string,
   ): string {
     return `/v1/host/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(threadId)}/${action}`;
+  }
+
+  private async download(path: string): Promise<ArrayBuffer> {
+    const response = await this.fetcher(`${this.endpoint}${path}`, {
+      headers: {
+        Authorization: `Bearer ${this.options.token}`,
+      },
+    });
+    if (!response.ok) await this.throwResponseError(response);
+    return response.arrayBuffer();
   }
 
   private async jsonResponse<Result>(response: Response): Promise<Result> {

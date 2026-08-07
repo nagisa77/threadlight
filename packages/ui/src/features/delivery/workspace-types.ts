@@ -246,10 +246,16 @@ export interface WorkspaceAdapter {
     path: string,
     threadId?: string,
   ): Promise<WorkspaceFile>;
+  download?(
+    projectId: string,
+    path: string,
+    threadId?: string,
+  ): Promise<ArrayBuffer>;
   reveal?(projectId: string, path: string, threadId?: string): Promise<void>;
   chooseSystemFile?(): Promise<string | undefined>;
   listSystemFiles?(path: string): Promise<SystemFileListing>;
   readSystemFile?(path: string): Promise<WorkspaceFile>;
+  downloadSystemFile?(path: string): Promise<ArrayBuffer>;
   revealSystemFile?(path: string): Promise<void>;
 }
 

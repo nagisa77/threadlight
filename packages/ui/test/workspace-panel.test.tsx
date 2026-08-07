@@ -37,7 +37,8 @@ describe("ReviewView", () => {
               deletions: 1,
               binary: false,
               oldContent: "export const value = 1;\n",
-              newContent: "export const value = 2;\nexport const next = true;\n",
+              newContent:
+                "export const value = 2;\nexport const next = true;\n",
             },
           ],
         }}
@@ -120,7 +121,9 @@ describe("ReviewView", () => {
 
     expect(html).toContain("已同步");
     expect(html).toContain("已同步 1 个文件到 main");
-    expect(html).toContain('class="review-delivery-indicator synced pressable"');
+    expect(html).toContain(
+      'class="review-delivery-indicator synced pressable"',
+    );
     expect(html).toContain('aria-label="查看交付中心: 已同步"');
     expect(html).not.toContain(">撤回<");
     expect(html).not.toContain("暂存并提交");
@@ -158,9 +161,7 @@ describe("ReviewView", () => {
             files: 1,
             pendingFiles: 1,
             alreadyAppliedFiles: 0,
-            conflicts: [
-              { path: "src/index.ts", reason: "target_modified" },
-            ],
+            conflicts: [{ path: "src/index.ts", reason: "target_modified" }],
           },
         }}
         onOpenDeliveryCenter={vi.fn()}
@@ -477,15 +478,11 @@ describe("FileSource", () => {
       />,
     );
 
-    expect(isPlanDocumentPath(".threadlight/plans/thread-1.md")).toBe(
-      true,
-    );
+    expect(isPlanDocumentPath(".threadlight/plans/thread-1.md")).toBe(true);
     expect(isPlanDocumentPath("docs/plan.md")).toBe(false);
     expect(html).toContain('class="plan-document"');
     expect(html).toContain("<h1>Plan</h1>");
-    expect(html).toContain(
-      'type="checkbox" disabled="" checked=""',
-    );
+    expect(html).toContain('type="checkbox" disabled="" checked=""');
   });
 
   it("renders stable one-based line numbers including a trailing blank line", () => {
@@ -503,7 +500,7 @@ describe("FileSource", () => {
     const html = renderToStaticMarkup(
       <FileSource
         name="example.ts"
-        content={'export const answer: number = 42;\n'}
+        content={"export const answer: number = 42;\n"}
       />,
     );
 
@@ -655,6 +652,30 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="在 Finder 中显示"');
   });
 
+  it("offers download instead of Finder for an unpreviewable remote file", () => {
+    const adapter: WorkspaceAdapter = {
+      getChanges: vi.fn(),
+      list: vi.fn(async () => []),
+      read: vi.fn(),
+      download: vi.fn(),
+      reveal: vi.fn(),
+    };
+    const html = renderToStaticMarkup(
+      <FileView
+        adapter={adapter}
+        projectId="project-1"
+        projectName="threadlight"
+        path="output/archive.zip"
+        remoteSystemFiles
+        onSelectFile={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("二进制文件或体积过大");
+    expect(html).toContain('aria-label="下载"');
+    expect(html).not.toContain("在 Finder 中显示");
+  });
+
   it("uses the Host file browser instead of the local picker for remote projects", () => {
     const adapter: WorkspaceAdapter = {
       getChanges: vi.fn(),
@@ -735,10 +756,7 @@ describe("WorkspacePanel", () => {
   });
 });
 
-function change(
-  path: string,
-  status: "added" | "modified" | "deleted",
-) {
+function change(path: string, status: "added" | "modified" | "deleted") {
   return {
     path,
     status,

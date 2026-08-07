@@ -62,7 +62,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-
 import {
   CapabilityChips,
   CapabilityMenu,
@@ -171,7 +170,6 @@ import {
   ComposerQueue,
   GuidedMessageReceipt,
 } from "./features/composer/composer-queue.js";
-
 import {
   ComputerPermissionCard,
   ComputerShareStatus,
@@ -603,7 +601,10 @@ function ThreadlightAppContent({
     interrupt,
     terminateProcess,
     runningThreadIds,
-  } = useThreadlightSession(client, { autoConnect: !projects });
+  } = useThreadlightSession(client, {
+    autoConnect: !projects,
+    runningThreadIds: projectSnapshot?.runningThreadIds,
+  });
   const {
     newTaskDraft,
     setNewTaskDraft,
@@ -809,7 +810,6 @@ function ThreadlightAppContent({
   const showFirstRunGuide = Boolean(
     firstRunRequired && !firstRunDemoThreadId && view === "thread",
   );
-
   useEffect(() => {
     setConversationRecoveryBusy(false);
     setConversationRecoveryError(undefined);

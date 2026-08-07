@@ -55,6 +55,7 @@ export interface ProjectSummary {
 export interface ProjectsSnapshot {
   activeProjectId?: string;
   projects: readonly ProjectSummary[];
+  runningThreadIds?: readonly string[];
 }
 
 export function projectsWithDeliveryStatus(
@@ -115,8 +116,7 @@ export interface ConversationSummaryTarget {
   id: string;
 }
 
-export interface ConversationRecoveryRequest
-  extends ConversationSummaryTarget {
+export interface ConversationRecoveryRequest extends ConversationSummaryTarget {
   replacementId?: string;
 }
 
@@ -152,7 +152,7 @@ export interface ProjectsAdapter {
     pinned: boolean;
   }): Promise<ProjectsSnapshot>;
 
-    deleteProject?(projectId: string): Promise<ProjectsSnapshot>;
+  deleteProject?(projectId: string): Promise<ProjectsSnapshot>;
   upsertConversation(
     update: ConversationSummaryUpdate,
   ): Promise<ProjectsSnapshot>;

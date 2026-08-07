@@ -1,7 +1,4 @@
-import type {
-  JsonRpcOutgoing,
-  JsonRpcRequest,
-} from "@threadlight/protocol";
+import type { JsonRpcOutgoing, JsonRpcRequest } from "@threadlight/protocol";
 
 import type { ClientTransport } from "./client.js";
 import {
@@ -25,9 +22,7 @@ export interface SwitchableHttpRuntimeTransportOptions {
  * project runtime on a remote Host.
  */
 export class SwitchableHttpRuntimeTransport implements ClientTransport {
-  private readonly listeners = new Set<
-    (message: JsonRpcOutgoing) => void
-  >();
+  private readonly listeners = new Set<(message: JsonRpcOutgoing) => void>();
   private transport?: HttpRuntimeTransport;
   private unsubscribe?: () => void;
   private activeProjectId?: string;
@@ -53,9 +48,7 @@ export class SwitchableHttpRuntimeTransport implements ClientTransport {
     this.unsubscribe = undefined;
     this.transport?.close();
     this.activeProjectId = value;
-    this.transport = new HttpRuntimeTransport(
-      this.runtimeOptions(value),
-    );
+    this.transport = new HttpRuntimeTransport(this.runtimeOptions(value));
     this.subscribeTransport();
   }
 
@@ -86,6 +79,10 @@ export class SwitchableHttpRuntimeTransport implements ClientTransport {
     return this.requireTransport().workspaceFile(path);
   }
 
+  downloadWorkspaceFile(path: string) {
+    return this.requireTransport().downloadWorkspaceFile(path);
+  }
+
   workspaceChanges() {
     return this.requireTransport().workspaceChanges();
   }
@@ -102,11 +99,7 @@ export class SwitchableHttpRuntimeTransport implements ClientTransport {
   }
 
   private subscribeTransport(): void {
-    if (
-      this.unsubscribe ||
-      !this.transport ||
-      this.listeners.size === 0
-    ) {
+    if (this.unsubscribe || !this.transport || this.listeners.size === 0) {
       return;
     }
     this.unsubscribe = this.transport.onMessage((message) => {

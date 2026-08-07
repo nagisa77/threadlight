@@ -10,6 +10,28 @@ import {
 } from "../src/index.js";
 
 describe("HttpRuntimeTransport", () => {
+  it("downloads raw workspace bytes with authentication", async () => {
+    let request: Request | undefined;
+    const transport = new HttpRuntimeTransport({
+      endpoint: "https://host.example.test",
+      token: "secret-token",
+      projectId: "project one",
+      fetch: (async (input, init) => {
+        request = new Request(input, init);
+        return new Response(Uint8Array.from([0, 1, 2, 255]));
+      }) as typeof globalThis.fetch,
+    });
+
+    await expect(
+      transport.downloadWorkspaceFile("output/file.pdf"),
+    ).resolves.toEqual(Uint8Array.from([0, 1, 2, 255]).buffer);
+    expect(request?.url).toBe(
+      "https://host.example.test/v1/projects/project%20one/runtime/workspace/download?path=output%2Ffile.pdf",
+    );
+    expect(request?.headers.get("authorization")).toBe("Bearer secret-token");
+    transport.close();
+  });
+
   it("parses standard SSE data frames and ignores heartbeat comments", async () => {
     const encoder = new TextEncoder();
     let streamController!: ReadableStreamDefaultController<Uint8Array>;
@@ -71,9 +93,7 @@ describe("SwitchableHttpRuntimeTransport", () => {
     const fetcher = async (input: string | URL | Request) => {
       urls.push(String(input));
       return new Response(
-        JSON.stringify([
-          { name: "src", path: "src", kind: "directory" },
-        ]),
+        JSON.stringify([{ name: "src", path: "src", kind: "directory" }]),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -154,9 +174,7 @@ describe("BrowserTerminalClient", () => {
     });
     expect(socketUrl).toBe("wss://host.example.test/v1/host/terminal");
     expect(socketUrl).not.toContain("token");
-    expect(protocols).toEqual(
-      browserTerminalProtocols("a token/with+symbols"),
-    );
+    expect(protocols).toEqual(browserTerminalProtocols("a token/with+symbols"));
     expect(protocols.join(",")).not.toContain("a token/with+symbols");
 
     client.write("terminal-1", "pwd\r");

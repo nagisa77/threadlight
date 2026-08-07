@@ -1,11 +1,5 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  readdir,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
@@ -13,12 +7,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { homedir } from "node:os";
-import {
-  basename,
-  dirname,
-  isAbsolute,
-  join,
-} from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import type { Duplex } from "node:stream";
 
 import {
@@ -35,6 +24,7 @@ import {
   projectDiagnosticBundle,
   projectDiagnostics,
   ProjectSearchService,
+  RunningThreadRegistry,
   TaskWorkspaceManager,
   type GitTaskWorkspace,
   type TaskWorkspace,
@@ -45,9 +35,7 @@ import {
   testProviderConnection,
   type RuntimeSettings,
 } from "@threadlight/host-core";
-import type {
-  TerminalSessionController,
-} from "@threadlight/terminal-core";
+import type { TerminalSessionController } from "@threadlight/terminal-core";
 import { THREADLIGHT_HOST_PROTOCOL_VERSION } from "@threadlight/protocol";
 import type {
   AttachmentData,
@@ -57,6 +45,7 @@ import type {
   HostAutomationUpdateRequest,
   HostDirectoryListing,
   HostProjectSummary,
+  HostProjectsSnapshot,
   HostProviderDiagnostic,
   HostProviderTestRequest,
   HostSearchRequest,
@@ -74,7 +63,11 @@ import type {
 import { WebSocketServer } from "ws";
 
 import { HostTerminalGateway } from "./host-terminal-gateway.js";
-import { listHostFiles, readHostFile } from "./host-files.js";
+import {
+  listHostFiles,
+  readHostFile,
+  readHostFileContents,
+} from "./host-files.js";
 import type { RuntimePeer } from "./remote-runtime-peer.js";
 import { RemoteWorkspace } from "./remote-workspace.js";
 
@@ -155,6 +148,7 @@ export class ThreadlightHostServer {
   private readonly listenHost: string;
   private readonly port: number;
   private readonly runtimes = new Map<string, RuntimeContext>();
+  private readonly runningThreads = new RunningThreadRegistry();
   private readonly pending = new Map<string, PendingResponse>();
   private readonly terminalGateway?: HostTerminalGateway;
   private readonly terminalWebSockets?: WebSocketServer;
@@ -194,13 +188,10 @@ export class ThreadlightHostServer {
     this.automationStore = new AutomationStore(
       join(options.homePath, "automations.json"),
     );
-    this.automationScheduler = new AutomationScheduler(
-      this.automationStore,
-      {
-        execute: (automation) => this.executeAutomation(automation),
-        notify: () => undefined,
-      },
-    );
+    this.automationScheduler = new AutomationScheduler(this.automationStore, {
+      execute: (automation) => this.executeAutomation(automation),
+      notify: () => undefined,
+    });
     this.taskWorkspaces =
       options.taskWorkspaces ??
       new TaskWorkspaceManager(join(options.homePath, "worktrees"), {
@@ -208,9 +199,7 @@ export class ThreadlightHostServer {
       });
     this.conversationChanges =
       options.conversationChanges ??
-      new ConversationChangeTracker(
-        join(options.homePath, "review-snapshots"),
-      );
+      new ConversationChangeTracker(join(options.homePath, "review-snapshots"));
     this.worktreeDelivery =
       options.worktreeDelivery ??
       new WorktreeDeliveryManager(this.conversationChanges);
@@ -310,9 +299,7 @@ export class ThreadlightHostServer {
     }
     this.pending.clear();
     await Promise.all(
-      pendingResponses.map((pending) =>
-        this.discardPendingWorkspace(pending),
-      ),
+      pendingResponses.map((pending) => this.discardPendingWorkspace(pending)),
     );
     this.terminalGateway?.close();
     this.terminalWebSockets?.close();
@@ -339,11 +326,7 @@ export class ThreadlightHostServer {
     const oauthCallback = hostOAuthCallbackRoute(url.pathname);
     if (request.method === "GET" && oauthCallback) {
       try {
-        this.handleOAuthCallback(
-          response,
-          url,
-          oauthCallback.connectorId,
-        );
+        this.handleOAuthCallback(response, url, oauthCallback.connectorId);
       } catch {
         this.writeJson(response, 400, {
           error: "Invalid OAuth callback",
@@ -364,9 +347,7 @@ export class ThreadlightHostServer {
           hostId: this.options.hostId,
           name: this.options.name,
           homePath: this.options.homePath,
-          ...(this.terminalGateway
-            ? { capabilities: { terminal: true } }
-            : {}),
+          ...(this.terminalGateway ? { capabilities: { terminal: true } } : {}),
         } satisfies ThreadlightHostHealth);
         return;
       }
@@ -488,10 +469,7 @@ export class ThreadlightHostServer {
       request.method === "POST" &&
       url.pathname === "/v1/host/automations/update"
     ) {
-      const automation = parseAutomationRequest(
-        await jsonBody(request),
-        true,
-      );
+      const automation = parseAutomationRequest(await jsonBody(request), true);
       this.requireProject(automation.projectId);
       this.writeJson(response, 200, this.automationStore.update(automation));
       return true;
@@ -528,7 +506,7 @@ export class ThreadlightHostServer {
       return true;
     }
     if (request.method === "GET" && url.pathname === "/v1/host/projects") {
-      this.writeJson(response, 200, this.options.projects.snapshot());
+      this.writeJson(response, 200, this.projectsSnapshot());
       return true;
     }
     if (request.method === "POST" && url.pathname === "/v1/host/search") {
@@ -541,10 +519,7 @@ export class ThreadlightHostServer {
       );
       return true;
     }
-    if (
-      request.method === "GET" &&
-      url.pathname === "/v1/host/directories"
-    ) {
+    if (request.method === "GET" && url.pathname === "/v1/host/directories") {
       this.writeJson(
         response,
         200,
@@ -568,6 +543,13 @@ export class ThreadlightHostServer {
       );
       return true;
     }
+    if (request.method === "GET" && url.pathname === "/v1/host/file/download") {
+      this.writeBinary(
+        response,
+        await readHostFileContents(url.searchParams.get("path") ?? ""),
+      );
+      return true;
+    }
     if (
       request.method === "POST" &&
       url.pathname === "/v1/host/projects/register"
@@ -576,7 +558,9 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        this.options.projects.register(requiredString(body.path, "path")),
+        this.projectsSnapshot(
+          this.options.projects.register(requiredString(body.path, "path")),
+        ),
       );
       return true;
     }
@@ -587,7 +571,7 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        this.options.projects.activateStandalone(),
+        this.projectsSnapshot(this.options.projects.activateStandalone()),
       );
       return true;
     }
@@ -599,8 +583,10 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        this.options.projects.activate(
-          requiredString(body.projectId, "projectId"),
+        this.projectsSnapshot(
+          this.options.projects.activate(
+            requiredString(body.projectId, "projectId"),
+          ),
         ),
       );
       return true;
@@ -613,10 +599,12 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        this.options.projects.updateProject({
-          id: requiredString(body.id, "id"),
-          pinned: requiredBoolean(body.pinned, "pinned"),
-        }),
+        this.projectsSnapshot(
+          this.options.projects.updateProject({
+            id: requiredString(body.id, "id"),
+            pinned: requiredBoolean(body.pinned, "pinned"),
+          }),
+        ),
       );
       return true;
     }
@@ -628,8 +616,10 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        this.options.projects.deleteProject(
-          requiredString(body.projectId, "projectId"),
+        this.projectsSnapshot(
+          this.options.projects.deleteProject(
+            requiredString(body.projectId, "projectId"),
+          ),
         ),
       );
       return true;
@@ -653,9 +643,7 @@ export class ThreadlightHostServer {
         snapshot = this.options.projects.updateConversation({
           ...target,
           ...(typeof body.title === "string" ? { title: body.title } : {}),
-          ...(typeof body.pinned === "boolean"
-            ? { pinned: body.pinned }
-            : {}),
+          ...(typeof body.pinned === "boolean" ? { pinned: body.pinned } : {}),
           ...(typeof body.archived === "boolean"
             ? { archived: body.archived }
             : {}),
@@ -681,14 +669,13 @@ export class ThreadlightHostServer {
       } else if (url.pathname.endsWith("/delete")) {
         const workspace = this.options.projects
           .project(target.projectId)
-          ?.conversations.find(({ id }) => id === target.id)
-          ?.workspace;
+          ?.conversations.find(({ id }) => id === target.id)?.workspace;
         snapshot = this.options.projects.deleteConversation(target);
         await this.disposeConversationWorkspace(target, workspace);
       } else {
         return false;
       }
-      this.writeJson(response, 200, snapshot);
+      this.writeJson(response, 200, this.projectsSnapshot(snapshot));
       return true;
     }
     if (request.method === "GET" && url.pathname === "/v1/host/settings") {
@@ -735,10 +722,7 @@ export class ThreadlightHostServer {
     url: URL,
     route: { projectId: string; threadId: string; action: string },
   ): Promise<void> {
-    const context = this.conversationWorkspace(
-      route.projectId,
-      route.threadId,
-    );
+    const context = this.conversationWorkspace(route.projectId, route.threadId);
     const { project, workspace } = context;
 
     if (request.method === "GET" && route.action === "changes") {
@@ -788,6 +772,14 @@ export class ThreadlightHostServer {
           requiredQuery(url, "path"),
         ),
       );
+      return;
+    }
+    if (request.method === "GET" && route.action === "workspace/download") {
+      const absolutePath = await this.conversationChanges.workspaceFilePath(
+        workspace.path,
+        requiredQuery(url, "path"),
+      );
+      this.writeBinary(response, await readFile(absolutePath));
       return;
     }
     if (request.method === "GET" && route.action === "delivery/history") {
@@ -869,10 +861,7 @@ export class ThreadlightHostServer {
       );
       return;
     }
-    if (
-      request.method === "POST" &&
-      route.action === "code-host/commit-push"
-    ) {
+    if (request.method === "POST" && route.action === "code-host/commit-push") {
       this.writeJson(
         response,
         200,
@@ -883,21 +872,15 @@ export class ThreadlightHostServer {
       );
       return;
     }
-    if (
-      request.method === "POST" &&
-      route.action === "code-host/create-pr"
-    ) {
+    if (request.method === "POST" && route.action === "code-host/create-pr") {
       this.writeJson(
         response,
         200,
-        await this.codeHostDelivery.createPullRequest(
-          codeHostRequest,
-          {
-            title: requiredString(body?.title, "title"),
-            draft: body?.draft !== false,
-            ...(typeof body?.body === "string" ? { body: body.body } : {}),
-          },
-        ),
+        await this.codeHostDelivery.createPullRequest(codeHostRequest, {
+          title: requiredString(body?.title, "title"),
+          draft: body?.draft !== false,
+          ...(typeof body?.body === "string" ? { body: body.body } : {}),
+        }),
       );
       return;
     }
@@ -935,9 +918,7 @@ export class ThreadlightHostServer {
     const project = this.options.projects.project(request.projectId);
     if (!project) throw new Error(`Unknown project: ${request.projectId}`);
     const conversation = request.threadId
-      ? project.conversations.find(
-          ({ id }) => id === request.threadId,
-        )
+      ? project.conversations.find(({ id }) => id === request.threadId)
       : undefined;
     if (request.threadId && !conversation) {
       throw new Error("Unknown conversation");
@@ -949,6 +930,17 @@ export class ThreadlightHostServer {
       mode: request.mode,
       limit: request.limit ?? 80,
     });
+  }
+
+  private projectsSnapshot(
+    snapshot = this.options.projects.snapshot(),
+  ): HostProjectsSnapshot {
+    return {
+      ...snapshot,
+      runningThreadIds: this.runningThreads.threadIds(
+        snapshot.projects.map(({ id }) => id),
+      ),
+    };
   }
 
   private async uploadHostAttachment(
@@ -1001,8 +993,7 @@ export class ThreadlightHostServer {
     const root = attachmentUploadRoot(project.basePath);
     const entry = (await readdir(root, { withFileTypes: true })).find(
       (candidate) =>
-        candidate.isFile() &&
-        candidate.name.startsWith(`${attachmentId}-`),
+        candidate.isFile() && candidate.name.startsWith(`${attachmentId}-`),
     );
     if (!entry) throw new Error("Attachment not found.");
     const content = await readFile(join(root, entry.name));
@@ -1069,6 +1060,15 @@ export class ThreadlightHostServer {
         response,
         200,
         await context.workspace.file(url.searchParams.get("path") ?? ""),
+      );
+      return;
+    }
+    if (request.method === "GET" && route.action === "/workspace/download") {
+      this.writeBinary(
+        response,
+        await context.workspace.fileContents(
+          url.searchParams.get("path") ?? "",
+        ),
       );
       return;
     }
@@ -1266,8 +1266,9 @@ export class ThreadlightHostServer {
         clearTimeout(pending.timeout);
         this.pending.delete(message.id);
         if (pending.method === "thread/start" && "result" in message) {
-          const threadId = (message.result as { threadId?: unknown } | undefined)
-            ?.threadId;
+          const threadId = (
+            message.result as { threadId?: unknown } | undefined
+          )?.threadId;
           if (typeof threadId === "string") {
             const project = this.options.projects.project(projectId);
             if (project && pending.workspace) {
@@ -1296,7 +1297,7 @@ export class ThreadlightHostServer {
         return;
       }
     }
-    this.recordNotification(projectId, message);
+    this.recordNotification(projectId, context, message);
     this.resolveAutomationTurn(projectId, message);
     const event = serverSentEvent(message);
     for (const client of this.projectEventClients(projectId)) {
@@ -1306,8 +1307,14 @@ export class ThreadlightHostServer {
 
   private recordNotification(
     projectId: string,
+    context: RuntimeContext,
     message: JsonRpcOutgoing,
   ): void {
+    this.runningThreads.record(
+      projectId,
+      runtimeKey(projectId, context.workspacePath),
+      message,
+    );
     if (!("method" in message)) return;
     const params = message.params as Record<string, unknown> | undefined;
     const threadId = params?.threadId;
@@ -1437,9 +1444,7 @@ export class ThreadlightHostServer {
       project.id,
       project.basePath,
       this.options.oauthCallbackUrlPrefix
-        ? normalizeOAuthCallbackUrlPrefix(
-            this.options.oauthCallbackUrlPrefix,
-          )
+        ? normalizeOAuthCallbackUrlPrefix(this.options.oauthCallbackUrlPrefix)
         : undefined,
     );
     const started = await requestRuntimePeer(context.peer, "thread/start");
@@ -1495,8 +1500,7 @@ export class ThreadlightHostServer {
   ): void {
     if (
       !("method" in message) ||
-      (message.method !== "turn/completed" &&
-        message.method !== "turn/failed")
+      (message.method !== "turn/completed" && message.method !== "turn/failed")
     ) {
       return;
     }
@@ -1515,8 +1519,7 @@ export class ThreadlightHostServer {
       // A task can be removed while a late automation result is queued.
     }
     const diagnostics = params?.diagnostics as
-      | { toolCalls?: readonly { isError?: boolean }[] }
-      | undefined;
+      { toolCalls?: readonly { isError?: boolean }[] } | undefined;
     waiter.resolve(
       message.method === "turn/failed"
         ? {
@@ -1594,9 +1597,7 @@ export class ThreadlightHostServer {
     );
   }
 
-  private oauthCallbackUrlPrefix(
-    request: IncomingMessage,
-  ): string | undefined {
+  private oauthCallbackUrlPrefix(request: IncomingMessage): string | undefined {
     if (this.options.oauthCallbackUrlPrefix) {
       return normalizeOAuthCallbackUrlPrefix(
         this.options.oauthCallbackUrlPrefix,
@@ -1645,9 +1646,9 @@ export class ThreadlightHostServer {
     };
   }
 
-  private requireWorktreeWorkspace(
-    context: { workspace: TaskWorkspace },
-  ): GitTaskWorkspace {
+  private requireWorktreeWorkspace(context: {
+    workspace: TaskWorkspace;
+  }): GitTaskWorkspace {
     if (context.workspace.mode !== "worktree") {
       throw new Error("Only isolated worktree tasks can be delivered");
     }
@@ -1659,10 +1660,7 @@ export class ThreadlightHostServer {
   ): Promise<void> {
     if (pending.pendingSnapshotId) {
       await this.conversationChanges
-        .discardPendingSnapshot(
-          pending.projectId,
-          pending.pendingSnapshotId,
-        )
+        .discardPendingSnapshot(pending.projectId, pending.pendingSnapshotId)
         .catch(() => undefined);
     }
     if (pending.workspace) {
@@ -1672,10 +1670,13 @@ export class ThreadlightHostServer {
     }
   }
 
-  private async disposeConversationWorkspace(target: {
-    projectId: string;
-    id: string;
-  }, workspace?: TaskWorkspace): Promise<void> {
+  private async disposeConversationWorkspace(
+    target: {
+      projectId: string;
+      id: string;
+    },
+    workspace?: TaskWorkspace,
+  ): Promise<void> {
     const project = this.options.projects.project(target.projectId);
     await this.conversationChanges
       .deleteSnapshot(target.projectId, target.id)
@@ -1694,6 +1695,7 @@ export class ThreadlightHostServer {
     const runtime = this.runtimes.get(key);
     if (runtime) {
       this.runtimes.delete(key);
+      this.runningThreads.clearRuntime(key);
       runtime.unsubscribe();
       runtime.unsubscribeExit();
       await runtime.peer.stop().catch(() => undefined);
@@ -1707,6 +1709,7 @@ export class ThreadlightHostServer {
     error: Error,
   ): void {
     const key = runtimeKey(projectId, context.workspacePath);
+    this.runningThreads.clearRuntime(key);
     if (this.runtimes.get(key) === context) {
       this.runtimes.delete(key);
     }
@@ -1731,6 +1734,7 @@ export class ThreadlightHostServer {
   private async stopRuntimes(): Promise<void> {
     const contexts = [...this.runtimes.values()];
     this.runtimes.clear();
+    this.runningThreads.clear();
     for (const context of contexts) {
       context.unsubscribe();
       context.unsubscribeExit();
@@ -1757,8 +1761,7 @@ export class ThreadlightHostServer {
     const supplied = Buffer.from(value);
     const expected = Buffer.from(this.options.token);
     return (
-      supplied.length === expected.length &&
-      timingSafeEqual(supplied, expected)
+      supplied.length === expected.length && timingSafeEqual(supplied, expected)
     );
   }
 
@@ -1785,18 +1788,12 @@ export class ThreadlightHostServer {
       rejectUpgrade(socket, 403, "Forbidden");
       return;
     }
-    this.terminalWebSockets.handleUpgrade(
-      request,
-      socket,
-      head,
-      (webSocket) => this.terminalGateway?.accept(webSocket),
+    this.terminalWebSockets.handleUpgrade(request, socket, head, (webSocket) =>
+      this.terminalGateway?.accept(webSocket),
     );
   }
 
-  private applyCors(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ): void {
+  private applyCors(request: IncomingMessage, response: ServerResponse): void {
     const origin = request.headers.origin;
     if (origin && this.isAllowedOrigin(origin)) {
       response.setHeader("Access-Control-Allow-Origin", origin);
@@ -1805,7 +1802,10 @@ export class ThreadlightHostServer {
         "Access-Control-Allow-Headers",
         "Authorization, Content-Type, X-Threadlight-Host-Endpoint",
       );
-      response.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
+      response.setHeader(
+        "Access-Control-Allow-Methods",
+        "GET, POST, PUT, OPTIONS",
+      );
     }
   }
 
@@ -1825,13 +1825,19 @@ export class ThreadlightHostServer {
     });
     response.end(JSON.stringify(value));
   }
+
+  private writeBinary(response: ServerResponse, content: Buffer): void {
+    if (response.writableEnded) return;
+    response.writeHead(200, {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(content.byteLength),
+      "Cache-Control": "no-store",
+    });
+    response.end(content);
+  }
 }
 
-function rejectUpgrade(
-  socket: Duplex,
-  status: number,
-  message: string,
-): void {
+function rejectUpgrade(socket: Duplex, status: number, message: string): void {
   socket.write(
     `HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`,
   );
@@ -1842,9 +1848,7 @@ function serverSentEvent(message: JsonRpcOutgoing): string {
   return `data: ${JSON.stringify(message)}\n\n`;
 }
 
-function browserWebSocketToken(
-  request: IncomingMessage,
-): string | undefined {
+function browserWebSocketToken(request: IncomingMessage): string | undefined {
   const protocols = request.headers["sec-websocket-protocol"];
   if (typeof protocols !== "string") return;
   const encoded = protocols
@@ -1875,9 +1879,7 @@ function runtimeRoute(
 
 function hostConversationWorkspaceRoute(
   pathname: string,
-):
-  | { projectId: string; threadId: string; action: string }
-  | undefined {
+): { projectId: string; threadId: string; action: string } | undefined {
   const match =
     /^\/v1\/host\/projects\/([^/]+)\/conversations\/([^/]+)\/(.+)$/.exec(
       pathname,
@@ -1915,12 +1917,14 @@ async function initializeRuntimePeer(
       }
     });
     try {
-      void Promise.resolve(peer.send({
-        jsonrpc: "2.0",
-        id,
-        method: "initialize",
-        ...(params ? { params } : {}),
-      } as JsonRpcRequest)).catch((error) => {
+      void Promise.resolve(
+        peer.send({
+          jsonrpc: "2.0",
+          id,
+          method: "initialize",
+          ...(params ? { params } : {}),
+        } as JsonRpcRequest),
+      ).catch((error) => {
         clearTimeout(timeout);
         unsubscribe();
         reject(error);
@@ -1979,15 +1983,11 @@ function hostAttachmentRoute(
   pathname: string,
 ): { projectId: string; attachmentId?: string } | undefined {
   const match =
-    /^\/v1\/host\/projects\/([^/]+)\/attachments(?:\/([^/]+))?$/.exec(
-      pathname,
-    );
+    /^\/v1\/host\/projects\/([^/]+)\/attachments(?:\/([^/]+))?$/.exec(pathname);
   if (!match) return;
   return {
     projectId: decodeURIComponent(match[1]!),
-    ...(match[2]
-      ? { attachmentId: decodeURIComponent(match[2]) }
-      : {}),
+    ...(match[2] ? { attachmentId: decodeURIComponent(match[2]) } : {}),
   };
 }
 
@@ -2013,11 +2013,7 @@ function attachmentMimeType(value: string | null): string {
 
 function attachmentSize(value: string | null): number {
   const size = Number(value);
-  if (
-    !Number.isSafeInteger(size) ||
-    size <= 0 ||
-    size > MAX_ATTACHMENT_BYTES
-  ) {
+  if (!Number.isSafeInteger(size) || size <= 0 || size > MAX_ATTACHMENT_BYTES) {
     throw new Error("Attachment must be non-empty and smaller than 50 MB.");
   }
   return size;
@@ -2136,9 +2132,7 @@ async function listHostDirectories(
     await Promise.all(
       entries
         .filter((entry) =>
-          entry.name.toLocaleLowerCase().startsWith(
-            prefix.toLocaleLowerCase(),
-          ),
+          entry.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase()),
         )
         .map(async (entry) => {
           const path = join(directory, entry.name);
@@ -2186,10 +2180,7 @@ function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {
   );
 }
 
-function readBody(
-  request: IncomingMessage,
-  limit: number,
-): Promise<string> {
+function readBody(request: IncomingMessage, limit: number): Promise<string> {
   return readBinaryBody(request, limit).then((content) =>
     content.toString("utf8"),
   );
@@ -2259,9 +2250,7 @@ function parseHostSearchRequest(value: unknown): HostSearchRequest {
       : {}),
     query: request.query,
     mode: request.mode,
-    ...(typeof request.limit === "number"
-      ? { limit: request.limit }
-      : {}),
+    ...(typeof request.limit === "number" ? { limit: request.limit } : {}),
   };
 }
 
@@ -2325,14 +2314,13 @@ function parseAutomationRequest(
     enabled: request.enabled,
     schedule: normalizedSchedule,
   };
-  return update
-    ? { ...base, id: request.id as string }
-    : base;
+  return update ? { ...base, id: request.id as string } : base;
 }
 
-function parseAutomationTarget(
-  value: unknown,
-): { projectId: string; id: string } {
+function parseAutomationTarget(value: unknown): {
+  projectId: string;
+  id: string;
+} {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Invalid automation target");
   }
@@ -2365,15 +2353,12 @@ function hostOAuthCallbackRoute(
   pathname: string,
 ): { connectorId: string } | undefined {
   const match =
-    /^\/v1\/host\/oauth\/callback\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(
-      pathname,
-    );
+    /^\/v1\/host\/oauth\/callback\/([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(pathname);
   return match?.[1] ? { connectorId: match[1] } : undefined;
 }
 
 function hostDiagnosticsProjectId(pathname: string): string | undefined {
-  const match =
-    /^\/v1\/host\/projects\/([^/]+)\/diagnostics$/.exec(pathname);
+  const match = /^\/v1\/host\/projects\/([^/]+)\/diagnostics$/.exec(pathname);
   if (!match?.[1]) return;
   const projectId = decodeURIComponent(match[1]);
   if (!projectId || projectId.length > 256) {
@@ -2382,11 +2367,10 @@ function hostDiagnosticsProjectId(pathname: string): string | undefined {
   return projectId;
 }
 
-function hostDiagnosticBundleProjectId(
-  pathname: string,
-): string | undefined {
-  const match =
-    /^\/v1\/host\/projects\/([^/]+)\/diagnostics\/bundle$/.exec(pathname);
+function hostDiagnosticBundleProjectId(pathname: string): string | undefined {
+  const match = /^\/v1\/host\/projects\/([^/]+)\/diagnostics\/bundle$/.exec(
+    pathname,
+  );
   if (!match?.[1]) return;
   const projectId = decodeURIComponent(match[1]);
   if (!projectId || projectId.length > 256) {
@@ -2404,9 +2388,7 @@ function parseDiagnosticBundleRequest(value: unknown): readonly string[] {
     !Array.isArray(conversationIds) ||
     conversationIds.length === 0 ||
     conversationIds.length > 500 ||
-    conversationIds.some(
-      (id) => typeof id !== "string" || !/^[\w-]+$/.test(id),
-    )
+    conversationIds.some((id) => typeof id !== "string" || !/^[\w-]+$/.test(id))
   ) {
     throw new Error("Invalid diagnostic conversation selection");
   }
@@ -2414,8 +2396,7 @@ function parseDiagnosticBundleRequest(value: unknown): readonly string[] {
 }
 
 function hostAutomationsProjectId(pathname: string): string | undefined {
-  const match =
-    /^\/v1\/host\/projects\/([^/]+)\/automations$/.exec(pathname);
+  const match = /^\/v1\/host\/projects\/([^/]+)\/automations$/.exec(pathname);
   if (!match?.[1]) return;
   const projectId = decodeURIComponent(match[1]);
   if (!projectId || projectId.length > 256) {

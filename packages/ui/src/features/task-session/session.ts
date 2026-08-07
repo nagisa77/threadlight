@@ -357,6 +357,20 @@ export function reduceThreadSession(
   };
 }
 
+export function mergeRunningThreadIds(
+  persisted: readonly string[],
+  sessions: Readonly<Record<string, SessionState>>,
+): readonly string[] {
+  return [
+    ...new Set([
+      ...persisted,
+      ...Object.values(sessions)
+        .filter((session) => session.isRunning && session.threadId)
+        .map((session) => session.threadId as string),
+    ]),
+  ];
+}
+
 function reduceAgentEvent(
   state: SessionState,
   event: AgentEventData,
@@ -683,7 +697,10 @@ export function newTaskDraftState(
 
 export function useThreadlightSession(
   client: ThreadlightClient,
-  options: { autoConnect?: boolean } = {},
+  options: {
+    autoConnect?: boolean;
+    runningThreadIds?: readonly string[];
+  } = {},
 ) {
   const [sessions, setSessions] = useState<
     Readonly<Record<string, SessionState>>
@@ -833,11 +850,8 @@ export function useThreadlightSession(
     (activeThreadIdValue ? sessions[activeThreadIdValue] : undefined) ??
     initialSessionState;
   const runningThreadIds = useMemo(
-    () =>
-      Object.values(sessions)
-        .filter((session) => session.isRunning && session.threadId)
-        .map((session) => session.threadId as string),
-    [sessions],
+    () => mergeRunningThreadIds(options.runningThreadIds ?? [], sessions),
+    [options.runningThreadIds, sessions],
   );
 
   const runningProcessOwnerKey = useMemo(

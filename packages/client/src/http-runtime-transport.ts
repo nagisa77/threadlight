@@ -1,7 +1,4 @@
-import type {
-  JsonRpcOutgoing,
-  JsonRpcRequest,
-} from "@threadlight/protocol";
+import type { JsonRpcOutgoing, JsonRpcRequest } from "@threadlight/protocol";
 
 import type { ClientTransport } from "./client.js";
 
@@ -25,7 +22,8 @@ export class HttpRuntimeTransport implements ClientTransport {
   constructor(private readonly options: HttpRuntimeTransportOptions) {
     this.endpoint = normalizeEndpoint(options.endpoint);
     this.fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
-    if (!options.token.trim()) throw new Error("Remote runtime token is required.");
+    if (!options.token.trim())
+      throw new Error("Remote runtime token is required.");
   }
 
   async send(message: JsonRpcRequest): Promise<void> {
@@ -34,7 +32,8 @@ export class HttpRuntimeTransport implements ClientTransport {
       headers: this.headers({ "Content-Type": "application/json" }),
       body: JSON.stringify(message),
     });
-    const payload = await response.json() as JsonRpcOutgoing | { error?: string };
+    const payload = (await response.json()) as
+      JsonRpcOutgoing | { error?: string };
     if (!response.ok) {
       throw new Error(
         "error" in payload && typeof payload.error === "string"
@@ -55,15 +54,31 @@ export class HttpRuntimeTransport implements ClientTransport {
   }
 
   async workspaceList(path = ""): Promise<RemoteRuntimeWorkspaceEntry[]> {
-    return this.getJson(
-      `/workspace/list?path=${encodeURIComponent(path)}`,
-    );
+    return this.getJson(`/workspace/list?path=${encodeURIComponent(path)}`);
   }
 
   async workspaceFile(path: string): Promise<RemoteRuntimeWorkspaceFile> {
-    return this.getJson(
-      `/workspace/file?path=${encodeURIComponent(path)}`,
+    return this.getJson(`/workspace/file?path=${encodeURIComponent(path)}`);
+  }
+
+  async downloadWorkspaceFile(path: string): Promise<ArrayBuffer> {
+    const response = await this.fetcher(
+      this.url(`/workspace/download?path=${encodeURIComponent(path)}`),
+      { headers: this.headers() },
     );
+    if (!response.ok) {
+      let message: string | undefined;
+      try {
+        const payload = (await response.json()) as { error?: unknown };
+        if (typeof payload.error === "string") message = payload.error;
+      } catch {
+        // Binary endpoints can fail before a JSON response is available.
+      }
+      throw new Error(
+        message ?? `Remote runtime request failed (${response.status}).`,
+      );
+    }
+    return response.arrayBuffer();
   }
 
   async workspaceChanges(): Promise<RemoteRuntimeWorkspaceChanges> {
@@ -90,7 +105,9 @@ export class HttpRuntimeTransport implements ClientTransport {
         signal: abort.signal,
       });
       if (!response.ok || !response.body) {
-        throw new Error(`Remote runtime event stream failed (${response.status}).`);
+        throw new Error(
+          `Remote runtime event stream failed (${response.status}).`,
+        );
       }
       this.setConnected(true);
       const reader = response.body.getReader();
@@ -104,9 +121,7 @@ export class HttpRuntimeTransport implements ClientTransport {
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
         for (const rawLine of lines) {
-          const line = rawLine.endsWith("\r")
-            ? rawLine.slice(0, -1)
-            : rawLine;
+          const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
           if (!line) {
             if (eventData.length > 0) {
               const data = eventData.join("\n");
@@ -166,7 +181,7 @@ export class HttpRuntimeTransport implements ClientTransport {
     const response = await this.fetcher(this.url(path), {
       headers: this.headers(),
     });
-    const payload = await response.json() as Result | { error?: string };
+    const payload = (await response.json()) as Result | { error?: string };
     if (!response.ok) {
       throw new Error(
         typeof payload === "object" &&

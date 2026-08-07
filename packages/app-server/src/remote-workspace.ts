@@ -49,10 +49,9 @@ export class RemoteWorkspace {
       .filter((entry) => entry.name !== ".git")
       .filter((entry) => entry.isDirectory() || entry.isFile())
       .map((entry): RemoteWorkspaceEntry => {
-        const childPath = relative(
-          this.root,
-          resolve(absolute, entry.name),
-        ).split(sep).join("/");
+        const childPath = relative(this.root, resolve(absolute, entry.name))
+          .split(sep)
+          .join("/");
         return {
           name: entry.name,
           path: childPath,
@@ -83,6 +82,14 @@ export class RemoteWorkspace {
       binary,
       size: stat.size,
     };
+  }
+
+  async fileContents(path: string): Promise<Buffer> {
+    if (!path) throw new Error("A workspace file path is required.");
+    const absolute = this.resolvePath(path);
+    const stat = await lstat(absolute);
+    if (!stat.isFile()) throw new Error("Workspace path is not a file.");
+    return readFile(absolute);
   }
 
   async changes(): Promise<RemoteWorkspaceChanges> {
@@ -125,16 +132,14 @@ export class RemoteWorkspace {
     const deleted = code.includes("D");
     const added = untracked || code.includes("A");
     const renamed = code.includes("R");
-    const oldBuffer =
-      added
-        ? undefined
-        : await this.gitBuffer(["show", `HEAD:${oldPath ?? path}`]).catch(
-            () => undefined,
-          );
-    const newBuffer =
-      deleted
-        ? undefined
-        : await readFile(this.resolvePath(path)).catch(() => undefined);
+    const oldBuffer = added
+      ? undefined
+      : await this.gitBuffer(["show", `HEAD:${oldPath ?? path}`]).catch(
+          () => undefined,
+        );
+    const newBuffer = deleted
+      ? undefined
+      : await readFile(this.resolvePath(path)).catch(() => undefined);
     const binary =
       Boolean(oldBuffer?.includes(0)) || Boolean(newBuffer?.includes(0));
     const oldText = binary ? undefined : oldBuffer?.toString("utf8");
