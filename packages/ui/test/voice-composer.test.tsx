@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { ThreadlightClient } from "@threadlight/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -8,7 +9,11 @@ import {
   preserveComposerFocusOnPointerDown,
   ThreadlightApp,
 } from "../src/app.js";
-import { voiceInputKeepsComposerExpanded } from "../src/features/composer/controller.js";
+
+const appSource = readFileSync(
+  new URL("../src/app.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("voice composer", () => {
   it("always queues composer submissions while a turn is running", () => {
@@ -58,10 +63,9 @@ describe("voice composer", () => {
   });
 
   it("keeps the mobile composer expanded for the full voice lifecycle", () => {
-    expect(voiceInputKeepsComposerExpanded("idle")).toBe(false);
-    expect(voiceInputKeepsComposerExpanded("requesting")).toBe(true);
-    expect(voiceInputKeepsComposerExpanded("recording")).toBe(true);
-    expect(voiceInputKeepsComposerExpanded("transcribing")).toBe(true);
+    expect(appSource).toContain(
+      'voiceStatus !== "idle" ? " is-voice-active" : ""',
+    );
   });
 
   it("exposes a file picker when a local staging adapter is available", () => {

@@ -16,12 +16,6 @@ export interface PendingAttachment {
 export type VoiceInputStatus =
   "idle" | "requesting" | "recording" | "transcribing";
 
-export function voiceInputKeepsComposerExpanded(
-  status: VoiceInputStatus,
-): boolean {
-  return status !== "idle";
-}
-
 export function shouldIgnoreComposerKey(
   composing: boolean,
   nativeEvent: Pick<globalThis.KeyboardEvent, "isComposing" | "keyCode">,
