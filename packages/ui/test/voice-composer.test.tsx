@@ -8,6 +8,7 @@ import {
   preserveComposerFocusOnPointerDown,
   ThreadlightApp,
 } from "../src/app.js";
+import { voiceInputKeepsComposerExpanded } from "../src/features/composer/controller.js";
 
 describe("voice composer", () => {
   it("always queues composer submissions while a turn is running", () => {
@@ -32,10 +33,7 @@ describe("voice composer", () => {
     });
 
     const html = renderToStaticMarkup(
-      <ThreadlightApp
-        client={client}
-        voiceInput={{ transcribe: vi.fn() }}
-      />,
+      <ThreadlightApp client={client} voiceInput={{ transcribe: vi.fn() }} />,
     );
 
     expect(html).toContain('aria-label="语音输入"');
@@ -59,16 +57,20 @@ describe("voice composer", () => {
     expect(preventDefault).toHaveBeenCalledOnce();
   });
 
+  it("keeps the mobile composer expanded for the full voice lifecycle", () => {
+    expect(voiceInputKeepsComposerExpanded("idle")).toBe(false);
+    expect(voiceInputKeepsComposerExpanded("requesting")).toBe(true);
+    expect(voiceInputKeepsComposerExpanded("recording")).toBe(true);
+    expect(voiceInputKeepsComposerExpanded("transcribing")).toBe(true);
+  });
+
   it("exposes a file picker when a local staging adapter is available", () => {
     const client = new ThreadlightClient({
       send: vi.fn(),
       onMessage: () => () => undefined,
     });
     const html = renderToStaticMarkup(
-      <ThreadlightApp
-        client={client}
-        attachmentStage={{ stage: vi.fn() }}
-      />,
+      <ThreadlightApp client={client} attachmentStage={{ stage: vi.fn() }} />,
     );
 
     expect(html).toContain('aria-label="添加"');
@@ -91,7 +93,8 @@ describe("voice composer", () => {
           },
         ]}
         attachmentPreview={{
-          imageUrl: (attachment) => `threadlight-attachment://local/${attachment.id}`,
+          imageUrl: (attachment) =>
+            `threadlight-attachment://local/${attachment.id}`,
         }}
       />,
     );

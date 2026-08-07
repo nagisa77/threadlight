@@ -26,8 +26,15 @@ import {
   ActionPopover,
   ActionPopoverHeading,
   anchoredPopoverPosition,
+  type AnchoredPopoverOptions,
   type PopoverPosition,
 } from "./popover.js";
+
+const ACCESS_POPOVER_OPTIONS: AnchoredPopoverOptions = {
+  width: 336,
+  align: "start",
+  pin: "bottom",
+};
 
 export interface ExecutionApprovalRequest {
   requestId: string;
@@ -298,13 +305,7 @@ export function ConversationAccessControl({
     onOpen?.();
     setError(undefined);
     setKeyboardOpen(fromKeyboard);
-    setPosition(
-      anchoredPopoverPosition(bounds, {
-        width: 336,
-        align: "start",
-        pin: "bottom",
-      }),
-    );
+    setPosition(anchoredPopoverPosition(bounds, ACCESS_POPOVER_OPTIONS));
   }
 
   function close() {
@@ -379,6 +380,7 @@ export function ConversationAccessControl({
           error={error}
           keyboardOpen={keyboardOpen}
           position={position}
+          anchorRef={trigger}
           returnFocusRef={trigger}
           onClose={close}
           onSelect={(nextMode) => void select(nextMode)}
@@ -394,6 +396,7 @@ export function ConversationAccessPopover({
   error,
   keyboardOpen = false,
   position,
+  anchorRef,
   returnFocusRef,
   onClose,
   onSelect,
@@ -403,6 +406,7 @@ export function ConversationAccessPopover({
   error?: string;
   keyboardOpen?: boolean;
   position: PopoverPosition;
+  anchorRef?: RefObject<HTMLElement | null>;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onClose(): void;
   onSelect(mode: ConversationAccessMode): void;
@@ -434,6 +438,8 @@ export function ConversationAccessPopover({
       label={labels.access}
       className={`conversation-access-popover${keyboardOpen ? " keyboard-open" : ""}`}
       position={position}
+      anchorRef={anchorRef}
+      anchorOptions={anchorRef ? ACCESS_POPOVER_OPTIONS : undefined}
       returnFocusRef={returnFocusRef}
       onClose={onClose}
     >

@@ -7,6 +7,7 @@ import {
   ActionPopover,
   ActionPopoverItem,
   anchoredPopoverPosition,
+  observePopoverAnchor,
 } from "../src/popover.js";
 
 const popoverSource = readFileSync(
@@ -15,6 +16,46 @@ const popoverSource = readFileSync(
 );
 
 describe("ActionPopover", () => {
+  it("remeasures its anchor as the mobile visual viewport changes", () => {
+    const visualViewport = new EventTarget();
+    const trackingDocument = new EventTarget();
+    let nextFrame: FrameRequestCallback | undefined;
+    const flushFrame = (time: number) => {
+      const callback = nextFrame;
+      nextFrame = undefined;
+      callback?.(time);
+    };
+    const trackingWindow = Object.assign(new EventTarget(), {
+      visualViewport,
+      requestAnimationFrame(callback: FrameRequestCallback) {
+        nextFrame = callback;
+        return 1;
+      },
+      cancelAnimationFrame() {
+        nextFrame = undefined;
+      },
+      setTimeout,
+      clearTimeout,
+    });
+    const reposition = vi.fn();
+    const dispose = observePopoverAnchor(
+      reposition,
+      trackingWindow,
+      trackingDocument,
+    );
+
+    flushFrame(0);
+    expect(reposition).toHaveBeenCalledOnce();
+
+    visualViewport.dispatchEvent(new Event("resize"));
+    flushFrame(16);
+    expect(reposition).toHaveBeenCalledTimes(2);
+
+    dispose();
+    visualViewport.dispatchEvent(new Event("resize"));
+    expect(nextFrame).toBeUndefined();
+  });
+
   it("positions below its trigger when space is available", () => {
     expect(
       anchoredPopoverPosition(
@@ -206,9 +247,7 @@ describe("ActionPopover", () => {
   });
 
   it("portals viewport-positioned popovers outside transformed ancestors", () => {
-    expect(popoverSource).toMatch(
-      /createPortal\(popover,\s*document\.body\)/,
-    );
+    expect(popoverSource).toMatch(/createPortal\(popover,\s*document\.body\)/);
   });
 
   it("renders a reusable accessible menu surface", () => {

@@ -8,8 +8,15 @@ import {
   ActionPopover,
   ActionPopoverHeading,
   anchoredPopoverPosition,
+  type AnchoredPopoverOptions,
   type PopoverPosition,
 } from "../../popover.js";
+
+const DEVELOPMENT_MODE_POPOVER_OPTIONS: AnchoredPopoverOptions = {
+  width: 344,
+  align: "start",
+  pin: "bottom",
+};
 
 export function DevelopmentModeControl({
   mode,
@@ -33,11 +40,7 @@ export function DevelopmentModeControl({
     onOpen?.();
     setKeyboardOpen(fromKeyboard);
     setPosition(
-      anchoredPopoverPosition(bounds, {
-        width: 344,
-        align: "start",
-        pin: "bottom",
-      }),
+      anchoredPopoverPosition(bounds, DEVELOPMENT_MODE_POPOVER_OPTIONS),
     );
   }
 
@@ -85,6 +88,8 @@ export function DevelopmentModeControl({
         <ActionPopover
           label={t("developmentMode")}
           position={position}
+          anchorRef={trigger}
+          anchorOptions={DEVELOPMENT_MODE_POPOVER_OPTIONS}
           className={`development-mode-popover${keyboardOpen ? " keyboard-open" : ""}`}
           returnFocusRef={trigger}
           onClose={close}

@@ -1,5 +1,39 @@
 import DiffViewer from "react-diff-viewer-continued";
-import type { ComponentProps } from "react";
+import { useSyncExternalStore, type ComponentProps } from "react";
+
+export const MOBILE_DIFF_QUERY = "(max-width: 720px)";
+
+type MatchMedia = (query: string) => MediaQueryList;
+
+function browserMatchMedia(): MatchMedia | undefined {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
+    return undefined;
+  }
+  return window.matchMedia.bind(window);
+}
+
+export function isMobileDiffViewport(
+  matchMedia: MatchMedia | undefined = browserMatchMedia(),
+): boolean {
+  return matchMedia?.(MOBILE_DIFF_QUERY).matches ?? false;
+}
+
+export function subscribeToMobileDiffViewport(
+  onStoreChange: () => void,
+  matchMedia: MatchMedia | undefined = browserMatchMedia(),
+): () => void {
+  if (!matchMedia) return () => undefined;
+  const media = matchMedia(MOBILE_DIFF_QUERY);
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function serverMobileDiffViewport(): boolean {
+  return false;
+}
 
 export function ReviewDiffViewer({
   oldValue,
@@ -16,6 +50,12 @@ export function ReviewDiffViewer({
   language?: string;
   styles: ComponentProps<typeof DiffViewer>["styles"];
 }) {
+  const hideLineNumbers = useSyncExternalStore(
+    subscribeToMobileDiffViewport,
+    isMobileDiffViewport,
+    serverMobileDiffViewport,
+  );
+
   return (
     <DiffViewer
       oldValue={oldValue}
@@ -25,6 +65,7 @@ export function ReviewDiffViewer({
       showDiffOnly
       extraLinesSurroundingDiff={3}
       hideSummary
+      hideLineNumbers={hideLineNumbers}
       disableWorker
       highlightLanguage={language}
       styles={styles}

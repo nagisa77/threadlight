@@ -75,18 +75,16 @@ describe("ReviewView", () => {
     });
   });
 
-  it("hides diff line numbers and reduces code sizing on mobile", () => {
+  it("reduces diff code sizing on mobile without hiding table cells", () => {
     expect(reviewDiffStylesForLayout("unified")).toMatchObject({
       diffContainer: {
         "@media (max-width: 720px)": { fontSize: "11px" },
-      },
-      gutter: {
-        "@media (max-width: 720px)": { display: "none" },
       },
       contentText: {
         "@media (max-width: 720px)": { padding: "0 8px" },
       },
     });
+    expect(reviewDiffStylesForLayout("unified")).not.toHaveProperty("gutter");
   });
 
   it("keeps automatic sync and recovery actions in one compact toolbar", () => {

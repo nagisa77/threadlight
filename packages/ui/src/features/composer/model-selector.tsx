@@ -11,6 +11,7 @@ import {
   ActionPopover,
   ActionPopoverHeading,
   anchoredPopoverPosition,
+  type AnchoredPopoverOptions,
   type PopoverPosition,
 } from "../../popover.js";
 import type { Translate } from "../../i18n.js";
@@ -33,6 +34,11 @@ export interface ModelSelection {
 }
 
 const POPOVER_WIDTH = 264;
+const MODEL_POPOVER_OPTIONS: AnchoredPopoverOptions = {
+  width: POPOVER_WIDTH,
+  align: "end",
+  pin: "bottom",
+};
 
 export function isCurrentModelSelection(
   activeProvider: ModelProviderId,
@@ -88,13 +94,7 @@ export function ModelSelector({
   function placePopover() {
     const bounds = triggerRef.current?.getBoundingClientRect();
     if (!bounds) return;
-    setPosition(
-      anchoredPopoverPosition(bounds, {
-        width: POPOVER_WIDTH,
-        align: "end",
-        pin: "bottom",
-      }),
-    );
+    setPosition(anchoredPopoverPosition(bounds, MODEL_POPOVER_OPTIONS));
   }
 
   function openPopover(fromKeyboard: boolean) {
@@ -211,6 +211,8 @@ export function ModelSelector({
         <ActionPopover
           label={t("modelSelector")}
           position={position}
+          anchorRef={triggerRef}
+          anchorOptions={MODEL_POPOVER_OPTIONS}
           className={`model-selector-popover${keyboardOpen ? " keyboard-open" : ""}`}
           returnFocusRef={triggerRef}
           onClose={handleClose}

@@ -3906,7 +3906,7 @@ function ThreadlightAppContent({
                 )}
                 <div
                   ref={composerRoot}
-                  className={`composer ${voiceStatus === "recording" ? "is-recording" : ""} ${composerHasContext ? "has-context" : ""}`}
+                  className={`composer${voiceStatus !== "idle" ? " is-voice-active" : ""}${voiceStatus === "recording" ? " is-recording" : ""}${composerHasContext ? " has-context" : ""}`}
                 >
                   <input
                     ref={fileInput}

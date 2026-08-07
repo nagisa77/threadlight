@@ -949,11 +949,6 @@ const diffStyles = {
   lineNumber: {
     minWidth: "44px",
   },
-  gutter: {
-    "@media (max-width: 720px)": {
-      display: "none",
-    },
-  },
   contentText: {
     padding: "0 10px",
     "@media (max-width: 720px)": {

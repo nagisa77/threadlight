@@ -2965,7 +2965,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
     border-radius: 14px;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+  .composer:not(:focus-within):not(.is-voice-active):not(.has-context):not(
       :has(.composer-toolbar [aria-expanded="true"])
     ) {
     display: grid;
@@ -2975,7 +2975,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
     padding: 5px 7px 5px 11px;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+  .composer:not(:focus-within):not(.is-voice-active):not(.has-context):not(
       :has(.composer-toolbar [aria-expanded="true"])
     )
     textarea {
@@ -2987,7 +2987,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
     line-height: 24px;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+  .composer:not(:focus-within):not(.is-voice-active):not(.has-context):not(
       :has(.composer-toolbar [aria-expanded="true"])
     )
     .composer-toolbar {
@@ -2996,11 +2996,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
     gap: 0;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+  .composer:not(:focus-within):not(.is-voice-active):not(.has-context):not(
       :has(.composer-toolbar [aria-expanded="true"])
     )
     .composer-toolbar-start,
-  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+  .composer:not(:focus-within):not(.is-voice-active):not(.has-context):not(
       :has(.composer-toolbar [aria-expanded="true"])
     )
     .composer-toolbar-end
@@ -3008,7 +3008,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
     display: none;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+  .composer:not(:focus-within):not(.is-voice-active):not(.has-context):not(
       :has(.composer-toolbar [aria-expanded="true"])
     )
     .composer-toolbar-end {
