@@ -2850,6 +2850,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   if (typeof update.model !== "string" || !update.model.trim()) {
     throw new Error("model must be a non-empty string");
   }
+  if (typeof update.customModel !== "string" || !update.customModel.trim()) {
+    throw new Error("customModel must be a non-empty string");
+  }
   if (typeof update.qwenBaseUrl !== "string" || !update.qwenBaseUrl.trim()) {
     throw new Error("qwenBaseUrl must be a non-empty string");
   }
@@ -2885,6 +2888,7 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
       : {}),
     provider: update.provider,
     model: update.model.trim(),
+    customModel: update.customModel.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
     kimiBaseUrl: update.kimiBaseUrl.trim(),
     doubaoBaseUrl: update.doubaoBaseUrl.trim(),

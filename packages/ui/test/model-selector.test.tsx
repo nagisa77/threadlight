@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ModelSelector,
+  configuredModelForProvider,
   isCurrentModelSelection,
 } from "../src/model-selector.js";
 import {
@@ -42,8 +43,16 @@ describe("ModelSelector", () => {
     ).toBe(false);
   });
 
-  it("does not append an active provider's unknown model to another provider", () => {
-    expect(selectorSource).toContain("level.provider !== effectiveProvider");
+  it("shows the saved custom model even when another provider is active", () => {
+    expect(
+      configuredModelForProvider("custom", {
+        customModel: "local/vision-model",
+      } as Parameters<typeof configuredModelForProvider>[1], "gpt-5.6-sol"),
+    ).toBe("local/vision-model");
+    expect(
+      configuredModelForProvider("custom", undefined, "gpt-5.6-sol"),
+    ).toBe("llama3.2");
+    expect(selectorSource).toContain('level.provider === "custom"');
   });
 
   it("always anchors its popover strictly above the trigger", () => {

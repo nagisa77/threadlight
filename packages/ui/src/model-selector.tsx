@@ -35,6 +35,15 @@ export function isCurrentModelSelection(
   return activeProvider === optionProvider && activeModel === optionModel;
 }
 
+export function configuredModelForProvider(
+  provider: ModelProviderId,
+  settings: SettingsSnapshot | undefined,
+  activeModel: string,
+): string {
+  if (provider !== "custom") return activeModel;
+  return settings?.customModel.trim() || providerDetails(provider).defaultModel;
+}
+
 function isProviderId(value: string | undefined): value is ModelProviderId {
   return PROVIDER_OPTIONS.some((option) => option.value === value);
 }
@@ -110,31 +119,43 @@ export function ModelSelector({
 
   const modelRows =
     level.step === "models"
-      ? [
-          ...providerDetails(level.provider).models.map((option) => ({
-            ...option,
-            selected:
-              isCurrentModelSelection(
+      ? (() => {
+          const modelValue = configuredModelForProvider(
+            level.provider,
+            settings,
+            effectiveModel,
+          );
+          const showConfiguredModel =
+            level.provider === "custom" || level.provider === effectiveProvider;
+
+          return [
+            ...providerDetails(level.provider).models.map((option) => ({
+              ...option,
+              selected: isCurrentModelSelection(
                 effectiveProvider,
                 effectiveModel,
                 level.provider,
                 option.value,
               ),
-          })),
-          ...(
-            level.provider !== effectiveProvider ||
-            isKnownModel(level.provider, effectiveModel)
+            })),
+            ...(!showConfiguredModel || isKnownModel(level.provider, modelValue)
               ? []
-            : [
-                {
-                  value: effectiveModel,
-                  label: `${effectiveModel}`,
-                  qualifier: "",
-                  description: "",
-                  selected: true,
-                },
-              ]),
-        ]
+              : [
+                  {
+                    value: modelValue,
+                    label: `${modelValue}`,
+                    qualifier: "",
+                    description: "",
+                    selected: isCurrentModelSelection(
+                      effectiveProvider,
+                      effectiveModel,
+                      level.provider,
+                      modelValue,
+                    ),
+                  },
+                ]),
+          ];
+        })()
       : [];
 
   return (

@@ -168,6 +168,7 @@ export interface DesktopSettingsSnapshot {
   geminiBaseUrl: string;
   grokBaseUrl: string;
   customBaseUrl: string;
+  customModel: string;
   model: string;
 }
 
@@ -191,6 +192,7 @@ export interface DesktopSettingsUpdate {
   geminiBaseUrl: string;
   grokBaseUrl: string;
   customBaseUrl: string;
+  customModel: string;
   model: string;
 }
 
