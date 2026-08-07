@@ -942,12 +942,23 @@ const diffStyles = {
       "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
     fontSize: "12px",
     lineHeight: 1.6,
+    "@media (max-width: 720px)": {
+      fontSize: "11px",
+    },
   },
   lineNumber: {
     minWidth: "44px",
   },
+  gutter: {
+    "@media (max-width: 720px)": {
+      display: "none",
+    },
+  },
   contentText: {
     padding: "0 10px",
+    "@media (max-width: 720px)": {
+      padding: "0 8px",
+    },
   },
 } as const;
 

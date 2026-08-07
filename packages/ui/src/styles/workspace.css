@@ -2216,6 +2216,24 @@ body.is-resizing-workspace .workspace-split-handle::after {
   word-break: break-word;
 }
 
+@media (max-width: 720px) {
+  .file-source {
+    font-size: 11px;
+  }
+
+  .file-source-line {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .file-source-line-number {
+    display: none;
+  }
+
+  .file-source-line code {
+    padding-inline: 10px;
+  }
+}
+
 .file-source .token.comment,
 .file-source .token.prolog,
 .file-source .token.doctype,

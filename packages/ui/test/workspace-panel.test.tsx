@@ -75,6 +75,20 @@ describe("ReviewView", () => {
     });
   });
 
+  it("hides diff line numbers and reduces code sizing on mobile", () => {
+    expect(reviewDiffStylesForLayout("unified")).toMatchObject({
+      diffContainer: {
+        "@media (max-width: 720px)": { fontSize: "11px" },
+      },
+      gutter: {
+        "@media (max-width: 720px)": { display: "none" },
+      },
+      contentText: {
+        "@media (max-width: 720px)": { padding: "0 8px" },
+      },
+    });
+  });
+
   it("keeps automatic sync and recovery actions in one compact toolbar", () => {
     const html = renderToStaticMarkup(
       <ReviewView

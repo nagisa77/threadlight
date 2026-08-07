@@ -36,4 +36,10 @@ describe("review panel layout", () => {
       /\.review-recovery-actions\s*\{[^}]*border-left:\s*1px solid var\(--line\);/s,
     );
   });
+
+  it("removes the file line-number column and reduces source sizing on mobile", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.file-source\s*\{[^}]*font-size:\s*11px;[\s\S]*?\.file-source-line\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?\.file-source-line-number\s*\{[^}]*display:\s*none;[\s\S]*?\.file-source-line code\s*\{[^}]*padding-inline:\s*10px;/s,
+    );
+  });
 });
