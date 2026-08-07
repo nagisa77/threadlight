@@ -561,19 +561,21 @@ function remoteWorkspaceAdapter(
         revision,
         message,
       ),
-    createDraftPullRequest: (
+    createPullRequest: (
       projectId,
       threadId,
       revision,
       title,
       body,
+      draft,
     ) =>
-      host.createDraftPullRequest(
+      host.createPullRequest(
         projectId,
         threadId,
         revision,
         title,
         body,
+        draft,
       ),
     async list(projectId, path, threadId) {
       activate(projectId);

@@ -38,6 +38,7 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   text: string;
   attachments?: readonly AttachmentData[];
+  followUpDelivery?: FollowUpDelivery;
   capabilityRefs?: readonly string[];
   capabilities?: readonly MessageCapabilityData[];
   error?: boolean;
@@ -1025,11 +1026,43 @@ export function useThreadlightSession(
   }, [client, state.threadId, updateSession]);
 
   const addFollowUp = useCallback(
-    async (value: string, delivery: FollowUpDelivery) => {
+    async (
+      value: string,
+      delivery: FollowUpDelivery,
+      attachments: readonly AttachmentData[] = [],
+    ) => {
       const input = value.trim();
-      if (!input || !state.threadId || !state.isRunning) return false;
+      if (
+        (!input && attachments.length === 0) ||
+        !state.threadId ||
+        !state.isRunning
+      ) {
+        return false;
+      }
       try {
-        await client.addFollowUp(state.threadId, input, delivery);
+        await client.addFollowUp(
+          state.threadId,
+          input,
+          delivery,
+          attachments,
+        );
+        return true;
+      } catch (error) {
+        updateSession(state.threadId, {
+          type: "submission.failed",
+          error: errorMessage(error),
+        });
+        return false;
+      }
+    },
+    [client, state.isRunning, state.threadId, updateSession],
+  );
+
+  const injectQueuedTurn = useCallback(
+    async (itemId: string) => {
+      if (!state.threadId || !state.isRunning) return false;
+      try {
+        await client.injectQueuedTurn(state.threadId, itemId);
         return true;
       } catch (error) {
         updateSession(state.threadId, {
@@ -1117,6 +1150,7 @@ export function useThreadlightSession(
     send,
     sendNewThread,
     addFollowUp,
+    injectQueuedTurn,
     reorderQueuedTurn,
     cancelQueuedTurn,
     interrupt,

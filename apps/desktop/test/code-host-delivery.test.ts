@@ -70,7 +70,7 @@ describe("CodeHostDeliveryManager", () => {
     );
   });
 
-  it("creates a Draft PR only after the task branch is pushed", async () => {
+  it("creates a Draft or ready PR only after the task branch is pushed", async () => {
     const fixture = await createFixture();
     const revision = (
       await fixture.tracker.changes(
@@ -81,16 +81,16 @@ describe("CodeHostDeliveryManager", () => {
     ).revision;
 
     await expect(
-      fixture.manager.createDraftPullRequest(
+      fixture.manager.createPullRequest(
         requestFor(fixture, revision),
-        { title: "Task PR" },
+        { title: "Task PR", draft: true },
       ),
     ).rejects.toThrow("Commit and push");
 
     fixture.provider.isPushed = true;
-    const status = await fixture.manager.createDraftPullRequest(
+    const status = await fixture.manager.createPullRequest(
       requestFor(fixture, revision),
-      { title: "Task PR", body: "Reviewed in Threadlight" },
+      { title: "Task PR", body: "Reviewed in Threadlight", draft: false },
     );
     expect(fixture.provider.created).toEqual([
       {
@@ -99,9 +99,10 @@ describe("CodeHostDeliveryManager", () => {
         base: "main",
         title: "Task PR",
         body: "Reviewed in Threadlight",
+        draft: false,
       },
     ]);
-    expect(status.pullRequest?.draft).toBe(true);
+    expect(status.pullRequest?.draft).toBe(false);
   });
 
   it("does not publish Git-ignored local data to a branch", async () => {
@@ -355,11 +356,11 @@ describe("GitHubCliProvider", () => {
       },
     });
 
-    const pullRequest = await provider.createDraftPullRequest(
+    const pullRequest = await provider.createPullRequest(
       "/repository",
       "threadlight/task",
       "main",
-      { title: "Draft task", body: "Body" },
+      { title: "Draft task", body: "Body", draft: true },
     );
 
     expect(pullRequest.draft).toBe(true);
@@ -378,6 +379,7 @@ class ScriptedProvider implements CodeHostProvider {
     base: string;
     title: string;
     body?: string;
+    draft: boolean;
   }> = [];
   pullRequest?: CodeHostPullRequest;
 
@@ -404,17 +406,18 @@ class ScriptedProvider implements CodeHostProvider {
     this.isPushed = true;
   }
 
-  async createDraftPullRequest(
+  async createPullRequest(
     repositoryRoot: string,
     headBranch: string,
     baseBranch: string,
-    input: { title: string; body?: string },
+    input: { title: string; body?: string; draft: boolean },
   ): Promise<CodeHostPullRequest> {
     this.created.push({
       path: repositoryRoot,
       head: headBranch,
       base: baseBranch,
       title: input.title,
+      draft: input.draft,
       ...(input.body ? { body: input.body } : {}),
     });
     this.pullRequest = {
@@ -422,7 +425,7 @@ class ScriptedProvider implements CodeHostProvider {
       url: "https://github.test/acme/repository/pull/1",
       title: input.title,
       state: "open",
-      draft: true,
+      draft: input.draft,
       headBranch,
       baseBranch,
       ciStatus: "none",

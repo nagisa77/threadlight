@@ -91,6 +91,7 @@ describe("sessionReducer", () => {
         id: "message-1",
         role: "user",
         text: queued.input,
+        followUpDelivery: "queued",
       },
     });
     expect(state.queuedTurns).toEqual([]);
@@ -99,6 +100,7 @@ describe("sessionReducer", () => {
         id: "message-1",
         role: "user",
         text: queued.input,
+        followUpDelivery: "queued",
       },
     ]);
   });

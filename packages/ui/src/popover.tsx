@@ -238,6 +238,14 @@ export function ActionPopoverItem({
   );
 }
 
+export function ActionPopoverHeading({ children }: { children: ReactNode }) {
+  return (
+    <div className="action-popover-heading" aria-hidden="true">
+      {children}
+    </div>
+  );
+}
+
 function popoverItems(root: HTMLElement | null): HTMLButtonElement[] {
   return Array.from(
     root?.querySelectorAll<HTMLButtonElement>(

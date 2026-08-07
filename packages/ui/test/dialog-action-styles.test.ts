@@ -43,9 +43,27 @@ describe("dialog action hierarchy", () => {
     );
   });
 
-  it("keeps conversation access choices compact", () => {
+  it("gives composer selection popovers one shared heading and row rhythm", () => {
     expect(styles).toMatch(
-      /\.action-popover\s+\.conversation-access-option\s*\{[^}]*min-height:\s*54px;[^}]*padding:\s*7px 10px;/s,
+      /\.action-popover-heading\s*\{[^}]*padding:\s*6px 10px 4px;[^}]*font-size:\s*10px;/s,
+    );
+    expect(styles).toMatch(
+      /\.action-popover\s+\.composer-popover-option\s*\{[^}]*gap:\s*10px;[^}]*padding:\s*7px 10px;/s,
+    );
+    expect(styles).toMatch(
+      /\.composer-popover-option-copy small\s*\{[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.4;/s,
+    );
+    expect(styles).toMatch(
+      /\.model-selector-popover\s*\{[^}]*gap:\s*2px;/s,
+    );
+  });
+
+  it("keeps composer popover arrows and model labels visually stable", () => {
+    expect(styles).toMatch(
+      /\.development-mode-chevron,\s*\.conversation-access-chevron,\s*\.composer-action\.model \.model-trigger-arrow\s*\{[^}]*transition:\s*transform 150ms var\(--ease-out\);/s,
+    );
+    expect(styles).toMatch(
+      /\.composer-action\.model \.composer-model-label\s*\{[^}]*min-width:\s*0;[^}]*line-height:\s*1\.4;/s,
     );
   });
 

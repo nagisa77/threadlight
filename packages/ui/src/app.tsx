@@ -30,10 +30,8 @@ import {
   Archive,
   ArchiveRestore,
   CalendarClock,
-  Check,
   ChevronDown,
   ChevronRight,
-  ChevronUp,
   CircleStop,
   Copy,
   Folder,
@@ -174,6 +172,7 @@ import {
 } from "./popover.js";
 import { ModelSelector } from "./model-selector.js";
 import { DevelopmentModeControl } from "./development-mode.js";
+import { ComposerQueue, GuidedMessageReceipt } from "./composer-queue.js";
 
 import {
   ComputerPermissionCard,
@@ -611,6 +610,7 @@ function ThreadlightAppContent({
     sendNewThread,
     setThreadModel,
     addFollowUp,
+    injectQueuedTurn,
     reorderQueuedTurn,
     cancelQueuedTurn,
     interrupt,
@@ -1089,11 +1089,13 @@ function ThreadlightAppContent({
       connectorRef ? [id, connectorRef] : [id],
     ),
   );
-  const filteredCapabilities = filterCapabilities(
-    capabilities,
-    capabilityQuery?.query ?? "",
-    selectedCapabilityIds,
-  );
+  const filteredCapabilities = state.isRunning
+    ? []
+    : filterCapabilities(
+        capabilities,
+        capabilityQuery?.query ?? "",
+        selectedCapabilityIds,
+      );
   const addActions = filterComposerAddActions(
     attachmentStage && pendingAttachments.length < MAX_COMPOSER_ATTACHMENTS
       ? [
@@ -2101,7 +2103,6 @@ function ThreadlightAppContent({
     if (
       !attachmentStage ||
       view !== "thread" ||
-      state.isRunning ||
       preparingAttachments ||
       files.length === 0
     ) {
@@ -2194,7 +2195,7 @@ function ThreadlightAppContent({
 
   async function submit(
     value = input,
-    followUpDelivery: "inject" | "queued" = "inject",
+    followUpDelivery: "inject" | "queued" = "queued",
   ) {
     if (
       submissionGate.current.pending ||
@@ -2207,18 +2208,13 @@ function ThreadlightAppContent({
       setView(firstRunRequired ? "thread" : "settings");
       return;
     }
-    followOutput.current = true;
-    if (state.isRunning) {
-      if (await addFollowUp(value, followUpDelivery)) {
-        setInput("");
-        setCapabilityQuery(undefined);
-        if (textarea.current) textarea.current.style.height = "auto";
-      }
-      return;
-    }
-    if (!submissionGate.current.tryStart()) return;
-    setSubmitting(true);
     const draftInput = value;
+    const draftAttachments = [...pendingAttachmentsRef.current];
+    if (!draftInput.trim() && draftAttachments.length === 0) return;
+    if (!submissionGate.current.tryStart()) return;
+    const submittingFollowUp = state.isRunning;
+    followOutput.current = true;
+    setSubmitting(true);
     // Clear the composer immediately instead of waiting for the server round
     // trip, so the UI reacts instantly and the pending state is visible.
     setInput("");
@@ -2226,7 +2222,6 @@ function ThreadlightAppContent({
     inputValueRef.current = "";
     if (textarea.current) textarea.current.style.height = "auto";
     try {
-      const draftAttachments = [...pendingAttachmentsRef.current];
       let stagedAttachments: AttachmentData[] = [];
       if (draftAttachments.length > 0) {
         if (!attachmentStage) return;
@@ -2245,6 +2240,21 @@ function ThreadlightAppContent({
         } finally {
           setPreparingAttachments(false);
         }
+      }
+      if (submittingFollowUp) {
+        if (!(await addFollowUp(value, followUpDelivery, stagedAttachments))) {
+          restoreComposerDraft(draftInput);
+          return;
+        }
+        for (const attachment of draftAttachments) {
+          if (attachment.previewUrl?.startsWith("blob:")) {
+            URL.revokeObjectURL(attachment.previewUrl);
+          }
+        }
+        setAttachmentError(undefined);
+        pendingAttachmentsRef.current = [];
+        setPendingAttachments([]);
+        return;
       }
       let submittedThreadId: string | undefined;
       let submitted = false;
@@ -3797,6 +3807,10 @@ function ThreadlightAppContent({
                           tabIndex={-1}
                         >
                           {message.role === "user" &&
+                            message.followUpDelivery === "inject" && (
+                              <GuidedMessageReceipt />
+                            )}
+                          {message.role === "user" &&
                             message.attachments &&
                             message.attachments.length > 0 && (
                               <MessageAttachments
@@ -4013,68 +4027,12 @@ function ThreadlightAppContent({
                     />
                   )}
                   {state.queuedTurns.length > 0 && (
-                    <div
-                      className="composer-queue"
-                      aria-label={t("queuedMessages")}
-                    >
-                      {state.queuedTurns.map((item, index) => (
-                        <div className="composer-queue-item" key={item.id}>
-                          <span
-                            className={`composer-queue-badge ${item.delivery}`}
-                          >
-                            {t(
-                              item.delivery === "inject"
-                                ? "injectSoon"
-                                : "afterCurrent",
-                            )}
-                          </span>
-                          <span className="composer-queue-copy">
-                            {item.input}
-                          </span>
-                          <div className="composer-queue-actions">
-                            <button
-                              type="button"
-                              className="pressable"
-                              disabled={index === 0}
-                              onClick={() =>
-                                void reorderQueuedTurn(
-                                  item.id,
-                                  state.queuedTurns[index - 1]?.id,
-                                )
-                              }
-                              aria-label={t("moveQueuedMessageUp")}
-                              title={t("moveUp")}
-                            >
-                              <ChevronUp size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              className="pressable"
-                              disabled={index === state.queuedTurns.length - 1}
-                              onClick={() =>
-                                void reorderQueuedTurn(
-                                  item.id,
-                                  state.queuedTurns[index + 2]?.id,
-                                )
-                              }
-                              aria-label={t("moveQueuedMessageDown")}
-                              title={t("moveDown")}
-                            >
-                              <ChevronDown size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              className="pressable cancel"
-                              onClick={() => void cancelQueuedTurn(item.id)}
-                              aria-label={t("cancelQueuedMessage")}
-                              title={t("cancel")}
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    <ComposerQueue
+                      items={state.queuedTurns}
+                      onInject={injectQueuedTurn}
+                      onReorder={reorderQueuedTurn}
+                      onCancel={cancelQueuedTurn}
+                    />
                   )}
                   <CapabilityChips
                     capabilities={selectedCapabilities}
@@ -4173,7 +4131,6 @@ function ThreadlightAppContent({
                         disabled={
                           state.connection !== "ready" ||
                           !providerReady ||
-                          state.isRunning ||
                           submitting ||
                           preparingAttachments
                         }
@@ -4300,12 +4257,20 @@ function ThreadlightAppContent({
                         <button
                           type="button"
                           className="composer-action send pressable"
-                          onClick={() => void submit(input, "inject")}
-                          disabled={!input.trim()}
-                          aria-label={t("injectMessage")}
-                          title={t("injectMessage")}
+                          onClick={() => void submit(input, "queued")}
+                          disabled={
+                            submitting ||
+                            preparingAttachments ||
+                            (!input.trim() && pendingAttachments.length === 0)
+                          }
+                          aria-label={t("queueMessage")}
+                          title={t("queueMessage")}
                         >
-                          <ArrowUp size={18} strokeWidth={2.4} />
+                          {submitting ? (
+                            <LoaderCircle className="spin" size={18} />
+                          ) : (
+                            <ArrowUp size={18} strokeWidth={2.4} />
+                          )}
                         </button>
                       )}
                       {state.isRunning ? (
@@ -4424,6 +4389,22 @@ function ThreadlightAppContent({
               taskBranch={taskTerminalBranch}
               originalBranch={originalTerminalBranch}
               taskWorkspaceAvailable={defaultTerminalWorkspace === "task"}
+              generatePullRequestDescription={
+                state.threadId && conversationChanges
+                  ? () =>
+                      client.generatePullRequestDescription(
+                        state.threadId as string,
+                        conversationChanges.files.map((file) => ({
+                          path: file.path,
+                          status: file.status,
+                          additions: file.additions,
+                          deletions: file.deletions,
+                          binary: file.binary,
+                          localOnly: file.localOnly,
+                        })),
+                      )
+                  : undefined
+              }
               onRetryAutomaticDelivery={() => void retryAutomaticDelivery()}
               onUndoAutomaticDelivery={undoAutomaticDelivery}
               taskTitle={currentConversation?.title}

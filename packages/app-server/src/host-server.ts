@@ -842,10 +842,11 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        await this.codeHostDelivery.createDraftPullRequest(
+        await this.codeHostDelivery.createPullRequest(
           codeHostRequest,
           {
             title: requiredString(body?.title, "title"),
+            draft: body?.draft !== false,
             ...(typeof body?.body === "string" ? { body: body.body } : {}),
           },
         ),

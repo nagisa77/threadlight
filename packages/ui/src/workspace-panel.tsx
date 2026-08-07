@@ -63,6 +63,7 @@ import type {
   CodeHostReviewComment,
   ConversationChangesSnapshot,
   ConversationFileChange,
+  PullRequestDescription,
   SystemFileEntry,
   SystemFileListing,
   WorkspaceAdapter,
@@ -92,6 +93,7 @@ export type {
   CodeHostReviewComment,
   ConversationChangesSnapshot,
   ConversationFileChange,
+  PullRequestDescription,
   SystemFileEntry,
   SystemFileListing,
   WorkspaceAdapter,
@@ -158,6 +160,7 @@ export function WorkspacePanel({
   taskBranch,
   originalBranch,
   taskWorkspaceAvailable = true,
+  generatePullRequestDescription,
   onDiscardTask,
   toolbarActions,
 }: {
@@ -192,6 +195,7 @@ export function WorkspacePanel({
   taskBranch?: string;
   originalBranch?: string;
   taskWorkspaceAvailable?: boolean;
+  generatePullRequestDescription?(): Promise<PullRequestDescription>;
   onDiscardTask?(): void;
   toolbarActions?: ReactNode;
 }) {
@@ -607,6 +611,7 @@ export function WorkspacePanel({
               deliveryDisabled={deliveryDisabled}
               automaticDelivery={automaticDelivery}
               defaultCommitMessage={taskTitle}
+              generatePullRequestDescription={generatePullRequestDescription}
               onPreflightDelivery={adapter.preflightDelivery}
               onApplyDelivery={adapter.applyDelivery}
               onCommitDelivery={adapter.commitDelivery}

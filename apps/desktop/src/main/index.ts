@@ -2170,17 +2170,19 @@ async function handleCodeHostDeliveryCreatePr(
   const request = parseCodeHostCreatePullRequest(value);
   if (isRemoteHost()) {
     if (!remoteHost) throw new Error("Remote Host is not connected.");
-    return remoteHost.client.createDraftPullRequest(
+    return remoteHost.client.createPullRequest(
       request.projectId,
       request.threadId,
       request.revision,
       request.title,
       request.body,
+      request.draft,
     );
   }
   const delivery = requireCodeHostDelivery(request);
-  return delivery.manager.createDraftPullRequest(delivery.request, {
+  return delivery.manager.createPullRequest(delivery.request, {
     title: request.title,
+    draft: request.draft,
     ...(request.body ? { body: request.body } : {}),
   });
 }
@@ -3155,14 +3157,16 @@ function parseCodeHostCreatePullRequest(
     typeof input.title !== "string" ||
     !input.title.trim() ||
     input.title.length > 256 ||
+    (input.draft !== undefined && typeof input.draft !== "boolean") ||
     (input.body !== undefined &&
       (typeof input.body !== "string" || input.body.length > 20_000))
   ) {
-    throw new Error("Invalid Draft PR details");
+    throw new Error("Invalid PR details");
   }
   return {
     ...request,
     title: input.title.trim(),
+    draft: input.draft !== false,
     ...(typeof input.body === "string" && input.body.trim()
       ? { body: input.body.trim() }
       : {}),

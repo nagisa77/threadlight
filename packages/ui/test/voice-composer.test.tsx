@@ -9,10 +9,10 @@ import {
 } from "../src/app.js";
 
 describe("voice composer", () => {
-  it("uses Enter for prompt injection and Cmd/Ctrl+Enter for the queue while running", () => {
+  it("always queues composer submissions while a turn is running", () => {
     expect(
       composerSubmitDelivery({ metaKey: false, ctrlKey: false }, true),
-    ).toBe("inject");
+    ).toBe("queued");
     expect(
       composerSubmitDelivery({ metaKey: true, ctrlKey: false }, true),
     ).toBe("queued");

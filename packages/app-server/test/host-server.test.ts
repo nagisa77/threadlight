@@ -1384,12 +1384,13 @@ describe("ThreadlightHostServer", () => {
       },
     ]);
     await expect(
-      webSession.workspace.createDraftPullRequest?.(
+      webSession.workspace.createPullRequest?.(
         "project-1",
         "thread-1",
         reviewed.revision,
         "Remote task",
         "Created from Web",
+        true,
       ),
     ).resolves.toMatchObject({
       pushed: true,
@@ -1935,18 +1936,18 @@ class ScriptedCodeHostProvider implements CodeHostProvider {
     return Promise.resolve();
   }
 
-  createDraftPullRequest(
+  createPullRequest(
     _repositoryRoot: string,
     headBranch: string,
     baseBranch: string,
-    input: { title: string; body?: string },
+    input: { title: string; body?: string; draft: boolean },
   ): Promise<CodeHostPullRequest> {
     this.pullRequest = {
       number: 12,
       url: "https://github.example/threadlight/example/pull/12",
       title: input.title,
       state: "open",
-      draft: true,
+      draft: input.draft,
       headBranch,
       baseBranch,
       ciStatus: "none",

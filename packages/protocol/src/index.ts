@@ -87,6 +87,20 @@ export type HostModelProvider =
 export type HostLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
 export type HostTheme = "system" | "light" | "dark";
 
+export interface PullRequestChangeSummary {
+  path: string;
+  status: "added" | "modified" | "deleted";
+  additions: number;
+  deletions: number;
+  binary?: boolean;
+  localOnly?: boolean;
+}
+
+export interface PullRequestDescriptionData {
+  title: string;
+  body: string;
+}
+
 export interface HostSettingsSnapshot {
   language: HostLanguage;
   theme: HostTheme;
@@ -868,6 +882,8 @@ export interface ConversationMessageData {
   role: "user" | "assistant";
   text: string;
   attachments?: readonly AttachmentData[];
+  /** How a running-turn follow-up entered the conversation. */
+  followUpDelivery?: FollowUpDelivery;
   capabilityRefs?: readonly string[];
   /** Display-safe snapshot of capabilities selected or applied for this message. */
   capabilities?: readonly MessageCapabilityData[];
@@ -904,6 +920,7 @@ export interface QueuedTurnData {
   id: string;
   input: string;
   delivery: FollowUpDelivery;
+  attachments?: readonly AttachmentData[];
   createdAt: string;
 }
 
@@ -986,6 +1003,13 @@ export interface ThreadlightMethodMap {
     params: { threadId: string; language: SuggestionLanguage };
     result: { suggestions: readonly [string, string, string] };
   };
+  "delivery/pull-request-description": {
+    params: {
+      threadId: string;
+      changes: readonly PullRequestChangeSummary[];
+    };
+    result: PullRequestDescriptionData;
+  };
   "capability/list": {
     params: { threadId: string };
     result: { capabilities: readonly CapabilityDescriptor[] };
@@ -1035,7 +1059,12 @@ export interface ThreadlightMethodMap {
       threadId: string;
       input: string;
       delivery: FollowUpDelivery;
+      attachments?: readonly AttachmentData[];
     };
+    result: { item: QueuedTurnData };
+  };
+  "turn/queue/inject": {
+    params: { threadId: string; itemId: string };
     result: { item: QueuedTurnData };
   };
   "turn/queue/reorder": {
@@ -1086,6 +1115,7 @@ export const THREADLIGHT_METHODS = [
   "thread/resume",
   "thread/delete",
   "thread/suggestions",
+  "delivery/pull-request-description",
   "capability/list",
   "connector/status",
   "connector/configure",
@@ -1094,6 +1124,7 @@ export const THREADLIGHT_METHODS = [
   "turn/start",
   "turn/interrupt",
   "turn/follow-up",
+  "turn/queue/inject",
   "turn/queue/reorder",
   "turn/queue/cancel",
   "process/status",

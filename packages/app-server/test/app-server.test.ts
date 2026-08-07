@@ -786,6 +786,104 @@ describe("AppServer", () => {
     ).toMatchObject({ result: { messages: [] } });
   });
 
+  it("generates structured PR copy with an offline scripted provider", async () => {
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate(request) {
+          requests.push(request);
+          if (request.instructions.includes("pull request metadata")) {
+            return {
+              text: JSON.stringify({
+                title: "Refine delivery center",
+                summary: [
+                  "Generate detailed PR copy automatically",
+                  "Support both ready and draft pull requests",
+                ],
+                changes: [
+                  "Add a structured metadata generation request",
+                  "Keep generated copy editable before publishing",
+                ],
+                testing: ["Ran the delivery center unit tests"],
+              }),
+              toolCalls: [],
+            };
+          }
+          return { text: "Implemented and tested the delivery flow.", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Complete the requested work",
+        tools: [],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Improve the delivery center" },
+    });
+    await completed.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "delivery/pull-request-description",
+      params: {
+        threadId,
+        changes: [
+          {
+            path: "packages/ui/src/features/delivery-center.tsx",
+            status: "modified",
+            additions: 80,
+            deletions: 20,
+          },
+        ],
+      },
+    });
+
+    expect(requests.at(-1)).toMatchObject({
+      tools: [],
+      input: expect.stringContaining(
+        "modified: packages/ui/src/features/delivery-center.tsx (+80 -20)",
+      ),
+    });
+    expect(
+      messages.find((message) => "id" in message && message.id === 4),
+    ).toMatchObject({
+      result: {
+        title: "Refine delivery center",
+        body: [
+          "## Summary",
+          "- Generate detailed PR copy automatically",
+          "- Support both ready and draft pull requests",
+          "",
+          "## Changes",
+          "- Add a structured metadata generation request",
+          "- Keep generated copy editable before publishing",
+          "",
+          "## Testing",
+          "- Ran the delivery center unit tests",
+        ].join("\n"),
+      },
+    });
+  });
+
   it("shares hourly suggestions across tasks and falls back to stale questions when refresh fails", async () => {
     let now = new Date("2026-07-31T08:00:00.000Z");
     let generation = 0;

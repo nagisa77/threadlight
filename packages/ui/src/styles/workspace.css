@@ -375,26 +375,28 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .delivery-overview {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 10px;
-}
-
-.delivery-metric {
-  display: grid;
-  min-width: 0;
-  min-height: 86px;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-content: start;
-  gap: 9px;
-  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 11px;
   background: var(--panel);
   box-shadow: 0 1px 2px rgb(28 27 24 / 3%);
 }
 
-.delivery-metric > span {
+.delivery-overview-item {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.delivery-overview-item + .delivery-overview-item {
+  border-left: 1px solid var(--line);
+}
+
+.delivery-overview-item > span {
   display: grid;
   width: 26px;
   height: 26px;
@@ -404,29 +406,24 @@ body.is-resizing-workspace .workspace-split-handle::after {
   background: var(--surface);
 }
 
-.delivery-metric.success > span {
+.delivery-overview-item.success > span {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 9%, var(--panel));
 }
 
-.delivery-metric.warning > span {
-  color: #87571b;
-  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
-}
-
-.delivery-metric.danger > span {
+.delivery-overview-item.danger > span {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 9%, var(--panel));
 }
 
-.delivery-metric > div {
+.delivery-overview-item > div {
   display: grid;
   min-width: 0;
   align-content: start;
   gap: 3px;
 }
 
-.delivery-metric small {
+.delivery-overview-item small {
   color: var(--subtle);
   font-size: 8px;
   font-weight: 660;
@@ -434,22 +431,23 @@ body.is-resizing-workspace .workspace-split-handle::after {
   text-transform: uppercase;
 }
 
-.delivery-metric strong,
-.delivery-metric div > span {
+.delivery-overview-item strong,
+.delivery-overview-item em {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.delivery-metric strong {
+.delivery-overview-item strong {
   color: var(--ink);
   font-size: 11px;
   font-weight: 670;
 }
 
-.delivery-metric div > span {
+.delivery-overview-item em {
   color: var(--muted);
   font-size: 9px;
+  font-style: normal;
 }
 
 .delivery-recovery-card,
@@ -579,11 +577,52 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 .delivery-history-card {
-  min-height: 150px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.delivery-history-card > summary {
+  padding: 11px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.delivery-history-card > summary::-webkit-details-marker {
+  display: none;
+}
+
+.delivery-history-card > summary > div {
+  flex: 1;
+}
+
+.delivery-history-card > summary > b {
+  display: grid;
+  min-width: 23px;
+  height: 23px;
+  padding: 0 6px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.delivery-history-card > summary > svg {
+  color: var(--subtle);
+  transition: transform 160ms var(--ease-out);
+}
+
+.delivery-history-card[open] > summary > svg {
+  transform: rotate(180deg);
+}
+
+.delivery-history-card[open] > summary {
+  border-bottom: 1px solid var(--line);
 }
 
 .delivery-history-empty {
-  margin: 18px 0 5px 38px;
+  margin: 14px 13px;
   color: var(--subtle);
   font-size: 9px;
 }
@@ -591,7 +630,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 .delivery-history-list {
   display: grid;
   gap: 0;
-  margin: 12px 0 0 12px;
+  margin: 12px 13px 0 25px;
   padding: 0;
   list-style: none;
 }
@@ -680,15 +719,14 @@ body.is-resizing-workspace .workspace-split-handle::after {
   font-size: 8px;
 }
 
-@container delivery-center (max-width: 760px) {
-  .delivery-overview {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 @container delivery-center (max-width: 430px) {
   .delivery-overview {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .delivery-overview-item + .delivery-overview-item {
+    border-top: 1px solid var(--line);
+    border-left: 0;
   }
 
   .delivery-recovery-card {
@@ -1288,7 +1326,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .github-pr-summary {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 7px;
 }
@@ -1297,13 +1335,29 @@ body.is-resizing-workspace .workspace-split-handle::after {
   color: #6e5494;
 }
 
-.github-pr-summary a {
+.github-pr-summary > a:first-of-type {
   overflow: hidden;
   color: var(--ink);
   font-size: 11px;
   font-weight: 640;
   text-decoration: none;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-pr-open {
+  display: inline-flex;
+  height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 9px;
+  font-weight: 650;
+  text-decoration: none;
   white-space: nowrap;
 }
 
@@ -1452,6 +1506,61 @@ body.is-resizing-workspace .workspace-split-handle::after {
 .github-pr-fields {
   display: grid;
   gap: 11px;
+}
+
+.github-pr-generation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin-top: 13px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+}
+
+.github-pr-generation.error {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--line));
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 5%, var(--panel));
+}
+
+.github-pr-generation > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.github-pr-generation strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 660;
+}
+
+.github-pr-generation small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-pr-regenerate {
+  display: inline-flex;
+  height: 27px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--panel);
+  font-size: 9px;
+  font-weight: 630;
+  cursor: pointer;
 }
 
 .delivery-commit-field textarea {
@@ -2746,7 +2855,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .plan-status-popover,
   .project-opener-menu,
   .local-file-context-menu,
-  .action-popover {
+  .action-popover,
+  .development-mode-chevron,
+  .conversation-access-chevron,
+  .model-trigger-arrow {
     transition-duration: 0ms;
   }
 
@@ -2793,4 +2905,3 @@ body.is-resizing-workspace .workspace-split-handle::after {
     opacity: 1;
   }
 }
-

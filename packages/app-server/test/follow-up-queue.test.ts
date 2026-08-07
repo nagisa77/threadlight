@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,13 +25,19 @@ afterEach(() => {
 });
 
 describe("running turn follow-ups", () => {
-  it("persists and injects a follow-up into a scripted run at the next safe boundary", async () => {
+  it("promotes a queued follow-up with an attachment into a scripted run at the next safe boundary", async () => {
     const generationStarted = Promise.withResolvers<void>();
     const finishGeneration = Promise.withResolvers<void>();
     const completed = Promise.withResolvers<void>();
     const requests: ModelRequest[] = [];
     const messages: JsonRpcOutgoing[] = [];
     let staleToolExecutions = 0;
+    const attachmentDirectory = mkdtempSync(
+      join(tmpdir(), "threadlight-follow-up-attachment-"),
+    );
+    temporaryDirectories.push(attachmentDirectory);
+    const attachmentPath = join(attachmentDirectory, "brief.txt");
+    writeFileSync(attachmentPath, "new constraints\n");
     const provider: ModelProvider = {
       async generate(request) {
         requests.push(request);
@@ -44,6 +50,18 @@ describe("running turn follow-ups", () => {
               { id: "stale-write", name: "write", arguments: {} },
             ],
             state: { opaque: "response-1" },
+          };
+        }
+        if (requests.length === 2) {
+          return {
+            text: "I need the attachment.",
+            toolCalls: [
+              {
+                id: "attach-follow-up",
+                name: "attach_to_model_context",
+                arguments: { attachmentId: "attachment-1" },
+              },
+            ],
           };
         }
         return { text: "Explained without editing.", toolCalls: [] };
@@ -65,6 +83,17 @@ describe("running turn follow-ups", () => {
           }),
         ],
       }),
+      attachmentProvider: {
+        async uploadAttachment(attachment) {
+          return {
+            ...attachment,
+            providerReference: {
+              protocol: "scripted",
+              fileId: "follow-up-file",
+            },
+          };
+        },
+      },
       send(message) {
         messages.push(message);
         if ("method" in message && message.method === "turn/completed") {
@@ -90,17 +119,40 @@ describe("running turn follow-ups", () => {
       params: {
         threadId,
         input: "Do not edit it; explain the change",
-        delivery: "inject",
+        delivery: "queued",
+        attachments: [
+          {
+            id: "attachment-1",
+            name: "brief.txt",
+            mimeType: "text/plain",
+            size: 16,
+            kind: "file",
+            path: attachmentPath,
+          },
+        ],
       },
     });
-    expect(resultFor<{ item: { delivery: string } }>(messages, 4).item)
+    const queued = resultFor<{
+      item: { id: string; delivery: string; attachments: readonly unknown[] };
+    }>(messages, 4).item;
+    expect(queued).toMatchObject({
+      delivery: "queued",
+      attachments: [{ name: "brief.txt" }],
+    });
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "turn/queue/inject",
+      params: { threadId, itemId: queued.id },
+    });
+    expect(resultFor<{ item: { delivery: string } }>(messages, 5).item)
       .toMatchObject({ delivery: "inject" });
 
     finishGeneration.resolve();
     await completed.promise;
     await server.receive({
       jsonrpc: "2.0",
-      id: 5,
+      id: 6,
       method: "thread/resume",
       params: { threadId },
     });
@@ -110,17 +162,35 @@ describe("running turn follow-ups", () => {
     expect(requests[1]?.input).toContain(
       "Do not edit it; explain the change",
     );
+    expect(requests[1]?.input).toContain("brief.txt");
+    expect(requests[1]?.tools.map(({ name }) => name)).toContain(
+      "attach_to_model_context",
+    );
     expect(requests[1]?.toolResults?.[0]).toMatchObject({
       callId: "stale-write",
       isError: true,
     });
+    expect(requests[2]?.attachments).toEqual([
+      expect.objectContaining({
+        id: "attachment-1",
+        providerReference: {
+          protocol: "scripted",
+          fileId: "follow-up-file",
+        },
+      }),
+    ]);
     expect(resultFor<{
       messages: readonly { role: string; text: string }[];
       queuedTurns: readonly unknown[];
-    }>(messages, 5)).toMatchObject({
+    }>(messages, 6)).toMatchObject({
       messages: [
         { role: "user", text: "Edit the file" },
-        { role: "user", text: "Do not edit it; explain the change" },
+        {
+          role: "user",
+          text: "Do not edit it; explain the change",
+          followUpDelivery: "inject",
+          attachments: [{ name: "brief.txt" }],
+        },
         { role: "assistant", text: "Explained without editing." },
       ],
       queuedTurns: [],
@@ -215,6 +285,101 @@ describe("running turn follow-ups", () => {
         },
       },
     });
+    await server.dispose();
+  });
+
+  it("starts an attachment-only queued follow-up after the active answer completes", async () => {
+    const firstGenerationStarted = Promise.withResolvers<void>();
+    const finishFirstGeneration = Promise.withResolvers<void>();
+    const queuedTurnCompleted = Promise.withResolvers<void>();
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const attachmentDirectory = mkdtempSync(
+      join(tmpdir(), "threadlight-queued-attachment-"),
+    );
+    temporaryDirectories.push(attachmentDirectory);
+    const attachmentPath = join(attachmentDirectory, "diagram.png");
+    writeFileSync(attachmentPath, "image");
+    let completions = 0;
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate(request) {
+          requests.push(request);
+          if (requests.length === 1) {
+            firstGenerationStarted.resolve();
+            await finishFirstGeneration.promise;
+          }
+          return { text: "Done", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({ name: "scripted", instructions: "Inspect inputs" }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completions += 1;
+          if (completions === 2) queuedTurnCompleted.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = resultFor<{ threadId: string }>(messages, 2).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Finish this answer" },
+    });
+    await firstGenerationStarted.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "turn/follow-up",
+      params: {
+        threadId,
+        input: "",
+        delivery: "queued",
+        attachments: [
+          {
+            id: "attachment-queued",
+            name: "diagram.png",
+            mimeType: "image/png",
+            size: 5,
+            kind: "image",
+            path: attachmentPath,
+          },
+        ],
+      },
+    });
+
+    finishFirstGeneration.resolve();
+    await queuedTurnCompleted.promise;
+    expect(requests[1]?.input).toContain("diagram.png");
+    expect(requests[1]?.tools.map(({ name }) => name)).toContain(
+      "attach_to_model_context",
+    );
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "thread/resume",
+      params: { threadId },
+    });
+    expect(resultFor<{
+      messages: readonly {
+        role: string;
+        followUpDelivery?: string;
+        attachments?: readonly { name: string }[];
+      }[];
+    }>(messages, 5).messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "user",
+          followUpDelivery: "queued",
+          attachments: [expect.objectContaining({ name: "diagram.png" })],
+        }),
+      ]),
+    );
     await server.dispose();
   });
 

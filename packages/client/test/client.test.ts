@@ -63,6 +63,16 @@ describe("ThreadlightClient", () => {
       "thread-1",
       "Check the smaller scope",
       "queued",
+      [
+        {
+          id: "attachment-1",
+          name: "scope.md",
+          mimeType: "text/markdown",
+          size: 24,
+          kind: "file",
+          path: "/tmp/scope.md",
+        },
+      ],
     );
     expect(transport.sent[0]).toMatchObject({
       method: "turn/follow-up",
@@ -70,6 +80,7 @@ describe("ThreadlightClient", () => {
         threadId: "thread-1",
         input: "Check the smaller scope",
         delivery: "queued",
+        attachments: [{ name: "scope.md" }],
       },
     });
     transport.emit({
@@ -88,12 +99,33 @@ describe("ThreadlightClient", () => {
       item: { id: "item-1" },
     });
 
+    const injected = client.injectQueuedTurn("thread-1", "item-1");
+    expect(transport.sent[1]).toMatchObject({
+      method: "turn/queue/inject",
+      params: { threadId: "thread-1", itemId: "item-1" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[1].id ?? null,
+      result: {
+        item: {
+          id: "item-1",
+          input: "Check the smaller scope",
+          delivery: "inject",
+          createdAt: "2026-07-29T10:00:00.000Z",
+        },
+      },
+    });
+    await expect(injected).resolves.toMatchObject({
+      item: { delivery: "inject" },
+    });
+
     const reordered = client.reorderQueuedTurn(
       "thread-1",
       "item-1",
       "item-2",
     );
-    expect(transport.sent[1]).toMatchObject({
+    expect(transport.sent[2]).toMatchObject({
       method: "turn/queue/reorder",
       params: {
         threadId: "thread-1",
@@ -103,19 +135,19 @@ describe("ThreadlightClient", () => {
     });
     transport.emit({
       jsonrpc: "2.0",
-      id: transport.sent[1].id ?? null,
+      id: transport.sent[2].id ?? null,
       result: { queuedTurns: [] },
     });
     await reordered;
 
     const canceled = client.cancelQueuedTurn("thread-1", "item-1");
-    expect(transport.sent[2]).toMatchObject({
+    expect(transport.sent[3]).toMatchObject({
       method: "turn/queue/cancel",
       params: { threadId: "thread-1", itemId: "item-1" },
     });
     transport.emit({
       jsonrpc: "2.0",
-      id: transport.sent[2].id ?? null,
+      id: transport.sent[3].id ?? null,
       result: { canceled: true, queuedTurns: [] },
     });
     await expect(canceled).resolves.toMatchObject({ canceled: true });
@@ -389,6 +421,40 @@ describe("ThreadlightClient", () => {
 
     await expect(suggested).resolves.toEqual({
       suggestions: ["问题一？", "问题二？", "问题三？"],
+    });
+  });
+
+  it("requests a model-generated pull request description", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+    const generated = client.generatePullRequestDescription("thread-1", [
+      {
+        path: "src/delivery.ts",
+        status: "modified",
+        additions: 24,
+        deletions: 3,
+      },
+    ]);
+
+    expect(transport.sent[0]).toMatchObject({
+      method: "delivery/pull-request-description",
+      params: {
+        threadId: "thread-1",
+        changes: [{ path: "src/delivery.ts", status: "modified" }],
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        title: "Improve delivery flow",
+        body: "## Summary\n- Improve delivery flow",
+      },
+    });
+
+    await expect(generated).resolves.toEqual({
+      title: "Improve delivery flow",
+      body: "## Summary\n- Improve delivery flow",
     });
   });
 

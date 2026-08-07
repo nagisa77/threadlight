@@ -379,7 +379,7 @@ const api: DesktopApi = {
       request,
     );
   },
-  createDraftPullRequest(request) {
+  createPullRequest(request) {
     return ipcRenderer.invoke(
       DESKTOP_CODE_HOST_DELIVERY_CREATE_PR_CHANNEL,
       request,

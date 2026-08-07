@@ -392,18 +392,19 @@ export class HttpHostClient {
     );
   }
 
-  createDraftPullRequest(
+  createPullRequest(
     projectId: string,
     threadId: string,
     revision: string,
     title: string,
     body?: string,
+    draft = true,
   ): Promise<HostCodeHostDeliveryStatus> {
     return this.request(
       this.conversationAction(projectId, threadId, "code-host/create-pr"),
       {
         method: "POST",
-        body: { revision, title, ...(body ? { body } : {}) },
+        body: { revision, title, draft, ...(body ? { body } : {}) },
       },
     );
   }

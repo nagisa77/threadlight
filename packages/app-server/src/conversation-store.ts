@@ -182,12 +182,17 @@ function isStoredConversation(value: unknown): value is StoredConversation {
 function isQueuedTurn(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
+  const attachmentsValid =
+    item.attachments === undefined ||
+    (Array.isArray(item.attachments) && item.attachments.every(isAttachment));
   return (
     typeof item.id === "string" &&
     item.id.length > 0 &&
     typeof item.input === "string" &&
-    item.input.trim().length > 0 &&
+    (item.input.trim().length > 0 ||
+      (Array.isArray(item.attachments) && item.attachments.length > 0)) &&
     (item.delivery === "inject" || item.delivery === "queued") &&
+    attachmentsValid &&
     typeof item.createdAt === "string"
   );
 }
@@ -214,6 +219,9 @@ function isConversationMessage(value: unknown): boolean {
     (message.attachments === undefined ||
       (Array.isArray(message.attachments) &&
         message.attachments.every(isAttachment))) &&
+    (message.followUpDelivery === undefined ||
+      message.followUpDelivery === "inject" ||
+      message.followUpDelivery === "queued") &&
     (message.capabilityRefs === undefined ||
       (Array.isArray(message.capabilityRefs) &&
         message.capabilityRefs.every(

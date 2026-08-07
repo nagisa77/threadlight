@@ -441,17 +441,19 @@ export function attachmentHint(
   if (submitting) return t("sending");
   if (preparing) return t("preparingAttachments");
   if (attachments.length > 0) {
-    return t("attachmentsAdded", { count: attachments.length });
+    return t(isRunning ? "queuedAttachmentsAdded" : "attachmentsAdded", {
+      count: attachments.length,
+    });
   }
   if (isRunning) return t("runningComposerHint");
   return voiceInputHint(status, undefined, t);
 }
 
 export function composerSubmitDelivery(
-  event: Pick<KeyboardEvent<HTMLTextAreaElement>, "metaKey" | "ctrlKey">,
+  _event: Pick<KeyboardEvent<HTMLTextAreaElement>, "metaKey" | "ctrlKey">,
   isRunning: boolean,
 ): "inject" | "queued" {
-  return isRunning && (event.metaKey || event.ctrlKey) ? "queued" : "inject";
+  return isRunning ? "queued" : "inject";
 }
 
 export function hasFiles(dataTransfer: DataTransfer): boolean {

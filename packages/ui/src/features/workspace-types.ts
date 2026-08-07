@@ -17,6 +17,11 @@ export interface ConversationChangesSnapshot {
   files: readonly ConversationFileChange[];
 }
 
+export interface PullRequestDescription {
+  title: string;
+  body: string;
+}
+
 export interface WorktreeDeliveryConflict {
   path: string;
   reason:
@@ -223,12 +228,13 @@ export interface WorkspaceAdapter {
     revision: string,
     message: string,
   ): Promise<CodeHostCommitPushResult>;
-  createDraftPullRequest?(
+  createPullRequest?(
     projectId: string,
     threadId: string,
     revision: string,
     title: string,
     body?: string,
+    draft?: boolean,
   ): Promise<CodeHostDeliveryStatus>;
   list(
     projectId: string,

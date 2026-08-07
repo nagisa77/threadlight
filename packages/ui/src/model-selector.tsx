@@ -3,6 +3,7 @@ import { Check, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
 
 import {
   ActionPopover,
+  ActionPopoverHeading,
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
@@ -65,6 +66,7 @@ export function ModelSelector({
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [level, setLevel] = useState<
     { step: "providers" } | { step: "models"; provider: ModelProviderId }
   >({ step: "providers" });
@@ -88,8 +90,9 @@ export function ModelSelector({
     );
   }
 
-  function openPopover() {
+  function openPopover(fromKeyboard: boolean) {
     setLevel({ step: "providers" });
+    setKeyboardOpen(fromKeyboard);
     placePopover();
     setOpen(true);
   }
@@ -163,8 +166,10 @@ export function ModelSelector({
       <button
         ref={triggerRef}
         type="button"
-        className={`composer-action model pressable ${open ? "active" : ""}`}
-        onClick={openPopover}
+        className={`composer-action model pressable ${open ? "active" : ""}${keyboardOpen && open ? " keyboard-open" : ""}`}
+        onClick={(event) =>
+          open ? closePopover() : openPopover(event.detail === 0)
+        }
         disabled={disabled}
         aria-label={t("modelSelector")}
         aria-expanded={open}
@@ -185,10 +190,11 @@ export function ModelSelector({
         <ActionPopover
           label={t("modelSelector")}
           position={position}
-          className="model-selector-popover"
+          className={`model-selector-popover${keyboardOpen ? " keyboard-open" : ""}`}
           returnFocusRef={triggerRef}
           onClose={handleClose}
         >
+          <ActionPopoverHeading>{t("modelSelector")}</ActionPopoverHeading>
           {level.step === "providers" ? (
             PROVIDER_OPTIONS.map((providerOption) => {
               const configured = Boolean(
@@ -202,13 +208,13 @@ export function ModelSelector({
                   type="button"
                   role="menuitem"
                   data-popover-item
-                  className="model-provider-option"
+                  className="composer-popover-option model-provider-option"
                   disabled={!configured}
                   aria-checked={selected}
                   aria-haspopup="menu"
                   onClick={() => openModels(providerOption.value)}
                 >
-                  <span className="model-option-copy">
+                  <span className="composer-popover-option-copy model-option-copy">
                     <strong>{providerLabel(providerOption.value, t)}</strong>
                     <small>
                       {configured
@@ -250,7 +256,7 @@ export function ModelSelector({
                     type="button"
                     role="menuitemradio"
                     data-popover-item
-                    className="model-option"
+                    className="composer-popover-option model-option"
                     aria-checked={option.selected}
                     onClick={() => {
                       onSelect({
@@ -260,7 +266,7 @@ export function ModelSelector({
                       closePopover();
                     }}
                   >
-                    <span className="model-option-copy">
+                    <span className="composer-popover-option-copy model-option-copy">
                       <strong>
                         {option.label}
                         {option.qualifier ? (

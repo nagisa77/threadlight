@@ -246,18 +246,20 @@ const workspace: WorkspaceAdapter = {
       revision,
       message,
     }),
-  createDraftPullRequest: (
+  createPullRequest: (
     projectId,
     threadId,
     revision,
     title,
     body,
+    draft,
   ) =>
-    window.threadlightDesktop.createDraftPullRequest({
+    window.threadlightDesktop.createPullRequest({
       projectId,
       threadId,
       revision,
       title,
+      draft: draft !== false,
       ...(body?.trim() ? { body } : {}),
     }),
   list: (projectId, path, threadId) =>

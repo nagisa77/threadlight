@@ -96,7 +96,7 @@ export class GitHubCliProvider implements CodeHostProvider {
     );
   }
 
-  async createDraftPullRequest(
+  async createPullRequest(
     repositoryRoot: string,
     headBranch: string,
     baseBranch: string,
@@ -105,7 +105,7 @@ export class GitHubCliProvider implements CodeHostProvider {
     const args = [
       "pr",
       "create",
-      "--draft",
+      ...(input.draft ? ["--draft"] : []),
       "--head",
       headBranch,
       "--base",

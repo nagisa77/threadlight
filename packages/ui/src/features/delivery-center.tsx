@@ -4,14 +4,15 @@ import {
   useRef,
   useState,
   type FormEvent,
-  type ReactNode,
 } from "react";
 import {
+  ChevronDown,
   ExternalLink,
   FileCode2,
   GitBranch,
   GitCommitHorizontal,
   GitMerge,
+  GitPullRequest,
   GitPullRequestDraft,
   Info,
   LoaderCircle,
@@ -19,6 +20,7 @@ import {
   PackageCheck,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   TriangleAlert,
   UploadCloud,
 } from "lucide-react";
@@ -46,6 +48,7 @@ export function DeliveryCenterView({
   automaticDelivery,
   disabled,
   defaultCommitMessage,
+  generatePullRequestDescription,
   onRetryAutomaticDelivery,
   onUndoAutomaticDelivery,
 }: {
@@ -56,6 +59,10 @@ export function DeliveryCenterView({
   automaticDelivery?: AutomaticDeliveryState;
   disabled: boolean;
   defaultCommitMessage?: string;
+  generatePullRequestDescription?(): Promise<{
+    title: string;
+    body: string;
+  }>;
   onRetryAutomaticDelivery?(): void | Promise<void>;
   onUndoAutomaticDelivery?(): void | Promise<void>;
 }) {
@@ -66,10 +73,9 @@ export function DeliveryCenterView({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [busyAction, setBusyAction] = useState<"retry" | "undo">();
-  const [pendingCodeHostAction, setPendingCodeHostAction] = useState<
-    | { action: "push"; message: string }
-    | { action: "pr"; title: string; body: string }
-  >();
+  const [pendingCodeHostAction, setPendingCodeHostAction] =
+    useState<PendingGitHubAction>();
+  const pullRequestDescriptionRequest = useRef(0);
   const scope = threadId ? `${projectId}\u0000${threadId}` : undefined;
   const liveState =
     automaticDelivery?.scope === scope ? automaticDelivery : undefined;
@@ -199,6 +205,64 @@ export function DeliveryCenterView({
     }
   }
 
+  function openPullRequestDialog(draft: boolean) {
+    const fallback = {
+      title:
+        defaultCommitMessage?.trim() || t("defaultPullRequestTitle"),
+      body: t("defaultPullRequestBody"),
+    };
+    const value: Extract<PendingGitHubAction, { action: "pr" }> = {
+      action: "pr",
+      draft,
+      ...fallback,
+      generation: generatePullRequestDescription ? "loading" : "ready",
+    };
+    setPendingCodeHostAction(value);
+    if (generatePullRequestDescription) {
+      void requestPullRequestDescription(value, fallback);
+    }
+  }
+
+  async function requestPullRequestDescription(
+    value: Extract<PendingGitHubAction, { action: "pr" }>,
+    fallback = { title: value.title, body: value.body },
+  ) {
+    if (!generatePullRequestDescription) return;
+    const request = ++pullRequestDescriptionRequest.current;
+    setPendingCodeHostAction({
+      ...value,
+      generation: "loading",
+      generationError: undefined,
+    });
+    try {
+      const generated = await generatePullRequestDescription();
+      if (pullRequestDescriptionRequest.current !== request) return;
+      setPendingCodeHostAction((current) =>
+        current?.action === "pr"
+          ? {
+              ...current,
+              title: generated.title,
+              body: generated.body,
+              generation: "ready",
+              generationError: undefined,
+            }
+          : current,
+      );
+    } catch (reason) {
+      if (pullRequestDescriptionRequest.current !== request) return;
+      setPendingCodeHostAction((current) =>
+        current?.action === "pr"
+          ? {
+              ...current,
+              ...fallback,
+              generation: "error",
+              generationError: errorMessage(reason),
+            }
+          : current,
+      );
+    }
+  }
+
   async function confirmCodeHostAction() {
     if (!pendingCodeHostAction || !threadId || !revision) return;
     setLoading(true);
@@ -216,16 +280,17 @@ export function DeliveryCenterView({
         );
         setCodeHostStatus(result.status);
       } else {
-        if (!adapter.createDraftPullRequest) {
+        if (!adapter.createPullRequest) {
           throw new Error(t("githubDeliveryUnavailable"));
         }
         setCodeHostStatus(
-          await adapter.createDraftPullRequest(
+          await adapter.createPullRequest(
             projectId,
             threadId,
             revision,
             pendingCodeHostAction.title,
             pendingCodeHostAction.body,
+            pendingCodeHostAction.draft,
           ),
         );
       }
@@ -277,81 +342,41 @@ export function DeliveryCenterView({
           </div>
         )}
 
-        <section
-          className="delivery-overview"
-          aria-label={t("deliveryOverview")}
-        >
-          <DeliveryMetric
-            label={t("targetBranch")}
-            value={targetBranch ?? t("notRecorded")}
-            detail={
-              taskBranch
-                ? t("fromTaskBranch", { branch: taskBranch })
-                : undefined
-            }
-            icon={<GitMerge size={15} />}
-          />
-          <DeliveryMetric
-            label={t("syncStatus")}
-            value={
-              deliveryHasNoChanges
-                ? t("deliveryStatusNoChanges")
-                : deliveryHistoryStatusLabel(visibleSyncStatus, t)
-            }
-            detail={
-              deliveryHasNoChanges
-                ? t("historyNoChanges")
-                : history?.currentRevision
-                  ? t("revisionShort", {
-                      revision: history.currentRevision.slice(0, 8),
-                    })
-                  : t("noSyncHistory")
-            }
-            tone={syncTone}
-            icon={
-              loading || liveState?.status === "syncing" ? (
+        <section className="delivery-overview" aria-label={t("deliveryOverview")}>
+          <div className="delivery-overview-item">
+            <span aria-hidden="true"><GitMerge size={15} /></span>
+            <div>
+              <small>{t("targetBranch")}</small>
+              <strong>{targetBranch ?? t("notRecorded")}</strong>
+              {taskBranch && <em>{t("fromTaskBranch", { branch: taskBranch })}</em>}
+            </div>
+          </div>
+          <div className={`delivery-overview-item ${syncTone ?? ""}`}>
+            <span aria-hidden="true">
+              {loading || liveState?.status === "syncing" ? (
                 <LoaderCircle className="spin" size={15} />
               ) : (
                 <PackageCheck size={15} />
-              )
-            }
-          />
-          <DeliveryMetric
-            label={t("publishStatus")}
-            value={
-              codeHostStatus?.pullRequest
-                ? t("pullRequestNumber", {
-                    number: codeHostStatus.pullRequest.number,
-                  })
-                : codeHostStatus?.pushed
-                  ? t("branchPushed")
-                  : t("branchLocalOnly")
-            }
-            detail={
-              codeHostStatus?.pullRequest
-                ? codeHostStatus.pullRequest.draft
-                  ? t("draftPullRequest")
-                  : codeHostStatus.pullRequest.state
-                : codeHostStatus?.repository
-            }
-            tone={codeHostStatus?.pushed ? "success" : undefined}
-            icon={<UploadCloud size={15} />}
-          />
-          <DeliveryMetric
-            label={t("recoveryPoint")}
-            value={
-              history?.undoPoint
-                ? t("undoFiles", { count: history.undoPoint.files.length })
-                : t("noUndoPoint")
-            }
-            detail={
-              history?.undoPoint?.createdAt
-                ? formatDeliveryTime(history.undoPoint.createdAt)
-                : undefined
-            }
-            tone={history?.undoPoint ? "warning" : undefined}
-            icon={<RotateCcw size={15} />}
-          />
+              )}
+            </span>
+            <div>
+              <small>{t("syncStatus")}</small>
+              <strong>
+                {deliveryHasNoChanges
+                  ? t("deliveryStatusNoChanges")
+                  : deliveryHistoryStatusLabel(visibleSyncStatus, t)}
+              </strong>
+              <em>
+                {deliveryHasNoChanges
+                  ? t("historyNoChanges")
+                  : history?.currentRevision
+                    ? t("revisionShort", {
+                        revision: history.currentRevision.slice(0, 8),
+                      })
+                    : t("noSyncHistory")}
+              </em>
+            </div>
+          </div>
         </section>
 
         {(canRetry || history?.undoPoint) && (
@@ -457,23 +482,21 @@ export function DeliveryCenterView({
                     })
                 : undefined
             }
+            onCreatePr={
+              adapter.createPullRequest
+                ? () => openPullRequestDialog(false)
+                : undefined
+            }
             onCreateDraftPr={
-              adapter.createDraftPullRequest
-                ? () =>
-                    setPendingCodeHostAction({
-                      action: "pr",
-                      title:
-                        defaultCommitMessage?.trim() ||
-                        t("defaultPullRequestTitle"),
-                      body: t("defaultPullRequestBody"),
-                    })
+              adapter.createPullRequest
+                ? () => openPullRequestDialog(true)
                 : undefined
             }
           />
         )}
 
-        <section className="delivery-history-card">
-          <div className="delivery-section-heading">
+        <details className="delivery-history-card">
+          <summary className="delivery-section-heading">
             <span>
               <GitCommitHorizontal size={15} />
             </span>
@@ -481,7 +504,9 @@ export function DeliveryCenterView({
               <strong>{t("syncHistory")}</strong>
               <small>{t("syncHistoryDescription")}</small>
             </div>
-          </div>
+            <b>{entries.length}</b>
+            <ChevronDown size={14} aria-hidden="true" />
+          </summary>
           {entries.length === 0 ? (
             <p className="delivery-history-empty">{t("noSyncHistory")}</p>
           ) : (
@@ -545,7 +570,7 @@ export function DeliveryCenterView({
               })}
             </ol>
           )}
-        </section>
+        </details>
       </div>
 
       {pendingCodeHostAction && (
@@ -553,40 +578,25 @@ export function DeliveryCenterView({
           action={pendingCodeHostAction.action}
           value={pendingCodeHostAction}
           busy={loading}
+          onRegenerate={
+            pendingCodeHostAction.action === "pr" &&
+            generatePullRequestDescription
+              ? () =>
+                  void requestPullRequestDescription(pendingCodeHostAction)
+              : undefined
+          }
           error={error}
           onChange={setPendingCodeHostAction}
           onCancel={() => {
-            if (!loading) setPendingCodeHostAction(undefined);
+            if (!loading) {
+              pullRequestDescriptionRequest.current += 1;
+              setPendingCodeHostAction(undefined);
+            }
           }}
           onConfirm={() => void confirmCodeHostAction()}
         />
       )}
     </div>
-  );
-}
-
-function DeliveryMetric({
-  label,
-  value,
-  detail,
-  tone,
-  icon,
-}: {
-  label: string;
-  value: string;
-  detail?: string;
-  tone?: "success" | "warning" | "danger";
-  icon: ReactNode;
-}) {
-  return (
-    <article className={`delivery-metric ${tone ?? ""}`}>
-      <span aria-hidden="true">{icon}</span>
-      <div>
-        <small>{label}</small>
-        <strong title={value}>{value}</strong>
-        {detail && <span title={detail}>{detail}</span>}
-      </div>
-    </article>
   );
 }
 
@@ -633,6 +643,7 @@ export function GitHubDeliveryCard({
   disabled,
   onRefresh,
   onCommitPush,
+  onCreatePr,
   onCreateDraftPr,
 }: {
   status?: CodeHostDeliveryStatus;
@@ -641,6 +652,7 @@ export function GitHubDeliveryCard({
   disabled: boolean;
   onRefresh(): void;
   onCommitPush?(): void;
+  onCreatePr?(): void;
   onCreateDraftPr?(): void;
 }) {
   const { t } = useI18n();
@@ -732,7 +744,7 @@ export function GitHubDeliveryCard({
           {onCreateDraftPr && (
             <button
               type="button"
-              className="github-delivery-button primary pressable"
+              className="github-delivery-button pressable"
               disabled={disabled || loading || !status.pushed}
               title={!status.pushed ? t("pushBeforeDraftPr") : undefined}
               onClick={onCreateDraftPr}
@@ -741,19 +753,44 @@ export function GitHubDeliveryCard({
               {t("createDraftPr")}
             </button>
           )}
+          {onCreatePr && (
+            <button
+              type="button"
+              className="github-delivery-button primary pressable"
+              disabled={disabled || loading || !status.pushed}
+              title={!status.pushed ? t("pushBeforePullRequest") : undefined}
+              onClick={onCreatePr}
+            >
+              <GitPullRequest size={14} />
+              {t("createPullRequest")}
+            </button>
+          )}
         </div>
       )}
 
       {pullRequest && (
         <div className="github-pr">
           <div className="github-pr-summary">
-            <GitPullRequestDraft size={15} aria-hidden="true" />
+            {pullRequest.draft ? (
+              <GitPullRequestDraft size={15} aria-hidden="true" />
+            ) : (
+              <GitPullRequest size={15} aria-hidden="true" />
+            )}
             <a href={pullRequest.url} target="_blank" rel="noreferrer">
               #{pullRequest.number} {pullRequest.title}
             </a>
             <span className="github-pr-draft">
               {pullRequest.draft ? t("draft") : pullRequest.state}
             </span>
+            <a
+              className="github-pr-open pressable"
+              href={pullRequest.url}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <ExternalLink size={12} aria-hidden="true" />
+              {t("openPullRequest")}
+            </a>
           </div>
           <div className="github-pr-signals">
             <span className={`github-ci-state ${pullRequest.ciStatus}`}>
@@ -920,13 +957,21 @@ function codeHostSetupCommand(
 
 type PendingGitHubAction =
   | { action: "push"; message: string }
-  | { action: "pr"; title: string; body: string };
+  | {
+      action: "pr";
+      title: string;
+      body: string;
+      draft: boolean;
+      generation: "loading" | "ready" | "error";
+      generationError?: string;
+    };
 
 function GitHubDeliveryDialog({
   action,
   value,
   busy,
   error,
+  onRegenerate,
   onChange,
   onCancel,
   onConfirm,
@@ -935,6 +980,7 @@ function GitHubDeliveryDialog({
   value: PendingGitHubAction;
   busy: boolean;
   error?: string;
+  onRegenerate?(): void;
   onChange(value: PendingGitHubAction): void;
   onCancel(): void;
   onConfirm(): void;
@@ -943,10 +989,13 @@ function GitHubDeliveryDialog({
   const firstField = useRef<HTMLInputElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
 
+  const generating = value.action === "pr" && value.generation === "loading";
+
   useEffect(() => {
+    if (generating) return;
     firstField.current?.focus();
     firstField.current?.select();
-  }, [action]);
+  }, [action, generating]);
 
   useEffect(() => {
     function handleEscape(event: globalThis.KeyboardEvent) {
@@ -958,7 +1007,7 @@ function GitHubDeliveryDialog({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!busy) onConfirm();
+    if (!busy && !generating) onConfirm();
   }
 
   const valid =
@@ -989,12 +1038,18 @@ function GitHubDeliveryDialog({
         <form onSubmit={submit}>
           <div className="delivery-dialog-copy">
             <h2 id="github-delivery-dialog-title">
-              {action === "push" ? t("commitAndPush") : t("createDraftPr")}
+              {action === "push"
+                ? t("commitAndPush")
+                : value.action === "pr" && value.draft
+                  ? t("createDraftPr")
+                  : t("createPullRequest")}
             </h2>
             <p>
               {action === "push"
                 ? t("commitAndPushDescription")
-                : t("createDraftPrDescription")}
+                : value.action === "pr" && value.draft
+                  ? t("createDraftPrDescription")
+                  : t("createPullRequestDescription")}
             </p>
             {value.action === "push" ? (
               <label className="delivery-commit-field">
@@ -1011,13 +1066,50 @@ function GitHubDeliveryDialog({
               </label>
             ) : (
               <div className="github-pr-fields">
+                <div
+                  className={`github-pr-generation ${value.generation}`}
+                  role="status"
+                >
+                  {value.generation === "loading" ? (
+                    <LoaderCircle className="spin" size={14} />
+                  ) : (
+                    <Sparkles size={14} />
+                  )}
+                  <span>
+                    <strong>
+                      {value.generation === "loading"
+                        ? t("generatingPullRequestDescription")
+                        : value.generation === "error"
+                          ? t("pullRequestGenerationFailed")
+                          : t("pullRequestDescriptionGenerated")}
+                    </strong>
+                    <small>
+                      {value.generation === "error"
+                        ? value.generationError
+                        : value.generation === "loading"
+                          ? t("generatingPullRequestDescriptionHelp")
+                          : t("pullRequestDescriptionGeneratedHelp")}
+                    </small>
+                  </span>
+                  {value.generation !== "loading" && onRegenerate && (
+                    <button
+                      type="button"
+                      className="github-pr-regenerate pressable"
+                      disabled={busy}
+                      onClick={onRegenerate}
+                    >
+                      <RefreshCw size={12} />
+                      {t("regenerate")}
+                    </button>
+                  )}
+                </div>
                 <label className="delivery-commit-field">
                   <span>{t("pullRequestTitle")}</span>
                   <input
                     ref={firstField}
                     value={value.title}
                     maxLength={256}
-                    disabled={busy}
+                    disabled={busy || generating}
                     onChange={(event) =>
                       onChange({ ...value, title: event.target.value })
                     }
@@ -1028,8 +1120,8 @@ function GitHubDeliveryDialog({
                   <textarea
                     value={value.body}
                     maxLength={20_000}
-                    rows={5}
-                    disabled={busy}
+                    rows={9}
+                    disabled={busy || generating}
                     onChange={(event) =>
                       onChange({ ...value, body: event.target.value })
                     }
@@ -1044,7 +1136,7 @@ function GitHubDeliveryDialog({
               ref={cancelButton}
               type="button"
               className="dialog-button secondary pressable"
-              disabled={busy}
+              disabled={busy || generating}
               onClick={onCancel}
             >
               {t("cancel")}
@@ -1052,14 +1144,16 @@ function GitHubDeliveryDialog({
             <button
               type="submit"
               className="dialog-button primary pressable"
-              disabled={busy || !valid}
+              disabled={busy || generating || !valid}
             >
               {busy && <LoaderCircle className="spin" size={14} />}
               {busy
                 ? t("publishingToGitHub")
                 : action === "push"
                   ? t("commitAndPush")
-                  : t("createDraftPr")}
+                  : value.action === "pr" && value.draft
+                    ? t("createDraftPr")
+                    : t("createPullRequest")}
             </button>
           </div>
         </form>

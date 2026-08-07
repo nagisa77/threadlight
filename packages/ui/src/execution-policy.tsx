@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   Check,
+  ChevronUp,
   ExternalLink,
   Eye,
   LoaderCircle,
@@ -21,6 +22,7 @@ import type { ConversationAccessMode } from "@threadlight/protocol";
 import { useI18n, type Language } from "./i18n.js";
 import {
   ActionPopover,
+  ActionPopoverHeading,
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
@@ -273,19 +275,21 @@ export function ConversationAccessControl({
   const labels = copy[language];
   const trigger = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState<PopoverPosition>();
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
-  function open() {
+  function open(fromKeyboard: boolean) {
     const bounds = trigger.current?.getBoundingClientRect();
     if (!bounds) return;
     onOpen?.();
     setError(undefined);
+    setKeyboardOpen(fromKeyboard);
     setPosition(
       anchoredPopoverPosition(bounds, {
         width: 336,
-        height: 151,
         align: "start",
+        pin: "bottom",
       }),
     );
   }
@@ -319,12 +323,12 @@ export function ConversationAccessControl({
       <button
         ref={trigger}
         type="button"
-        className={`conversation-access-trigger pressable ${mode}`}
+        className={`conversation-access-trigger pressable ${mode}${keyboardOpen && position ? " keyboard-open" : ""}`}
         aria-haspopup="menu"
         aria-expanded={Boolean(position)}
         disabled={disabled || busy}
         title={labels.access}
-        onClick={() => (position ? close() : open())}
+        onClick={(event) => (position ? close() : open(event.detail === 0))}
       >
         {busy ? (
           <LoaderCircle className="spin" size={15} />
@@ -336,12 +340,18 @@ export function ConversationAccessControl({
         <span>
           {mode === "full" ? labels.fullAccess : labels.requestApproval}
         </span>
+        <ChevronUp
+          className="conversation-access-chevron"
+          size={13}
+          aria-hidden="true"
+        />
       </button>
       {position && (
         <ConversationAccessPopover
           mode={mode}
           busy={busy}
           error={error}
+          keyboardOpen={keyboardOpen}
           position={position}
           returnFocusRef={trigger}
           onClose={close}
@@ -356,6 +366,7 @@ export function ConversationAccessPopover({
   mode,
   busy = false,
   error,
+  keyboardOpen = false,
   position,
   returnFocusRef,
   onClose,
@@ -364,6 +375,7 @@ export function ConversationAccessPopover({
   mode: ConversationAccessMode;
   busy?: boolean;
   error?: string;
+  keyboardOpen?: boolean;
   position: PopoverPosition;
   returnFocusRef?: RefObject<HTMLElement | null>;
   onClose(): void;
@@ -394,16 +406,17 @@ export function ConversationAccessPopover({
   return (
     <ActionPopover
       label={labels.access}
-      className="conversation-access-popover"
+      className={`conversation-access-popover${keyboardOpen ? " keyboard-open" : ""}`}
       position={position}
       returnFocusRef={returnFocusRef}
       onClose={onClose}
     >
+      <ActionPopoverHeading>{labels.access}</ActionPopoverHeading>
       {options.map((option) => (
         <button
           key={option.mode}
           type="button"
-          className={`conversation-access-option ${option.mode}`}
+          className={`composer-popover-option conversation-access-option ${option.mode}`}
           role="menuitemradio"
           aria-checked={option.mode === mode}
           data-popover-item
@@ -413,7 +426,7 @@ export function ConversationAccessPopover({
           <span className="conversation-access-option-icon" aria-hidden="true">
             {option.icon}
           </span>
-          <span className="conversation-access-option-copy">
+          <span className="composer-popover-option-copy">
             <strong>{option.title}</strong>
             <small>{option.body}</small>
           </span>

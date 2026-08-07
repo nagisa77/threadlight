@@ -18,8 +18,9 @@ export interface AttachmentProvider {
 
 export interface AttachmentRuntime {
   input: string;
-  tool?: Tool;
-  controller?: RunController;
+  tool: Tool;
+  controller: RunController;
+  addInput(input: string, attachments: readonly ModelAttachment[]): string;
 }
 
 export function createAttachmentRuntime(
@@ -27,13 +28,20 @@ export function createAttachmentRuntime(
   input: string,
   attachments: readonly ModelAttachment[],
 ): AttachmentRuntime {
-  if (attachments.length === 0) return { input };
-
-  const available = new Map(
-    attachments.map((attachment) => [attachment.id, attachment]),
-  );
+  const available = new Map<string, ModelAttachment>();
   const uploaded = new Map<string, ModelAttachment>();
   const pending: ModelAttachment[] = [];
+
+  const addInput = (
+    nextInput: string,
+    nextAttachments: readonly ModelAttachment[],
+  ): string => {
+    if (nextAttachments.length === 0) return nextInput;
+    for (const attachment of nextAttachments) {
+      available.set(attachment.id, attachment);
+    }
+    return attachmentPrompt(nextInput, nextAttachments);
+  };
 
   const tool: Tool = {
     name: ATTACH_TO_MODEL_CONTEXT_TOOL,
@@ -95,9 +103,10 @@ export function createAttachmentRuntime(
   };
 
   return {
-    input: attachmentPrompt(input, attachments),
+    input: addInput(input, attachments),
     tool,
     controller,
+    addInput,
   };
 }
 

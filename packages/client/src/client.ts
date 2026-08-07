@@ -8,6 +8,7 @@ import type {
   JsonRpcRequest,
   MethodParams,
   MethodResult,
+  PullRequestChangeSummary,
   TaskDevelopmentMode,
   ThreadlightMethod,
   ThreadlightNotificationMap,
@@ -163,6 +164,16 @@ export class ThreadlightClient {
     return this.request("thread/suggestions", { threadId, language });
   }
 
+  generatePullRequestDescription(
+    threadId: string,
+    changes: readonly PullRequestChangeSummary[],
+  ) {
+    return this.request("delivery/pull-request-description", {
+      threadId,
+      changes,
+    });
+  }
+
   startTurn(
     threadId: string,
     input: string,
@@ -193,12 +204,18 @@ export class ThreadlightClient {
     threadId: string,
     input: string,
     delivery: FollowUpDelivery,
+    attachments: readonly AttachmentData[] = [],
   ) {
     return this.request("turn/follow-up", {
       threadId,
       input,
       delivery,
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
+  }
+
+  injectQueuedTurn(threadId: string, itemId: string) {
+    return this.request("turn/queue/inject", { threadId, itemId });
   }
 
   reorderQueuedTurn(

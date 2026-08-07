@@ -76,6 +76,7 @@ export interface CodeHostCommitPushResult {
 export interface CodeHostPullRequestInput {
   title: string;
   body?: string;
+  draft: boolean;
 }
 
 export interface CodeHostProvider {
@@ -88,7 +89,7 @@ export interface CodeHostProvider {
     repositoryRoot: string,
     branch: string,
   ): Promise<void>;
-  createDraftPullRequest(
+  createPullRequest(
     repositoryRoot: string,
     headBranch: string,
     baseBranch: string,
@@ -182,7 +183,7 @@ export class CodeHostDeliveryManager {
     };
   }
 
-  async createDraftPullRequest(
+  async createPullRequest(
     request: CodeHostDeliveryRequest,
     input: CodeHostPullRequestInput,
   ): Promise<CodeHostDeliveryStatus> {
@@ -197,11 +198,15 @@ export class CodeHostDeliveryManager {
       throw new Error("Commit and push the task branch before creating a PR");
     }
     if (current.pullRequest) return current;
-    await this.provider.createDraftPullRequest(
+    await this.provider.createPullRequest(
       request.workspace.path,
       request.workspace.branch,
       baseBranch(request.workspace),
-      { title, ...(input.body?.trim() ? { body: input.body.trim() } : {}) },
+      {
+        title,
+        draft: input.draft,
+        ...(input.body?.trim() ? { body: input.body.trim() } : {}),
+      },
     );
     return this.status(request);
   }

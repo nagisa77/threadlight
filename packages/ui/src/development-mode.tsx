@@ -1,10 +1,11 @@
 import { useRef, useState, type ReactNode } from "react";
 import type { TaskDevelopmentMode } from "@threadlight/protocol";
-import { Check, ChevronDown, GitBranch, Laptop } from "lucide-react";
+import { Check, ChevronUp, GitBranch, Laptop } from "lucide-react";
 
 import { useI18n } from "./i18n.js";
 import {
   ActionPopover,
+  ActionPopoverHeading,
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
@@ -33,9 +34,8 @@ export function DevelopmentModeControl({
     setPosition(
       anchoredPopoverPosition(bounds, {
         width: 344,
-        height: 174,
         align: "start",
-        placement: "top",
+        pin: "bottom",
       }),
     );
   }
@@ -58,7 +58,7 @@ export function DevelopmentModeControl({
       <button
         ref={trigger}
         type="button"
-        className={`development-mode-trigger pressable ${mode}`}
+        className={`development-mode-trigger pressable ${mode}${keyboardOpen && position ? " keyboard-open" : ""}`}
         aria-haspopup="menu"
         aria-expanded={Boolean(position)}
         disabled={disabled}
@@ -67,7 +67,7 @@ export function DevelopmentModeControl({
       >
         {mode === "worktree" ? <GitBranch size={15} /> : <Laptop size={15} />}
         <span>{label}</span>
-        <ChevronDown className="development-mode-chevron" size={13} />
+        <ChevronUp className="development-mode-chevron" size={13} />
       </button>
       {position && (
         <ActionPopover
@@ -77,7 +77,7 @@ export function DevelopmentModeControl({
           returnFocusRef={trigger}
           onClose={close}
         >
-          <div className="development-mode-heading">{t("developmentMode")}</div>
+          <ActionPopoverHeading>{t("developmentMode")}</ActionPopoverHeading>
           <DevelopmentModeOption
             selected={mode === "local"}
             icon={<Laptop size={17} />}
@@ -114,7 +114,7 @@ function DevelopmentModeOption({
   return (
     <button
       type="button"
-      className="development-mode-option"
+      className="composer-popover-option development-mode-option"
       role="menuitemradio"
       aria-checked={selected}
       data-popover-item
@@ -123,7 +123,7 @@ function DevelopmentModeOption({
       <span className="development-mode-option-icon" aria-hidden="true">
         {icon}
       </span>
-      <span className="development-mode-option-copy">
+      <span className="composer-popover-option-copy">
         <strong>{title}</strong>
         <small>{description}</small>
       </span>

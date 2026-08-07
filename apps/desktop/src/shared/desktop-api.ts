@@ -628,6 +628,7 @@ export interface DesktopCodeHostCreatePullRequest
   extends DesktopWorktreeDeliveryRequest {
   title: string;
   body?: string;
+  draft: boolean;
 }
 
 export interface DesktopConversationFileChange {
@@ -956,7 +957,7 @@ export interface DesktopApi {
   commitAndPushCodeHostDelivery(
     request: DesktopCodeHostCommitPushRequest,
   ): Promise<DesktopCodeHostCommitPushResult>;
-  createDraftPullRequest(
+  createPullRequest(
     request: DesktopCodeHostCreatePullRequest,
   ): Promise<DesktopCodeHostDeliveryStatus>;
   listWorkspace(
