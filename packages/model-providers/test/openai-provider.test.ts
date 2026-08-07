@@ -10,6 +10,47 @@ import {
 } from "../src/openai-provider.js";
 
 describe("OpenAIResponsesProvider", () => {
+  it("falls back to visible history when opaque state belongs to another provider", async () => {
+    const response = {
+      output_text: "bluebird",
+      output: [],
+    } as unknown as OpenAI.Responses.Response;
+    const responseStream = {
+      on() {
+        return responseStream;
+      },
+      async finalResponse() {
+        return response;
+      },
+    };
+    const stream = vi.fn(() => responseStream);
+    const client = { responses: { stream } } as unknown as OpenAI;
+    const provider = new OpenAIResponsesProvider({ client });
+
+    await provider.generate({
+      instructions: "Reply from context",
+      input: "What is the code?",
+      state: {
+        protocol: "openai-compatible-chat",
+        provider: "custom:https://custom.test/v1",
+        messages: [{ role: "user", content: "private state" }],
+      },
+      history: [
+        { role: "user", text: "Remember bluebird" },
+        { role: "assistant", text: "I will remember bluebird" },
+      ],
+      tools: [],
+    });
+
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      input: [
+        { role: "user", content: "Remember bluebird" },
+        { role: "assistant", content: "I will remember bluebird" },
+        { role: "user", content: "What is the code?" },
+      ],
+    });
+  });
+
   it("omits computer tools for models that do not support the native protocol", async () => {
     const response = {
       output_text: "Hello",
@@ -201,6 +242,9 @@ describe("OpenAIResponsesProvider", () => {
     const second = await provider.generate({
       instructions: "Use tools",
       state: first.state,
+      history: [
+        { role: "user", text: "This fallback must not be duplicated" },
+      ],
       toolResults: [
         {
           callId: "computer-call-1",

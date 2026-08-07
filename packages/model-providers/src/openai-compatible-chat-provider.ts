@@ -99,7 +99,11 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
         `${this.provider} 当前不支持通过文件上传接口发送附件，请切换到 OpenAI。`,
       );
     }
-    const messages = this.messagesFrom(request.state, request.instructions);
+    const messages = this.messagesFrom(
+      request.state,
+      request.instructions,
+      request.history,
+    );
 
     if (request.input) {
       messages.push({ role: "user", content: request.input });
@@ -222,7 +226,11 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     };
   }
 
-  private messagesFrom(state: unknown, instructions: string): ChatMessage[] {
+  private messagesFrom(
+    state: unknown,
+    instructions: string,
+    history: ModelRequest["history"],
+  ): ChatMessage[] {
     if (isChatProviderState(state) && state.provider === this.stateProvider) {
       const messages = state.messages.map((message) => ({ ...message }));
       const system = messages.find((message) => message.role === "system");
@@ -231,7 +239,10 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       return messages;
     }
 
-    return [{ role: "system", content: instructions }];
+    return [
+      { role: "system", content: instructions },
+      ...(history ?? []).map(({ role, text }) => ({ role, content: text })),
+    ];
   }
 }
 

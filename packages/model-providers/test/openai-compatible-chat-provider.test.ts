@@ -83,6 +83,9 @@ describe("OpenAICompatibleChatProvider", () => {
       {
         instructions: "Use tools",
         state: first.state,
+        history: [
+          { role: "user", text: "This fallback must not be duplicated" },
+        ],
         toolResults: [
           { callId: "call-1", name: "double", output: "42" },
         ],
@@ -121,7 +124,7 @@ describe("OpenAICompatibleChatProvider", () => {
     expect(second.text).toBe("The answer is 42");
   });
 
-  it("does not replay opaque state from another provider", async () => {
+  it("falls back to visible history instead of replaying another provider's state", async () => {
     const create = vi.fn().mockResolvedValue(
       chunks([{ choices: [{ delta: { content: "Fresh" } }] }]),
     );
@@ -143,11 +146,17 @@ describe("OpenAICompatibleChatProvider", () => {
         provider: "deepseek",
         messages: [{ role: "user", content: "private history" }],
       },
+      history: [
+        { role: "user", text: "Remember bluebird" },
+        { role: "assistant", text: "I will remember bluebird" },
+      ],
       tools: [],
     });
 
     expect(create.mock.calls[0]?.[0].messages).toEqual([
       { role: "system", content: "Qwen instructions" },
+      { role: "user", content: "Remember bluebird" },
+      { role: "assistant", content: "I will remember bluebird" },
       { role: "user", content: "Hello" },
     ]);
   });

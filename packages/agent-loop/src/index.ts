@@ -8,6 +8,7 @@ export type {
   JsonSchema,
   ModelGenerateOptions,
   ModelAttachment,
+  ModelConversationMessage,
   ModelProvider,
   ModelRequest,
   ModelStreamEvent,

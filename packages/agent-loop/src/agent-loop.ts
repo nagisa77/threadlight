@@ -98,6 +98,7 @@ export class AgentLoop {
           instructions,
           input: modelInput,
           attachments: directive.attachments,
+          history: options.history,
           state,
           toolResults,
           tools: advertisedTools,

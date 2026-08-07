@@ -192,7 +192,10 @@ export class OpenAIResponsesProvider implements ModelProvider {
     const computerToolsRemoved = availableTools.length !== request.tools.length;
     const input: OpenAI.Responses.ResponseInput = Array.isArray(request.state)
       ? sanitizeResponseInput(request.state)
-      : [];
+      : (request.history ?? []).map(({ role, text }) => ({
+          role,
+          content: text,
+        }));
 
     for (const result of request.toolResults ?? []) {
       const tool = request.tools.find(

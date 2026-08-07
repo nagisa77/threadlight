@@ -1125,6 +1125,10 @@ export class AppServer {
         {
           toolScopeId: threadId,
           modelState: thread.conversation.modelState,
+          history: thread.conversation.messages
+            .slice(0, -1)
+            .filter((message) => message.text.length > 0)
+            .map(({ role, text }) => ({ role, text })),
           controller: runController,
           signal: controller.signal,
           takeAdditionalInput: () =>

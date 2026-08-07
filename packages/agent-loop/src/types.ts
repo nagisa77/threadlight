@@ -88,6 +88,12 @@ export interface ModelAttachment {
   providerReference?: unknown;
 }
 
+/** Provider-neutral visible transcript used when opaque state cannot cross providers. */
+export interface ModelConversationMessage {
+  role: "user" | "assistant";
+  text: string;
+}
+
 export interface ModelRequest {
   model?: string;
   /** Routing hint forwarded from the agent; see {@link Agent.provider}. */
@@ -95,6 +101,8 @@ export interface ModelRequest {
   instructions: string;
   input?: string;
   attachments?: readonly ModelAttachment[];
+  /** Prior visible turns, available as a fallback when state belongs to another provider. */
+  history?: readonly ModelConversationMessage[];
   state?: unknown;
   toolResults?: readonly ToolResult[];
   tools: readonly Pick<
@@ -174,6 +182,8 @@ export interface RunOptions {
   signal?: AbortSignal;
   toolScopeId?: string;
   modelState?: unknown;
+  /** Prior visible turns forwarded without interpreting provider-specific state. */
+  history?: readonly ModelConversationMessage[];
   controller?: RunController;
   /**
    * Consumes user input added while this run is active.

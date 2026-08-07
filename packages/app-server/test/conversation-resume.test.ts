@@ -304,6 +304,81 @@ describe("persistent conversations", () => {
     ]);
   });
 
+  it("forwards visible history when a conversation switches providers", async () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-provider-switch-"));
+    directories.push(root);
+    const store = new FileConversationStore(
+      join(root, ".threadlight", "conversations"),
+    );
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return requests.length === 1
+          ? {
+              text: "My launch code is bluebird.",
+              toolCalls: [],
+              state: {
+                protocol: "openai-compatible-chat",
+                provider: "custom:https://custom.test/v1",
+                messages: [{ role: "assistant", content: "private state" }],
+              },
+            }
+          : { text: "It is bluebird.", toolCalls: [], state: [] };
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    let completed = notification(messages, "turn/completed");
+    const appServer = server(provider, store, (message) => {
+      messages.push(message);
+      completed.receive(message);
+    });
+
+    await appServer.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await appServer.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "Remember that my launch code is bluebird.",
+        provider: "custom",
+        model: "custom-model",
+      },
+    });
+    await completed.promise;
+
+    completed = notification(messages, "turn/completed");
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "What is my launch code?",
+        provider: "openai",
+        model: "gpt-5.6",
+      },
+    });
+    await completed.promise;
+
+    expect(requests[1]).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.6",
+      input: "What is my launch code?",
+      state: {
+        protocol: "openai-compatible-chat",
+        provider: "custom:https://custom.test/v1",
+      },
+      history: [
+        { role: "user", text: "Remember that my launch code is bluebird." },
+        { role: "assistant", text: "My launch code is bluebird." },
+      ],
+    });
+  });
+
   it("keeps a blank session ephemeral until the first user input", async () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-ephemeral-"));
     directories.push(root);
