@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  browserLanguage,
   connectionPageCopy,
+  initialConnectionLanguage,
   RemoteConnectionPage,
 } from "../src/connection-page.js";
 import type { HostRecord } from "../src/host-store.js";
@@ -20,7 +22,60 @@ function host(partial: Partial<HostRecord>): HostRecord {
 }
 
 describe("remote connection page preferences", () => {
-  it("starts independently in English with the system theme", () => {
+  it("uses the first supported browser language on a first visit", () => {
+    expect(
+      browserLanguage({
+        languages: ["fr-FR", "zh-Hant-HK", "en-US"],
+        language: "en-US",
+      }),
+    ).toBe("zh-TW");
+    expect(browserLanguage({ languages: [], language: "ja-JP" })).toBe("ja");
+    expect(browserLanguage({ languages: ["zh_Hans_SG"] })).toBe("zh-CN");
+    expect(browserLanguage({ languages: ["ko-KR"] })).toBe("ko");
+    expect(browserLanguage({ languages: ["fr-FR"] })).toBe("en");
+  });
+
+  it("keeps a saved language ahead of the browser preference", () => {
+    expect(
+      initialConnectionLanguage("en", {
+        languages: ["zh-CN"],
+        language: "zh-CN",
+      }),
+    ).toBe("en");
+    expect(
+      initialConnectionLanguage("unsupported", {
+        languages: ["zh-TW"],
+      }),
+    ).toBe("zh-TW");
+  });
+
+  it("renders a first visit in the detected browser language", () => {
+    vi.stubGlobal("navigator", {
+      languages: ["zh-TW", "en-US"],
+      language: "zh-TW",
+    });
+
+    try {
+      const html = renderToStaticMarkup(
+        <RemoteConnectionPage
+          initialEndpoint=""
+          initialToken=""
+          autoConnect={false}
+          onConnect={async () => {}}
+        />,
+      );
+
+      expect(html).toContain("連線遠端 Host");
+      expect(html).toContain(
+        '<option value="zh-TW" selected="">繁體中文</option>',
+      );
+      expect(html).not.toContain("Connect to a remote Host");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("falls back to English with the system theme without a browser locale", () => {
     const html = renderToStaticMarkup(
       <RemoteConnectionPage
         initialEndpoint=""
@@ -206,6 +261,15 @@ describe("remote connection page responsive layout", () => {
     );
     expect(styles).toMatch(
       /@media \(max-width: 700px\)[\s\S]*?\.web-connect-submit\s*{[^}]*min-height:\s*44px/,
+    );
+  });
+
+  it("owns viewport scrolling instead of growing behind the locked web root", () => {
+    expect(styles).toMatch(
+      /\.web-connect-shell\s*{[^}]*height:\s*100%;[^}]*min-height:\s*0;[^}]*-webkit-overflow-scrolling:\s*touch;[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior-y:\s*contain;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 700px\)[\s\S]*?\.web-connect-shell\s*{[^}]*padding:[^}]*env\(safe-area-inset-bottom, 0px\)/s,
     );
   });
 });

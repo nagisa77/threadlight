@@ -67,10 +67,10 @@ describe("i18n", () => {
     expect(renderLanguage("zh-TW")).toContain("<label>語言</label>");
 
     const source = readFileSync(
-      new URL("../src/i18n.tsx", import.meta.url),
+      new URL("../src/features/i18n/messages/zh-TW.ts", import.meta.url),
       "utf8",
     );
-    expect(source).toContain("const zhTW: Messages = {");
+    expect(source).toContain("export const zhTW: Messages = {");
     expect(source).not.toContain("traditionalize(");
   });
 

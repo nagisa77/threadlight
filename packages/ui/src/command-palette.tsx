@@ -12,15 +12,10 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useI18n } from "./i18n.js";
+import { Dialog } from "./dialog.js";
 import {
   isCommandPaletteShortcut,
   isFileSearchShortcut,
@@ -53,10 +48,7 @@ export interface SearchAdapter {
 
 export interface CommandPaletteEntry {
   id: string;
-  kind:
-    | SearchResult["kind"]
-    | "action"
-    | "task";
+  kind: SearchResult["kind"] | "action" | "task";
   title: string;
   subtitle: string;
   snippet?: string;
@@ -92,19 +84,16 @@ export function CommandPalette({
   onClose(): void;
 }) {
   const { t } = useI18n();
-  const dialog = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const request = useRef(0);
-  const onCloseRef = useRef(onClose);
   const onSelectRef = useRef(onSelect);
   const [query, setQuery] = useState("");
-  const [remoteResults, setRemoteResults] = useState<
-    readonly SearchResult[]
-  >([]);
+  const [remoteResults, setRemoteResults] = useState<readonly SearchResult[]>(
+    [],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [activeIndex, setActiveIndex] = useState(0);
-  onCloseRef.current = onClose;
   onSelectRef.current = onSelect;
 
   const entries = useMemo(() => {
@@ -116,15 +105,6 @@ export function CommandPalette({
     return orderPaletteEntries([...local, ...remote]);
   }, [actions, mode, query, remoteResults, tasks]);
   const resultKey = entries.map(({ id }) => id).join("\u0000");
-
-  useEffect(() => {
-    input.current?.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, []);
 
   useEffect(() => {
     const operation = ++request.current;
@@ -161,40 +141,6 @@ export function CommandPalette({
   }, [mode, query, resultKey]);
 
   useEffect(() => {
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (isCommandPaletteShortcut(event)) {
-        event.preventDefault();
-        onModeChange("all");
-      } else if (isFileSearchShortcut(event)) {
-        event.preventDefault();
-        onModeChange("files");
-      } else if (event.key === "Tab") {
-        const focusable = Array.from(
-          dialog.current?.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
-          ) ?? [],
-        );
-        const first = focusable[0];
-        const last = focusable.at(-1);
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last?.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first?.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onModeChange]);
-
-  useEffect(() => {
     document
       .getElementById(`command-palette-result-${activeIndex}`)
       ?.scrollIntoView({ block: "nearest" });
@@ -202,173 +148,176 @@ export function CommandPalette({
 
   const activeEntry = entries[activeIndex];
   return (
-    <div
-      className="command-palette-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+    <Dialog
+      backdropClassName="command-palette-backdrop"
+      className="command-palette"
+      aria-labelledby="command-palette-title"
+      initialFocusRef={input}
+      onClose={onClose}
+      onKeyDown={(event) => {
+        if (isCommandPaletteShortcut(event.nativeEvent)) {
+          event.preventDefault();
+          onModeChange("all");
+        } else if (isFileSearchShortcut(event.nativeEvent)) {
+          event.preventDefault();
+          onModeChange("files");
+        }
       }}
     >
-      <section
-        ref={dialog}
-        className="command-palette"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="command-palette-title"
-      >
-        <h2 id="command-palette-title" className="sr-only">
-          {t("commandPalette")}
-        </h2>
-        <div className="command-palette-input">
-          {loading ? (
-            <LoaderCircle className="spin" size={17} aria-hidden="true" />
-          ) : (
-            <Search size={17} aria-hidden="true" />
-          )}
-          <input
-            ref={input}
-            value={query}
-            role="combobox"
-            aria-expanded="true"
-            aria-controls="command-palette-results"
-            aria-activedescendant={
-              activeEntry
-                ? `command-palette-result-${activeIndex}`
-                : undefined
+      <h2 id="command-palette-title" className="sr-only">
+        {t("commandPalette")}
+      </h2>
+      <div className="command-palette-input">
+        {loading ? (
+          <LoaderCircle className="spin" size={17} aria-hidden="true" />
+        ) : (
+          <Search size={17} aria-hidden="true" />
+        )}
+        <input
+          ref={input}
+          value={query}
+          role="combobox"
+          aria-expanded="true"
+          aria-controls="command-palette-results"
+          aria-activedescendant={
+            activeEntry ? `command-palette-result-${activeIndex}` : undefined
+          }
+          placeholder={
+            mode === "files" ? t("searchFilePaths") : t("searchEverything")
+          }
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setActiveIndex((index) =>
+                entries.length ? (index + 1) % entries.length : 0,
+              );
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActiveIndex((index) =>
+                entries.length
+                  ? (index - 1 + entries.length) % entries.length
+                  : 0,
+              );
+            } else if (event.key === "Enter" && activeEntry) {
+              event.preventDefault();
+              onSelectRef.current(activeEntry);
             }
-            placeholder={
-              mode === "files"
-                ? t("searchFilePaths")
-                : t("searchEverything")
-            }
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setActiveIndex((index) =>
-                  entries.length ? (index + 1) % entries.length : 0,
-                );
-              } else if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setActiveIndex((index) =>
-                  entries.length
-                    ? (index - 1 + entries.length) % entries.length
-                    : 0,
-                );
-              } else if (event.key === "Enter" && activeEntry) {
-                event.preventDefault();
-                onSelectRef.current(activeEntry);
-              }
-            }}
-          />
-          {query && (
-            <button
-              type="button"
-              className="command-palette-clear pressable"
-              aria-label={t("clearSearch")}
-              onClick={() => {
-                setQuery("");
-                input.current?.focus();
-              }}
-            >
-              <X size={14} />
-            </button>
-          )}
-          <kbd>esc</kbd>
-        </div>
-        <div className="command-palette-modes" role="tablist">
+          }}
+        />
+        {query && (
           <button
             type="button"
-            role="tab"
-            aria-selected={mode === "all"}
-            className={mode === "all" ? "active" : ""}
+            className="command-palette-clear pressable"
+            aria-label={t("clearSearch")}
             onClick={() => {
-              onModeChange("all");
+              setQuery("");
               input.current?.focus();
             }}
           >
-            {t("allResults")}
-            <kbd>⌘K</kbd>
+            <X size={14} />
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "files"}
-            className={mode === "files" ? "active" : ""}
-            onClick={() => {
-              onModeChange("files");
-              input.current?.focus();
-            }}
-          >
-            {t("files")}
-            <kbd>⌘P</kbd>
-          </button>
-        </div>
-        <div
-          id="command-palette-results"
-          className="command-palette-results"
-          role="listbox"
-          aria-label={t("searchResults")}
+        )}
+        <kbd>esc</kbd>
+      </div>
+      <div className="command-palette-modes" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "all"}
+          className={mode === "all" ? "active" : ""}
+          onClick={() => {
+            onModeChange("all");
+            input.current?.focus();
+          }}
         >
-          {error ? (
-            <div className="command-palette-empty error">
-              <Activity size={18} aria-hidden="true" />
-              <span>{t("searchFailed")}</span>
-              <small>{error}</small>
-            </div>
-          ) : entries.length === 0 && !loading ? (
-            <div className="command-palette-empty">
-              <Search size={19} aria-hidden="true" />
-              <span>
-                {query ? t("noSearchResults") : t("startTypingToSearch")}
-              </span>
-            </div>
-          ) : (
-            groupEntries(entries).map(([kind, group]) => (
-              <section
-                className="command-palette-group"
-                role="group"
-                aria-label={paletteGroupLabel(kind, t)}
-                key={kind}
-              >
-                <h3 aria-hidden="true">{paletteGroupLabel(kind, t)}</h3>
-                {group.map(({ entry, index }) => (
-                  <button
-                    id={`command-palette-result-${index}`}
-                    key={entry.id}
-                    type="button"
-                    role="option"
-                    aria-selected={index === activeIndex}
-                    className={`command-palette-result ${
-                      index === activeIndex ? "active" : ""
-                    }`}
-                    onMouseMove={() => setActiveIndex(index)}
-                    onClick={() => onSelect(entry)}
-                  >
-                    <span className={`command-palette-icon ${entry.kind}`}>
-                      {paletteIcon(entry.kind)}
+          {t("allResults")}
+          <kbd>⌘K</kbd>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "files"}
+          className={mode === "files" ? "active" : ""}
+          onClick={() => {
+            onModeChange("files");
+            input.current?.focus();
+          }}
+        >
+          {t("files")}
+          <kbd>⌘P</kbd>
+        </button>
+      </div>
+      <div
+        id="command-palette-results"
+        className="command-palette-results"
+        role="listbox"
+        aria-label={t("searchResults")}
+      >
+        {error ? (
+          <div className="command-palette-empty error">
+            <Activity size={18} aria-hidden="true" />
+            <span>{t("searchFailed")}</span>
+            <small>{error}</small>
+          </div>
+        ) : entries.length === 0 && !loading ? (
+          <div className="command-palette-empty">
+            <Search size={19} aria-hidden="true" />
+            <span>
+              {query ? t("noSearchResults") : t("startTypingToSearch")}
+            </span>
+          </div>
+        ) : (
+          groupEntries(entries).map(([kind, group]) => (
+            <section
+              className="command-palette-group"
+              role="group"
+              aria-label={paletteGroupLabel(kind, t)}
+              key={kind}
+            >
+              <h3 aria-hidden="true">{paletteGroupLabel(kind, t)}</h3>
+              {group.map(({ entry, index }) => (
+                <button
+                  id={`command-palette-result-${index}`}
+                  key={entry.id}
+                  type="button"
+                  role="option"
+                  aria-selected={index === activeIndex}
+                  className={`command-palette-result ${
+                    index === activeIndex ? "active" : ""
+                  }`}
+                  onMouseMove={() => setActiveIndex(index)}
+                  onClick={() => onSelect(entry)}
+                >
+                  <span className={`command-palette-icon ${entry.kind}`}>
+                    {paletteIcon(entry.kind)}
+                  </span>
+                  <span className="command-palette-result-copy">
+                    <span>
+                      <strong>{entry.title}</strong>
+                      <small>{entry.subtitle}</small>
                     </span>
-                    <span className="command-palette-result-copy">
-                      <span>
-                        <strong>{entry.title}</strong>
-                        <small>{entry.subtitle}</small>
-                      </span>
-                      {entry.snippet && <p>{entry.snippet}</p>}
-                    </span>
-                    {index === activeIndex && (
-                      <CornerDownLeft size={13} aria-hidden="true" />
-                    )}
-                  </button>
-                ))}
-              </section>
-            ))
-          )}
-        </div>
-        <footer className="command-palette-footer">
-          <span><kbd>↑</kbd><kbd>↓</kbd> {t("navigate")}</span>
-          <span><kbd>↵</kbd> {t("open")}</span>
-        </footer>
-      </section>
-    </div>
+                    {entry.snippet && <p>{entry.snippet}</p>}
+                  </span>
+                  {index === activeIndex && (
+                    <CornerDownLeft size={13} aria-hidden="true" />
+                  )}
+                </button>
+              ))}
+            </section>
+          ))
+        )}
+      </div>
+      <footer className="command-palette-footer">
+        <span>
+          <kbd>↑</kbd>
+          <kbd>↓</kbd> {t("navigate")}
+        </span>
+        <span>
+          <kbd>↵</kbd> {t("open")}
+        </span>
+      </footer>
+    </Dialog>
   );
 }
 
@@ -378,12 +327,7 @@ export function paletteEntryMatches(
 ): boolean {
   const normalized = query.trim().toLocaleLowerCase();
   if (!normalized) return true;
-  const haystack = [
-    entry.title,
-    entry.subtitle,
-    entry.snippet,
-    entry.keywords,
-  ]
+  const haystack = [entry.title, entry.subtitle, entry.snippet, entry.keywords]
     .filter(Boolean)
     .join("\n")
     .toLocaleLowerCase();
@@ -414,12 +358,15 @@ function orderPaletteEntries(
   );
 }
 
-function groupEntries(
-  entries: readonly CommandPaletteEntry[],
-): Array<[CommandPaletteEntry["kind"], Array<{
-  entry: CommandPaletteEntry;
-  index: number;
-}>]> {
+function groupEntries(entries: readonly CommandPaletteEntry[]): Array<
+  [
+    CommandPaletteEntry["kind"],
+    Array<{
+      entry: CommandPaletteEntry;
+      index: number;
+    }>,
+  ]
+> {
   const groups = new Map<
     CommandPaletteEntry["kind"],
     Array<{ entry: CommandPaletteEntry; index: number }>

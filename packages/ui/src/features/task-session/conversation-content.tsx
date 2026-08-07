@@ -14,15 +14,15 @@ import {
   X,
 } from "lucide-react";
 
-import { useI18n, type Translate } from "../i18n.js";
-import { MarkdownContent, type LocalFileReference } from "../markdown.js";
-import type { ProjectSummary, ProjectsSnapshot } from "../projects.js";
-import type { ConversationProgress, ToolActivity } from "../session.js";
+import { useI18n, type Translate } from "../../i18n.js";
+import { MarkdownContent, type LocalFileReference } from "../../markdown.js";
+import type { ProjectSummary, ProjectsSnapshot } from "../../projects.js";
+import type { AttachmentPreviewAdapter } from "../composer/types.js";
 import type {
-  AttachmentPreviewAdapter,
   PendingAttachment,
   VoiceInputStatus,
-} from "../app.js";
+} from "../composer/controller.js";
+import type { ConversationProgress, ToolActivity } from "./session.js";
 
 export function ProgressList({
   progress,

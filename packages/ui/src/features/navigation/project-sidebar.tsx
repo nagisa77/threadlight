@@ -32,20 +32,21 @@ import {
   X,
 } from "lucide-react";
 
-import { useI18n, type Translate } from "../i18n.js";
+import { useI18n, type Translate } from "../../i18n.js";
+import { Dialog } from "../../dialog.js";
 import {
   ActionPopover,
   ActionPopoverItem,
   anchoredPopoverPosition,
   type PopoverPosition,
-} from "../popover.js";
+} from "../../popover.js";
 import type {
   ConversationSummary,
   HostSummary,
   ProjectSummary,
-} from "../projects.js";
-import type { ComputerShareSnapshot } from "../app.js";
-import { errorMessage } from "./conversation-content.js";
+} from "../../projects.js";
+import type { ComputerShareSnapshot } from "../task-session/computer-types.js";
+import { errorMessage } from "../task-session/conversation-content.js";
 
 export type TaskListFilter =
   "all" | "running" | "pending" | "completed" | "archived";
@@ -132,10 +133,7 @@ export function TaskSearchDialog({
   onClose(): void;
 }) {
   const { t } = useI18n();
-  const dialog = useRef<HTMLElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const filteredProjects = filterProjectsForTaskList(
     projects,
     query,
@@ -155,183 +153,142 @@ export function TaskSearchDialog({
     "archived",
   ];
 
-  useEffect(() => {
-    input.current?.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (event.key !== "Tab") return;
-      const focusable = Array.from(
-        dialog.current?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
   return (
-    <div
-      className="task-search-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+    <Dialog
+      backdropClassName="task-search-backdrop"
+      className="task-search-dialog"
+      aria-labelledby="task-search-title"
+      initialFocusRef={input}
+      onClose={onClose}
     >
-      <section
-        ref={dialog}
-        className="task-search-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="task-search-title"
-      >
-        <h2 id="task-search-title" className="sr-only">
-          {t("searchTasks")}
-        </h2>
-        <div className="task-search-dialog-input">
-          <Search size={17} aria-hidden="true" />
-          <input
-            ref={input}
-            type="search"
-            value={query}
-            placeholder={t("searchTasks")}
-            aria-label={t("searchTasks")}
-            onChange={(event) => onQueryChange(event.target.value)}
-          />
-          {query && (
-            <button
-              type="button"
-              className="task-search-dialog-clear pressable"
-              aria-label={t("clearSearch")}
-              title={t("clearSearch")}
-              onClick={() => {
-                onQueryChange("");
-                input.current?.focus();
-              }}
-            >
-              <X size={14} />
-            </button>
-          )}
+      <h2 id="task-search-title" className="sr-only">
+        {t("searchTasks")}
+      </h2>
+      <div className="task-search-dialog-input">
+        <Search size={17} aria-hidden="true" />
+        <input
+          ref={input}
+          type="search"
+          value={query}
+          placeholder={t("searchTasks")}
+          aria-label={t("searchTasks")}
+          onChange={(event) => onQueryChange(event.target.value)}
+        />
+        {query && (
           <button
             type="button"
-            className="task-search-dialog-close pressable"
-            aria-label={t("closeTaskSearch")}
-            title={t("closeTaskSearch")}
-            onClick={onClose}
+            className="task-search-dialog-clear pressable"
+            aria-label={t("clearSearch")}
+            title={t("clearSearch")}
+            onClick={() => {
+              onQueryChange("");
+              input.current?.focus();
+            }}
           >
-            <X size={15} />
+            <X size={14} />
           </button>
-        </div>
-        <div
-          className="task-search-filters"
-          role="tablist"
-          aria-label={t("filterTasks")}
+        )}
+        <button
+          type="button"
+          className="task-search-dialog-close pressable"
+          aria-label={t("closeTaskSearch")}
+          title={t("closeTaskSearch")}
+          onClick={onClose}
         >
-          {filters.map((candidate) => (
-            <button
-              key={candidate}
-              type="button"
-              role="tab"
-              aria-selected={candidate === filter}
-              className={`task-search-filter pressable ${candidate === filter ? "active" : ""}`}
-              onClick={() => onFilterChange(candidate)}
-            >
-              {taskFilterLabel(candidate, t)}
-            </button>
-          ))}
-        </div>
-        <div
-          className="task-search-results"
-          aria-label={t("taskSearchResults", { count: resultCount })}
-        >
-          {resultCount === 0 ? (
-            <div className="task-search-empty">
-              <Search size={20} aria-hidden="true" />
-              <span>{t("noMatchingTasks")}</span>
-            </div>
-          ) : (
-            filteredProjects.map((project) => (
-              <section className="task-search-project" key={project.id}>
-                <h3>
-                  {project.scope === "standalone" ? (
-                    <X size={14} aria-hidden="true" />
-                  ) : (
-                    <Folder size={14} aria-hidden="true" />
-                  )}
-                  <span>
-                    {project.scope === "standalone"
-                      ? t("notInProject")
-                      : project.name}
-                  </span>
-                  <small>{project.conversations.length}</small>
-                </h3>
-                {project.conversations.map((conversation) => {
-                  const isRunning = running.has(conversation.id);
-                  return (
-                    <button
-                      key={conversation.id}
-                      type="button"
-                      className={`task-search-result pressable ${conversation.id === activeThreadId ? "active" : ""}`}
-                      aria-current={
-                        conversation.id === activeThreadId ? "page" : undefined
-                      }
-                      onClick={() => onSelect(project.id, conversation.id)}
-                    >
-                      <span className="task-search-result-icon">
-                        {isRunning ? (
-                          <LoaderCircle className="spin" size={14} />
-                        ) : conversation.archivedAt ? (
-                          <Archive size={14} />
-                        ) : conversation.status === "attention" ? (
-                          <TriangleAlert size={14} />
-                        ) : conversation.pinnedAt ? (
-                          <Pin size={14} />
-                        ) : (
-                          <FileText size={14} />
-                        )}
-                      </span>
-                      <span className="task-search-result-copy">
-                        <strong>{conversation.title}</strong>
-                        <small>
-                          {isRunning
-                            ? t("runningTasks")
-                            : conversation.archivedAt
-                              ? t("archivedTasks")
-                              : conversation.status === "pending"
-                                ? t("pendingTasks")
-                                : conversation.status === "attention"
-                                  ? t("needsAttention")
-                                  : t("completedTasks")}
-                        </small>
-                      </span>
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </button>
-                  );
-                })}
-              </section>
-            ))
-          )}
-        </div>
-      </section>
-    </div>
+          <X size={15} />
+        </button>
+      </div>
+      <div
+        className="task-search-filters"
+        role="tablist"
+        aria-label={t("filterTasks")}
+      >
+        {filters.map((candidate) => (
+          <button
+            key={candidate}
+            type="button"
+            role="tab"
+            aria-selected={candidate === filter}
+            className={`task-search-filter pressable ${candidate === filter ? "active" : ""}`}
+            onClick={() => onFilterChange(candidate)}
+          >
+            {taskFilterLabel(candidate, t)}
+          </button>
+        ))}
+      </div>
+      <div
+        className="task-search-results"
+        aria-label={t("taskSearchResults", { count: resultCount })}
+      >
+        {resultCount === 0 ? (
+          <div className="task-search-empty">
+            <Search size={20} aria-hidden="true" />
+            <span>{t("noMatchingTasks")}</span>
+          </div>
+        ) : (
+          filteredProjects.map((project) => (
+            <section className="task-search-project" key={project.id}>
+              <h3>
+                {project.scope === "standalone" ? (
+                  <X size={14} aria-hidden="true" />
+                ) : (
+                  <Folder size={14} aria-hidden="true" />
+                )}
+                <span>
+                  {project.scope === "standalone"
+                    ? t("notInProject")
+                    : project.name}
+                </span>
+                <small>{project.conversations.length}</small>
+              </h3>
+              {project.conversations.map((conversation) => {
+                const isRunning = running.has(conversation.id);
+                return (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    className={`task-search-result pressable ${conversation.id === activeThreadId ? "active" : ""}`}
+                    aria-current={
+                      conversation.id === activeThreadId ? "page" : undefined
+                    }
+                    onClick={() => onSelect(project.id, conversation.id)}
+                  >
+                    <span className="task-search-result-icon">
+                      {isRunning ? (
+                        <LoaderCircle className="spin" size={14} />
+                      ) : conversation.archivedAt ? (
+                        <Archive size={14} />
+                      ) : conversation.status === "attention" ? (
+                        <TriangleAlert size={14} />
+                      ) : conversation.pinnedAt ? (
+                        <Pin size={14} />
+                      ) : (
+                        <FileText size={14} />
+                      )}
+                    </span>
+                    <span className="task-search-result-copy">
+                      <strong>{conversation.title}</strong>
+                      <small>
+                        {isRunning
+                          ? t("runningTasks")
+                          : conversation.archivedAt
+                            ? t("archivedTasks")
+                            : conversation.status === "pending"
+                              ? t("pendingTasks")
+                              : conversation.status === "attention"
+                                ? t("needsAttention")
+                                : t("completedTasks")}
+                      </small>
+                    </span>
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </button>
+                );
+              })}
+            </section>
+          ))
+        )}
+      </div>
+    </Dialog>
   );
 }
 

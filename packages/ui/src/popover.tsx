@@ -14,11 +14,7 @@ export interface PopoverPosition {
   /** Distance from the viewport bottom to the popover's bottom edge. */
   bottom?: number;
   left: number;
-  transformOrigin:
-    | "top left"
-    | "top right"
-    | "bottom left"
-    | "bottom right";
+  transformOrigin: "top left" | "top right" | "bottom left" | "bottom right";
 }
 
 export function anchoredPopoverPosition(
@@ -57,7 +53,7 @@ export function anchoredPopoverPosition(
     ),
   );
   const origin = (opensBelow: boolean) =>
-    (`${opensBelow ? "top" : "bottom"} ${align === "start" ? "left" : "right"}` as const);
+    `${opensBelow ? "top" : "bottom"} ${align === "start" ? "left" : "right"}` as const;
 
   // Pinned mode anchors one popover edge at a fixed distance from the
   // trigger, so the menu grows outward without depending on its own height.
@@ -71,8 +67,7 @@ export function anchoredPopoverPosition(
     };
   }
   if (options.pin === "top") {
-    const opensBelow =
-      viewportHeight - bounds.bottom - gap - margin >= margin;
+    const opensBelow = viewportHeight - bounds.bottom - gap - margin >= margin;
     return {
       top: opensBelow ? bounds.bottom + gap : undefined,
       bottom: opensBelow ? undefined : viewportHeight - bounds.top + gap,
@@ -134,8 +129,7 @@ export function ActionPopover({
       }
     }
     window.addEventListener("pointerdown", closeFromOutside);
-    return () =>
-      window.removeEventListener("pointerdown", closeFromOutside);
+    return () => window.removeEventListener("pointerdown", closeFromOutside);
   }, [initialFocusRef, returnFocusRef]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -197,6 +191,7 @@ export function ActionPopover({
     <div
       ref={root}
       className={`action-popover${className ? ` ${className}` : ""}`}
+      data-dialog-portal=""
       role={role}
       aria-label={label}
       style={style}

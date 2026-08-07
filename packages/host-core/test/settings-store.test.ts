@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,7 +28,7 @@ const connections = {
 
 afterEach(() => directories.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })));
 
-describe("SettingsStore custom model", () => {
+describe("SettingsStore", () => {
   it("persists the custom model independently of the active provider and defaults old settings", () => {
     const directory = mkdtempSync(join(tmpdir(), "threadlight-custom-model-"));
     directories.push(directory);
@@ -45,6 +45,53 @@ describe("SettingsStore custom model", () => {
       provider: "openai",
       model: "gpt-5.6-sol",
       customModel: "local/vision-model",
+    });
+  });
+
+  it("builds a snapshot from one consistent stored document", () => {
+    const directory = mkdtempSync(
+      join(tmpdir(), "threadlight-settings-snapshot-"),
+    );
+    directories.push(directory);
+    const path = join(directory, "settings.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        language: "ja",
+        theme: "dark",
+        preferredProjectOpener: "cursor",
+        provider: "openai",
+        encryptedOpenAIApiKey: "secret",
+        customModel: "original-custom-model",
+        model: "gpt-5.6-sol",
+      }),
+    );
+    const mutatingCodec: SecretCodec = {
+      encrypt: (value) => value,
+      decrypt: (value) => {
+        writeFileSync(
+          path,
+          JSON.stringify({
+            version: 1,
+            language: "ko",
+            theme: "light",
+            preferredProjectOpener: "vscode",
+            provider: "openai",
+            customModel: "replacement-custom-model",
+            model: "gpt-5.6-sol",
+          }),
+        );
+        return value;
+      },
+    };
+
+    expect(new SettingsStore(path, mutatingCodec).snapshot({})).toMatchObject({
+      language: "ja",
+      theme: "dark",
+      preferredProjectOpener: "cursor",
+      openAIApiKeyConfigured: true,
+      customModel: "original-custom-model",
     });
   });
 });

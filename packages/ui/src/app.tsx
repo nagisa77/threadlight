@@ -17,19 +17,16 @@ import type {
   AgentPlanData,
   AttachmentData,
   CapabilityDescriptor,
-  ConnectorStatusData,
   ConversationAccessMode,
   HostDirectoryEntry,
   HostDirectoryListing,
   TaskDevelopmentMode,
-  TurnMode,
 } from "@threadlight/protocol";
 import {
   Activity,
   ArrowUp,
   Archive,
   ArchiveRestore,
-  CalendarClock,
   ChevronDown,
   ChevronRight,
   CircleStop,
@@ -46,7 +43,6 @@ import {
   Monitor,
   NotebookText,
   Paperclip,
-  PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
   PencilLine,
@@ -57,11 +53,9 @@ import {
   RotateCcw,
   Search,
   Server,
-  Settings,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  SquarePen,
   Square,
   Terminal,
   TriangleAlert,
@@ -80,7 +74,6 @@ import {
   filterComposerAddActions,
   nextCapabilityIndex,
   removeCapabilityQuery,
-  type CapabilityQuery,
   type ComposerAddAction,
 } from "./capabilities.js";
 import {
@@ -89,7 +82,7 @@ import {
   useThreadlightSession,
   type ConversationProgress,
   type ToolActivity,
-} from "./session.js";
+} from "./features/task-session/session.js";
 import {
   fileReaderReference,
   MarkdownContent,
@@ -159,7 +152,7 @@ import {
   automaticDeliveryFromHistory,
   DeliveryTurnStatus,
   shouldShowDeliveryTurnStatus,
-} from "./delivery-turn-status.js";
+} from "./features/delivery/delivery-turn-status.js";
 import {
   ProjectOpenControl,
   type ProjectOpenerAdapter,
@@ -172,9 +165,12 @@ import {
   anchoredPopoverPosition,
   type PopoverPosition,
 } from "./popover.js";
-import { ModelSelector } from "./model-selector.js";
-import { DevelopmentModeControl } from "./development-mode.js";
-import { ComposerQueue, GuidedMessageReceipt } from "./composer-queue.js";
+import { ModelSelector } from "./features/composer/model-selector.js";
+import { DevelopmentModeControl } from "./features/composer/development-mode.js";
+import {
+  ComposerQueue,
+  GuidedMessageReceipt,
+} from "./features/composer/composer-queue.js";
 
 import {
   ComputerPermissionCard,
@@ -186,18 +182,13 @@ import {
   conversationChangesRefreshKey,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
-} from "./features/turn-status.js";
+} from "./features/task-session/turn-status.js";
 import {
-  ProjectGroup,
-  ProjectListHeading,
-  RecentTasksGroup,
-  RuntimeStatusControl,
-  TaskSearchDialog,
   conversationContextChanged,
   filterProjectsForTaskList,
   ownsActiveComputerShare,
-  type TaskListFilter,
-} from "./features/project-sidebar.js";
+} from "./features/navigation/project-sidebar.js";
+import { NavigationSidebar } from "./features/navigation/navigation-sidebar.js";
 import {
   ActivityList,
   ComposerAttachments,
@@ -213,7 +204,7 @@ import {
   hasUserInput,
   projectContainingThread,
   shortId,
-} from "./features/conversation-content.js";
+} from "./features/task-session/conversation-content.js";
 export {
   ComputerPermissionCard,
   ComputerShareStatus,
@@ -227,7 +218,7 @@ export {
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
   writeClipboardText,
-} from "./features/turn-status.js";
+} from "./features/task-session/turn-status.js";
 export {
   ProjectActionPopover,
   ProjectConversationItem,
@@ -241,7 +232,7 @@ export {
   ownsActiveComputerShare,
   showsProjectLevelActivity,
   type TaskListFilter,
-} from "./features/project-sidebar.js";
+} from "./features/navigation/project-sidebar.js";
 export {
   ActivityList,
   MessageAttachments,
@@ -249,7 +240,7 @@ export {
   composerSubmitDelivery,
   hasUserInput,
   projectContainingThread,
-} from "./features/conversation-content.js";
+} from "./features/task-session/conversation-content.js";
 
 import {
   DeleteConversationDialog,
@@ -259,7 +250,66 @@ import {
   ProjectPickerPopover,
   RemoteProjectPathDialog,
   RemoteRuntimeDialog,
-} from "./features/project-dialogs.js";
+} from "./features/navigation/project-dialogs.js";
+import {
+  activateComposerMenuOnPointerDown,
+  preserveComposerFocusOnPointerDown,
+  shouldIgnoreComposerKey,
+  useComposerController,
+  type PendingAttachment,
+} from "./features/composer/controller.js";
+import {
+  completeFirstRun,
+  MOBILE_SIDEBAR_QUERY,
+  SIDEBAR_VISIBILITY_KEY,
+  sidebarStartsOpen,
+  storedSidebarVisibility,
+  useNavigationController,
+} from "./features/navigation/controller.js";
+import { useTaskSessionController } from "./features/task-session/controller.js";
+import { useDeliveryController } from "./features/delivery/controller.js";
+import type {
+  AttachmentPreviewAdapter,
+  AttachmentStageAdapter,
+  ClipboardAdapter,
+  ConnectorAuthorizationAdapter,
+} from "./features/composer/types.js";
+import type {
+  ComputerPermissionAdapter,
+  ComputerPermissionCapability,
+  ComputerPermissionSnapshot,
+  ComputerShareAdapter,
+  ComputerShareSnapshot,
+  ComputerShareTarget,
+} from "./features/task-session/computer-types.js";
+export {
+  activateComposerMenuOnPointerDown,
+  createSubmissionGate,
+  preserveComposerFocusOnPointerDown,
+  shouldIgnoreComposerKey,
+} from "./features/composer/controller.js";
+export type {
+  PendingAttachment,
+  VoiceInputStatus,
+} from "./features/composer/controller.js";
+export {
+  firstRunIsComplete,
+  sidebarStartsOpen,
+} from "./features/navigation/controller.js";
+export type {
+  AttachmentPreviewAdapter,
+  AttachmentStageAdapter,
+  ClipboardAdapter,
+  ConnectorAuthorizationAdapter,
+} from "./features/composer/types.js";
+export type {
+  ComputerPermissionAdapter,
+  ComputerPermissionCapability,
+  ComputerPermissionSnapshot,
+  ComputerShareAdapter,
+  ComputerShareSnapshot,
+  ComputerShareTarget,
+} from "./features/task-session/computer-types.js";
 export {
   DeleteConversationDialog,
   EmptyState,
@@ -267,7 +317,7 @@ export {
   ProjectPickerPopover,
   RemoteRuntimeDialog,
   filterProjectsForPicker,
-} from "./features/project-dialogs.js";
+} from "./features/navigation/project-dialogs.js";
 
 const LazyFirstRunGuide = lazy(() =>
   import("./first-run.js").then(({ FirstRunGuide }) => ({
@@ -326,46 +376,12 @@ function DeferredTerminalPanel({ label }: { label: string }) {
   );
 }
 
-export function shouldIgnoreComposerKey(
-  composing: boolean,
-  nativeEvent: Pick<globalThis.KeyboardEvent, "isComposing" | "keyCode">,
-) {
-  return composing || nativeEvent.isComposing || nativeEvent.keyCode === 229;
-}
-
-export function preserveComposerFocusOnPointerDown(event: {
-  preventDefault(): void;
-}) {
-  event.preventDefault();
-}
-
-/**
- * Atomic guard that keeps a single composer submission in flight. The submit
- * flow spans several awaits (attachment staging, thread creation, turn start),
- * during which `isRunning` has not been set yet; without this guard rapid
- * Enter presses would start duplicate tasks or turns.
- */
-export function createSubmissionGate() {
-  let pending = false;
-  return {
-    get pending(): boolean {
-      return pending;
-    },
-    tryStart(): boolean {
-      if (pending) return false;
-      pending = true;
-      return true;
-    },
-    stop(): void {
-      pending = false;
-    },
-  };
-}
-
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
   initialThreadId?: string;
+  initialLanguage?: Language;
   onThreadChange?(threadId?: string): void;
+  onLanguageChange?(language: Language): void;
   clipboard?: ClipboardAdapter;
   settings?: SettingsAdapter;
   diagnostics?: DiagnosticsAdapter;
@@ -385,48 +401,8 @@ export interface ThreadlightAppProps {
   executionPolicy?: ExecutionPolicyAdapter;
 }
 
-export interface ClipboardAdapter {
-  writeText(text: string): Promise<void>;
-}
-
-export interface ConnectorAuthorizationAdapter {
-  authorize<Result>(action: () => Promise<Result>): Promise<Result>;
-}
-
 const COMPUTER_PERMISSION_RESUME_KEY = "threadlight:computer-permission-resume";
 const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
-const SIDEBAR_VISIBILITY_KEY = "threadlight:sidebar-visible";
-const FIRST_RUN_COMPLETE_KEY = "threadlight:first-run-complete:v1";
-const MOBILE_SIDEBAR_QUERY = "(max-width: 720px)";
-
-export function sidebarStartsOpen(
-  mobile: boolean,
-  storedVisibility?: string | null,
-): boolean {
-  return !mobile && storedVisibility !== "false";
-}
-
-function isMobileSidebarViewport(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(MOBILE_SIDEBAR_QUERY).matches
-  );
-}
-
-function storedSidebarVisibility(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(SIDEBAR_VISIBILITY_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function firstRunIsComplete(stored?: string | null): boolean {
-  return stored === "true";
-}
-
 export function composerProviderIsReady(
   settingsAvailable: boolean,
   runtimeSettings?: SettingsSnapshot,
@@ -442,108 +418,32 @@ export function projectSupportsDevelopmentMode(
   return Boolean(project && project.scope !== "standalone");
 }
 
-function storedFirstRunComplete(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return firstRunIsComplete(
-      window.localStorage.getItem(FIRST_RUN_COMPLETE_KEY),
-    );
-  } catch {
-    return false;
-  }
-}
-
-function completeFirstRun(setCompleted: (completed: boolean) => void): void {
-  try {
-    window.localStorage.setItem(FIRST_RUN_COMPLETE_KEY, "true");
-  } catch {
-    // Persisted project history still prevents established users from looping.
-  }
-  setCompleted(true);
-}
-
-export interface AttachmentStageAdapter {
-  stage(file: File): Promise<AttachmentData>;
-}
-
-export interface AttachmentPreviewAdapter {
-  imageUrl(attachment: AttachmentData): string | undefined;
-  loadImageUrl?(attachment: AttachmentData): Promise<string | undefined>;
-}
-
-export type ComputerPermissionCapability = "screen_recording" | "accessibility";
-
-export interface ComputerPermissionSnapshot {
-  required: boolean;
-  blockingCapability?: ComputerPermissionCapability;
-  ownerThreadId?: string;
-  screenRecording:
-    "not-determined" | "granted" | "denied" | "restricted" | "unknown";
-  accessibility: "granted" | "denied";
-  relaunchRequired: boolean;
-}
-
-export interface ComputerPermissionAdapter {
-  load(): Promise<ComputerPermissionSnapshot>;
-  request(
-    capability: ComputerPermissionCapability,
-  ): Promise<ComputerPermissionSnapshot>;
-  relaunch(): Promise<void>;
-  subscribe(
-    listener: (snapshot: ComputerPermissionSnapshot) => void,
-  ): () => void;
-}
-
-export interface ComputerShareTarget {
-  id: string;
-  name: string;
-  applicationName?: string;
-}
-
-export interface ComputerShareSnapshot {
-  active: boolean;
-  pictureInPicture: boolean;
-  ownerThreadId?: string;
-  targets: readonly ComputerShareTarget[];
-}
-
-export interface ComputerShareAdapter {
-  load(): Promise<ComputerShareSnapshot>;
-  showPictureInPicture(): Promise<ComputerShareSnapshot>;
-  stop(): Promise<ComputerShareSnapshot>;
-  subscribe(listener: (snapshot: ComputerShareSnapshot) => void): () => void;
-}
-
-export interface PendingAttachment {
-  id: string;
-  file: File;
-  previewUrl?: string;
-}
-
 const MAX_COMPOSER_ATTACHMENTS = 10;
 
-interface SuggestedQuestionsState {
-  key: string;
-  status: "loading" | "ready" | "error";
-  suggestions: readonly string[];
-}
-
-export type VoiceInputStatus =
-  "idle" | "requesting" | "recording" | "transcribing";
-
 export function ThreadlightApp(props: ThreadlightAppProps) {
-  const [language, setLanguage] = useState<Language>("zh-CN");
+  const [language, setLanguage] = useState<Language>(
+    () => props.initialLanguage ?? "zh-CN",
+  );
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [preferredProjectOpener, setPreferredProjectOpener] =
     useState<ProjectOpenerId>("");
+
+  const changeLanguage = useCallback(
+    (nextLanguage: Language) => {
+      setLanguage(nextLanguage);
+      props.onLanguageChange?.(nextLanguage);
+    },
+    [props.onLanguageChange],
+  );
 
   useEffect(() => {
     let active = true;
     void props.settings
       ?.load()
       .then((snapshot) => {
-        if (active && isLanguage(snapshot.language))
-          setLanguage(snapshot.language);
+        if (active && isLanguage(snapshot.language)) {
+          changeLanguage(snapshot.language);
+        }
         if (active && isThemePreference(snapshot.theme))
           setTheme(snapshot.theme);
         if (active) {
@@ -554,14 +454,14 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
     return () => {
       active = false;
     };
-  }, [props.settings]);
+  }, [changeLanguage, props.settings]);
 
   return (
     <ThemeProvider preference={theme}>
       <I18nProvider language={language}>
         <ThreadlightAppContent
           {...props}
-          onLanguageChange={setLanguage}
+          onLanguageChange={changeLanguage}
           onThemeChange={setTheme}
           preferredProjectOpener={preferredProjectOpener}
           onPreferredProjectOpenerChange={setPreferredProjectOpener}
@@ -603,13 +503,65 @@ function ThreadlightAppContent({
   onPreferredProjectOpenerChange(opener: ProjectOpenerId): void;
 }) {
   const { language, t } = useI18n();
-  const initialMobileSidebar = isMobileSidebarViewport();
-  const [mobileSidebar, setMobileSidebar] = useState(initialMobileSidebar);
-  const [sidebarOpen, setSidebarOpen] = useState(() =>
-    sidebarStartsOpen(initialMobileSidebar, storedSidebarVisibility()),
-  );
-  const sidebarCloseButton = useRef<HTMLButtonElement>(null);
-  const sidebarOpenButton = useRef<HTMLButtonElement>(null);
+  const {
+    mobileSidebar,
+    setMobileSidebar,
+    sidebarOpen,
+    setSidebarOpen,
+    sidebarCloseButton,
+    sidebarOpenButton,
+    view,
+    setView,
+    projectSnapshot,
+    setProjectSnapshot,
+    runtimeSettings,
+    setRuntimeSettings,
+    firstRunCompleted,
+    setFirstRunCompleted,
+    firstRunDemoThreadId,
+    setFirstRunDemoThreadId,
+    firstRunRetryDemo,
+    setFirstRunRetryDemo,
+    observedInitialProjects,
+    hostSnapshot,
+    setHostSnapshot,
+    projectError,
+    setProjectError,
+    switchingProject,
+    setSwitchingProject,
+    remoteRuntimeOpen,
+    setRemoteRuntimeOpen,
+    remoteProjectPathOpen,
+    setRemoteProjectPathOpen,
+    remoteRuntimeBusy,
+    setRemoteRuntimeBusy,
+    remoteRuntimeError,
+    setRemoteRuntimeError,
+    commandPaletteOpen,
+    setCommandPaletteOpen,
+    commandPaletteMode,
+    setCommandPaletteMode,
+    pendingSearchJump,
+    setPendingSearchJump,
+    pendingDelete,
+    setPendingDelete,
+    deleteError,
+    setDeleteError,
+    deletingConversation,
+    setDeletingConversation,
+    pendingDeleteProject,
+    setPendingDeleteProject,
+    deleteProjectError,
+    setDeleteProjectError,
+    deletingProject,
+    setDeletingProject,
+    projectOpeners,
+    setProjectOpeners,
+    commandPaletteTrigger,
+    projectSnapshotRef,
+    activeThreadIdRef,
+    viewRef,
+  } = useNavigationController();
   const {
     state: activeState,
     retry,
@@ -626,96 +578,81 @@ function ThreadlightAppContent({
     terminateProcess,
     runningThreadIds,
   } = useThreadlightSession(client, { autoConnect: !projects });
-  const [newTaskDraft, setNewTaskDraft] = useState(false);
-  const [newTaskDraftError, setNewTaskDraftError] = useState<string>();
-  const [developmentMode, setDevelopmentMode] =
-    useState<TaskDevelopmentMode>("local");
-  const [draftAccessMode, setDraftAccessMode] =
-    useState<ConversationAccessMode>("approval");
-  const [draftModel, setDraftModel] = useState<{
-    provider: string;
-    model: string;
-  }>();
+  const {
+    newTaskDraft,
+    setNewTaskDraft,
+    newTaskDraftError,
+    setNewTaskDraftError,
+    developmentMode,
+    setDevelopmentMode,
+    draftAccessMode,
+    setDraftAccessMode,
+    draftModel,
+    setDraftModel,
+    conversationRecoveryBusy,
+    setConversationRecoveryBusy,
+    conversationRecoveryError,
+    setConversationRecoveryError,
+    suggestedQuestions,
+    setSuggestedQuestions,
+    suggestionRetry,
+    setSuggestionRetry,
+    conversation,
+    followOutput,
+  } = useTaskSessionController();
   const state = newTaskDraft
     ? newTaskDraftState(activeState, newTaskDraftError)
     : activeState;
-  const [view, setView] = useState<
-    | "thread"
-    | "memory"
-    | "diagnostics"
-    | "automations"
-    | "security"
-    | "settings"
-  >("thread");
-  const [input, setInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const submissionGate = useRef(createSubmissionGate());
-  const inputValueRef = useRef("");
-  const [composerMode, setComposerMode] = useState<TurnMode>("default");
-  const [capabilities, setCapabilities] = useState<
-    readonly CapabilityDescriptor[]
-  >([]);
-  const [selectedCapabilities, setSelectedCapabilities] = useState<
-    readonly CapabilityDescriptor[]
-  >([]);
-  const [capabilityQuery, setCapabilityQuery] = useState<CapabilityQuery>();
-  const [activeCapabilityIndex, setActiveCapabilityIndex] = useState(0);
-  const [addMenuOpen, setAddMenuOpen] = useState(false);
-  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
-  const [connectorSetup, setConnectorSetup] = useState<{
-    capability: CapabilityDescriptor;
-    selection: CapabilityDescriptor;
-    status: ConnectorStatusData;
-  }>();
-  const [connectorBusy, setConnectorBusy] = useState(false);
-  const [connectorError, setConnectorError] = useState<string>();
-  const [projectSnapshot, setProjectSnapshot] = useState<ProjectsSnapshot>();
-  const [runtimeSettings, setRuntimeSettings] = useState<SettingsSnapshot>();
-  const [firstRunCompleted, setFirstRunCompleted] = useState(
-    storedFirstRunComplete,
-  );
-  const [firstRunDemoThreadId, setFirstRunDemoThreadId] = useState<string>();
-  const [firstRunRetryDemo, setFirstRunRetryDemo] = useState(false);
-  const observedInitialProjects = useRef(false);
-  const [hostSnapshot, setHostSnapshot] = useState<HostsSnapshot>();
-  const [projectError, setProjectError] = useState<string>();
-  const [switchingProject, setSwitchingProject] = useState(false);
-  const [remoteRuntimeOpen, setRemoteRuntimeOpen] = useState(false);
-  const [remoteProjectPathOpen, setRemoteProjectPathOpen] = useState(false);
-  const [remoteRuntimeBusy, setRemoteRuntimeBusy] = useState(false);
-  const [remoteRuntimeError, setRemoteRuntimeError] = useState<string>();
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [commandPaletteMode, setCommandPaletteMode] =
-    useState<CommandPaletteMode>("all");
-  const [pendingSearchJump, setPendingSearchJump] = useState<{
-    threadId: string;
-    messageId?: string;
-    activityId?: string;
-  }>();
-  const [pendingDelete, setPendingDelete] = useState<{
-    projectId: string;
-    conversation: ConversationSummary;
-    mode?: "delete" | "discard" | "metadata";
-  }>();
-  const [deleteError, setDeleteError] = useState<string>();
-  const [deletingConversation, setDeletingConversation] = useState(false);
-  const [conversationRecoveryBusy, setConversationRecoveryBusy] =
-    useState(false);
-  const [conversationRecoveryError, setConversationRecoveryError] =
-    useState<string>();
-  const [pendingDeleteProject, setPendingDeleteProject] = useState<
-    ProjectSummary | undefined
-  >();
-  const [deleteProjectError, setDeleteProjectError] = useState<string>();
-  const [deletingProject, setDeletingProject] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState<VoiceInputStatus>("idle");
-  const [voiceError, setVoiceError] = useState<string>();
-  const [pendingAttachments, setPendingAttachments] = useState<
-    PendingAttachment[]
-  >([]);
-  const [preparingAttachments, setPreparingAttachments] = useState(false);
-  const [attachmentError, setAttachmentError] = useState<string>();
-  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const {
+    input,
+    setInput,
+    submitting,
+    setSubmitting,
+    submissionGate,
+    inputValueRef,
+    composerMode,
+    setComposerMode,
+    capabilities,
+    setCapabilities,
+    selectedCapabilities,
+    setSelectedCapabilities,
+    capabilityQuery,
+    setCapabilityQuery,
+    activeCapabilityIndex,
+    setActiveCapabilityIndex,
+    addMenuOpen,
+    setAddMenuOpen,
+    capabilitiesLoading,
+    setCapabilitiesLoading,
+    connectorSetup,
+    setConnectorSetup,
+    connectorBusy,
+    setConnectorBusy,
+    connectorError,
+    setConnectorError,
+    voiceStatus,
+    setVoiceStatus,
+    voiceError,
+    setVoiceError,
+    pendingAttachments,
+    setPendingAttachments,
+    preparingAttachments,
+    setPreparingAttachments,
+    attachmentError,
+    setAttachmentError,
+    isDraggingFiles,
+    setIsDraggingFiles,
+    composerRoot,
+    textarea,
+    composing,
+    fileInput,
+    mediaRecorder,
+    mediaStream,
+    recordedChunks,
+    voiceOperation,
+    dragDepth,
+    pendingAttachmentsRef,
+  } = useComposerController();
   const [computerShareSnapshot, setComputerShareSnapshot] =
     useState<ComputerShareSnapshot>();
   const [computerShareError, setComputerShareError] = useState<string>();
@@ -728,51 +665,34 @@ function ThreadlightAppContent({
     useState<string>();
   const [showingComputerShare, setShowingComputerShare] = useState(false);
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
-  const [terminalOpen, setTerminalOpen] = useState(false);
-  const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
-  const workspacePanelMounted = useRef(false);
-  if (workspacePanelOpen) workspacePanelMounted.current = true;
-  const [workspacePanelWidth, setWorkspacePanelWidth] = useState<number>();
-  const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
-  const [workspaceDeliveryRequest, setWorkspaceDeliveryRequest] = useState(0);
-  const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] =
-    useState<WorkspaceFileOpenRequest>();
-  const [conversationChanges, setConversationChanges] =
-    useState<ConversationChangesSnapshot>();
-  const [conversationChangesLoading, setConversationChangesLoading] =
-    useState(false);
-  const [conversationChangesError, setConversationChangesError] =
-    useState<string>();
-  const [automaticDeliveries, setAutomaticDeliveries] = useState<
-    Record<string, AutomaticDeliveryState>
-  >({});
-  const [suggestedQuestions, setSuggestedQuestions] =
-    useState<SuggestedQuestionsState>();
-  const [suggestionRetry, setSuggestionRetry] = useState(0);
-  const [projectOpeners, setProjectOpeners] = useState<
-    readonly ProjectOpenerOption[]
-  >([]);
-  const conversationChangesRequest = useRef(0);
-  const conversationChangesScope = useRef("");
-  const activePlanDocument = useRef<string | undefined>(undefined);
-  const deliveryAwaitingScopes = useRef(new Set<string>());
-  const composerRoot = useRef<HTMLDivElement>(null);
-  const textarea = useRef<HTMLTextAreaElement>(null);
-  const composing = useRef(false);
-  const commandPaletteTrigger = useRef<HTMLButtonElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
-  const mediaStream = useRef<MediaStream | undefined>(undefined);
-  const recordedChunks = useRef<Blob[]>([]);
-  const voiceOperation = useRef(0);
-  const dragDepth = useRef(0);
-  const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
-  const conversation = useRef<HTMLElement>(null);
-  const workspaceRoot = useRef<HTMLElement>(null);
-  const followOutput = useRef(true);
-  const projectSnapshotRef = useRef<ProjectsSnapshot | undefined>(undefined);
-  const activeThreadIdRef = useRef<string | undefined>(undefined);
-  const viewRef = useRef(view);
+  const {
+    terminalOpen,
+    setTerminalOpen,
+    workspacePanelOpen,
+    setWorkspacePanelOpen,
+    workspacePanelMounted,
+    workspacePanelWidth,
+    setWorkspacePanelWidth,
+    workspaceReviewRequest,
+    setWorkspaceReviewRequest,
+    workspaceDeliveryRequest,
+    setWorkspaceDeliveryRequest,
+    workspaceFileOpenRequest,
+    setWorkspaceFileOpenRequest,
+    conversationChanges,
+    setConversationChanges,
+    conversationChangesLoading,
+    setConversationChangesLoading,
+    conversationChangesError,
+    setConversationChangesError,
+    automaticDeliveries,
+    setAutomaticDeliveries,
+    conversationChangesRequest,
+    conversationChangesScope,
+    activePlanDocument,
+    deliveryAwaitingScopes,
+    workspaceRoot,
+  } = useDeliveryController();
   const currentProject = activeProject(projectSnapshot);
   const currentHost = hostSnapshot?.hosts.find(
     (host) => host.id === hostSnapshot.activeHostId,
@@ -3484,260 +3404,64 @@ function ThreadlightAppContent({
     <div
       className={`app-shell ${sidebarOpen ? "sidebar-open" : "sidebar-hidden"}`}
     >
-      {mobileSidebar && sidebarOpen && (
-        <button
-          type="button"
-          className="sidebar-backdrop"
-          aria-label={t("hideSidebar")}
-          onClick={() => hideSidebar(true)}
-        />
-      )}
-      <aside id="app-sidebar" className="sidebar" aria-hidden={!sidebarOpen}>
-        <div className="window-drag-region" />
-        <button
-          ref={sidebarCloseButton}
-          type="button"
-          className="sidebar-collapse-button pressable"
-          aria-label={t("hideSidebar")}
-          title={t("hideSidebar")}
-          onClick={() => hideSidebar(true)}
-        >
-          <PanelLeftClose size={16} />
-        </button>
-        <button
-          className="new-thread-button project-row pressable"
-          onClick={() => void createThread()}
-          disabled={
-            !currentProject ||
-            state.connection !== "ready" ||
-            switchingProject ||
-            voiceStatus !== "idle"
-          }
-        >
-          <SquarePen size={16} />
-          <span>{t("newTask")}</span>
-        </button>
-        {automations &&
-          currentProject &&
-          currentProject.scope !== "standalone" && (
-            <div className="sidebar-primary-nav">
-              <button
-                type="button"
-                className={`scheduled-button project-row pressable ${view === "automations" ? "active" : ""}`}
-                aria-current={view === "automations" ? "page" : undefined}
-                disabled={switchingProject || voiceStatus !== "idle"}
-                onClick={() => {
-                  cancelVoiceInput();
-                  setView("automations");
-                  closeSidebarForNavigation();
-                }}
-              >
-                <CalendarClock size={16} />
-                <span>{t("scheduled")}</span>
-              </button>
-            </div>
-          )}
-
-        <nav className="thread-list" aria-label={t("projectsAndTasks")}>
-          {projects ? (
-            <>
-              <ProjectListHeading
-                searchTriggerRef={commandPaletteTrigger}
-                searchDisabled={
-                  !search ||
-                  !currentProject ||
-                  switchingProject ||
-                  voiceStatus !== "idle"
-                }
-                addDisabled={switchingProject || voiceStatus !== "idle"}
-                onSearch={() => openCommandPalette("all")}
-                onAdd={() => void openProjectFolder()}
-              />
-              <div className="project-list-scroll">
-                {sidebarProjects.map((project) => (
-                  <ProjectGroup
-                    key={project.id}
-                    project={project}
-                    active={project.id === projectSnapshot?.activeProjectId}
-                    activeThreadId={state.threadId}
-                    runningThreadIds={runningThreadIds}
-                    computerThreadId={computerShareSnapshot?.ownerThreadId}
-                    disabled={switchingProject || voiceStatus !== "idle"}
-                    onNewTask={() => createProjectThread(project.id)}
-                    onOpenMemory={
-                      memory
-                        ? () => openProjectView(project.id, "memory")
-                        : undefined
-                    }
-                    onOpenSecurity={
-                      executionPolicy
-                        ? () => openProjectView(project.id, "security")
-                        : undefined
-                    }
-                    onRevealInFinder={
-                      project.runtime?.kind !== "remote" &&
-                      workspace?.revealSystemFile
-                        ? () => revealProjectInFinder(project)
-                        : undefined
-                    }
-                    onToggleProjectPinned={
-                      projects.updateProject
-                        ? () => toggleProjectPinned(project)
-                        : undefined
-                    }
-                    onOpenDiagnostics={
-                      diagnostics
-                        ? () => openProjectView(project.id, "diagnostics")
-                        : undefined
-                    }
-                    onDeleteProject={
-                      projects.deleteProject
-                        ? () => {
-                            setDeleteProjectError(undefined);
-                            setPendingDeleteProject(project);
-                          }
-                        : undefined
-                    }
-                    onSelect={(threadId) =>
-                      void selectConversation(project.id, threadId)
-                    }
-                    onRename={(conversation, title) =>
-                      updateConversationMetadata(project.id, conversation, {
-                        title,
-                      })
-                    }
-                    onTogglePinned={(conversation) =>
-                      updateConversationMetadata(project.id, conversation, {
-                        pinned: !conversation.pinnedAt,
-                      })
-                    }
-                    onArchive={(conversation, archived) =>
-                      updateConversationMetadata(project.id, conversation, {
-                        archived,
-                      })
-                    }
-                    onDelete={(conversation) => {
-                      setDeleteError(undefined);
-                      setPendingDelete({ projectId: project.id, conversation });
-                    }}
-                  />
-                ))}
-                {standaloneProject &&
-                  standaloneProject.conversations.some(
-                    (conversation) => !conversation.archivedAt,
-                  ) && (
-                    <RecentTasksGroup
-                      project={standaloneProject}
-                      active={
-                        standaloneProject.id ===
-                        projectSnapshot?.activeProjectId
-                      }
-                      activeThreadId={state.threadId}
-                      runningThreadIds={runningThreadIds}
-                      computerThreadId={computerShareSnapshot?.ownerThreadId}
-                      disabled={switchingProject || voiceStatus !== "idle"}
-                      onSelect={(threadId) =>
-                        void selectConversation(standaloneProject.id, threadId)
-                      }
-                      onRename={(conversation, title) =>
-                        updateConversationMetadata(
-                          standaloneProject.id,
-                          conversation,
-                          { title },
-                        )
-                      }
-                      onTogglePinned={(conversation) =>
-                        updateConversationMetadata(
-                          standaloneProject.id,
-                          conversation,
-                          { pinned: !conversation.pinnedAt },
-                        )
-                      }
-                      onArchive={(conversation, archived) =>
-                        updateConversationMetadata(
-                          standaloneProject.id,
-                          conversation,
-                          { archived },
-                        )
-                      }
-                      onDelete={(conversation) => {
-                        setDeleteError(undefined);
-                        setPendingDelete({
-                          projectId: standaloneProject.id,
-                          conversation,
-                        });
-                      }}
-                    />
-                  )}
-                {sidebarProjects.length === 0 &&
-                !standaloneProject?.conversations.some(
-                  (conversation) => !conversation.archivedAt,
-                ) ? (
-                  <div className="thread-placeholder">
-                    {t("openFolderToStart")}
-                  </div>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="section-label">{t("current")}</p>
-              {state.threadId ? (
-                <div className="thread-item active" aria-current="page">
-                  <span className="thread-title">
-                    {state.messages[0]?.text || t("task")}
-                  </span>
-                  <span className="thread-id">{shortId(state.threadId)}</span>
-                </div>
-              ) : (
-                <div className="thread-placeholder">{t("preparingTask")}</div>
-              )}
-            </>
-          )}
-        </nav>
-
-        <div className="sidebar-footer">
-          {settings && (
-            <button
-              type="button"
-              className={`settings-nav-button pressable ${view === "settings" ? "active" : ""}`}
-              aria-current={view === "settings" ? "page" : undefined}
-              onClick={() => {
-                cancelVoiceInput();
-                setView("settings");
-                closeSidebarForNavigation();
-              }}
-            >
-              <Settings size={15} />
-              {t("settings")}
-            </button>
-          )}
-          <RuntimeStatusControl
-            status={currentProject || !projects ? state.connection : "idle"}
-            label={
-              currentHost?.name ??
-              (currentProject || !projects
-                ? connectionLabel(state.connection, t)
-                : t("noProjectOpen"))
-            }
-            mode={`${currentHost?.kind === "remote" ? t("remoteHost") : t("local")} · ${
-              currentProject || !projects
-                ? connectionLabel(state.connection, t)
-                : t("noProjectOpen")
-            }`}
-            disabled={switchingProject || voiceStatus !== "idle"}
-            title={t("connectRemoteRuntime")}
-            onOpen={
-              projects?.connectRemote
-                ? () => {
-                    setRemoteRuntimeError(undefined);
-                    setRemoteRuntimeOpen(true);
-                  }
-                : undefined
-            }
-          />
-        </div>
-      </aside>
+      <NavigationSidebar
+        open={sidebarOpen}
+        mobile={mobileSidebar}
+        closeButtonRef={sidebarCloseButton}
+        currentProject={currentProject}
+        connection={state.connection}
+        threadId={state.threadId}
+        fallbackTaskTitle={state.messages[0]?.text}
+        disabled={switchingProject || voiceStatus !== "idle"}
+        automationsEnabled={Boolean(automations)}
+        view={view}
+        projectsAvailable={Boolean(projects)}
+        projects={projectSnapshot}
+        sidebarProjects={sidebarProjects}
+        standaloneProject={standaloneProject}
+        runningThreadIds={runningThreadIds}
+        computerThreadId={computerShareSnapshot?.ownerThreadId}
+        searchAvailable={Boolean(search)}
+        memoryEnabled={Boolean(memory)}
+        securityEnabled={Boolean(executionPolicy)}
+        diagnosticsEnabled={Boolean(diagnostics)}
+        canRevealProjects={Boolean(workspace?.revealSystemFile)}
+        canUpdateProjects={Boolean(projects?.updateProject)}
+        canDeleteProjects={Boolean(projects?.deleteProject)}
+        settingsEnabled={Boolean(settings)}
+        currentHost={currentHost}
+        canConnectRemote={Boolean(projects?.connectRemote)}
+        searchTriggerRef={commandPaletteTrigger}
+        onHide={() => hideSidebar(true)}
+        onCreateTask={() => void createThread()}
+        onNavigate={(nextView) => {
+          cancelVoiceInput();
+          setView(nextView);
+          closeSidebarForNavigation();
+        }}
+        onSearch={() => openCommandPalette("all")}
+        onOpenProject={() => void openProjectFolder()}
+        onCreateProjectTask={createProjectThread}
+        onOpenProjectView={openProjectView}
+        onRevealProject={revealProjectInFinder}
+        onToggleProjectPinned={toggleProjectPinned}
+        onDeleteProject={(project) => {
+          setDeleteProjectError(undefined);
+          setPendingDeleteProject(project);
+        }}
+        onSelectConversation={(projectId, threadId) =>
+          void selectConversation(projectId, threadId)
+        }
+        onUpdateConversation={updateConversationMetadata}
+        onDeleteConversation={(projectId, conversation) => {
+          setDeleteError(undefined);
+          setPendingDelete({ projectId, conversation });
+        }}
+        onOpenRemoteRuntime={() => {
+          setRemoteRuntimeError(undefined);
+          setRemoteRuntimeOpen(true);
+        }}
+      />
 
       <main
         ref={workspaceRoot}
@@ -4272,8 +3996,18 @@ function ThreadlightAppContent({
                       <button
                         type="button"
                         className={`composer-action add pressable ${addMenuOpen ? "active" : ""}`}
-                        onPointerDown={(event) => {
-                          event.preventDefault();
+                        onPointerDown={(event) =>
+                          activateComposerMenuOnPointerDown(event, () => {
+                            setCapabilityQuery(undefined);
+                            setAddMenuOpen((open) => !open);
+                            setActiveCapabilityIndex(0);
+                            requestAnimationFrame(() =>
+                              textarea.current?.focus(),
+                            );
+                          })
+                        }
+                        onClick={(event) => {
+                          if (event.detail !== 0) return;
                           setCapabilityQuery(undefined);
                           setAddMenuOpen((open) => !open);
                           setActiveCapabilityIndex(0);

@@ -6,11 +6,15 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { LoaderCircle, LogOut } from "lucide-react";
+import { LoaderCircle } from "lucide-react";
 import {
   createRemoteWebSession,
   type RemoteWebSession,
 } from "@threadlight/web-runtime";
+import {
+  I18nProvider,
+  type Language,
+} from "@threadlight/ui/i18n";
 import "@threadlight/ui/styles.css";
 
 import "./web.css";
@@ -19,7 +23,11 @@ import {
   threadIdFromTaskPath,
 } from "./task-route.js";
 import { installMobileViewportHeight } from "./mobile-viewport.js";
-import { RemoteConnectionPage } from "./connection-page.js";
+import {
+  loadConnectPrefs,
+  RemoteConnectionPage,
+} from "./connection-page.js";
+import { WebSessionIndicator } from "./session-indicator.js";
 import {
   hostNameForEndpoint,
   loadHostRecords,
@@ -48,6 +56,9 @@ if (import.meta.hot) {
 
 function WebApp() {
   const [session, setSession] = useState<RemoteWebSession>();
+  const [language, setLanguage] = useState<Language>(
+    () => loadConnectPrefs().language,
+  );
   const [hostRecords, setHostRecords] = useState<HostRecord[]>(() =>
     initialHostRecords(),
   );
@@ -131,6 +142,7 @@ function WebApp() {
         onConnect={connect}
         onUpsertHost={upsertHost}
         onDeleteHost={deleteHost}
+        onLanguageChange={setLanguage}
       />
     );
   }
@@ -148,7 +160,9 @@ function WebApp() {
         <LazyThreadlightApp
           client={session.client}
           initialThreadId={initialThreadId}
+          initialLanguage={language}
           onThreadChange={replaceWebTaskPath}
+          onLanguageChange={setLanguage}
           clipboard={session.clipboard}
           connectorAuthorization={session.connectorAuthorization}
           settings={session.settings}
@@ -165,21 +179,12 @@ function WebApp() {
           executionPolicy={session.executionPolicy}
         />
       </Suspense>
-      <div className="web-session-indicator">
-        <span className="web-session-dot" aria-hidden="true" />
-        <span className="web-session-name" title={session.health.name}>
-          {session.health.name}
-        </span>
-        <button
-          type="button"
-          className="web-session-disconnect pressable"
-          aria-label="断开远端 Host"
-          title="断开远端 Host"
-          onClick={disconnect}
-        >
-          <LogOut size={13} />
-        </button>
-      </div>
+      <I18nProvider language={language}>
+        <WebSessionIndicator
+          hostName={session.health.name}
+          onDisconnect={disconnect}
+        />
+      </I18nProvider>
     </>
   );
 }

@@ -16,6 +16,8 @@ export {
   TurnStatusPill,
 } from "./app.js";
 export { activeProject } from "./projects.js";
+export { Dialog } from "./dialog.js";
+export type { DialogProps } from "./dialog.js";
 export {
   ActionPopover,
   ActionPopoverItem,
@@ -30,10 +32,7 @@ export {
   workspaceFileReference,
 } from "./markdown.js";
 export { MemoryDocument, ProjectMemoryPage } from "./memory.js";
-export {
-  CommandPalette,
-  paletteEntryMatches,
-} from "./command-palette.js";
+export { CommandPalette, paletteEntryMatches } from "./command-palette.js";
 export {
   DiagnosticExportDialog,
   DiagnosticsPage,
@@ -137,10 +136,7 @@ export type {
   MarkdownContentProps,
   WorkspaceFileReference,
 } from "./markdown.js";
-export type {
-  ProjectMemoryAdapter,
-  ProjectMemorySnapshot,
-} from "./memory.js";
+export type { ProjectMemoryAdapter, ProjectMemorySnapshot } from "./memory.js";
 export type {
   CommandPaletteEntry,
   CommandPaletteMode,
@@ -173,10 +169,7 @@ export type {
 } from "./session.js";
 export type { ScrollMetrics } from "./scroll.js";
 export type { Language, Translate } from "./i18n.js";
-export type {
-  ResolvedTheme,
-  ThemePreference,
-} from "./theme.js";
+export type { ResolvedTheme, ThemePreference } from "./theme.js";
 export type {
   ModelProviderId,
   ProviderDiagnostic,

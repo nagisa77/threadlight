@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DevelopmentModeControl } from "../src/development-mode.js";
 
 const developmentModeSource = readFileSync(
-  new URL("../src/development-mode.tsx", import.meta.url),
+  new URL("../src/features/composer/development-mode.tsx", import.meta.url),
   "utf8",
 );
 

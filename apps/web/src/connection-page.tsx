@@ -261,8 +261,49 @@ interface ConnectPrefs {
   theme: ThemePreference;
 }
 
-function loadConnectPrefs(): ConnectPrefs {
-  const fallback: ConnectPrefs = { language: "en", theme: "system" };
+interface BrowserLanguageSource {
+  readonly languages?: readonly string[];
+  readonly language?: string;
+}
+
+export function browserLanguage(source?: BrowserLanguageSource): Language {
+  const candidates = [...(source?.languages ?? [])];
+  if (source?.language && !candidates.includes(source.language)) {
+    candidates.push(source.language);
+  }
+
+  for (const candidate of candidates) {
+    const parts = candidate
+      .trim()
+      .replaceAll("_", "-")
+      .toLowerCase()
+      .split("-")
+      .filter(Boolean);
+    const base = parts[0];
+    if (base === "zh") {
+      return parts.some((part) => ["hant", "tw", "hk", "mo"].includes(part))
+        ? "zh-TW"
+        : "zh-CN";
+    }
+    if (base === "en" || base === "ja" || base === "ko") return base;
+  }
+
+  return "en";
+}
+
+export function initialConnectionLanguage(
+  storedLanguage: unknown,
+  source?: BrowserLanguageSource,
+): Language {
+  return isLanguage(storedLanguage) ? storedLanguage : browserLanguage(source);
+}
+
+export function loadConnectPrefs(): ConnectPrefs {
+  const source = typeof navigator === "undefined" ? undefined : navigator;
+  const fallback: ConnectPrefs = {
+    language: initialConnectionLanguage(undefined, source),
+    theme: "system",
+  };
   if (typeof window === "undefined") return fallback;
   try {
     const raw = window.localStorage.getItem(PREF_STORAGE_KEY);
@@ -271,7 +312,7 @@ function loadConnectPrefs(): ConnectPrefs {
     if (typeof parsed !== "object" || parsed === null) return fallback;
     const entry = parsed as Record<string, unknown>;
     return {
-      language: isLanguage(entry.language) ? entry.language : fallback.language,
+      language: initialConnectionLanguage(entry.language, source),
       theme: isThemePreference(entry.theme) ? entry.theme : fallback.theme,
     };
   } catch {
@@ -296,6 +337,7 @@ export function RemoteConnectionPage({
   onConnect,
   onUpsertHost,
   onDeleteHost,
+  onLanguageChange,
 }: {
   initialEndpoint: string;
   initialToken: string;
@@ -304,10 +346,16 @@ export function RemoteConnectionPage({
   onConnect(endpoint: string, token: string, name?: string): Promise<void>;
   onUpsertHost?(host: HostRecordInput): void;
   onDeleteHost?(id: string): void;
+  onLanguageChange?(language: Language): void;
 }) {
   const [initialPrefs] = useState<ConnectPrefs>(loadConnectPrefs);
   const [language, setLanguage] = useState<Language>(initialPrefs.language);
   const [theme, setTheme] = useState<ThemePreference>(initialPrefs.theme);
+
+  function changeLanguage(nextLanguage: Language) {
+    setLanguage(nextLanguage);
+    onLanguageChange?.(nextLanguage);
+  }
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -327,7 +375,7 @@ export function RemoteConnectionPage({
           onDeleteHost={onDeleteHost}
           language={language}
           theme={theme}
-          onLanguageChange={setLanguage}
+          onLanguageChange={changeLanguage}
           onThemeChange={setTheme}
         />
       </I18nProvider>

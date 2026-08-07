@@ -18,10 +18,7 @@ import {
   LocateFixed,
   X,
 } from "lucide-react";
-import Markdown, {
-  defaultUrlTransform,
-  type Components,
-} from "react-markdown";
+import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   MessageCitationData,
@@ -29,13 +26,12 @@ import type {
 } from "@threadlight/protocol";
 
 import { useI18n, type Language } from "./i18n.js";
+import { Dialog } from "./dialog.js";
 
 export interface MarkdownContentProps {
   children: string;
   onOpenLocalFile?(reference: LocalFileReference): void;
-  onRevealLocalFile?(
-    reference: LocalFileReference,
-  ): void | Promise<void>;
+  onRevealLocalFile?(reference: LocalFileReference): void | Promise<void>;
   sources?: readonly MessageSourceData[];
   citations?: readonly MessageCitationData[];
 }
@@ -92,8 +88,7 @@ export function MarkdownContent({
         const marker = document.getElementById(
           citationAnchorId(citationNamespace, citationId),
         );
-        const target =
-          marker?.closest("p, li, blockquote, td, th") ?? marker;
+        const target = marker?.closest("p, li, blockquote, td, th") ?? marker;
         if (!(target instanceof HTMLElement)) return;
         target.scrollIntoView({
           behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -115,9 +110,7 @@ export function MarkdownContent({
   const components: Components = {
     a({ href, node: _node, className, children: linkChildren, ...props }) {
       const citationId = parseSourceCitationHref(href);
-      const citation = citationId
-        ? citationById.get(citationId)
-        : undefined;
+      const citation = citationId ? citationById.get(citationId) : undefined;
       if (citation) {
         return (
           <button
@@ -128,9 +121,7 @@ export function MarkdownContent({
               "{number}",
               String(linkChildren),
             )}
-            onClick={(event) =>
-              openSources(citation.id, event.currentTarget)
-            }
+            onClick={(event) => openSources(citation.id, event.currentTarget)}
           >
             {linkChildren}
           </button>
@@ -142,9 +133,7 @@ export function MarkdownContent({
           <LocalFileLink
             href={href}
             {...props}
-            className={["local-file-link", className]
-              .filter(Boolean)
-              .join(" ")}
+            className={["local-file-link", className].filter(Boolean).join(" ")}
             reference={localFile}
             onOpen={onOpenLocalFile}
             onReveal={onRevealLocalFile}
@@ -182,9 +171,7 @@ export function MarkdownContent({
         components={components}
         remarkPlugins={[remarkGfm]}
         urlTransform={(url) =>
-          url.startsWith("threadlight-source:")
-            ? url
-            : defaultUrlTransform(url)
+          url.startsWith("threadlight-source:") ? url : defaultUrlTransform(url)
         }
       >
         {children}
@@ -197,10 +184,7 @@ export function MarkdownContent({
           onClick={(event) => openSources(undefined, event.currentTarget)}
         >
           <BookOpen size={13} />
-          {labels.sourceCount.replace(
-            "{count}",
-            String(sources.length),
-          )}
+          {labels.sourceCount.replace("{count}", String(sources.length))}
         </button>
       ) : null}
       {sourceDrawer
@@ -235,7 +219,6 @@ function SourceDrawer({
   const { language } = useI18n();
   const labels = sourceCopy(language);
   const closeButton = useRef<HTMLButtonElement>(null);
-  const drawer = useRef<HTMLElement>(null);
   const titleId = useId();
   const activeCitation = citations.find(
     (citation) => citation.id === activeCitationId,
@@ -246,155 +229,113 @@ function SourceDrawer({
     return leftActive - rightActive;
   });
 
-  useEffect(() => {
-    closeButton.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      className="source-drawer-backdrop"
-      role="presentation"
-      onPointerDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+    <Dialog
+      as="aside"
+      backdropClassName="source-drawer-backdrop"
+      className="source-drawer"
+      aria-labelledby={titleId}
+      initialFocusRef={closeButton}
+      onClose={onClose}
     >
-      <aside
-        ref={drawer}
-        className="source-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        onKeyDown={(event) => {
-          if (event.key !== "Tab") return;
-          const focusable = [
-            ...(drawer.current?.querySelectorAll<HTMLElement>(
-              'button:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
-            ) ?? []),
-          ];
-          const first = focusable[0];
-          const last = focusable.at(-1);
-          if (!first || !last) return;
-          if (event.shiftKey && document.activeElement === first) {
-            event.preventDefault();
-            last.focus();
-          } else if (!event.shiftKey && document.activeElement === last) {
-            event.preventDefault();
-            first.focus();
-          }
-        }}
-      >
-        <header className="source-drawer-header">
-          <div>
-            <h2 id={titleId}>{labels.sources}</h2>
-            <p>
-              {labels.drawerSubtitle.replace(
-                "{count}",
-                String(sources.length),
-              )}
-            </p>
-          </div>
-          <button
-            ref={closeButton}
-            type="button"
-            className="source-drawer-close pressable"
-            aria-label={labels.close}
-            title={labels.close}
-            onClick={onClose}
-          >
-            <X size={16} />
-          </button>
-        </header>
+      <header className="source-drawer-header">
+        <div>
+          <h2 id={titleId}>{labels.sources}</h2>
+          <p>
+            {labels.drawerSubtitle.replace("{count}", String(sources.length))}
+          </p>
+        </div>
+        <button
+          ref={closeButton}
+          type="button"
+          className="source-drawer-close pressable"
+          aria-label={labels.close}
+          title={labels.close}
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
+      </header>
 
-        <div className="source-drawer-list">
-          {orderedSources.map((source) => {
-            const sourceCitations = citations.filter((citation) =>
-              citation.sourceIds.includes(source.id),
-            );
-            const preferredCitation =
-              sourceCitations.find(
-                (citation) => citation.id === activeCitationId,
-              ) ?? sourceCitations[0];
-            const active = activeCitation?.sourceIds.includes(source.id);
-            return (
-              <article
-                key={source.id}
-                className={`source-card ${active ? "active" : ""}`}
+      <div className="source-drawer-list">
+        {orderedSources.map((source) => {
+          const sourceCitations = citations.filter((citation) =>
+            citation.sourceIds.includes(source.id),
+          );
+          const preferredCitation =
+            sourceCitations.find(
+              (citation) => citation.id === activeCitationId,
+            ) ?? sourceCitations[0];
+          const active = activeCitation?.sourceIds.includes(source.id);
+          return (
+            <article
+              key={source.id}
+              className={`source-card ${active ? "active" : ""}`}
+            >
+              <div className="source-card-domain">
+                <span className="source-card-number">
+                  {sourceNumber(source, sources)}
+                </span>
+                <span>{source.domain}</span>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={`${labels.openPage}: ${source.title}`}
+                  title={labels.openPage}
+                >
+                  <ExternalLink size={13} />
+                </a>
+              </div>
+              <button
+                type="button"
+                className="source-card-title pressable"
+                onClick={() =>
+                  preferredCitation && onLocate(preferredCitation.id)
+                }
               >
-                <div className="source-card-domain">
-                  <span className="source-card-number">
-                    {sourceNumber(source, sources)}
-                  </span>
-                  <span>{source.domain}</span>
-                  <a
-                    href={source.url}
-                    target="_blank"
-                    rel="noreferrer noopener"
-                    aria-label={`${labels.openPage}: ${source.title}`}
-                    title={labels.openPage}
-                  >
-                    <ExternalLink size={13} />
-                  </a>
+                <strong>{source.title}</strong>
+                {source.description ? <span>{source.description}</span> : null}
+                <small>
+                  <LocateFixed size={12} />
+                  {labels.locate}
+                </small>
+              </button>
+              {sourceCitations.length > 1 ? (
+                <div className="source-card-citations">
+                  <p>
+                    {labels.supports.replace(
+                      "{count}",
+                      String(sourceCitations.length),
+                    )}
+                  </p>
+                  {sourceCitations.map((citation) => (
+                    <button
+                      key={citation.id}
+                      type="button"
+                      className={`source-card-excerpt pressable ${
+                        citation.id === activeCitationId ? "active" : ""
+                      }`}
+                      onClick={() => onLocate(citation.id)}
+                    >
+                      “{citation.excerpt}”
+                    </button>
+                  ))}
                 </div>
+              ) : preferredCitation?.excerpt ? (
                 <button
                   type="button"
-                  className="source-card-title pressable"
-                  onClick={() =>
-                    preferredCitation &&
-                    onLocate(preferredCitation.id)
-                  }
+                  className="source-card-excerpt pressable"
+                  onClick={() => onLocate(preferredCitation.id)}
                 >
-                  <strong>{source.title}</strong>
-                  {source.description ? (
-                    <span>{source.description}</span>
-                  ) : null}
-                  <small>
-                    <LocateFixed size={12} />
-                    {labels.locate}
-                  </small>
+                  “{preferredCitation.excerpt}”
                 </button>
-                {sourceCitations.length > 1 ? (
-                  <div className="source-card-citations">
-                    <p>
-                      {labels.supports.replace(
-                        "{count}",
-                        String(sourceCitations.length),
-                      )}
-                    </p>
-                    {sourceCitations.map((citation) => (
-                      <button
-                        key={citation.id}
-                        type="button"
-                        className={`source-card-excerpt pressable ${
-                          citation.id === activeCitationId ? "active" : ""
-                        }`}
-                        onClick={() => onLocate(citation.id)}
-                      >
-                        “{citation.excerpt}”
-                      </button>
-                    ))}
-                  </div>
-                ) : preferredCitation?.excerpt ? (
-                  <button
-                    type="button"
-                    className="source-card-excerpt pressable"
-                    onClick={() => onLocate(preferredCitation.id)}
-                  >
-                    “{preferredCitation.excerpt}”
-                  </button>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
-      </aside>
-    </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </Dialog>
   );
 }
 
@@ -488,8 +429,14 @@ export function localFileContextMenuPosition(
   viewportWidth: number,
   viewportHeight: number,
 ): ContextMenuPosition {
-  const availableWidth = Math.max(0, viewportWidth - LOCAL_FILE_MENU_MARGIN * 2);
-  const availableHeight = Math.max(0, viewportHeight - LOCAL_FILE_MENU_MARGIN * 2);
+  const availableWidth = Math.max(
+    0,
+    viewportWidth - LOCAL_FILE_MENU_MARGIN * 2,
+  );
+  const availableHeight = Math.max(
+    0,
+    viewportHeight - LOCAL_FILE_MENU_MARGIN * 2,
+  );
   const width = Math.min(LOCAL_FILE_MENU_WIDTH, availableWidth);
   const height = Math.min(LOCAL_FILE_MENU_HEIGHT, availableHeight);
   const left = Math.max(
@@ -533,7 +480,8 @@ function LocalFileLink({
     const focusFrame = requestAnimationFrame(() => items.current[0]?.focus());
     const closeFromPointer = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (menu.current?.contains(target) || link.current?.contains(target)) return;
+      if (menu.current?.contains(target) || link.current?.contains(target))
+        return;
       setPosition(undefined);
     };
     const closeFromKeyboard = (event: KeyboardEvent) => {
@@ -561,12 +509,7 @@ function LocalFileLink({
     if (!onReveal) return;
     setError(undefined);
     setPosition(
-      localFileContextMenuPosition(
-        x,
-        y,
-        window.innerWidth,
-        window.innerHeight,
-      ),
+      localFileContextMenuPosition(x, y, window.innerWidth, window.innerHeight),
     );
   }
 
@@ -650,9 +593,7 @@ function LocalFileLink({
         <FileCode2 size={14} strokeWidth={1.8} aria-hidden="true" />
         <span>{children}</span>
         {reference.line && (
-          <span className="local-file-link-line">
-            (line {reference.line})
-          </span>
+          <span className="local-file-link-line">(line {reference.line})</span>
         )}
       </a>
       {position &&
@@ -809,18 +750,16 @@ export function fileReaderReference(
   const comparisonPath = windows
     ? absolutePath.toLocaleLowerCase()
     : absolutePath;
-  const rootPrefix =
-    comparisonRoot.endsWith("/") ? comparisonRoot : `${comparisonRoot}/`;
+  const rootPrefix = comparisonRoot.endsWith("/")
+    ? comparisonRoot
+    : `${comparisonRoot}/`;
   const insideWorkspace =
-    comparisonPath !== comparisonRoot &&
-    comparisonPath.startsWith(rootPrefix);
+    comparisonPath !== comparisonRoot && comparisonPath.startsWith(rootPrefix);
 
   return {
     source: insideWorkspace ? "workspace" : "system",
     path: insideWorkspace
-      ? absolutePath.slice(
-          root.endsWith("/") ? root.length : root.length + 1,
-        )
+      ? absolutePath.slice(root.endsWith("/") ? root.length : root.length + 1)
       : absolutePath,
     ...(reference.line ? { line: reference.line } : {}),
     ...(reference.column ? { column: reference.column } : {}),

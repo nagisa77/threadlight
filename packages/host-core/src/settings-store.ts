@@ -101,14 +101,12 @@ export class SettingsStore {
   ) {}
 
   snapshot(environment: NodeJS.ProcessEnv = process.env): DesktopSettingsSnapshot {
-    const settings = this.runtimeSettings(environment);
     const stored = this.read();
+    const settings = this.runtimeSettingsFrom(stored, environment);
     return {
-      language: parseLanguage(this.read().language),
-      theme: parseTheme(this.read().theme),
-      preferredProjectOpener: parseProjectOpener(
-        this.read().preferredProjectOpener,
-      ),
+      language: parseLanguage(stored.language),
+      theme: parseTheme(stored.theme),
+      preferredProjectOpener: parseProjectOpener(stored.preferredProjectOpener),
       provider: settings.provider,
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
@@ -223,7 +221,13 @@ export class SettingsStore {
   runtimeSettings(
     environment: NodeJS.ProcessEnv = process.env,
   ): RuntimeSettings {
-    const stored = this.read();
+    return this.runtimeSettingsFrom(this.read(), environment);
+  }
+
+  private runtimeSettingsFrom(
+    stored: StoredSettings,
+    environment: NodeJS.ProcessEnv,
+  ): RuntimeSettings {
     const provider =
       stored.provider ?? parseProvider(environment.THREADLIGHT_PROVIDER);
     return {

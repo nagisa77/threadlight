@@ -25,7 +25,8 @@ import {
   UploadCloud,
 } from "lucide-react";
 
-import { useI18n, type Translate } from "../i18n.js";
+import { useI18n, type Translate } from "../../i18n.js";
+import { Dialog } from "../../dialog.js";
 import { ChangeCounts, PanelState } from "./workspace-primitives.js";
 import type {
   AutomaticDeliveryState,
@@ -72,9 +73,7 @@ export function DeliveryCenterView({
     useState<CodeHostDeliveryStatus>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [busyAction, setBusyAction] = useState<
-    "sync" | "retry" | "undo"
-  >();
+  const [busyAction, setBusyAction] = useState<"sync" | "retry" | "undo">();
   const [pendingManualSync, setPendingManualSync] =
     useState<WorktreeDeliveryPreflight>();
   const [pendingCodeHostAction, setPendingCodeHostAction] =
@@ -156,17 +155,17 @@ export function DeliveryCenterView({
     (!liveState && latestHasNoChanges);
   const currentRevisionIsSynced = Boolean(
     revision &&
-      (history?.currentRevision === revision ||
-        (liveState?.revision === revision && liveState.status === "synced")),
+    (history?.currentRevision === revision ||
+      (liveState?.revision === revision && liveState.status === "synced")),
   );
   const canStartManualSync = Boolean(
     revision &&
-      adapter.preflightDelivery &&
-      adapter.applyDelivery &&
-      !currentRevisionIsSynced &&
-      !canRetry &&
-      liveState?.status !== "syncing" &&
-      liveState?.status !== "undoing",
+    adapter.preflightDelivery &&
+    adapter.applyDelivery &&
+    !currentRevisionIsSynced &&
+    !canRetry &&
+    liveState?.status !== "syncing" &&
+    liveState?.status !== "undoing",
   );
   const syncTone = deliveryHasNoChanges
     ? ("success" as const)
@@ -205,12 +204,7 @@ export function DeliveryCenterView({
   }
 
   async function beginManualSync() {
-    if (
-      !threadId ||
-      !revision ||
-      !adapter.preflightDelivery ||
-      busyAction
-    ) {
+    if (!threadId || !revision || !adapter.preflightDelivery || busyAction) {
       return;
     }
     setBusyAction("sync");
@@ -1096,7 +1090,6 @@ export function GitHubDeliveryDialog({
 }) {
   const { t } = useI18n();
   const firstField = useRef<HTMLInputElement>(null);
-  const cancelButton = useRef<HTMLButtonElement>(null);
 
   const generating = value.action === "pr" && value.generation === "loading";
 
@@ -1105,14 +1098,6 @@ export function GitHubDeliveryDialog({
     firstField.current?.focus();
     firstField.current?.select();
   }, [action, generating]);
-
-  useEffect(() => {
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -1125,152 +1110,145 @@ export function GitHubDeliveryDialog({
       : Boolean(value.title.trim());
 
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
+    <Dialog
+      className="delivery-dialog github-delivery-dialog"
+      aria-busy={generating}
+      aria-labelledby="github-delivery-dialog-title"
+      initialFocusRef={firstField}
+      dismissDisabled={busy}
+      onClose={onCancel}
     >
-      <section
-        className="delivery-dialog github-delivery-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-busy={generating}
-        aria-labelledby="github-delivery-dialog-title"
-      >
-        <span className="delivery-dialog-icon" aria-hidden="true">
-          {action === "push" ? (
-            <UploadCloud size={18} />
-          ) : value.action === "pr" && value.draft ? (
-            <GitPullRequestDraft size={18} />
+      <span className="delivery-dialog-icon" aria-hidden="true">
+        {action === "push" ? (
+          <UploadCloud size={18} />
+        ) : value.action === "pr" && value.draft ? (
+          <GitPullRequestDraft size={18} />
+        ) : (
+          <GitPullRequest size={18} />
+        )}
+      </span>
+      <form onSubmit={submit}>
+        <div className="delivery-dialog-copy">
+          <h2 id="github-delivery-dialog-title">
+            {action === "push"
+              ? t("commitAndPush")
+              : value.action === "pr" && value.draft
+                ? t("createDraftPr")
+                : t("createPullRequest")}
+          </h2>
+          <p>
+            {action === "push"
+              ? t("commitAndPushDescription")
+              : value.action === "pr" && value.draft
+                ? t("createDraftPrDescription")
+                : t("createPullRequestDescription")}
+          </p>
+          {value.action === "push" ? (
+            <label className="delivery-commit-field">
+              <span>{t("commitMessage")}</span>
+              <input
+                ref={firstField}
+                value={value.message}
+                maxLength={1_000}
+                disabled={busy}
+                onChange={(event) =>
+                  onChange({ ...value, message: event.target.value })
+                }
+              />
+            </label>
           ) : (
-            <GitPullRequest size={18} />
+            <div className="github-pr-fields">
+              <div
+                className={`github-pr-generation ${value.generation}`}
+                role="status"
+              >
+                {value.generation === "loading" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                <span>
+                  <strong>
+                    {value.generation === "loading"
+                      ? t("generatingPullRequestDescription")
+                      : value.generation === "error"
+                        ? t("pullRequestGenerationFailed")
+                        : t("pullRequestDescriptionGenerated")}
+                  </strong>
+                  <small>
+                    {value.generation === "error"
+                      ? value.generationError
+                      : value.generation === "loading"
+                        ? t("generatingPullRequestDescriptionHelp")
+                        : t("pullRequestDescriptionGeneratedHelp")}
+                  </small>
+                </span>
+                {value.generation !== "loading" && onRegenerate && (
+                  <button
+                    type="button"
+                    className="github-pr-regenerate pressable"
+                    disabled={busy}
+                    onClick={onRegenerate}
+                  >
+                    <RefreshCw size={12} />
+                    {t("regenerate")}
+                  </button>
+                )}
+              </div>
+              <label className="delivery-commit-field">
+                <span>{t("pullRequestTitle")}</span>
+                <input
+                  ref={firstField}
+                  value={value.title}
+                  maxLength={256}
+                  disabled={busy || generating}
+                  onChange={(event) =>
+                    onChange({ ...value, title: event.target.value })
+                  }
+                />
+              </label>
+              <label className="delivery-commit-field">
+                <span>{t("pullRequestDescription")}</span>
+                <textarea
+                  value={value.body}
+                  maxLength={20_000}
+                  rows={9}
+                  disabled={busy || generating}
+                  onChange={(event) =>
+                    onChange({ ...value, body: event.target.value })
+                  }
+                />
+              </label>
+            </div>
           )}
-        </span>
-        <form onSubmit={submit}>
-          <div className="delivery-dialog-copy">
-            <h2 id="github-delivery-dialog-title">
-              {action === "push"
+          {error && <p className="delivery-dialog-error">{error}</p>}
+        </div>
+        <div className="delivery-dialog-actions">
+          <button
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="submit"
+            className="dialog-button primary pressable"
+            disabled={busy || generating || !valid}
+          >
+            {busy && <LoaderCircle className="spin" size={14} />}
+            {busy
+              ? t("publishingToGitHub")
+              : action === "push"
                 ? t("commitAndPush")
                 : value.action === "pr" && value.draft
                   ? t("createDraftPr")
                   : t("createPullRequest")}
-            </h2>
-            <p>
-              {action === "push"
-                ? t("commitAndPushDescription")
-                : value.action === "pr" && value.draft
-                  ? t("createDraftPrDescription")
-                  : t("createPullRequestDescription")}
-            </p>
-            {value.action === "push" ? (
-              <label className="delivery-commit-field">
-                <span>{t("commitMessage")}</span>
-                <input
-                  ref={firstField}
-                  value={value.message}
-                  maxLength={1_000}
-                  disabled={busy}
-                  onChange={(event) =>
-                    onChange({ ...value, message: event.target.value })
-                  }
-                />
-              </label>
-            ) : (
-              <div className="github-pr-fields">
-                <div
-                  className={`github-pr-generation ${value.generation}`}
-                  role="status"
-                >
-                  {value.generation === "loading" ? (
-                    <LoaderCircle className="spin" size={14} />
-                  ) : (
-                    <Sparkles size={14} />
-                  )}
-                  <span>
-                    <strong>
-                      {value.generation === "loading"
-                        ? t("generatingPullRequestDescription")
-                        : value.generation === "error"
-                          ? t("pullRequestGenerationFailed")
-                          : t("pullRequestDescriptionGenerated")}
-                    </strong>
-                    <small>
-                      {value.generation === "error"
-                        ? value.generationError
-                        : value.generation === "loading"
-                          ? t("generatingPullRequestDescriptionHelp")
-                          : t("pullRequestDescriptionGeneratedHelp")}
-                    </small>
-                  </span>
-                  {value.generation !== "loading" && onRegenerate && (
-                    <button
-                      type="button"
-                      className="github-pr-regenerate pressable"
-                      disabled={busy}
-                      onClick={onRegenerate}
-                    >
-                      <RefreshCw size={12} />
-                      {t("regenerate")}
-                    </button>
-                  )}
-                </div>
-                <label className="delivery-commit-field">
-                  <span>{t("pullRequestTitle")}</span>
-                  <input
-                    ref={firstField}
-                    value={value.title}
-                    maxLength={256}
-                    disabled={busy || generating}
-                    onChange={(event) =>
-                      onChange({ ...value, title: event.target.value })
-                    }
-                  />
-                </label>
-                <label className="delivery-commit-field">
-                  <span>{t("pullRequestDescription")}</span>
-                  <textarea
-                    value={value.body}
-                    maxLength={20_000}
-                    rows={9}
-                    disabled={busy || generating}
-                    onChange={(event) =>
-                      onChange({ ...value, body: event.target.value })
-                    }
-                  />
-                </label>
-              </div>
-            )}
-            {error && <p className="delivery-dialog-error">{error}</p>}
-          </div>
-          <div className="delivery-dialog-actions">
-            <button
-              ref={cancelButton}
-              type="button"
-              className="dialog-button secondary pressable"
-              disabled={busy}
-              onClick={onCancel}
-            >
-              {t("cancel")}
-            </button>
-            <button
-              type="submit"
-              className="dialog-button primary pressable"
-              disabled={busy || generating || !valid}
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}
-              {busy
-                ? t("publishingToGitHub")
-                : action === "push"
-                  ? t("commitAndPush")
-                  : value.action === "pr" && value.draft
-                    ? t("createDraftPr")
-                    : t("createPullRequest")}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -1316,160 +1294,140 @@ export function WorktreeDeliveryDialog({
   const blocked = preflight.branchChanged || preflight.conflicts.length > 0;
   const alreadyApplied = action === "apply" && preflight.pendingFiles === 0;
 
-  useEffect(() => {
-    if (action === "commit" && !blocked) {
-      messageInput.current?.focus();
-      messageInput.current?.select();
-    } else {
-      cancelButton.current?.focus();
-    }
-  }, [action, blocked]);
-
-  useEffect(() => {
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
-
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
+    <Dialog
+      className="delivery-dialog"
+      role="alertdialog"
+      aria-labelledby="delivery-dialog-title"
+      aria-describedby="delivery-dialog-description"
+      initialFocusRef={
+        action === "commit" && !blocked ? messageInput : cancelButton
+      }
+      dismissDisabled={busy}
+      onClose={onCancel}
     >
-      <section
-        className="delivery-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delivery-dialog-title"
-        aria-describedby="delivery-dialog-description"
+      <span
+        className={`delivery-dialog-icon ${blocked ? "blocked" : ""}`}
+        aria-hidden="true"
       >
-        <span
-          className={`delivery-dialog-icon ${blocked ? "blocked" : ""}`}
-          aria-hidden="true"
-        >
-          {blocked ? (
-            <TriangleAlert size={18} />
-          ) : action === "commit" ? (
-            <GitCommitHorizontal size={18} />
-          ) : (
-            <GitMerge size={18} />
-          )}
-        </span>
-        <div className="delivery-dialog-copy">
-          <h2 id="delivery-dialog-title">
-            {blocked
-              ? t("deliveryBlocked")
-              : action === "commit"
-                ? t("commitDeliveryQuestion")
-                : t("applyDeliveryQuestion")}
-          </h2>
-          <p id="delivery-dialog-description">
-            {t("deliveryPreflightSummary", {
-              count: preflight.files,
-              branch: preflight.targetBranch,
+        {blocked ? (
+          <TriangleAlert size={18} />
+        ) : action === "commit" ? (
+          <GitCommitHorizontal size={18} />
+        ) : (
+          <GitMerge size={18} />
+        )}
+      </span>
+      <div className="delivery-dialog-copy">
+        <h2 id="delivery-dialog-title">
+          {blocked
+            ? t("deliveryBlocked")
+            : action === "commit"
+              ? t("commitDeliveryQuestion")
+              : t("applyDeliveryQuestion")}
+        </h2>
+        <p id="delivery-dialog-description">
+          {t("deliveryPreflightSummary", {
+            count: preflight.files,
+            branch: preflight.targetBranch,
+          })}
+        </p>
+        {(preflight.localOnlyFiles ?? 0) > 0 && (
+          <p className="delivery-dialog-notice">
+            {t("deliveryLocalDataSummary", {
+              count: preflight.localOnlyFiles ?? 0,
             })}
           </p>
-          {(preflight.localOnlyFiles ?? 0) > 0 && (
-            <p className="delivery-dialog-notice">
-              {t("deliveryLocalDataSummary", {
-                count: preflight.localOnlyFiles ?? 0,
+        )}
+        <div className="delivery-branch-route">
+          <code>{preflight.taskBranch}</code>
+          <GitMerge size={14} aria-hidden="true" />
+          <code>{preflight.targetBranch}</code>
+        </div>
+        {preflight.branchChanged && (
+          <p className="delivery-dialog-warning">
+            {t("deliveryBranchChanged", {
+              source: preflight.sourceBranch ?? "",
+              target: preflight.targetBranch,
+            })}
+          </p>
+        )}
+        {preflight.conflicts.length > 0 && (
+          <div className="delivery-conflicts">
+            <strong>
+              {t("deliveryConflicts", {
+                count: preflight.conflicts.length,
               })}
-            </p>
-          )}
-          <div className="delivery-branch-route">
-            <code>{preflight.taskBranch}</code>
-            <GitMerge size={14} aria-hidden="true" />
-            <code>{preflight.targetBranch}</code>
-          </div>
-          {preflight.branchChanged && (
-            <p className="delivery-dialog-warning">
-              {t("deliveryBranchChanged", {
-                source: preflight.sourceBranch ?? "",
-                target: preflight.targetBranch,
-              })}
-            </p>
-          )}
-          {preflight.conflicts.length > 0 && (
-            <div className="delivery-conflicts">
-              <strong>
-                {t("deliveryConflicts", {
-                  count: preflight.conflicts.length,
+            </strong>
+            <ul>
+              {preflight.conflicts.slice(0, 8).map((conflict) => (
+                <li key={conflict.path}>
+                  <code>{conflict.path}</code>
+                  <span>{t(deliveryConflictKey(conflict.reason))}</span>
+                </li>
+              ))}
+            </ul>
+            {preflight.conflicts.length > 8 && (
+              <small>
+                {t("moreDeliveryConflicts", {
+                  count: preflight.conflicts.length - 8,
                 })}
-              </strong>
-              <ul>
-                {preflight.conflicts.slice(0, 8).map((conflict) => (
-                  <li key={conflict.path}>
-                    <code>{conflict.path}</code>
-                    <span>{t(deliveryConflictKey(conflict.reason))}</span>
-                  </li>
-                ))}
-              </ul>
-              {preflight.conflicts.length > 8 && (
-                <small>
-                  {t("moreDeliveryConflicts", {
-                    count: preflight.conflicts.length - 8,
-                  })}
-                </small>
-              )}
-            </div>
-          )}
-          {alreadyApplied && (
-            <p className="delivery-dialog-notice">
-              {t("deliveryAlreadyApplied")}
-            </p>
-          )}
-          {action === "commit" && !blocked && (
-            <label className="delivery-commit-field">
-              <span>{t("commitMessage")}</span>
-              <input
-                ref={messageInput}
-                value={message}
-                maxLength={1_000}
-                disabled={busy}
-                onChange={(event) => onMessageChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && message.trim() && !busy) {
-                    event.preventDefault();
-                    onConfirm();
-                  }
-                }}
-              />
-            </label>
-          )}
-          {error && <p className="delivery-dialog-error">{error}</p>}
-        </div>
-        <div className="delivery-dialog-actions">
+              </small>
+            )}
+          </div>
+        )}
+        {alreadyApplied && (
+          <p className="delivery-dialog-notice">
+            {t("deliveryAlreadyApplied")}
+          </p>
+        )}
+        {action === "commit" && !blocked && (
+          <label className="delivery-commit-field">
+            <span>{t("commitMessage")}</span>
+            <input
+              ref={messageInput}
+              value={message}
+              maxLength={1_000}
+              disabled={busy}
+              onChange={(event) => onMessageChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && message.trim() && !busy) {
+                  event.preventDefault();
+                  onConfirm();
+                }
+              }}
+            />
+          </label>
+        )}
+        {error && <p className="delivery-dialog-error">{error}</p>}
+      </div>
+      <div className="delivery-dialog-actions">
+        <button
+          ref={cancelButton}
+          type="button"
+          className="dialog-button secondary pressable"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          {blocked || alreadyApplied ? t("close") : t("cancel")}
+        </button>
+        {!blocked && !alreadyApplied && (
           <button
-            ref={cancelButton}
             type="button"
-            className="dialog-button secondary pressable"
-            disabled={busy}
-            onClick={onCancel}
+            className="dialog-button primary pressable"
+            disabled={busy || (action === "commit" && !message.trim())}
+            onClick={onConfirm}
           >
-            {blocked || alreadyApplied ? t("close") : t("cancel")}
+            {busy && <LoaderCircle className="spin" size={14} />}
+            {busy
+              ? t("delivering")
+              : action === "commit"
+                ? t("stageAndCommit")
+                : t("applyToOriginal")}
           </button>
-          {!blocked && !alreadyApplied && (
-            <button
-              type="button"
-              className="dialog-button primary pressable"
-              disabled={busy || (action === "commit" && !message.trim())}
-              onClick={onConfirm}
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}
-              {busy
-                ? t("delivering")
-                : action === "commit"
-                  ? t("stageAndCommit")
-                  : t("applyToOriginal")}
-            </button>
-          )}
-        </div>
-      </section>
-    </div>
+        )}
+      </div>
+    </Dialog>
   );
 }
 

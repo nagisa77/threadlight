@@ -789,7 +789,6 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .delivery-history-empty {
     margin-left: 0;
   }
-
 }
 
 .review-toolbar,
@@ -2619,12 +2618,16 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .composer-action.plan-mode:hover:not(:disabled):not(.active),
   .composer-action.model:hover:not(:disabled):not(.active),
   .development-mode-trigger:hover:not(:disabled):not([aria-expanded="true"]),
-  .conversation-access-trigger:hover:not(:disabled):not([aria-expanded="true"]) {
+  .conversation-access-trigger:hover:not(:disabled):not(
+      [aria-expanded="true"]
+    ) {
     color: var(--ink);
     background: rgb(239 238 233 / 74%);
   }
 
-  .conversation-access-trigger.full:hover:not(:disabled):not([aria-expanded="true"]) {
+  .conversation-access-trigger.full:hover:not(:disabled):not(
+      [aria-expanded="true"]
+    ) {
     color: #c64f18;
     background: color-mix(in srgb, #ef6c2f 13%, transparent);
   }
@@ -2696,7 +2699,6 @@ body.is-resizing-workspace .workspace-split-handle::after {
     color: #87571b;
     background: color-mix(in srgb, var(--warning) 13%, transparent);
   }
-
 
   .project-open-button:hover:not(:disabled) {
     background: #3a3934;
@@ -2813,6 +2815,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .sidebar-reveal-button {
     width: 36px;
     height: 34px;
+  }
+
+  .sidebar-mobile-close-icon {
+    stroke-width: 2;
   }
 
   .sidebar-reveal-button {
@@ -2937,7 +2943,9 @@ body.is-resizing-workspace .workspace-split-handle::after {
     border-radius: 14px;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context) {
+  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+      :has(.composer-toolbar [aria-expanded="true"])
+    ) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) var(--composer-control-size);
     align-items: center;
@@ -2945,7 +2953,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
     padding: 5px 7px 5px 11px;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context) textarea {
+  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+      :has(.composer-toolbar [aria-expanded="true"])
+    )
+    textarea {
     height: 24px !important;
     min-height: 24px;
     max-height: 24px;
@@ -2954,22 +2965,30 @@ body.is-resizing-workspace .workspace-split-handle::after {
     line-height: 24px;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+      :has(.composer-toolbar [aria-expanded="true"])
+    )
     .composer-toolbar {
     width: var(--composer-control-size);
     margin: 0;
     gap: 0;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+      :has(.composer-toolbar [aria-expanded="true"])
+    )
     .composer-toolbar-start,
-  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+      :has(.composer-toolbar [aria-expanded="true"])
+    )
     .composer-toolbar-end
     > :not(.send) {
     display: none;
   }
 
-  .composer:not(:focus-within):not(.is-recording):not(.has-context)
+  .composer:not(:focus-within):not(.is-recording):not(.has-context):not(
+      :has(.composer-toolbar [aria-expanded="true"])
+    )
     .composer-toolbar-end {
     width: 100%;
     margin: 0;

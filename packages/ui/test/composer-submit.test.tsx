@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { createSubmissionGate } from "../src/app.js";
-import { attachmentHint } from "../src/features/conversation-content.js";
+import { attachmentHint } from "../src/features/task-session/conversation-content.js";
 import {
   I18nProvider,
   LANGUAGE_OPTIONS,

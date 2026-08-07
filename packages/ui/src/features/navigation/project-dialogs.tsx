@@ -30,20 +30,21 @@ import {
   X,
 } from "lucide-react";
 
-import { useI18n } from "../i18n.js";
+import { useI18n } from "../../i18n.js";
+import { Dialog } from "../../dialog.js";
 import {
   ActionPopover,
   ActionPopoverItem,
   anchoredPopoverPosition,
   type PopoverPosition,
-} from "../popover.js";
+} from "../../popover.js";
 import type {
   ConversationSummary,
   HostSummary,
   HostsSnapshot,
   ProjectSummary,
-} from "../projects.js";
-import { errorMessage } from "./conversation-content.js";
+} from "../../projects.js";
+import { errorMessage } from "../task-session/conversation-content.js";
 
 export function DeleteConversationDialog({
   conversation,
@@ -67,90 +68,76 @@ export function DeleteConversationDialog({
   const { t } = useI18n();
   const cancelButton = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    cancelButton.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [deleting, onCancel]);
-
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !deleting) onCancel();
-      }}
+    <Dialog
+      className="delete-dialog"
+      role="alertdialog"
+      aria-labelledby="delete-dialog-title"
+      aria-describedby="delete-dialog-description"
+      initialFocusRef={cancelButton}
+      dismissDisabled={deleting}
+      onClose={onCancel}
     >
-      <section
-        className="delete-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-dialog-title"
-        aria-describedby="delete-dialog-description"
-      >
-        <span className="delete-dialog-icon" aria-hidden="true">
-          <Trash2 size={18} />
-        </span>
-        <div className="delete-dialog-copy">
-          <h2 id="delete-dialog-title">
-            {metadataOnly
-              ? t("deleteTaskMetadataQuestion")
-              : discard
-                ? t("discardTaskQuestion")
-                : t("deleteTaskQuestion")}
-          </h2>
-          <p id="delete-dialog-description">
-            {metadataOnly
-              ? t("deleteTaskMetadataDescription", {
+      <span className="delete-dialog-icon" aria-hidden="true">
+        <Trash2 size={18} />
+      </span>
+      <div className="delete-dialog-copy">
+        <h2 id="delete-dialog-title">
+          {metadataOnly
+            ? t("deleteTaskMetadataQuestion")
+            : discard
+              ? t("discardTaskQuestion")
+              : t("deleteTaskQuestion")}
+        </h2>
+        <p id="delete-dialog-description">
+          {metadataOnly
+            ? t("deleteTaskMetadataDescription", {
+                title: conversation.title,
+              })
+            : discard
+              ? t("discardTaskConfirmDescription", {
                   title: conversation.title,
                 })
-              : discard
-                ? t("discardTaskConfirmDescription", {
-                    title: conversation.title,
-                  })
-                : t("deleteTaskDescription", { title: conversation.title })}
+              : t("deleteTaskDescription", { title: conversation.title })}
+        </p>
+        {discard && localDataFiles > 0 && (
+          <p className="delete-dialog-warning">
+            {t("discardLocalDataWarning", { count: localDataFiles })}
           </p>
-          {discard && localDataFiles > 0 && (
-            <p className="delete-dialog-warning">
-              {t("discardLocalDataWarning", { count: localDataFiles })}
-            </p>
-          )}
-          {error && <p className="delete-dialog-error">{error}</p>}
-        </div>
-        <div className="delete-dialog-actions">
-          <button
-            ref={cancelButton}
-            type="button"
-            className="dialog-button secondary pressable"
-            disabled={deleting}
-            onClick={onCancel}
-          >
-            {t("cancel")}
-          </button>
-          <button
-            type="button"
-            className="dialog-button danger pressable"
-            disabled={deleting}
-            onClick={onConfirm}
-          >
-            {deleting && <LoaderCircle className="spin" size={14} />}
-            {deleting
-              ? metadataOnly
-                ? t("deletingTaskMetadata")
-                : discard
-                  ? t("discardingTask")
-                  : t("deleting")
-              : metadataOnly
-                ? t("deleteTaskMetadata")
-                : discard
-                  ? t("discardTask")
-                  : t("deleteTask")}
-          </button>
-        </div>
-      </section>
-    </div>
+        )}
+        {error && <p className="delete-dialog-error">{error}</p>}
+      </div>
+      <div className="delete-dialog-actions">
+        <button
+          ref={cancelButton}
+          type="button"
+          className="dialog-button secondary pressable"
+          disabled={deleting}
+          onClick={onCancel}
+        >
+          {t("cancel")}
+        </button>
+        <button
+          type="button"
+          className="dialog-button danger pressable"
+          disabled={deleting}
+          onClick={onConfirm}
+        >
+          {deleting && <LoaderCircle className="spin" size={14} />}
+          {deleting
+            ? metadataOnly
+              ? t("deletingTaskMetadata")
+              : discard
+                ? t("discardingTask")
+                : t("deleting")
+            : metadataOnly
+              ? t("deleteTaskMetadata")
+              : discard
+                ? t("discardTask")
+                : t("deleteTask")}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
@@ -170,66 +157,48 @@ export function DeleteProjectDialog({
   const { t } = useI18n();
   const cancelButton = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    cancelButton.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !deleting) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [deleting, onCancel]);
-
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !deleting) onCancel();
-      }}
+    <Dialog
+      className="delete-dialog"
+      role="alertdialog"
+      aria-labelledby="delete-project-dialog-title"
+      aria-describedby="delete-project-dialog-description"
+      initialFocusRef={cancelButton}
+      dismissDisabled={deleting}
+      onClose={onCancel}
     >
-      <section
-        className="delete-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="delete-project-dialog-title"
-        aria-describedby="delete-project-dialog-description"
-      >
-        <span className="delete-dialog-icon" aria-hidden="true">
-          <Trash2 size={18} />
-        </span>
-        <div className="delete-dialog-copy">
-          <h2 id="delete-project-dialog-title">
-            {t("deleteProjectQuestion")}
-          </h2>
-          <p id="delete-project-dialog-description">
-            {t("deleteProjectDescription", { project: project.name })}
-          </p>
-          <p className="delete-dialog-hint">
-            {t("deleteProjectKeepsData")}
-          </p>
-          {error && <p className="delete-dialog-error">{error}</p>}
-        </div>
-        <div className="delete-dialog-actions">
-          <button
-            ref={cancelButton}
-            type="button"
-            className="dialog-button secondary pressable"
-            disabled={deleting}
-            onClick={onCancel}
-          >
-            {t("cancel")}
-          </button>
-          <button
-            type="button"
-            className="dialog-button danger pressable"
-            disabled={deleting}
-            onClick={onConfirm}
-          >
-            {deleting && <LoaderCircle className="spin" size={14} />}
-            {deleting ? t("deletingProject") : t("deleteProject")}
-          </button>
-        </div>
-      </section>
-    </div>
+      <span className="delete-dialog-icon" aria-hidden="true">
+        <Trash2 size={18} />
+      </span>
+      <div className="delete-dialog-copy">
+        <h2 id="delete-project-dialog-title">{t("deleteProjectQuestion")}</h2>
+        <p id="delete-project-dialog-description">
+          {t("deleteProjectDescription", { project: project.name })}
+        </p>
+        <p className="delete-dialog-hint">{t("deleteProjectKeepsData")}</p>
+        {error && <p className="delete-dialog-error">{error}</p>}
+      </div>
+      <div className="delete-dialog-actions">
+        <button
+          ref={cancelButton}
+          type="button"
+          className="dialog-button secondary pressable"
+          disabled={deleting}
+          onClick={onCancel}
+        >
+          {t("cancel")}
+        </button>
+        <button
+          type="button"
+          className="dialog-button danger pressable"
+          disabled={deleting}
+          onClick={onConfirm}
+        >
+          {deleting && <LoaderCircle className="spin" size={14} />}
+          {deleting ? t("deletingProject") : t("deleteProject")}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
@@ -329,15 +298,6 @@ export function RemoteRuntimeDialog({
   const [editingHostId, setEditingHostId] = useState<string>();
   const firstField = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    firstField.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
-
   function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -377,174 +337,166 @@ export function RemoteRuntimeDialog({
   }
 
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
+    <Dialog
+      className="connector-dialog remote-runtime-dialog"
+      aria-labelledby="remote-runtime-title"
+      aria-describedby="remote-runtime-description"
+      initialFocusRef={firstField}
+      dismissDisabled={busy}
+      onClose={onCancel}
     >
-      <section
-        className="connector-dialog remote-runtime-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remote-runtime-title"
-        aria-describedby="remote-runtime-description"
-      >
-        <div className="connector-dialog-heading">
-          <span className="connector-dialog-icon" aria-hidden="true">
-            <Server size={18} />
-          </span>
-          <div>
-            <h2 id="remote-runtime-title">{t("connectRemoteRuntime")}</h2>
-            <p id="remote-runtime-description">
-              {t("remoteRuntimeDescription")}
-            </p>
-          </div>
+      <div className="connector-dialog-heading">
+        <span className="connector-dialog-icon" aria-hidden="true">
+          <Server size={18} />
+        </span>
+        <div>
+          <h2 id="remote-runtime-title">{t("connectRemoteRuntime")}</h2>
+          <p id="remote-runtime-description">{t("remoteRuntimeDescription")}</p>
         </div>
-        {hosts && hosts.hosts.length > 0 && (
-          <div className="host-connection-list" aria-label={t("savedHosts")}>
-            <p className="connector-section-label">{t("savedHosts")}</p>
-            {hosts.hosts.map((host) => {
-              const active = host.id === activeHostId;
-              return (
-                <div
-                  key={host.id}
-                  className={`host-connection-row ${active ? "active" : ""}`}
+      </div>
+      {hosts && hosts.hosts.length > 0 && (
+        <div className="host-connection-list" aria-label={t("savedHosts")}>
+          <p className="connector-section-label">{t("savedHosts")}</p>
+          {hosts.hosts.map((host) => {
+            const active = host.id === activeHostId;
+            return (
+              <div
+                key={host.id}
+                className={`host-connection-row ${active ? "active" : ""}`}
+              >
+                <button
+                  type="button"
+                  className="host-connection-select pressable"
+                  disabled={busy || active}
+                  onClick={() => onActivate(host.id)}
                 >
-                  <button
-                    type="button"
-                    className="host-connection-select pressable"
-                    disabled={busy || active}
-                    onClick={() => onActivate(host.id)}
-                  >
-                    <span className="host-connection-icon" aria-hidden="true">
-                      {host.kind === "local" ? (
-                        <Monitor size={15} />
-                      ) : (
-                        <Server size={15} />
-                      )}
-                    </span>
-                    <span className="host-connection-copy">
-                      <strong>{host.name}</strong>
-                      <small>
-                        {host.kind === "local" ? t("localHost") : host.endpoint}
-                      </small>
-                    </span>
-                    {active && <Check size={14} aria-label={t("current")} />}
-                  </button>
-                  {host.kind === "remote" && (onUpdate || onDelete) && (
-                    <span className="host-connection-actions">
-                      {onUpdate && (
-                        <button
-                          type="button"
-                          className="host-connection-edit pressable"
-                          aria-label={t("editHost", { name: host.name })}
-                          title={t("editHost", { name: host.name })}
-                          disabled={busy}
-                          onClick={() => editHost(host)}
-                        >
-                          <PencilLine size={14} />
-                        </button>
-                      )}
-                      {onDelete && (
-                        <button
-                          type="button"
-                          className="host-connection-remove pressable"
-                          aria-label={t("removeHost", { name: host.name })}
-                          title={t("removeHost", { name: host.name })}
-                          disabled={busy}
-                          onClick={() => {
-                            if (editingHostId === host.id) cancelEditing();
-                            onDelete(host.id);
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-        <form onSubmit={submit}>
-          <p className="connector-section-label">
-            {editingHostId ? t("editSavedHost") : t("connectNewHost")}
-          </p>
-          <div className="connector-fields">
-            <label>
-              <span>{t("remoteRuntimeEndpoint")}</span>
-              <input
-                ref={firstField}
-                value={endpoint}
-                onChange={(event) => setEndpoint(event.target.value)}
-                inputMode="url"
-                autoComplete="url"
-                spellCheck={false}
-                required
-                disabled={busy}
-              />
-            </label>
-            <label>
-              <span>{t("remoteRuntimeToken")}</span>
-              <input
-                type="password"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                autoComplete="off"
-                required={!editingHostId}
-                disabled={busy}
-                placeholder={
-                  editingHostId ? t("remoteRuntimeTokenKeep") : undefined
-                }
-              />
-            </label>
-            <label>
-              <span>{t("remoteRuntimeName")}</span>
-              <input
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                autoComplete="off"
-                disabled={busy}
-                placeholder={t("remoteRuntimeNameOptional")}
-              />
-            </label>
-          </div>
-          <p className="remote-runtime-security">
-            <ShieldAlert size={14} />
-            {t("remoteRuntimeSecurity")}
-          </p>
-          {error && <p className="connector-dialog-error">{error}</p>}
-          <div className="connector-dialog-actions">
-            <button
-              type="button"
-              className="dialog-button secondary pressable"
+                  <span className="host-connection-icon" aria-hidden="true">
+                    {host.kind === "local" ? (
+                      <Monitor size={15} />
+                    ) : (
+                      <Server size={15} />
+                    )}
+                  </span>
+                  <span className="host-connection-copy">
+                    <strong>{host.name}</strong>
+                    <small>
+                      {host.kind === "local" ? t("localHost") : host.endpoint}
+                    </small>
+                  </span>
+                  {active && <Check size={14} aria-label={t("current")} />}
+                </button>
+                {host.kind === "remote" && (onUpdate || onDelete) && (
+                  <span className="host-connection-actions">
+                    {onUpdate && (
+                      <button
+                        type="button"
+                        className="host-connection-edit pressable"
+                        aria-label={t("editHost", { name: host.name })}
+                        title={t("editHost", { name: host.name })}
+                        disabled={busy}
+                        onClick={() => editHost(host)}
+                      >
+                        <PencilLine size={14} />
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        type="button"
+                        className="host-connection-remove pressable"
+                        aria-label={t("removeHost", { name: host.name })}
+                        title={t("removeHost", { name: host.name })}
+                        disabled={busy}
+                        onClick={() => {
+                          if (editingHostId === host.id) cancelEditing();
+                          onDelete(host.id);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <form onSubmit={submit}>
+        <p className="connector-section-label">
+          {editingHostId ? t("editSavedHost") : t("connectNewHost")}
+        </p>
+        <div className="connector-fields">
+          <label>
+            <span>{t("remoteRuntimeEndpoint")}</span>
+            <input
+              ref={firstField}
+              value={endpoint}
+              onChange={(event) => setEndpoint(event.target.value)}
+              inputMode="url"
+              autoComplete="url"
+              spellCheck={false}
+              required
               disabled={busy}
-              onClick={editingHostId ? cancelEditing : onCancel}
-            >
-              {t("cancel")}
-            </button>
-            <button
-              type="submit"
-              className="dialog-button primary pressable"
-              disabled={
-                busy || !endpoint.trim() || (!editingHostId && !token.trim())
+            />
+          </label>
+          <label>
+            <span>{t("remoteRuntimeToken")}</span>
+            <input
+              type="password"
+              value={token}
+              onChange={(event) => setToken(event.target.value)}
+              autoComplete="off"
+              required={!editingHostId}
+              disabled={busy}
+              placeholder={
+                editingHostId ? t("remoteRuntimeTokenKeep") : undefined
               }
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}
-              {busy
-                ? editingHostId
-                  ? t("saving")
-                  : t("connectingRuntime")
-                : editingHostId
-                  ? t("saveChanges")
-                  : t("connect")}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+            />
+          </label>
+          <label>
+            <span>{t("remoteRuntimeName")}</span>
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              autoComplete="off"
+              disabled={busy}
+              placeholder={t("remoteRuntimeNameOptional")}
+            />
+          </label>
+        </div>
+        <p className="remote-runtime-security">
+          <ShieldAlert size={14} />
+          {t("remoteRuntimeSecurity")}
+        </p>
+        {error && <p className="connector-dialog-error">{error}</p>}
+        <div className="connector-dialog-actions">
+          <button
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={busy}
+            onClick={editingHostId ? cancelEditing : onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="submit"
+            className="dialog-button primary pressable"
+            disabled={
+              busy || !endpoint.trim() || (!editingHostId && !token.trim())
+            }
+          >
+            {busy && <LoaderCircle className="spin" size={14} />}
+            {busy
+              ? editingHostId
+                ? t("saving")
+                : t("connectingRuntime")
+              : editingHostId
+                ? t("saveChanges")
+                : t("connect")}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -575,15 +527,6 @@ export function RemoteProjectPathDialog({
   const firstField = useRef<HTMLInputElement>(null);
   const firstDirectory = useRef<HTMLButtonElement>(null);
   const browseRequest = useRef(0);
-
-  useEffect(() => {
-    firstField.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
 
   useEffect(() => {
     if (
@@ -644,141 +587,135 @@ export function RemoteProjectPathDialog({
   }
 
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
+    <Dialog
+      className="connector-dialog remote-project-dialog"
+      aria-labelledby="remote-project-title"
+      initialFocusRef={firstField}
+      dismissDisabled={busy}
+      onClose={onCancel}
     >
-      <section
-        className="connector-dialog remote-project-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="remote-project-title"
-      >
-        <div className="connector-dialog-heading">
-          <span className="connector-dialog-icon" aria-hidden="true">
-            <FolderPlus size={18} />
-          </span>
-          <div>
-            <h2 id="remote-project-title">{t("addRemoteProject")}</h2>
-            <p>{t("addRemoteProjectDescription", { host: hostName })}</p>
-          </div>
+      <div className="connector-dialog-heading">
+        <span className="connector-dialog-icon" aria-hidden="true">
+          <FolderPlus size={18} />
+        </span>
+        <div>
+          <h2 id="remote-project-title">{t("addRemoteProject")}</h2>
+          <p>{t("addRemoteProjectDescription", { host: hostName })}</p>
         </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!busy && path.trim()) onOpen(path.trim());
-          }}
-        >
-          <div className="connector-fields">
-            <label>
-              <span>{t("remoteProjectPath")}</span>
-              <input
-                ref={firstField}
-                value={path}
-                onChange={(event) => {
-                  setPath(event.target.value);
-                  setDirectoryDismissed(false);
-                }}
-                onFocus={() => setDirectoryDismissed(false)}
-                onKeyDown={(event) => {
-                  if (event.key === "ArrowDown" && directoryPosition) {
-                    event.preventDefault();
-                    firstDirectory.current?.focus();
-                  } else if (event.key === "Escape" && directoryPosition) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setDirectoryDismissed(true);
-                  }
-                }}
-                placeholder="/home/user/projects/example"
-                autoComplete="off"
-                spellCheck={false}
-                required
-                disabled={busy}
-              />
-            </label>
-          </div>
-          {directoryPosition && (
-            <ActionPopover
-              label={t("remoteFolders")}
-              className="remote-directory-popover"
-              role="dialog"
-              position={directoryPosition}
-              initialFocusRef={firstField}
-              returnFocusRef={firstField}
-              onClose={() => setDirectoryDismissed(true)}
-            >
-              <div
-                className="remote-directory-list"
-                role="listbox"
-                aria-label={t("remoteFolders")}
-              >
-                {directoryLoading ? (
-                  <p className="remote-directory-status" role="status">
-                    <LoaderCircle className="spin" size={14} />
-                    {t("loadingFolders")}
-                  </p>
-                ) : directoryError ? (
-                  <p className="remote-directory-status error" role="status">
-                    <TriangleAlert size={14} />
-                    {directoryError}
-                  </p>
-                ) : directories.length === 0 ? (
-                  <p className="remote-directory-status" role="status">
-                    {t("noMatchingFolders")}
-                  </p>
-                ) : (
-                  directories.map((directory, index) => (
-                    <button
-                      key={directory.path}
-                      ref={index === 0 ? firstDirectory : undefined}
-                      type="button"
-                      role="option"
-                      data-popover-item
-                      aria-selected={false}
-                      onClick={() => selectDirectory(directory)}
-                    >
-                      <span
-                        className="remote-directory-option-icon"
-                        aria-hidden="true"
-                      >
-                        <Folder size={15} />
-                      </span>
-                      <span className="remote-directory-option-copy">
-                        <strong>{directory.name}</strong>
-                        <small>{directory.path}</small>
-                      </span>
-                      <ChevronRight size={14} aria-hidden="true" />
-                    </button>
-                  ))
-                )}
-              </div>
-            </ActionPopover>
-          )}
-          {error && <p className="connector-dialog-error">{error}</p>}
-          <div className="connector-dialog-actions">
-            <button
-              type="button"
-              className="dialog-button secondary pressable"
+      </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && path.trim()) onOpen(path.trim());
+        }}
+      >
+        <div className="connector-fields">
+          <label>
+            <span>{t("remoteProjectPath")}</span>
+            <input
+              ref={firstField}
+              value={path}
+              onChange={(event) => {
+                setPath(event.target.value);
+                setDirectoryDismissed(false);
+              }}
+              onFocus={() => setDirectoryDismissed(false)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" && directoryPosition) {
+                  event.preventDefault();
+                  firstDirectory.current?.focus();
+                } else if (event.key === "Escape" && directoryPosition) {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setDirectoryDismissed(true);
+                }
+              }}
+              placeholder="/home/user/projects/example"
+              autoComplete="off"
+              spellCheck={false}
+              required
               disabled={busy}
-              onClick={onCancel}
+            />
+          </label>
+        </div>
+        {directoryPosition && (
+          <ActionPopover
+            label={t("remoteFolders")}
+            className="remote-directory-popover"
+            role="dialog"
+            position={directoryPosition}
+            initialFocusRef={firstField}
+            returnFocusRef={firstField}
+            onClose={() => setDirectoryDismissed(true)}
+          >
+            <div
+              className="remote-directory-list"
+              role="listbox"
+              aria-label={t("remoteFolders")}
             >
-              {t("cancel")}
-            </button>
-            <button
-              type="submit"
-              className="dialog-button primary pressable"
-              disabled={busy || !path.trim()}
-            >
-              {busy && <LoaderCircle className="spin" size={14} />}
-              {busy ? t("opening") : t("openProject")}
-            </button>
-          </div>
-        </form>
-      </section>
-    </div>
+              {directoryLoading ? (
+                <p className="remote-directory-status" role="status">
+                  <LoaderCircle className="spin" size={14} />
+                  {t("loadingFolders")}
+                </p>
+              ) : directoryError ? (
+                <p className="remote-directory-status error" role="status">
+                  <TriangleAlert size={14} />
+                  {directoryError}
+                </p>
+              ) : directories.length === 0 ? (
+                <p className="remote-directory-status" role="status">
+                  {t("noMatchingFolders")}
+                </p>
+              ) : (
+                directories.map((directory, index) => (
+                  <button
+                    key={directory.path}
+                    ref={index === 0 ? firstDirectory : undefined}
+                    type="button"
+                    role="option"
+                    data-popover-item
+                    aria-selected={false}
+                    onClick={() => selectDirectory(directory)}
+                  >
+                    <span
+                      className="remote-directory-option-icon"
+                      aria-hidden="true"
+                    >
+                      <Folder size={15} />
+                    </span>
+                    <span className="remote-directory-option-copy">
+                      <strong>{directory.name}</strong>
+                      <small>{directory.path}</small>
+                    </span>
+                    <ChevronRight size={14} aria-hidden="true" />
+                  </button>
+                ))
+              )}
+            </div>
+          </ActionPopover>
+        )}
+        {error && <p className="connector-dialog-error">{error}</p>}
+        <div className="connector-dialog-actions">
+          <button
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          <button
+            type="submit"
+            className="dialog-button primary pressable"
+            disabled={busy || !path.trim()}
+          >
+            {busy && <LoaderCircle className="spin" size={14} />}
+            {busy ? t("opening") : t("openProject")}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

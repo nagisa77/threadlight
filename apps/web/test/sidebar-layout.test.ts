@@ -12,4 +12,10 @@ describe("web sidebar chrome", () => {
       /\.app-shell\.sidebar-hidden \+ \.web-session-indicator\s*\{[^}]*display:\s*none;/s,
     );
   });
+
+  it("keeps the Host indicator above the open mobile sidebar", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.web-session-indicator\s*\{[^}]*z-index:\s*90;[^}]*safe-area-inset-top[^}]*safe-area-inset-left/s,
+    );
+  });
 });

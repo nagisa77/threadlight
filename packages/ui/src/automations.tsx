@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 
 import { useI18n, type Language } from "./i18n.js";
+import { Dialog } from "./dialog.js";
 import {
   ActionPopover,
   anchoredPopoverPosition,
@@ -26,16 +27,10 @@ import {
 } from "./popover.js";
 
 export type AutomationKind =
-  | "custom"
-  | "tests"
-  | "dependencies"
-  | "issue-triage";
+  "custom" | "tests" | "dependencies" | "issue-triage";
 export type AutomationCadence = "daily" | "weekdays" | "weekly";
 export type AutomationRunStatus =
-  | "running"
-  | "succeeded"
-  | "attention"
-  | "failed";
+  "running" | "succeeded" | "attention" | "failed";
 
 export interface AutomationSchedule {
   cadence: AutomationCadence;
@@ -325,20 +320,35 @@ const TEMPLATE_TEXT: Record<Language, TemplateText> = {
     ["Coverage gaps", "Find important uncovered branches in recent code"],
     ["Types and lint", "Group type-check and lint failures by root cause"],
     ["Dependency health", "Review outdated packages and actionable upgrades"],
-    ["Security audit", "Prioritize vulnerabilities by reachability and severity"],
+    [
+      "Security audit",
+      "Prioritize vulnerabilities by reachability and severity",
+    ],
     ["License review", "Find unknown, missing, or sensitive licenses"],
     ["Lockfile consistency", "Check manifests and lockfiles for drift"],
     ["Issue triage", "Prioritize, deduplicate, and flag blockers"],
     ["Stale issue review", "Find issues missing follow-up or current context"],
     ["Bug reproducibility", "Check new bugs for complete reproduction details"],
-    ["Release readiness", "Summarize build, test, and blocker risk before release"],
+    [
+      "Release readiness",
+      "Summarize build, test, and blocker risk before release",
+    ],
     ["Changelog review", "Find missing notes for user-facing changes"],
     ["Documentation drift", "Compare docs and examples with current behavior"],
     ["Dead code review", "Find likely unused files, exports, and dependencies"],
-    ["Performance regression", "Compare baselines and flag meaningful regressions"],
+    [
+      "Performance regression",
+      "Compare baselines and flag meaningful regressions",
+    ],
     ["Accessibility review", "Check keyboard, focus, labels, and contrast"],
-    ["Localization integrity", "Find missing keys, placeholders, and fallbacks"],
-    ["Repository health", "Summarize tests, dependencies, docs, and maintenance"],
+    [
+      "Localization integrity",
+      "Find missing keys, placeholders, and fallbacks",
+    ],
+    [
+      "Repository health",
+      "Summarize tests, dependencies, docs, and maintenance",
+    ],
   ]),
   ja: templateText([
     ["全テストスイート", "定義済みの全テストを実行して失敗を特定"],
@@ -430,9 +440,7 @@ export function AutomationsPage({
   const [error, setError] = useState<string>();
   const [draft, setDraft] = useState<AutomationDraft>();
   const [pendingDelete, setPendingDelete] = useState<string>();
-  const [filter, setFilter] = useState<"all" | "enabled" | "attention">(
-    "all",
-  );
+  const [filter, setFilter] = useState<"all" | "enabled" | "attention">("all");
 
   useEffect(() => {
     let active = true;
@@ -556,8 +564,7 @@ export function AutomationsPage({
   const enabledCount = automations.filter((item) => item.enabled).length;
   const attentionCount = automations.filter(
     (item) =>
-      item.lastRun?.status === "attention" ||
-      item.lastRun?.status === "failed",
+      item.lastRun?.status === "attention" || item.lastRun?.status === "failed",
   ).length;
   const nextAutomation = automations
     .filter((item) => item.enabled && item.nextRunAt)
@@ -625,9 +632,7 @@ export function AutomationsPage({
               <button
                 type="button"
                 className="automations-empty-primary automations-primary pressable"
-                onClick={() =>
-                  setDraft(defaultDraft("custom", language))
-                }
+                onClick={() => setDraft(defaultDraft("custom", language))}
               >
                 <Plus size={14} />
                 {copy.blankTask}
@@ -637,32 +642,28 @@ export function AutomationsPage({
                 <small>{copy.templateOptional}</small>
               </div>
               <div className="automation-template-grid">
-                {templates.slice(0, 6).map(
-                  (template) => (
-                    <button
-                      type="button"
-                      className="automation-template pressable"
-                      key={template.id}
-                      onClick={() =>
-                        setDraft(draftFromTemplate(template))
-                      }
+                {templates.slice(0, 6).map((template) => (
+                  <button
+                    type="button"
+                    className="automation-template pressable"
+                    key={template.id}
+                    onClick={() => setDraft(draftFromTemplate(template))}
+                  >
+                    <span
+                      className={`automation-template-icon ${template.kind}`}
                     >
-                      <span
-                        className={`automation-template-icon ${template.kind}`}
-                      >
-                        {kindIcon(template.kind, 18)}
-                      </span>
-                      <span className="automation-template-copy">
-                        <strong>{template.name}</strong>
-                        <small>{template.description}</small>
-                      </span>
-                      <span className="automation-template-action">
-                        {copy.useTemplate}
-                        <ChevronRight size={13} />
-                      </span>
-                    </button>
-                  ),
-                )}
+                      {kindIcon(template.kind, 18)}
+                    </span>
+                    <span className="automation-template-copy">
+                      <strong>{template.name}</strong>
+                      <small>{template.description}</small>
+                    </span>
+                    <span className="automation-template-action">
+                      {copy.useTemplate}
+                      <ChevronRight size={13} />
+                    </span>
+                  </button>
+                ))}
               </div>
               <div className="automations-safety-note">
                 <CheckCircle2 size={14} />
@@ -715,9 +716,7 @@ export function AutomationsPage({
                   </span>
                   <span>
                     <small>{copy.nextRun}</small>
-                    <strong>
-                      {nextAutomation?.name ?? copy.noUpcoming}
-                    </strong>
+                    <strong>{nextAutomation?.name ?? copy.noUpcoming}</strong>
                     <em>
                       {nextAutomation?.nextRunAt
                         ? formatDateTime(nextAutomation.nextRunAt, language)
@@ -732,30 +731,28 @@ export function AutomationsPage({
                   role="group"
                   aria-label={copy.filter}
                 >
-                  {(["all", "enabled", "attention"] as const).map(
-                    (value) => (
-                      <button
-                        type="button"
-                        className={`pressable ${filter === value ? "active" : ""}`}
-                        aria-pressed={filter === value}
-                        key={value}
-                        onClick={() => setFilter(value)}
-                      >
+                  {(["all", "enabled", "attention"] as const).map((value) => (
+                    <button
+                      type="button"
+                      className={`pressable ${filter === value ? "active" : ""}`}
+                      aria-pressed={filter === value}
+                      key={value}
+                      onClick={() => setFilter(value)}
+                    >
+                      {value === "all"
+                        ? copy.all
+                        : value === "enabled"
+                          ? copy.enabled
+                          : copy.status.attention}
+                      <span>
                         {value === "all"
-                          ? copy.all
+                          ? automations.length
                           : value === "enabled"
-                            ? copy.enabled
-                            : copy.status.attention}
-                        <span>
-                          {value === "all"
-                            ? automations.length
-                            : value === "enabled"
-                              ? enabledCount
-                              : attentionCount}
-                        </span>
-                      </button>
-                    ),
-                  )}
+                            ? enabledCount
+                            : attentionCount}
+                      </span>
+                    </button>
+                  ))}
                 </div>
                 <div className="automations-timezone">
                   <Globe2 size={12} />
@@ -771,14 +768,10 @@ export function AutomationsPage({
               ) : (
                 <div className="automation-list">
                   {visibleAutomations.map((automation) => {
-                    const running =
-                      automation.lastRun?.status === "running";
+                    const running = automation.lastRun?.status === "running";
                     const busy = busyId === automation.id || running;
                     return (
-                      <article
-                        className="automation-card"
-                        key={automation.id}
-                      >
+                      <article className="automation-card" key={automation.id}>
                         <div className="automation-card-header">
                           <div
                             className={`automation-kind-icon ${automation.kind}`}
@@ -795,10 +788,7 @@ export function AutomationsPage({
                                 className={`automation-status ${automation.lastRun.status}`}
                               >
                                 {automation.lastRun.status === "running" && (
-                                  <LoaderCircle
-                                    className="spin"
-                                    size={11}
-                                  />
+                                  <LoaderCircle className="spin" size={11} />
                                 )}
                                 {copy.status[automation.lastRun.status]}
                               </span>
@@ -816,9 +806,7 @@ export function AutomationsPage({
                             ) : (
                               <Circle size={13} />
                             )}
-                            {automation.enabled
-                              ? copy.enabled
-                              : copy.disabled}
+                            {automation.enabled ? copy.enabled : copy.disabled}
                           </button>
                         </div>
                         <p className="automation-card-prompt">
@@ -852,9 +840,7 @@ export function AutomationsPage({
                                 type="button"
                                 className="automation-open-task pressable"
                                 onClick={() =>
-                                  onOpenThread?.(
-                                    automation.lastRun!.threadId!,
-                                  )
+                                  onOpenThread?.(automation.lastRun!.threadId!)
                                 }
                               >
                                 {copy.openTask}
@@ -887,8 +873,7 @@ export function AutomationsPage({
                               <span>
                                 <small>{copy.nextRun}</small>
                                 <strong>
-                                  {automation.enabled &&
-                                  automation.nextRunAt
+                                  {automation.enabled && automation.nextRunAt
                                     ? formatDateTime(
                                         automation.nextRunAt,
                                         language,
@@ -906,10 +891,7 @@ export function AutomationsPage({
                               onClick={() => void runNow(automation)}
                             >
                               {running ? (
-                                <LoaderCircle
-                                  className="spin"
-                                  size={13}
-                                />
+                                <LoaderCircle className="spin" size={13} />
                               ) : (
                                 <Play size={13} />
                               )}
@@ -938,9 +920,7 @@ export function AutomationsPage({
                                   type="button"
                                   className="icon-button pressable"
                                   aria-label={copy.cancel}
-                                  onClick={() =>
-                                    setPendingDelete(undefined)
-                                  }
+                                  onClick={() => setPendingDelete(undefined)}
                                 >
                                   <X size={13} />
                                 </button>
@@ -951,9 +931,7 @@ export function AutomationsPage({
                                 className="icon-button pressable danger"
                                 aria-label={copy.delete}
                                 disabled={busy}
-                                onClick={() =>
-                                  setPendingDelete(automation.id)
-                                }
+                                onClick={() => setPendingDelete(automation.id)}
                               >
                                 <Trash2 size={14} />
                               </button>
@@ -1006,8 +984,8 @@ function AutomationEditor({
 }) {
   const valid = draft.name.trim() && draft.prompt.trim();
   const templateTrigger = useRef<HTMLButtonElement>(null);
-  const [templatePosition, setTemplatePosition] =
-    useState<PopoverPosition>();
+  const nameInput = useRef<HTMLInputElement>(null);
+  const [templatePosition, setTemplatePosition] = useState<PopoverPosition>();
   const templates = automationTemplates(language);
 
   function toggleTemplates() {
@@ -1037,280 +1015,251 @@ function AutomationEditor({
     setTemplatePosition(undefined);
   }
 
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape" || saving) return;
-      event.preventDefault();
-      onCancel();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onCancel, saving]);
   return (
-    <div
-      className="automation-dialog-backdrop"
-      role="presentation"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !saving) onCancel();
-      }}
+    <Dialog
+      backdropClassName="automation-dialog-backdrop"
+      className="automation-dialog"
+      aria-labelledby="automation-dialog-title"
+      initialFocusRef={nameInput}
+      dismissDisabled={saving}
+      onClose={onCancel}
     >
-      <section
-        className="automation-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="automation-dialog-title"
-      >
-        <header>
-          <span className="automation-dialog-icon" aria-hidden="true">
-            {kindIcon(draft.kind, 18)}
-          </span>
-          <div>
-            <h2 id="automation-dialog-title">
-              {draft.id ? copy.editAutomation : copy.newAutomation}
-            </h2>
-            <p>{copy.editorDescription}</p>
+      <header>
+        <span className="automation-dialog-icon" aria-hidden="true">
+          {kindIcon(draft.kind, 18)}
+        </span>
+        <div>
+          <h2 id="automation-dialog-title">
+            {draft.id ? copy.editAutomation : copy.newAutomation}
+          </h2>
+          <p>{copy.editorDescription}</p>
+        </div>
+        <button
+          type="button"
+          className="icon-button pressable"
+          aria-label={copy.cancel}
+          onClick={onCancel}
+        >
+          <X size={15} />
+        </button>
+      </header>
+      <div className="automation-editor-body">
+        <section className="automation-editor-section">
+          <div className="automation-editor-section-heading">
+            <span>01</span>
+            <div>
+              <strong>{copy.taskDetails}</strong>
+              <small>{copy.taskDetailsHint}</small>
+            </div>
           </div>
-          <button
-            type="button"
-            className="icon-button pressable"
-            aria-label={copy.cancel}
-            onClick={onCancel}
-          >
-            <X size={15} />
-          </button>
-        </header>
-        <div className="automation-editor-body">
-          <section className="automation-editor-section">
-            <div className="automation-editor-section-heading">
-              <span>01</span>
-              <div>
-                <strong>{copy.taskDetails}</strong>
-                <small>{copy.taskDetailsHint}</small>
-              </div>
-            </div>
-            <div className="automation-editor-template-row">
-              <button
-                ref={templateTrigger}
-                type="button"
-                className="automation-template-trigger pressable"
-                aria-haspopup="menu"
-                aria-expanded={Boolean(templatePosition)}
-                onClick={toggleTemplates}
-              >
-                <Sparkles size={14} />
-                <span>
-                  <strong>{copy.browseTemplates}</strong>
-                  <small>{copy.templateCount}</small>
-                </span>
-                <ChevronRight size={14} />
-              </button>
-              <small>{copy.templateOptional}</small>
-            </div>
-            {templatePosition && (
-              <ActionPopover
-                label={copy.browseTemplates}
-                position={templatePosition}
-                className="automation-template-popover"
-                returnFocusRef={templateTrigger}
-                onClose={() => setTemplatePosition(undefined)}
-              >
-                <div className="automation-template-popover-header">
-                  <strong>{copy.browseTemplates}</strong>
-                  <span>{copy.templateOptional}</span>
-                </div>
-                <div className="automation-template-popover-list">
-                  {templates.map((template) => (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      data-popover-item
-                      key={template.id}
-                      onClick={() => applyTemplate(template)}
-                    >
-                      <span
-                        className={`automation-template-icon ${template.kind}`}
-                        aria-hidden="true"
-                      >
-                        {kindIcon(template.kind, 15)}
-                      </span>
-                      <span>
-                        <strong>{template.name}</strong>
-                        <small>{template.description}</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </ActionPopover>
-            )}
-            <label className="automation-editor-field">
-              <span>{copy.name}</span>
-              <input
-                autoFocus
-                value={draft.name}
-                maxLength={120}
-                onChange={(event) =>
-                  onChange({ ...draft, name: event.target.value })
-                }
-              />
-            </label>
-            <label className="automation-editor-field automation-editor-prompt">
+          <div className="automation-editor-template-row">
+            <button
+              ref={templateTrigger}
+              type="button"
+              className="automation-template-trigger pressable"
+              aria-haspopup="menu"
+              aria-expanded={Boolean(templatePosition)}
+              onClick={toggleTemplates}
+            >
+              <Sparkles size={14} />
               <span>
-                {copy.instructions}
-                <small>{draft.prompt.length.toLocaleString()} / 12,000</small>
+                <strong>{copy.browseTemplates}</strong>
+                <small>{copy.templateCount}</small>
               </span>
-              <textarea
-                value={draft.prompt}
-                rows={6}
-                maxLength={12_000}
-                onChange={(event) =>
-                  onChange({ ...draft, prompt: event.target.value })
-                }
-              />
-              <small>{copy.instructionsHint}</small>
-            </label>
-          </section>
-          <section className="automation-editor-section schedule">
-            <div className="automation-editor-section-heading">
-              <span>02</span>
-              <div>
-                <strong>{copy.cadence}</strong>
-                <small>{copy.scheduleHint}</small>
+              <ChevronRight size={14} />
+            </button>
+            <small>{copy.templateOptional}</small>
+          </div>
+          {templatePosition && (
+            <ActionPopover
+              label={copy.browseTemplates}
+              position={templatePosition}
+              className="automation-template-popover"
+              returnFocusRef={templateTrigger}
+              onClose={() => setTemplatePosition(undefined)}
+            >
+              <div className="automation-template-popover-header">
+                <strong>{copy.browseTemplates}</strong>
+                <span>{copy.templateOptional}</span>
               </div>
-            </div>
-            <div className="automation-cadence-picker">
-              {(["daily", "weekdays", "weekly"] as const).map(
-                (cadence) => (
+              <div className="automation-template-popover-list">
+                {templates.map((template) => (
                   <button
                     type="button"
-                    className={`pressable ${draft.schedule.cadence === cadence ? "selected" : ""}`}
-                    aria-pressed={draft.schedule.cadence === cadence}
-                    key={cadence}
-                    onClick={() =>
-                      onChange({
-                        ...draft,
-                        schedule: {
-                          cadence,
-                          time: draft.schedule.time,
-                          ...(cadence === "weekly"
-                            ? {
-                                weekday:
-                                  draft.schedule.weekday ?? 1,
-                              }
-                            : {}),
-                        },
-                      })
-                    }
+                    role="menuitem"
+                    data-popover-item
+                    key={template.id}
+                    onClick={() => applyTemplate(template)}
                   >
-                    {copy.cadenceLabel[cadence]}
+                    <span
+                      className={`automation-template-icon ${template.kind}`}
+                      aria-hidden="true"
+                    >
+                      {kindIcon(template.kind, 15)}
+                    </span>
+                    <span>
+                      <strong>{template.name}</strong>
+                      <small>{template.description}</small>
+                    </span>
                   </button>
-                ),
-              )}
+                ))}
+              </div>
+            </ActionPopover>
+          )}
+          <label className="automation-editor-field">
+            <span>{copy.name}</span>
+            <input
+              ref={nameInput}
+              value={draft.name}
+              maxLength={120}
+              onChange={(event) =>
+                onChange({ ...draft, name: event.target.value })
+              }
+            />
+          </label>
+          <label className="automation-editor-field automation-editor-prompt">
+            <span>
+              {copy.instructions}
+              <small>{draft.prompt.length.toLocaleString()} / 12,000</small>
+            </span>
+            <textarea
+              value={draft.prompt}
+              rows={6}
+              maxLength={12_000}
+              onChange={(event) =>
+                onChange({ ...draft, prompt: event.target.value })
+              }
+            />
+            <small>{copy.instructionsHint}</small>
+          </label>
+        </section>
+        <section className="automation-editor-section schedule">
+          <div className="automation-editor-section-heading">
+            <span>02</span>
+            <div>
+              <strong>{copy.cadence}</strong>
+              <small>{copy.scheduleHint}</small>
             </div>
-            <div className="automation-schedule-fields">
-              {draft.schedule.cadence === "weekly" && (
-                <label className="automation-editor-field">
-                  <span>{copy.weekday}</span>
-                  <select
-                    value={draft.schedule.weekday ?? 1}
-                    onChange={(event) =>
-                      onChange({
-                        ...draft,
-                        schedule: {
-                          ...draft.schedule,
-                          weekday: Number(event.target.value),
-                        },
-                      })
-                    }
-                  >
-                    {copy.weekdays.map((label, index) => (
-                      <option value={index} key={label}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
+          </div>
+          <div className="automation-cadence-picker">
+            {(["daily", "weekdays", "weekly"] as const).map((cadence) => (
+              <button
+                type="button"
+                className={`pressable ${draft.schedule.cadence === cadence ? "selected" : ""}`}
+                aria-pressed={draft.schedule.cadence === cadence}
+                key={cadence}
+                onClick={() =>
+                  onChange({
+                    ...draft,
+                    schedule: {
+                      cadence,
+                      time: draft.schedule.time,
+                      ...(cadence === "weekly"
+                        ? {
+                            weekday: draft.schedule.weekday ?? 1,
+                          }
+                        : {}),
+                    },
+                  })
+                }
+              >
+                {copy.cadenceLabel[cadence]}
+              </button>
+            ))}
+          </div>
+          <div className="automation-schedule-fields">
+            {draft.schedule.cadence === "weekly" && (
               <label className="automation-editor-field">
-                <span>{copy.time}</span>
-                <input
-                  type="time"
-                  value={draft.schedule.time}
+                <span>{copy.weekday}</span>
+                <select
+                  value={draft.schedule.weekday ?? 1}
                   onChange={(event) =>
                     onChange({
                       ...draft,
                       schedule: {
                         ...draft.schedule,
-                        time: event.target.value,
+                        weekday: Number(event.target.value),
                       },
                     })
                   }
-                />
+                >
+                  {copy.weekdays.map((label, index) => (
+                    <option value={index} key={label}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <div className="automation-editor-timezone">
-                <Globe2 size={13} />
-                <span>
-                  {copy.hostTime}
-                  <strong>
-                    {timeZone ??
-                      Intl.DateTimeFormat().resolvedOptions().timeZone}
-                  </strong>
-                </span>
-              </div>
+            )}
+            <label className="automation-editor-field">
+              <span>{copy.time}</span>
+              <input
+                type="time"
+                value={draft.schedule.time}
+                onChange={(event) =>
+                  onChange({
+                    ...draft,
+                    schedule: {
+                      ...draft.schedule,
+                      time: event.target.value,
+                    },
+                  })
+                }
+              />
+            </label>
+            <div className="automation-editor-timezone">
+              <Globe2 size={13} />
+              <span>
+                {copy.hostTime}
+                <strong>
+                  {timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone}
+                </strong>
+              </span>
             </div>
-            <div className="automation-schedule-preview">
-              <CalendarClock size={15} />
-              <span>{copy.nextRun}</span>
-              <strong>
-                {formatSchedule(draft.schedule, language, copy)}
-              </strong>
-            </div>
-          </section>
-        </div>
-        <footer>
+          </div>
+          <div className="automation-schedule-preview">
+            <CalendarClock size={15} />
+            <span>{copy.nextRun}</span>
+            <strong>{formatSchedule(draft.schedule, language, copy)}</strong>
+          </div>
+        </section>
+      </div>
+      <footer>
+        <button
+          type="button"
+          className="automation-editor-state pressable"
+          aria-pressed={draft.enabled}
+          onClick={() => onChange({ ...draft, enabled: !draft.enabled })}
+        >
+          {draft.enabled ? <CheckCircle2 size={14} /> : <Circle size={14} />}
+          <span>
+            <strong>{copy.enableAfterSave}</strong>
+            <small>
+              {draft.enabled ? copy.enableAfterSaveHint : copy.savePausedHint}
+            </small>
+          </span>
+        </button>
+        <div className="automation-editor-footer-actions">
           <button
             type="button"
-            className="automation-editor-state pressable"
-            aria-pressed={draft.enabled}
-            onClick={() =>
-              onChange({ ...draft, enabled: !draft.enabled })
-            }
+            className="automation-secondary pressable"
+            disabled={saving}
+            onClick={onCancel}
           >
-            {draft.enabled ? (
-              <CheckCircle2 size={14} />
-            ) : (
-              <Circle size={14} />
-            )}
-            <span>
-              <strong>{copy.enableAfterSave}</strong>
-              <small>
-                {draft.enabled
-                  ? copy.enableAfterSaveHint
-                  : copy.savePausedHint}
-              </small>
-            </span>
+            {copy.cancel}
           </button>
-          <div className="automation-editor-footer-actions">
-            <button
-              type="button"
-              className="automation-secondary pressable"
-              disabled={saving}
-              onClick={onCancel}
-            >
-              {copy.cancel}
-            </button>
-            <button
-              type="button"
-              className="automations-primary pressable"
-              disabled={saving || !valid}
-              onClick={onSave}
-            >
-              {saving && <LoaderCircle className="spin" size={13} />}
-              {saving ? copy.saving : copy.save}
-            </button>
-          </div>
-        </footer>
-      </section>
-    </div>
+          <button
+            type="button"
+            className="automations-primary pressable"
+            disabled={saving || !valid}
+            onClick={onSave}
+          >
+            {saving && <LoaderCircle className="spin" size={13} />}
+            {saving ? copy.saving : copy.save}
+          </button>
+        </div>
+      </footer>
+    </Dialog>
   );
 }
 
@@ -1584,7 +1533,12 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     savePausedHint: "先儲存為已暫停，稍後再啟用",
     saving: "正在儲存…",
     save: "儲存自動化",
-    kind: { custom: "自訂工作", tests: "測試", dependencies: "依賴檢查", "issue-triage": "Issue 分流" },
+    kind: {
+      custom: "自訂工作",
+      tests: "測試",
+      dependencies: "依賴檢查",
+      "issue-triage": "Issue 分流",
+    },
     kindDescription: {
       custom: "自由定義工作內容和檢查目標",
       tests: "執行專案測試並定位失敗",
@@ -1598,12 +1552,18 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
       "issue-triage": "Issue 分流",
     },
     cadenceLabel: { daily: "每天", weekdays: "工作日", weekly: "每週" },
-    status: { running: "執行中", succeeded: "正常", attention: "需關注", failed: "失敗" },
+    status: {
+      running: "執行中",
+      succeeded: "正常",
+      attention: "需關注",
+      failed: "失敗",
+    },
     weekdays: ["週日", "週一", "週二", "週三", "週四", "週五", "週六"],
   },
   en: {
     title: "Automations",
-    subtitle: "Schedule checks for {project} and get notified when something is wrong.",
+    subtitle:
+      "Schedule checks for {project} and get notified when something is wrong.",
     newAutomation: "New automation",
     loading: "Loading automations…",
     emptyTitle: "Hand repetitive checks to Threadlight",
@@ -1615,7 +1575,8 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     templateOptional: "Optional — templates never limit the task",
     browseTemplates: "Browse task templates",
     templateCount: "20 common workflows",
-    safetyNote: "Automations run read-only checks and never modify the repository or external systems.",
+    safetyNote:
+      "Automations run read-only checks and never modify the repository or external systems.",
     overviewStatus: "Current status",
     runningNormally: "Running normally",
     allPaused: "All automations paused",
@@ -1640,7 +1601,8 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     cancel: "Cancel",
     dismiss: "Dismiss",
     editAutomation: "Edit automation",
-    editorDescription: "Set the schedule and the read-only instructions given to the agent.",
+    editorDescription:
+      "Set the schedule and the read-only instructions given to the agent.",
     type: "Type",
     typeHint: "Choose a template, then tailor it to the project",
     taskDetails: "Task details",
@@ -1652,13 +1614,19 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     weekday: "Weekday",
     hostTime: "Host time zone",
     instructions: "Run instructions",
-    instructionsHint: "Read-only constraints and a status marker are appended automatically.",
+    instructionsHint:
+      "Read-only constraints and a status marker are appended automatically.",
     enableAfterSave: "Enable after saving",
     enableAfterSaveHint: "Run automatically on the saved schedule",
     savePausedHint: "Save paused and enable it when you are ready",
     saving: "Saving…",
     save: "Save automation",
-    kind: { custom: "Custom task", tests: "Tests", dependencies: "Dependency check", "issue-triage": "Issue triage" },
+    kind: {
+      custom: "Custom task",
+      tests: "Tests",
+      dependencies: "Dependency check",
+      "issue-triage": "Issue triage",
+    },
     kindDescription: {
       custom: "Define any recurring task or review goal",
       tests: "Run project tests and locate failures",
@@ -1672,8 +1640,21 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
       "issue-triage": "Issue triage",
     },
     cadenceLabel: { daily: "Daily", weekdays: "Weekdays", weekly: "Weekly" },
-    status: { running: "Running", succeeded: "Healthy", attention: "Attention", failed: "Failed" },
-    weekdays: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+    status: {
+      running: "Running",
+      succeeded: "Healthy",
+      attention: "Attention",
+      failed: "Failed",
+    },
+    weekdays: [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+    ],
   },
   ja: {
     title: "自動化",
@@ -1689,7 +1670,8 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     templateOptional: "任意。タスク内容は制限されません",
     browseTemplates: "タスクテンプレートを見る",
     templateCount: "20 の一般的なワークフロー",
-    safetyNote: "自動化は読み取り専用で、リポジトリや外部システムを変更しません。",
+    safetyNote:
+      "自動化は読み取り専用で、リポジトリや外部システムを変更しません。",
     overviewStatus: "現在の状態",
     runningNormally: "正常に稼働中",
     allPaused: "すべて一時停止中",
@@ -1714,7 +1696,8 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     cancel: "キャンセル",
     dismiss: "閉じる",
     editAutomation: "自動化を編集",
-    editorDescription: "スケジュールと Agent に渡す読み取り専用の指示を設定します。",
+    editorDescription:
+      "スケジュールと Agent に渡す読み取り専用の指示を設定します。",
     type: "種類",
     typeHint: "テンプレートを選び、プロジェクトに合わせて調整",
     taskDetails: "タスク内容",
@@ -1726,13 +1709,19 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     weekday: "曜日",
     hostTime: "Host タイムゾーン",
     instructions: "実行指示",
-    instructionsHint: "読み取り専用制約とステータスマーカーは自動で追加されます。",
+    instructionsHint:
+      "読み取り専用制約とステータスマーカーは自動で追加されます。",
     enableAfterSave: "保存後に有効化",
     enableAfterSaveHint: "保存したスケジュールで自動実行",
     savePausedHint: "一時停止で保存し、準備後に有効化",
     saving: "保存中…",
     save: "自動化を保存",
-    kind: { custom: "カスタムタスク", tests: "テスト", dependencies: "依存関係チェック", "issue-triage": "Issue トリアージ" },
+    kind: {
+      custom: "カスタムタスク",
+      tests: "テスト",
+      dependencies: "依存関係チェック",
+      "issue-triage": "Issue トリアージ",
+    },
     kindDescription: {
       custom: "任意の反復タスクや確認目標を定義",
       tests: "テストを実行して失敗箇所を特定",
@@ -1746,8 +1735,21 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
       "issue-triage": "Issue トリアージ",
     },
     cadenceLabel: { daily: "毎日", weekdays: "平日", weekly: "毎週" },
-    status: { running: "実行中", succeeded: "正常", attention: "要確認", failed: "失敗" },
-    weekdays: ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"],
+    status: {
+      running: "実行中",
+      succeeded: "正常",
+      attention: "要確認",
+      failed: "失敗",
+    },
+    weekdays: [
+      "日曜日",
+      "月曜日",
+      "火曜日",
+      "水曜日",
+      "木曜日",
+      "金曜日",
+      "土曜日",
+    ],
   },
   ko: {
     title: "자동화",
@@ -1763,7 +1765,8 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     templateOptional: "선택 사항이며 작업 내용을 제한하지 않습니다",
     browseTemplates: "작업 템플릿 보기",
     templateCount: "20가지 일반 워크플로",
-    safetyNote: "자동화는 읽기 전용으로 실행되며 저장소나 외부 시스템을 수정하지 않습니다.",
+    safetyNote:
+      "자동화는 읽기 전용으로 실행되며 저장소나 외부 시스템을 수정하지 않습니다.",
     overviewStatus: "현재 상태",
     runningNormally: "정상 실행 중",
     allPaused: "모든 자동화 일시 중지",
@@ -1788,7 +1791,8 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     cancel: "취소",
     dismiss: "닫기",
     editAutomation: "자동화 편집",
-    editorDescription: "일정과 Agent에 전달할 읽기 전용 검사 지침을 설정합니다.",
+    editorDescription:
+      "일정과 Agent에 전달할 읽기 전용 검사 지침을 설정합니다.",
     type: "유형",
     typeHint: "템플릿을 선택한 뒤 프로젝트에 맞게 조정하세요",
     taskDetails: "작업 내용",
@@ -1806,7 +1810,12 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
     savePausedHint: "일시 중지 상태로 저장하고 나중에 활성화",
     saving: "저장 중…",
     save: "자동화 저장",
-    kind: { custom: "사용자 지정 작업", tests: "테스트", dependencies: "의존성 검사", "issue-triage": "Issue 분류" },
+    kind: {
+      custom: "사용자 지정 작업",
+      tests: "테스트",
+      dependencies: "의존성 검사",
+      "issue-triage": "Issue 분류",
+    },
     kindDescription: {
       custom: "반복 작업이나 검토 목표를 자유롭게 정의",
       tests: "프로젝트 테스트 실행 및 실패 위치 확인",
@@ -1820,7 +1829,20 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
       "issue-triage": "Issue 분류",
     },
     cadenceLabel: { daily: "매일", weekdays: "평일", weekly: "매주" },
-    status: { running: "실행 중", succeeded: "정상", attention: "확인 필요", failed: "실패" },
-    weekdays: ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"],
+    status: {
+      running: "실행 중",
+      succeeded: "정상",
+      attention: "확인 필요",
+      failed: "실패",
+    },
+    weekdays: [
+      "일요일",
+      "월요일",
+      "화요일",
+      "수요일",
+      "목요일",
+      "금요일",
+      "토요일",
+    ],
   },
 };

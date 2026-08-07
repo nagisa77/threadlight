@@ -68,13 +68,13 @@ describe("expanded composer layout", () => {
       /\.composer-wrap\s*\{[^}]*container:\s*composer-shell \/ inline-size;/s,
     );
     expect(styles).toMatch(
-      /@container composer-shell \(max-width: 720px\)\s*\{[\s\S]*?\.composer:not\(:focus-within\):not\(\.is-recording\):not\(\.has-context\)\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) var\(--composer-control-size\);/s,
+      /@container composer-shell \(max-width: 720px\)\s*\{[\s\S]*?\.composer:not\(:focus-within\):not\(\.is-recording\):not\(\.has-context\)[^{]*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*minmax\(0, 1fr\) var\(--composer-control-size\);/s,
     );
     expect(styles).not.toMatch(
       /@media \(hover: none\) and \(pointer: coarse\)\s*\{\s*@container composer-shell/,
     );
     expect(styles).toMatch(
-      /\.composer:not\(:focus-within\):not\(\.is-recording\):not\(\.has-context\)\s*textarea\s*\{[^}]*height:\s*24px !important;[^}]*max-height:\s*24px;[^}]*line-height:\s*24px;/s,
+      /\.composer:not\(:focus-within\):not\(\.is-recording\):not\(\.has-context\)[^{]*textarea\s*\{[^}]*height:\s*24px !important;[^}]*max-height:\s*24px;[^}]*line-height:\s*24px;/s,
     );
     expect(styles).toMatch(
       /\.composer-toolbar-end\s*> :not\(\.send\)\s*\{[^}]*display:\s*none;/s,

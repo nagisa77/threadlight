@@ -12,17 +12,17 @@ import {
   X,
 } from "lucide-react";
 
-import { useI18n } from "../i18n.js";
-import type { ConversationProgress } from "../session.js";
+import { useI18n } from "../../i18n.js";
+import type { ConversationProgress } from "./session.js";
 import type {
   ComputerPermissionCapability,
   ComputerPermissionSnapshot,
   ComputerShareSnapshot,
-} from "../app.js";
+} from "./computer-types.js";
 import type {
   ConversationChangesSnapshot,
   WorkspaceFileOpenRequest,
-} from "../workspace-panel.js";
+} from "../../workspace-panel.js";
 
 export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
   "exec_command",

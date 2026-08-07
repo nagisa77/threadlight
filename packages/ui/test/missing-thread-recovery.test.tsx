@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { MissingThreadRecovery } from "../src/features/conversation-content.js";
-import { DeleteConversationDialog } from "../src/features/project-dialogs.js";
+import { MissingThreadRecovery } from "../src/features/task-session/conversation-content.js";
+import { DeleteConversationDialog } from "../src/features/navigation/project-dialogs.js";
 
 describe("missing task recovery", () => {
   it("offers explicit repair, relink, and metadata-only removal actions", () => {

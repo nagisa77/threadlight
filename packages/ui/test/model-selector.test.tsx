@@ -15,7 +15,7 @@ import {
 import type { Translate } from "../src/i18n.js";
 
 const selectorSource = readFileSync(
-  new URL("../src/model-selector.tsx", import.meta.url),
+  new URL("../src/features/composer/model-selector.tsx", import.meta.url),
   "utf8",
 );
 

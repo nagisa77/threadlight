@@ -175,6 +175,21 @@ describe("ThreadlightApp", () => {
     client.dispose();
   });
 
+  it("uses an explicit initial language while remote settings load", () => {
+    const client = new ThreadlightClient({
+      send: vi.fn(),
+      onMessage: () => () => undefined,
+    });
+
+    const html = renderToStaticMarkup(
+      <ThreadlightApp client={client} initialLanguage="en" />,
+    );
+
+    expect(html).toContain('aria-label="Hide sidebar"');
+    expect(html).not.toContain('aria-label="隐藏侧边栏"');
+    client.dispose();
+  });
+
   it("combines runtime status and remote entry into one compact row", () => {
     const html = renderToStaticMarkup(
       <RuntimeStatusControl

@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   CheckCircle2,
@@ -24,6 +18,7 @@ import {
 import type { HostProjectDiagnosticBundle } from "@threadlight/protocol";
 
 import { useI18n } from "./i18n.js";
+import { Dialog } from "./dialog.js";
 
 export interface ModelStepDiagnostic {
   step: number;
@@ -391,197 +386,178 @@ export function DiagnosticExportDialog({
   const selected = new Set(selectedIds);
   const canExport = scope === "project" || selectedIds.length > 0;
 
-  useEffect(() => {
-    dialog.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel]);
-
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
+    <Dialog
+      className="diagnostics-export-dialog"
+      aria-labelledby="diagnostics-export-title"
+      aria-describedby="diagnostics-export-description"
+      aria-busy={busy}
+      panelRef={dialog}
+      initialFocusRef={dialog}
+      dismissDisabled={busy}
+      onClose={onCancel}
     >
-      <section
-        ref={dialog}
-        className="diagnostics-export-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="diagnostics-export-title"
-        aria-describedby="diagnostics-export-description"
-        aria-busy={busy}
-        tabIndex={-1}
-      >
-        <header className="diagnostics-export-dialog-header">
-          <span className="diagnostics-export-dialog-icon" aria-hidden="true">
-            <Download size={17} />
-          </span>
-          <div>
-            <h2 id="diagnostics-export-title">{t("exportDiagnosticBundle")}</h2>
-            <p id="diagnostics-export-description">
-              {t("diagnosticExportDialogDescription", {
-                project: projectName,
-              })}
-            </p>
-          </div>
-          <button
-            type="button"
-            className="diagnostics-export-close pressable"
-            aria-label={t("close")}
-            title={t("close")}
-            disabled={busy}
-            onClick={onCancel}
-          >
-            <X size={15} />
-          </button>
-        </header>
-
-        <div
-          className="diagnostics-export-scopes"
-          role="group"
-          aria-label={t("diagnosticExportScope")}
+      <header className="diagnostics-export-dialog-header">
+        <span className="diagnostics-export-dialog-icon" aria-hidden="true">
+          <Download size={17} />
+        </span>
+        <div>
+          <h2 id="diagnostics-export-title">{t("exportDiagnosticBundle")}</h2>
+          <p id="diagnostics-export-description">
+            {t("diagnosticExportDialogDescription", {
+              project: projectName,
+            })}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="diagnostics-export-close pressable"
+          aria-label={t("close")}
+          title={t("close")}
+          disabled={busy}
+          onClick={onCancel}
         >
-          <button
-            type="button"
-            className={scope === "project" ? "active" : undefined}
-            aria-pressed={scope === "project"}
-            disabled={busy}
-            onClick={() => onScopeChange("project")}
-          >
-            <FolderArchive size={16} aria-hidden="true" />
-            <span>
-              <strong>{t("entireProject")}</strong>
-              <small>
-                {t("entireProjectDiagnosticDescription", {
-                  count: conversations.length,
-                })}
-              </small>
-            </span>
-          </button>
-          <button
-            type="button"
-            className={scope === "conversations" ? "active" : undefined}
-            aria-pressed={scope === "conversations"}
-            disabled={busy || conversations.length === 0}
-            onClick={() => onScopeChange("conversations")}
-          >
-            <MessageSquare size={16} aria-hidden="true" />
-            <span>
-              <strong>{t("selectedConversations")}</strong>
-              <small>{t("selectedConversationsDiagnosticDescription")}</small>
-            </span>
-          </button>
-        </div>
+          <X size={15} />
+        </button>
+      </header>
 
-        {scope === "conversations" && (
-          <div className="diagnostics-conversation-picker">
-            <div className="diagnostics-conversation-toolbar">
-              <label>
-                <Search size={14} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={query}
-                  placeholder={t("searchConversations")}
-                  aria-label={t("searchConversations")}
-                  disabled={busy}
-                  onChange={(event) => onQueryChange(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                disabled={busy || conversations.length === 0}
-                onClick={onSelectAll}
-              >
-                {selectedIds.length === conversations.length
-                  ? t("deselectAll")
-                  : t("selectAll")}
-              </button>
-            </div>
-            <div className="diagnostics-conversation-list">
-              {filteredConversations.length ? (
-                filteredConversations.map((conversation) => (
-                  <label
-                    className={selected.has(conversation.id) ? "selected" : undefined}
-                    key={conversation.id}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected.has(conversation.id)}
-                      disabled={busy}
-                      onChange={() => onToggle(conversation.id)}
-                    />
-                    <span>
-                      <strong>{conversation.title}</strong>
-                      <small>
-                        {new Intl.DateTimeFormat(language, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        }).format(new Date(conversation.updatedAt))}
-                        {" · "}
-                        {conversation.id}
-                      </small>
-                    </span>
-                  </label>
-                ))
-              ) : (
-                <div className="diagnostics-conversation-empty">
-                  {t("noMatchingConversations")}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="diagnostics-export-dialog-notice">
-          <ShieldCheck size={15} aria-hidden="true" />
-          <span>{t("diagnosticCompleteRecordNotice")}</span>
-        </div>
-        {error && (
-          <div className="diagnostics-export-dialog-error" role="alert">
-            {error}
-          </div>
-        )}
-        <footer className="diagnostics-export-dialog-actions">
+      <div
+        className="diagnostics-export-scopes"
+        role="group"
+        aria-label={t("diagnosticExportScope")}
+      >
+        <button
+          type="button"
+          className={scope === "project" ? "active" : undefined}
+          aria-pressed={scope === "project"}
+          disabled={busy}
+          onClick={() => onScopeChange("project")}
+        >
+          <FolderArchive size={16} aria-hidden="true" />
           <span>
-            {scope === "conversations"
-              ? t("conversationsSelected", { count: selectedIds.length })
-              : t("allConversationsSelected", { count: conversations.length })}
+            <strong>{t("entireProject")}</strong>
+            <small>
+              {t("entireProjectDiagnosticDescription", {
+                count: conversations.length,
+              })}
+            </small>
           </span>
-          <button
-            type="button"
-            className="diagnostics-export-cancel pressable"
-            disabled={busy}
-            onClick={onCancel}
-          >
-            {t("cancel")}
-          </button>
-          <button
-            type="button"
-            className="diagnostics-export-confirm pressable"
-            disabled={busy || !canExport}
-            onClick={onExport}
-          >
-            {busy ? (
-              <LoaderCircle className="spin" size={14} />
+        </button>
+        <button
+          type="button"
+          className={scope === "conversations" ? "active" : undefined}
+          aria-pressed={scope === "conversations"}
+          disabled={busy || conversations.length === 0}
+          onClick={() => onScopeChange("conversations")}
+        >
+          <MessageSquare size={16} aria-hidden="true" />
+          <span>
+            <strong>{t("selectedConversations")}</strong>
+            <small>{t("selectedConversationsDiagnosticDescription")}</small>
+          </span>
+        </button>
+      </div>
+
+      {scope === "conversations" && (
+        <div className="diagnostics-conversation-picker">
+          <div className="diagnostics-conversation-toolbar">
+            <label>
+              <Search size={14} aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                placeholder={t("searchConversations")}
+                aria-label={t("searchConversations")}
+                disabled={busy}
+                onChange={(event) => onQueryChange(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy || conversations.length === 0}
+              onClick={onSelectAll}
+            >
+              {selectedIds.length === conversations.length
+                ? t("deselectAll")
+                : t("selectAll")}
+            </button>
+          </div>
+          <div className="diagnostics-conversation-list">
+            {filteredConversations.length ? (
+              filteredConversations.map((conversation) => (
+                <label
+                  className={
+                    selected.has(conversation.id) ? "selected" : undefined
+                  }
+                  key={conversation.id}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(conversation.id)}
+                    disabled={busy}
+                    onChange={() => onToggle(conversation.id)}
+                  />
+                  <span>
+                    <strong>{conversation.title}</strong>
+                    <small>
+                      {new Intl.DateTimeFormat(language, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      }).format(new Date(conversation.updatedAt))}
+                      {" · "}
+                      {conversation.id}
+                    </small>
+                  </span>
+                </label>
+              ))
             ) : (
-              <Download size={14} />
+              <div className="diagnostics-conversation-empty">
+                {t("noMatchingConversations")}
+              </div>
             )}
-            {busy
-              ? t("exportingDiagnosticBundle")
-              : t("exportDiagnosticBundle")}
-          </button>
-        </footer>
-      </section>
-    </div>
+          </div>
+        </div>
+      )}
+
+      <div className="diagnostics-export-dialog-notice">
+        <ShieldCheck size={15} aria-hidden="true" />
+        <span>{t("diagnosticCompleteRecordNotice")}</span>
+      </div>
+      {error && (
+        <div className="diagnostics-export-dialog-error" role="alert">
+          {error}
+        </div>
+      )}
+      <footer className="diagnostics-export-dialog-actions">
+        <span>
+          {scope === "conversations"
+            ? t("conversationsSelected", { count: selectedIds.length })
+            : t("allConversationsSelected", { count: conversations.length })}
+        </span>
+        <button
+          type="button"
+          className="diagnostics-export-cancel pressable"
+          disabled={busy}
+          onClick={onCancel}
+        >
+          {t("cancel")}
+        </button>
+        <button
+          type="button"
+          className="diagnostics-export-confirm pressable"
+          disabled={busy || !canExport}
+          onClick={onExport}
+        >
+          {busy ? (
+            <LoaderCircle className="spin" size={14} />
+          ) : (
+            <Download size={14} />
+          )}
+          {busy ? t("exportingDiagnosticBundle") : t("exportDiagnosticBundle")}
+        </button>
+      </footer>
+    </Dialog>
   );
 }
 

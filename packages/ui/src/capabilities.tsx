@@ -29,6 +29,7 @@ import {
 } from "react";
 
 import { useI18n } from "./i18n.js";
+import { Dialog } from "./dialog.js";
 
 export interface CapabilityQuery {
   start: number;
@@ -88,9 +89,7 @@ export function filterCapabilities(
         ...(capability.keywords ?? []),
       ]
         .filter(Boolean)
-        .some((value) =>
-          value!.toLocaleLowerCase().includes(normalized),
-        );
+        .some((value) => value!.toLocaleLowerCase().includes(normalized));
     })
     .sort((left, right) => {
       if (left.kind === right.kind) return 0;
@@ -174,10 +173,7 @@ export function CapabilityChips({
   const { t } = useI18n();
   if (capabilities.length === 0) return null;
   return (
-    <div
-      className="capability-chips"
-      aria-label={t("selectedCapabilities")}
-    >
+    <div className="capability-chips" aria-label={t("selectedCapabilities")}>
       {capabilities.map((capability) => (
         <span className="capability-chip" key={capability.id}>
           <CapabilityIcon icon={capability.icon} kind={capability.kind} />
@@ -249,14 +245,9 @@ export function MessageCapabilityReceipts({
       {resolved.map((capability) => (
         <span className="message-capability-receipt" key={capability.id}>
           <span className="message-capability-icon" aria-hidden="true">
-            <CapabilityIcon
-              icon={capability.icon}
-              kind={capability.kind}
-            />
+            <CapabilityIcon icon={capability.icon} kind={capability.kind} />
           </span>
-          <span className="message-capability-name">
-            {capability.name}
-          </span>
+          <span className="message-capability-name">{capability.name}</span>
           <span className="message-capability-status">
             {role === "user"
               ? t("selectedForTurn")
@@ -331,13 +322,9 @@ export function CapabilityMenu({
         </div>
       )}
       {loading && capabilities.length === 0 ? (
-        <p className="capability-menu-empty">
-          {t("loadingCapabilities")}
-        </p>
+        <p className="capability-menu-empty">{t("loadingCapabilities")}</p>
       ) : empty ? (
-        <p className="capability-menu-empty">
-          {t("noMatchingCapabilities")}
-        </p>
+        <p className="capability-menu-empty">{t("noMatchingCapabilities")}</p>
       ) : (
         (["tool", "skill"] as const).map((kind) => {
           const grouped = capabilities
@@ -382,9 +369,9 @@ export function CapabilityMenu({
                       ? t("capabilityNeedsConfiguration")
                       : capability.status === "needs_authorization"
                         ? t("capabilityNeedsAuthorization")
-                      : kind === "skill"
-                        ? t("capabilityKindSkill")
-                        : t("capabilityKindTool")}
+                        : kind === "skill"
+                          ? t("capabilityKindSkill")
+                          : t("capabilityKindTool")}
                   </span>
                 </button>
               ))}
@@ -419,16 +406,6 @@ export function ConnectorSetupDialog({
   const firstField = useRef<HTMLInputElement>(null);
   const continueButton = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    if (status.configured) continueButton.current?.focus();
-    else firstField.current?.focus();
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape" && !busy) onCancel();
-    }
-    window.addEventListener("keydown", handleEscape);
-    return () => window.removeEventListener("keydown", handleEscape);
-  }, [busy, onCancel, status.configured]);
-
   function submit(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -436,149 +413,138 @@ export function ConnectorSetupDialog({
   }
 
   return (
-    <div
-      className="dialog-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
-      }}
+    <Dialog
+      className="connector-dialog"
+      aria-labelledby="connector-dialog-title"
+      aria-describedby="connector-dialog-description"
+      initialFocusRef={status.configured ? continueButton : firstField}
+      dismissDisabled={busy}
+      onClose={onCancel}
     >
-      <section
-        className="connector-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="connector-dialog-title"
-        aria-describedby="connector-dialog-description"
-      >
-        <div className="connector-dialog-heading">
-          <span className="connector-dialog-icon" aria-hidden="true">
-            <CapabilityIcon icon={capability.icon} kind="tool" />
-          </span>
-          <div>
-            <h2 id="connector-dialog-title">
+      <div className="connector-dialog-heading">
+        <span className="connector-dialog-icon" aria-hidden="true">
+          <CapabilityIcon icon={capability.icon} kind="tool" />
+        </span>
+        <div>
+          <h2 id="connector-dialog-title">
+            {status.authorized
+              ? t("manageCapabilityConnection", {
+                  name: capability.name,
+                })
+              : t("connectCapability", { name: capability.name })}
+          </h2>
+          <p id="connector-dialog-description">
+            {status.authorized
+              ? t("connectorConnectedDescription")
+              : status.configured
+                ? t("connectorAuthorizationDescription")
+                : t("connectorConfigurationDescription")}
+          </p>
+        </div>
+      </div>
+      <form onSubmit={submit}>
+        {!status.configured && (
+          <div className="connector-fields">
+            <label>
+              <span>{t("oauthClientId")}</span>
+              <input
+                ref={firstField}
+                value={clientId}
+                onChange={(event) => setClientId(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                required
+                disabled={busy}
+              />
+            </label>
+            <label>
+              <span>{t("oauthClientSecret")}</span>
+              <input
+                type="password"
+                value={clientSecret}
+                onChange={(event) => setClientSecret(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
+                required
+                disabled={busy}
+              />
+            </label>
+            <label>
+              <span>{t("oauthRedirectUri")}</span>
+              <input
+                className="connector-redirect"
+                value={status.redirectUrl}
+                readOnly
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </label>
+            <p className="connector-help">{t("connectorConfigurationHelp")}</p>
+          </div>
+        )}
+        {status.configured && (
+          <div className="connector-authorize-note">
+            <p>
               {status.authorized
-                ? t("manageCapabilityConnection", {
-                    name: capability.name,
-                  })
-                : t("connectCapability", { name: capability.name })}
-            </h2>
-            <p id="connector-dialog-description">
-              {status.authorized
-                ? t("connectorConnectedDescription")
-                : status.configured
-                  ? t("connectorAuthorizationDescription")
-                  : t("connectorConfigurationDescription")}
+                ? t("connectorConnectedNotice")
+                : t("connectorBrowserNotice")}
             </p>
           </div>
-        </div>
-        <form onSubmit={submit}>
-          {!status.configured && (
-            <div className="connector-fields">
-              <label>
-                <span>{t("oauthClientId")}</span>
-                <input
-                  ref={firstField}
-                  value={clientId}
-                  onChange={(event) => setClientId(event.target.value)}
-                  autoComplete="off"
-                  spellCheck={false}
-                  required
-                  disabled={busy}
-                />
-              </label>
-              <label>
-                <span>{t("oauthClientSecret")}</span>
-                <input
-                  type="password"
-                  value={clientSecret}
-                  onChange={(event) =>
-                    setClientSecret(event.target.value)
-                  }
-                  autoComplete="off"
-                  spellCheck={false}
-                  required
-                  disabled={busy}
-                />
-              </label>
-              <label>
-                <span>{t("oauthRedirectUri")}</span>
-                <input
-                  className="connector-redirect"
-                  value={status.redirectUrl}
-                  readOnly
-                  onFocus={(event) => event.currentTarget.select()}
-                />
-              </label>
-              <p className="connector-help">
-                {t("connectorConfigurationHelp")}
-              </p>
-            </div>
-          )}
+        )}
+        {error && (
+          <p className="connector-dialog-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="connector-dialog-actions">
           {status.configured && (
-            <div className="connector-authorize-note">
-              <p>
-                {status.authorized
-                  ? t("connectorConnectedNotice")
-                  : t("connectorBrowserNotice")}
-              </p>
-            </div>
-          )}
-          {error && (
-            <p className="connector-dialog-error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="connector-dialog-actions">
-            {status.configured && (
-              <button
-                type="button"
-                className="dialog-button quiet-danger pressable"
-                disabled={busy}
-                onClick={onDisconnect}
-              >
-                {t("disconnect")}
-              </button>
-            )}
             <button
               type="button"
-              className="dialog-button secondary pressable"
+              className="dialog-button quiet-danger pressable"
+              disabled={busy}
+              onClick={onDisconnect}
+            >
+              {t("disconnect")}
+            </button>
+          )}
+          <button
+            type="button"
+            className="dialog-button secondary pressable"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {t("cancel")}
+          </button>
+          {status.authorized ? (
+            <button
+              ref={continueButton}
+              type="button"
+              className="dialog-button primary pressable"
               disabled={busy}
               onClick={onCancel}
             >
-              {t("cancel")}
+              {t("done")}
             </button>
-            {status.authorized ? (
-              <button
-                ref={continueButton}
-                type="button"
-                className="dialog-button primary pressable"
-                disabled={busy}
-                onClick={onCancel}
-              >
-                {t("done")}
-              </button>
-            ) : (
-              <button
-                ref={continueButton}
-                type="submit"
-                className="dialog-button primary pressable"
-                disabled={
-                  busy ||
-                  (!status.configured &&
-                    (!clientId.trim() || !clientSecret))
-                }
-              >
-                {busy && <LoaderCircle className="spin" size={14} />}
-                {busy
-                  ? t("waitingForAuthorization")
-                  : status.configured
-                    ? t("continueToAuthorization")
-                    : t("configureAndConnect")}
-              </button>
-            )}
-          </div>
-        </form>
-      </section>
-    </div>
+          ) : (
+            <button
+              ref={continueButton}
+              type="submit"
+              className="dialog-button primary pressable"
+              disabled={
+                busy ||
+                (!status.configured && (!clientId.trim() || !clientSecret))
+              }
+            >
+              {busy && <LoaderCircle className="spin" size={14} />}
+              {busy
+                ? t("waitingForAuthorization")
+                : status.configured
+                  ? t("continueToAuthorization")
+                  : t("configureAndConnect")}
+            </button>
+          )}
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -594,12 +560,7 @@ function MenuFrame({
   children: ReactNode;
 }) {
   return (
-    <div
-      id={id}
-      className="capability-menu"
-      role="listbox"
-      aria-label={title}
-    >
+    <div id={id} className="capability-menu" role="listbox" aria-label={title}>
       <div className="capability-menu-heading">
         {icon}
         <span>{title}</span>

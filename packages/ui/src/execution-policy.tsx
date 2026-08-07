@@ -20,6 +20,8 @@ import {
 import type { ConversationAccessMode } from "@threadlight/protocol";
 
 import { useI18n, type Language } from "./i18n.js";
+import { Dialog } from "./dialog.js";
+import { activateComposerMenuOnPointerDown } from "./features/composer/controller.js";
 import {
   ActionPopover,
   ActionPopoverHeading,
@@ -61,9 +63,7 @@ export interface ExecutionPolicySnapshot {
 }
 
 export interface ExecutionPolicyAdapter {
-  subscribe(
-    listener: (request: ExecutionApprovalRequest) => void,
-  ): () => void;
+  subscribe(listener: (request: ExecutionApprovalRequest) => void): () => void;
   subscribeResolved(listener: (requestId: string) => void): () => void;
   respond(
     requestId: string,
@@ -165,7 +165,8 @@ const copy = {
     forever: "Always allow in project",
     foreverBody: "Similar operations in this project",
     hint: "Only similar operations are granted. Destructive actions stay blocked.",
-    standaloneHint: "Tasks outside a project do not offer permanent cross-task grants.",
+    standaloneHint:
+      "Tasks outside a project do not offer permanent cross-task grants.",
     safety: "Safe execution",
     subtitle: "Control what the agent may do in this project.",
     readTitle: "Read-only actions",
@@ -173,18 +174,22 @@ const copy = {
     writeTitle: "Write actions",
     writeBody: "Ask first, with once, task, and project scopes.",
     destructiveTitle: "Destructive actions",
-    destructiveBody: "Always block deletion, forced resets, and repository cleanup.",
+    destructiveBody:
+      "Always block deletion, forced resets, and repository cleanup.",
     grants: "Permanent project grants",
     noGrants: "No permanent grants yet. Threadlight asks before writing.",
     revoke: "Revoke grant",
     loadError: "Could not load the safety policy",
     access: "Access permissions",
     requestApproval: "Request approval",
-    requestApprovalBody: "Ask before writes and external access; block destructive actions.",
+    requestApprovalBody:
+      "Ask before writes and external access; block destructive actions.",
     fullAccess: "Full access",
-    fullAccessBody: "Bypass safe execution for this conversation and use tools without restrictions.",
+    fullAccessBody:
+      "Bypass safe execution for this conversation and use tools without restrictions.",
     accessUpdateError: "Could not update this conversation's access",
-    respondError: "Could not submit approval. Check the Host connection and retry.",
+    respondError:
+      "Could not submit approval. Check the Host connection and retry.",
   },
   ja: {
     title: "書き込み権限が必要です",
@@ -201,7 +206,8 @@ const copy = {
     forever: "このプロジェクトで常に許可",
     foreverBody: "このプロジェクト内の同種の操作",
     hint: "同種の操作だけを許可します。破壊的操作は常に禁止されます。",
-    standaloneHint: "プロジェクト外のタスクでは、タスクをまたぐ恒久的な許可は利用できません。",
+    standaloneHint:
+      "プロジェクト外のタスクでは、タスクをまたぐ恒久的な許可は利用できません。",
     safety: "安全な実行",
     subtitle: "このプロジェクトで Agent が実行できる操作を管理します。",
     readTitle: "読み取り専用",
@@ -209,18 +215,22 @@ const copy = {
     writeTitle: "書き込み",
     writeBody: "実行前に確認し、今回・タスク・プロジェクト単位で許可できます。",
     destructiveTitle: "破壊的操作",
-    destructiveBody: "削除、強制リセット、リポジトリのクリーンを常に禁止します。",
+    destructiveBody:
+      "削除、強制リセット、リポジトリのクリーンを常に禁止します。",
     grants: "プロジェクトの恒久的な許可",
     noGrants: "恒久的な許可はありません。書き込み前に確認します。",
     revoke: "許可を取り消す",
     loadError: "安全ポリシーを読み込めませんでした",
     access: "アクセス権限",
     requestApproval: "承認をリクエスト",
-    requestApprovalBody: "書き込みや外部アクセスの前に確認し、破壊的操作を禁止します。",
+    requestApprovalBody:
+      "書き込みや外部アクセスの前に確認し、破壊的操作を禁止します。",
     fullAccess: "フルアクセス",
-    fullAccessBody: "この会話では安全な実行を迂回し、制限なくツールを使用します。",
+    fullAccessBody:
+      "この会話では安全な実行を迂回し、制限なくツールを使用します。",
     accessUpdateError: "この会話のアクセス権限を更新できませんでした",
-    respondError: "承認を送信できません。Host 接続を確認して再試行してください。",
+    respondError:
+      "承認を送信できません。Host 接続を確認して再試行してください。",
   },
   ko: {
     title: "쓰기 권한 필요",
@@ -237,7 +247,8 @@ const copy = {
     forever: "이 프로젝트에서 항상 허용",
     foreverBody: "이 프로젝트의 유사한 작업",
     hint: "같은 종류의 작업만 허용하며 파괴적 작업은 계속 차단됩니다.",
-    standaloneHint: "프로젝트 외부 작업에서는 작업 간 영구 권한을 제공하지 않습니다.",
+    standaloneHint:
+      "프로젝트 외부 작업에서는 작업 간 영구 권한을 제공하지 않습니다.",
     safety: "안전한 실행",
     subtitle: "이 프로젝트에서 Agent가 수행할 수 있는 작업을 관리합니다.",
     readTitle: "읽기 전용 작업",
@@ -254,9 +265,11 @@ const copy = {
     requestApproval: "승인 요청",
     requestApprovalBody: "쓰기와 외부 접근 전에 묻고 파괴적 작업은 차단합니다.",
     fullAccess: "전체 접근",
-    fullAccessBody: "이 대화에서는 안전 실행을 우회하고 제한 없이 도구를 사용합니다.",
+    fullAccessBody:
+      "이 대화에서는 안전 실행을 우회하고 제한 없이 도구를 사용합니다.",
     accessUpdateError: "이 대화의 접근 권한을 업데이트할 수 없습니다",
-    respondError: "승인을 제출할 수 없습니다. Host 연결을 확인한 후 다시 시도하세요.",
+    respondError:
+      "승인을 제출할 수 없습니다. Host 연결을 확인한 후 다시 시도하세요.",
   },
 } satisfies Record<Language, Record<string, string>>;
 
@@ -298,6 +311,11 @@ export function ConversationAccessControl({
     if (!busy) setPosition(undefined);
   }
 
+  function toggle(fromKeyboard: boolean) {
+    if (position) close();
+    else open(fromKeyboard);
+  }
+
   async function select(nextMode: ConversationAccessMode) {
     if (busy) return;
     if (nextMode === mode) {
@@ -331,7 +349,12 @@ export function ConversationAccessControl({
         }`}
         disabled={disabled || busy}
         title={labels.access}
-        onClick={(event) => (position ? close() : open(event.detail === 0))}
+        onPointerDown={(event) =>
+          activateComposerMenuOnPointerDown(event, () => toggle(false))
+        }
+        onClick={(event) => {
+          if (event.detail === 0) toggle(true);
+        }}
       >
         {busy ? (
           <LoaderCircle className="spin" size={15} />
@@ -529,13 +552,6 @@ export function ExecutionApprovalGate({
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      void respond("deny", "once");
-    }
-  };
-
   const selectScopeWithKeyboard = (
     event: KeyboardEvent<HTMLButtonElement>,
     current: ExecutionApprovalScope,
@@ -552,8 +568,7 @@ export function ExecutionApprovalGate({
     const index = availableScopes.indexOf(current);
     const next =
       availableScopes[
-        (index + direction + availableScopes.length) %
-          availableScopes.length
+        (index + direction + availableScopes.length) % availableScopes.length
       ]!;
     setScope(next);
     const option = event.currentTarget.parentElement?.querySelector(
@@ -563,125 +578,118 @@ export function ExecutionApprovalGate({
   };
 
   return (
-    <div
-      className="execution-approval-backdrop"
-      role="presentation"
-      onKeyDown={onKeyDown}
+    <Dialog
+      backdropClassName="execution-approval-backdrop"
+      className="execution-approval-dialog"
+      role="alertdialog"
+      aria-labelledby="execution-approval-title"
+      aria-describedby="execution-approval-summary"
+      initialFocusRef={allowButton}
+      closeOnBackdrop={false}
+      dismissDisabled={busy}
+      onClose={() => void respond("deny", "once")}
     >
-      <section
-        className="execution-approval-dialog"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="execution-approval-title"
-        aria-describedby="execution-approval-summary"
-      >
-        <div className="execution-approval-heading">
-          <span className="execution-approval-icon">
-            <LockKeyhole size={18} />
-          </span>
-          <div>
-            <h2 id="execution-approval-title">{labels.title}</h2>
-            <p id="execution-approval-summary">{request.summary}</p>
-          </div>
-          {queue.length > 1 ? (
-            <span className="execution-approval-count">+{queue.length - 1}</span>
-          ) : null}
+      <div className="execution-approval-heading">
+        <span className="execution-approval-icon">
+          <LockKeyhole size={18} />
+        </span>
+        <div>
+          <h2 id="execution-approval-title">{labels.title}</h2>
+          <p id="execution-approval-summary">{request.summary}</p>
         </div>
-
-        <dl className="execution-approval-meta">
-          <div>
-            <dt>{labels.project}</dt>
-            <dd>{request.projectName}</dd>
-          </div>
-          <div>
-            <dt>{labels.tool}</dt>
-            <dd>{request.toolName}</dd>
-          </div>
-        </dl>
-        {request.detail ? (
-          <pre className="execution-approval-detail">{request.detail}</pre>
+        {queue.length > 1 ? (
+          <span className="execution-approval-count">+{queue.length - 1}</span>
         ) : null}
-        {request.external ? (
-          <p className="execution-approval-external">
-            <ExternalLink size={13} />
-            {labels.external}
+      </div>
+
+      <dl className="execution-approval-meta">
+        <div>
+          <dt>{labels.project}</dt>
+          <dd>{request.projectName}</dd>
+        </div>
+        <div>
+          <dt>{labels.tool}</dt>
+          <dd>{request.toolName}</dd>
+        </div>
+      </dl>
+      {request.detail ? (
+        <pre className="execution-approval-detail">{request.detail}</pre>
+      ) : null}
+      {request.external ? (
+        <p className="execution-approval-external">
+          <ExternalLink size={13} />
+          {labels.external}
+        </p>
+      ) : null}
+      <div className="execution-approval-scope-picker">
+        <div className="execution-approval-scope-heading">
+          <span>{labels.scope}</span>
+          <p className="execution-approval-hint">
+            {request.projectScopeAvailable === false
+              ? labels.standaloneHint
+              : labels.hint}
+          </p>
+        </div>
+        <div
+          className={`execution-approval-scope-options ${
+            scopeOptions.length === 2 ? "two" : ""
+          }`}
+          role="radiogroup"
+          aria-label={labels.scope}
+        >
+          {scopeOptions.map(([value, title, body]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={scope === value}
+              data-scope={value}
+              tabIndex={scope === value ? 0 : -1}
+              className={`execution-approval-scope-option pressable ${
+                scope === value ? "selected" : ""
+              }`}
+              disabled={busy}
+              onClick={() => setScope(value)}
+              onKeyDown={(event) => selectScopeWithKeyboard(event, value)}
+            >
+              <span className="execution-approval-radio" aria-hidden="true">
+                {scope === value ? <Check size={11} /> : null}
+              </span>
+              <span>
+                <strong>{title}</strong>
+                <small>{body}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="execution-approval-actions">
+        {error ? (
+          <p className="execution-approval-error" role="alert">
+            {error}
           </p>
         ) : null}
-        <div className="execution-approval-scope-picker">
-          <div className="execution-approval-scope-heading">
-            <span>{labels.scope}</span>
-            <p className="execution-approval-hint">
-              {request.projectScopeAvailable === false
-                ? labels.standaloneHint
-                : labels.hint}
-            </p>
-          </div>
-          <div
-            className={`execution-approval-scope-options ${
-              scopeOptions.length === 2 ? "two" : ""
-            }`}
-            role="radiogroup"
-            aria-label={labels.scope}
-          >
-            {scopeOptions.map(([value, title, body]) => (
-              <button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={scope === value}
-                data-scope={value}
-                tabIndex={scope === value ? 0 : -1}
-                className={`execution-approval-scope-option pressable ${
-                  scope === value ? "selected" : ""
-                }`}
-                disabled={busy}
-                onClick={() => setScope(value)}
-                onKeyDown={(event) =>
-                  selectScopeWithKeyboard(event, value)
-                }
-              >
-                <span
-                  className="execution-approval-radio"
-                  aria-hidden="true"
-                >
-                  {scope === value ? <Check size={11} /> : null}
-                </span>
-                <span>
-                  <strong>{title}</strong>
-                  <small>{body}</small>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="execution-approval-actions">
-          {error ? (
-            <p className="execution-approval-error" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <button
-            type="button"
-            className="dialog-button secondary pressable"
-            disabled={busy}
-            onClick={() => void respond("deny", "once")}
-          >
-            {labels.deny}
-          </button>
-          <button
-            ref={allowButton}
-            type="button"
-            className="dialog-button primary execution-approval-primary pressable"
-            disabled={busy}
-            onClick={() => void respond("allow", scope)}
-          >
-            {busy ? <LoaderCircle className="spin" size={13} /> : null}
-            {labels.allow}
-          </button>
-        </div>
-      </section>
-    </div>
+        <button
+          type="button"
+          className="dialog-button secondary pressable"
+          disabled={busy}
+          onClick={() => void respond("deny", "once")}
+        >
+          {labels.deny}
+        </button>
+        <button
+          ref={allowButton}
+          type="button"
+          className="dialog-button primary execution-approval-primary pressable"
+          disabled={busy}
+          onClick={() => void respond("allow", scope)}
+        >
+          {busy ? <LoaderCircle className="spin" size={13} /> : null}
+          {labels.allow}
+        </button>
+      </div>
+    </Dialog>
   );
 }
 
