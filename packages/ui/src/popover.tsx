@@ -9,7 +9,10 @@ import {
 import { createPortal } from "react-dom";
 
 export interface PopoverPosition {
-  top: number;
+  /** Distance from the viewport top to the popover's top edge. */
+  top?: number;
+  /** Distance from the viewport bottom to the popover's bottom edge. */
+  bottom?: number;
   left: number;
   transformOrigin:
     | "top left"
@@ -24,13 +27,14 @@ export function anchoredPopoverPosition(
   },
   options: {
     width: number;
-    height: number;
+    height?: number;
     viewportWidth?: number;
     viewportHeight?: number;
     gap?: number;
     margin?: number;
     align?: "start" | "end";
     placement?: "auto" | "top" | "bottom";
+    pin?: "top" | "bottom";
   },
 ): PopoverPosition {
   const viewportWidth = options.viewportWidth ?? window.innerWidth;
@@ -39,28 +43,56 @@ export function anchoredPopoverPosition(
   const margin = options.margin ?? 8;
   const align = options.align ?? "end";
   const placement = options.placement ?? "auto";
+  const height = options.height ?? 0;
+
+  const desiredLeft =
+    align === "start"
+      ? (bounds.left ?? bounds.right - options.width)
+      : bounds.right - options.width;
+  const left = Math.max(
+    margin,
+    Math.min(
+      viewportWidth - options.width - margin,
+      Math.max(margin, desiredLeft),
+    ),
+  );
+  const origin = (opensBelow: boolean) =>
+    (`${opensBelow ? "top" : "bottom"} ${align === "start" ? "left" : "right"}` as const);
+
+  // Pinned mode anchors one popover edge at a fixed distance from the
+  // trigger, so the menu grows outward without depending on its own height.
+  if (options.pin === "bottom") {
+    const opensAbove = bounds.top - gap - margin >= margin;
+    return {
+      top: opensAbove ? undefined : bounds.bottom + gap,
+      bottom: opensAbove ? viewportHeight - bounds.top + gap : undefined,
+      left,
+      transformOrigin: origin(!opensAbove),
+    };
+  }
+  if (options.pin === "top") {
+    const opensBelow =
+      viewportHeight - bounds.bottom - gap - margin >= margin;
+    return {
+      top: opensBelow ? bounds.bottom + gap : undefined,
+      bottom: opensBelow ? undefined : viewportHeight - bounds.top + gap,
+      left,
+      transformOrigin: origin(opensBelow),
+    };
+  }
+
   const opensBelow =
     placement === "bottom"
       ? true
       : placement === "top"
         ? false
-        : viewportHeight - bounds.bottom >= options.height + gap + margin;
-  const desiredLeft =
-    align === "start"
-      ? (bounds.left ?? bounds.right - options.width)
-      : bounds.right - options.width;
+        : viewportHeight - bounds.bottom >= height + gap + margin;
   return {
     top: opensBelow
       ? bounds.bottom + gap
-      : Math.max(margin, bounds.top - options.height - gap),
-    left: Math.max(
-      margin,
-      Math.min(
-        viewportWidth - options.width - margin,
-        Math.max(margin, desiredLeft),
-      ),
-    ),
-    transformOrigin: `${opensBelow ? "top" : "bottom"} ${align === "start" ? "left" : "right"}`,
+      : Math.max(margin, bounds.top - height - gap),
+    left,
+    transformOrigin: origin(opensBelow),
   };
 }
 
@@ -156,6 +188,7 @@ export function ActionPopover({
 
   const style: CSSProperties = {
     top: position.top,
+    bottom: position.bottom,
     left: position.left,
     transformOrigin: position.transformOrigin,
   };

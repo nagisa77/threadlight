@@ -2054,6 +2054,11 @@
   border-top: 1px solid var(--line);
 }
 
+.model-list {
+  max-height: min(328px, 42vh);
+  overflow-y: auto;
+}
+
 .model-option {
   min-height: 62px;
   align-items: flex-start;

@@ -127,6 +127,84 @@ describe("ActionPopover", () => {
     });
   });
 
+  it("pins a popover's bottom edge above its trigger", () => {
+    expect(
+      anchoredPopoverPosition(
+        { top: 300, right: 260, bottom: 326 },
+        {
+          width: 218,
+          viewportWidth: 800,
+          viewportHeight: 600,
+          align: "end",
+          pin: "bottom",
+        },
+      ),
+    ).toEqual({
+      bottom: 306,
+      left: 42,
+      transformOrigin: "bottom right",
+    });
+  });
+
+  it("pinned positioning ignores estimated height", () => {
+    const trigger = { top: 300, right: 260, bottom: 326 };
+    const short = anchoredPopoverPosition(trigger, {
+      width: 218,
+      height: 120,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      align: "end",
+      pin: "bottom",
+    });
+    const tall = anchoredPopoverPosition(trigger, {
+      width: 218,
+      height: 460,
+      viewportWidth: 800,
+      viewportHeight: 600,
+      align: "end",
+      pin: "bottom",
+    });
+    expect(tall).toEqual(short);
+  });
+
+  it("opens a bottom-pinned popover below its trigger when there is no room above", () => {
+    expect(
+      anchoredPopoverPosition(
+        { top: 10, right: 260, bottom: 36 },
+        {
+          width: 218,
+          viewportWidth: 800,
+          viewportHeight: 600,
+          align: "end",
+          pin: "bottom",
+        },
+      ),
+    ).toEqual({
+      top: 42,
+      left: 42,
+      transformOrigin: "top right",
+    });
+  });
+
+  it("pins a popover's top edge below its trigger when asked", () => {
+    expect(
+      anchoredPopoverPosition(
+        { top: 300, right: 260, bottom: 326 },
+        {
+          width: 218,
+          viewportWidth: 800,
+          viewportHeight: 600,
+          align: "end",
+          pin: "top",
+        },
+      ),
+    ).toEqual({
+      top: 332,
+      left: 42,
+      transformOrigin: "top right",
+    });
+  });
+
   it("portals viewport-positioned popovers outside transformed ancestors", () => {
     expect(popoverSource).toMatch(
       /createPortal\(popover,\s*document\.body\)/,

@@ -31,7 +31,7 @@ describe("ModelSelector", () => {
   });
 
   it("always anchors its popover strictly above the trigger", () => {
-    expect(selectorSource).toContain('placement: "top"');
+    expect(selectorSource).toContain('pin: "bottom"');
   });
 
   it("shows provider rows as submenu entries with a trailing chevron", () => {

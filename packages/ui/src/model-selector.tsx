@@ -25,9 +25,6 @@ export interface ModelSelection {
 }
 
 const POPOVER_WIDTH = 264;
-const PROVIDER_ROW_HEIGHT = 48;
-const MODEL_ROW_HEIGHT = 62;
-const BACK_ROW_HEIGHT = 38;
 
 function isProviderId(value: string | undefined): value is ModelProviderId {
   return PROVIDER_OPTIONS.some((option) => option.value === value);
@@ -61,45 +58,32 @@ export function ModelSelector({
   const effectiveModel =
     model ?? settings?.model ?? providerDetails(effectiveProvider).defaultModel;
 
-  function providerListHeight(): number {
-    return 10 + PROVIDER_OPTIONS.length * PROVIDER_ROW_HEIGHT;
-  }
-
-  function modelListHeight(providerId: ModelProviderId): number {
-    const providerOption = providerDetails(providerId);
-    const rows =
-      providerOption.models.length +
-      (isKnownModel(providerId, effectiveModel) ? 0 : 1);
-    return 10 + BACK_ROW_HEIGHT + rows * MODEL_ROW_HEIGHT;
-  }
-
-  function placePopover(height: number) {
+  function placePopover() {
     const bounds = triggerRef.current?.getBoundingClientRect();
     if (!bounds) return;
     setPosition(
       anchoredPopoverPosition(bounds, {
         width: POPOVER_WIDTH,
-        height,
         align: "end",
-        placement: "top",
+        pin: "bottom",
       }),
     );
   }
 
   function openPopover() {
     setLevel({ step: "providers" });
-    placePopover(providerListHeight());
+    placePopover();
     setOpen(true);
   }
 
   function openModels(providerId: ModelProviderId) {
     setLevel({ step: "models", provider: providerId });
-    placePopover(modelListHeight(providerId));
+    placePopover();
   }
 
   function showProviders() {
     setLevel({ step: "providers" });
-    placePopover(providerListHeight());
+    placePopover();
   }
 
   function closePopover() {
