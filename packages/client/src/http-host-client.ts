@@ -12,6 +12,7 @@ import type {
   HostProviderDiagnostic,
   HostProviderTestRequest,
   HostProjectsSnapshot,
+  HostProjectDiagnosticBundle,
   HostProjectDiagnosticsSnapshot,
   HostSearchRequest,
   HostSearchResult,
@@ -67,6 +68,12 @@ export class HttpHostClient {
   diagnostics(projectId: string): Promise<HostProjectDiagnosticsSnapshot> {
     return this.request(
       `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics`,
+    );
+  }
+
+  diagnosticBundle(projectId: string): Promise<HostProjectDiagnosticBundle> {
+    return this.request(
+      `/v1/host/projects/${encodeURIComponent(projectId)}/diagnostics/bundle`,
     );
   }
 

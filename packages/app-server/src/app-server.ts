@@ -1902,6 +1902,9 @@ class TurnDiagnosticsRecorder {
         name: event.result.name,
         durationMs: event.durationMs ?? 0,
         isError: event.result.isError ?? false,
+        ...(event.result.error?.code
+          ? { errorCode: event.result.error.code }
+          : {}),
       });
       return;
     }

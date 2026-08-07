@@ -102,7 +102,10 @@ import {
   type AutomationAlert,
   type AutomationExecutionResult,
 } from "./automation-scheduler.js";
-import { projectDiagnostics } from "./diagnostics.js";
+import {
+  projectDiagnosticBundle,
+  projectDiagnostics,
+} from "./diagnostics.js";
 import { testProviderConnection } from "./provider-diagnostics.js";
 import {
   openProjectWith,
@@ -153,6 +156,7 @@ import {
   DESKTOP_CONVERSATION_UPDATE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_DIAGNOSTICS_GET_CHANNEL,
+  DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL,
   DESKTOP_HOST_ACTIVATE_CHANNEL,
   DESKTOP_HOST_DELETE_CHANNEL,
   DESKTOP_HOST_DIRECTORIES_CHANNEL,
@@ -1328,6 +1332,32 @@ function handleDiagnosticsGet(
     return remoteHost.diagnostics(project.id);
   }
   return projectDiagnostics(project);
+}
+
+async function handleDiagnosticsExport(
+  event: IpcMainInvokeEvent,
+  value: unknown,
+) {
+  requireTrustedSender(event);
+  const project = requireProject(value);
+  if (isRemoteHost()) {
+    if (!remoteHost) throw new Error("Remote Host is not connected.");
+    return remoteHost.diagnosticBundle(project.id);
+  }
+  if (!conversationChangeTracker) {
+    throw new Error("Conversation changes are not available.");
+  }
+  return projectDiagnosticBundle(project, {
+    changes: conversationChangeTracker,
+    environment: {
+      runtime: "desktop",
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      architecture: process.arch,
+      nodeVersion: process.version,
+      electronVersion: process.versions.electron,
+    },
+  });
 }
 
 function handleProviderTest(
@@ -4155,6 +4185,10 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle(DESKTOP_SETTINGS_UPDATE_CHANNEL, handleSettingsUpdate);
   ipcMain.handle(DESKTOP_DIAGNOSTICS_GET_CHANNEL, handleDiagnosticsGet);
+  ipcMain.handle(
+    DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL,
+    handleDiagnosticsExport,
+  );
   ipcMain.handle(DESKTOP_PROVIDER_TEST_CHANNEL, handleProviderTest);
   ipcMain.handle(DESKTOP_PROJECTS_GET_CHANNEL, handleProjectsGet);
   ipcMain.handle(DESKTOP_HOSTS_GET_CHANNEL, handleHostsGet);

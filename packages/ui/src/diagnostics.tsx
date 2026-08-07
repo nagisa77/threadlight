@@ -1,13 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
+  CheckCircle2,
   Clock3,
   Cpu,
+  Download,
   Gauge,
   LoaderCircle,
   RefreshCw,
+  ShieldCheck,
   Wrench,
 } from "lucide-react";
+import type { HostProjectDiagnosticBundle } from "@threadlight/protocol";
 
 import { useI18n } from "./i18n.js";
 
@@ -24,6 +28,7 @@ export interface ToolCallDiagnostic {
   name: string;
   durationMs: number;
   isError: boolean;
+  errorCode?: string;
 }
 
 export interface TurnDiagnostic {
@@ -61,6 +66,7 @@ export interface ProjectDiagnosticsSnapshot {
 
 export interface DiagnosticsAdapter {
   load(projectId: string): Promise<ProjectDiagnosticsSnapshot>;
+  exportBundle(projectId: string): Promise<HostProjectDiagnosticBundle>;
 }
 
 export function DiagnosticsPage({
@@ -77,6 +83,11 @@ export function DiagnosticsPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [refresh, setRefresh] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<{
+    status: "success" | "error";
+    message: string;
+  }>();
 
   useEffect(() => {
     let active = true;
@@ -101,8 +112,29 @@ export function DiagnosticsPage({
   }, [adapter, projectId, refresh]);
 
   const totals = snapshot?.totals;
-  const averageDuration =
-    totals?.turns ? totals.durationMs / totals.turns : 0;
+  const averageDuration = totals?.turns ? totals.durationMs / totals.turns : 0;
+
+  async function exportBundle() {
+    setExporting(true);
+    setExportFeedback(undefined);
+    try {
+      const bundle = await adapter.exportBundle(projectId);
+      downloadDiagnosticBundle(bundle);
+      setExportFeedback({
+        status: "success",
+        message: t("diagnosticBundleExported", { filename: bundle.filename }),
+      });
+    } catch (reason) {
+      setExportFeedback({
+        status: "error",
+        message: t("diagnosticBundleExportFailed", {
+          error: reason instanceof Error ? reason.message : String(reason),
+        }),
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <>
@@ -111,19 +143,37 @@ export function DiagnosticsPage({
           <h1>{t("usageDiagnostics")}</h1>
           <p>{t("usageDiagnosticsSubtitle", { project: projectName })}</p>
         </div>
-        <button
-          type="button"
-          className="diagnostics-refresh pressable"
-          disabled={loading}
-          onClick={() => setRefresh((value) => value + 1)}
-        >
-          {loading ? (
-            <LoaderCircle className="spin" size={14} />
-          ) : (
-            <RefreshCw size={14} />
-          )}
-          {t("refresh")}
-        </button>
+        <div className="diagnostics-header-actions">
+          <button
+            type="button"
+            className="diagnostics-refresh pressable"
+            aria-label={t("refresh")}
+            title={t("refresh")}
+            disabled={loading}
+            onClick={() => setRefresh((value) => value + 1)}
+          >
+            {loading ? (
+              <LoaderCircle className="spin" size={14} />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+          </button>
+          <button
+            type="button"
+            className="diagnostics-export pressable"
+            disabled={exporting}
+            onClick={() => void exportBundle()}
+          >
+            {exporting ? (
+              <LoaderCircle className="spin" size={14} />
+            ) : (
+              <Download size={14} />
+            )}
+            {exporting
+              ? t("exportingDiagnosticBundle")
+              : t("exportDiagnosticBundle")}
+          </button>
+        </div>
       </header>
       <section className="diagnostics-scroll">
         {error ? (
@@ -135,6 +185,25 @@ export function DiagnosticsPage({
           </div>
         ) : (
           <div className="diagnostics-page">
+            <div className="diagnostics-export-note">
+              <ShieldCheck size={16} aria-hidden="true" />
+              <div>
+                <strong>{t("diagnosticBundleContents")}</strong>
+                <p>{t("diagnosticBundleDescription")}</p>
+              </div>
+            </div>
+            {exportFeedback && (
+              <div
+                className={`diagnostics-export-feedback ${exportFeedback.status}`}
+                role={exportFeedback.status === "error" ? "alert" : "status"}
+                aria-live="polite"
+              >
+                {exportFeedback.status === "success" && (
+                  <CheckCircle2 size={15} aria-hidden="true" />
+                )}
+                <span>{exportFeedback.message}</span>
+              </div>
+            )}
             <div className="diagnostics-metrics">
               <Metric
                 icon={<Gauge size={15} />}
@@ -286,7 +355,9 @@ function TurnRow({
               id: tool.callId,
               name: tool.name,
               duration: formatDuration(tool.durationMs),
-              detail: tool.isError ? t("failed") : t("completed"),
+              detail: tool.isError
+                ? `${t("failed")}${tool.errorCode ? ` · ${tool.errorCode}` : ""}`
+                : t("completed"),
               error: tool.isError,
             }))}
           />
@@ -294,6 +365,21 @@ function TurnRow({
       </div>
     </details>
   );
+}
+
+function downloadDiagnosticBundle(bundle: HostProjectDiagnosticBundle): void {
+  const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], {
+    type: "application/json;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = bundle.filename;
+  anchor.style.display = "none";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function DiagnosticTable({

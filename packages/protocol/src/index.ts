@@ -207,6 +207,7 @@ export interface HostToolCallDiagnostic {
   name: string;
   durationMs: number;
   isError: boolean;
+  errorCode?: string;
 }
 
 export interface HostTurnDiagnostic {
@@ -230,6 +231,120 @@ export interface HostProjectDiagnosticsSnapshot {
   generatedAt: string;
   totals: HostDiagnosticsTotals;
   turns: readonly HostTurnDiagnostic[];
+}
+
+export interface HostDiagnosticEnvironment {
+  runtime: "desktop" | "host";
+  appVersion?: string;
+  platform: string;
+  architecture: string;
+  nodeVersion: string;
+  electronVersion?: string;
+}
+
+export interface HostDiagnosticAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  kind: "image" | "file";
+}
+
+export interface HostDiagnosticMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  attachments?: readonly HostDiagnosticAttachment[];
+  followUpDelivery?: FollowUpDelivery;
+  error?: boolean;
+  errorCode?: string;
+  mode?: TurnMode;
+}
+
+export interface HostDiagnosticQueuedTurn {
+  id: string;
+  text: string;
+  delivery: FollowUpDelivery;
+  createdAt: string;
+  attachments?: readonly HostDiagnosticAttachment[];
+}
+
+export interface HostDiagnosticConversation {
+  threadId: string;
+  title: string;
+  createdAt?: string;
+  updatedAt?: string;
+  provider?: string;
+  model?: string;
+  workspaceMode?: HostTaskWorkspace["mode"];
+  messages: readonly HostDiagnosticMessage[];
+  queuedTurns: readonly HostDiagnosticQueuedTurn[];
+}
+
+export interface HostDiagnosticFile {
+  threadId: string;
+  path: string;
+  status: "added" | "modified" | "deleted";
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  localOnly?: boolean;
+  oldContent?: string;
+  newContent?: string;
+  omittedReason?: "binary" | "too_large" | "unavailable";
+}
+
+export type HostDiagnosticTimelineEventKind =
+  | "turn"
+  | "model"
+  | "tool"
+  | "process";
+
+export interface HostDiagnosticTimelineEvent {
+  sequence: number;
+  threadId: string;
+  messageId?: string;
+  kind: HostDiagnosticTimelineEventKind;
+  name: string;
+  status: "running" | "completed" | "failed" | "terminated";
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+  errorCode?: string;
+}
+
+export interface HostDiagnosticError {
+  threadId: string;
+  messageId?: string;
+  source: "turn" | "tool" | "process";
+  code: string;
+  message?: string;
+  occurredAt?: string;
+}
+
+export interface HostProjectDiagnosticBundle {
+  schemaVersion: 1;
+  filename: string;
+  generatedAt: string;
+  project: {
+    id: string;
+    name: string;
+    scope?: "project" | "standalone";
+    conversationCount: number;
+  };
+  environment: HostDiagnosticEnvironment;
+  summary: HostProjectDiagnosticsSnapshot;
+  timeline: readonly HostDiagnosticTimelineEvent[];
+  errors: readonly HostDiagnosticError[];
+  conversations: readonly HostDiagnosticConversation[];
+  files: readonly HostDiagnosticFile[];
+  redaction: {
+    applied: true;
+    replacement: "[REDACTED]";
+    count: number;
+    truncatedTextFields: number;
+  };
+  warnings: readonly string[];
 }
 
 export type HostAutomationKind =
@@ -735,6 +850,7 @@ export interface ToolCallDiagnosticsData {
   name: string;
   durationMs: number;
   isError: boolean;
+  errorCode?: string;
 }
 
 export interface TurnDiagnosticsData {

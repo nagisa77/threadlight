@@ -106,6 +106,7 @@ export async function createRemoteWebSession(
   };
   const diagnostics: DiagnosticsAdapter = {
     load: (projectId) => host.diagnostics(projectId),
+    exportBundle: (projectId) => host.diagnosticBundle(projectId),
   };
   const automations: AutomationAdapter = {
     load: (projectId) => host.automations(projectId),

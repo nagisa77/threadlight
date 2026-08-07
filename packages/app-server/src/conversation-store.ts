@@ -311,7 +311,9 @@ function isTurnDiagnostics(value: unknown): boolean {
         typeof candidate.callId === "string" &&
         typeof candidate.name === "string" &&
         isNonNegativeNumber(candidate.durationMs) &&
-        typeof candidate.isError === "boolean"
+        typeof candidate.isError === "boolean" &&
+        (candidate.errorCode === undefined ||
+          typeof candidate.errorCode === "string")
       );
     })
   );

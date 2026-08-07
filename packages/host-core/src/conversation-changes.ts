@@ -248,6 +248,24 @@ export class ConversationChangeTracker {
     };
   }
 
+  /**
+   * Reads changes only when a baseline already exists. Diagnostic exports use
+   * this path so observing a task never creates a new review snapshot.
+   */
+  async trackedChanges(
+    projectId: string,
+    threadId: string,
+    workspacePath: string,
+  ): Promise<ConversationChangesSnapshot | undefined> {
+    try {
+      await stat(join(this.threadPath(projectId, threadId), "manifest.json"));
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") return;
+      throw error;
+    }
+    return this.changes(projectId, threadId, workspacePath);
+  }
+
   async restore(
     projectId: string,
     threadId: string,

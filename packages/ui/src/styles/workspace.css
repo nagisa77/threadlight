@@ -610,7 +610,6 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .delivery-history-card > summary > svg {
   color: var(--subtle);
-  transition: transform 160ms var(--ease-out);
 }
 
 .delivery-history-card[open] > summary > svg {
@@ -741,6 +740,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .delivery-history-empty {
     margin-left: 0;
   }
+
 }
 
 .review-toolbar,
@@ -1548,6 +1548,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
   white-space: nowrap;
 }
 
+.github-pr-generation.error small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .github-pr-regenerate {
   display: inline-flex;
   height: 27px;
@@ -1720,6 +1725,30 @@ body.is-resizing-workspace .workspace-split-handle::after {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 20px;
+}
+
+@container delivery-center (max-width: 430px) {
+  .github-delivery-actions {
+    margin-left: 0;
+  }
+
+  .github-pr-summary {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .github-pr-open {
+    grid-column: 2 / -1;
+    justify-self: end;
+  }
+
+  .github-pr-generation {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .github-pr-regenerate {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 .diff-layout-toggle {
@@ -2490,6 +2519,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .provider-test-button:hover:not(:disabled) {
     border-color: #bab7ad;
     background: var(--surface);
+  }
+
+  .diagnostics-export:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 68%, var(--ink));
   }
 
   .diagnostics-turn summary:hover {

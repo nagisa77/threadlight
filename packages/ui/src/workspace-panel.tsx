@@ -110,7 +110,9 @@ export type {
 export {
   DeliveryCenterView,
   GitHubDeliveryCard,
+  GitHubDeliveryDialog,
 } from "./features/delivery-center.js";
+export type { PendingGitHubAction } from "./features/delivery-center.js";
 
 const MAX_SIMULTANEOUS_REVIEW_FILES = 50;
 const LazyReviewDiffViewer = lazy(() =>
@@ -207,6 +209,13 @@ export function WorkspacePanel({
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   useEffect(() => {
+    setTabs([createFileTab(t)]);
+    setActiveTabId("");
+    setDiffLayout("unified");
+    setRemoteFilePickerOpen(false);
+  }, [projectId, remoteFileRoot, threadId]);
+
+  useEffect(() => {
     if (reviewRequest === 0) return;
     setTabs((current) => {
       const review = current.find((tab) => tab.kind === "review");
@@ -285,13 +294,6 @@ export function WorkspacePanel({
       return [...current, next];
     });
   }, [fileOpenRequest?.id]);
-
-  useEffect(() => {
-    setTabs([createFileTab(t)]);
-    setActiveTabId("");
-    setDiffLayout("unified");
-    setRemoteFilePickerOpen(false);
-  }, [projectId, remoteFileRoot, threadId]);
 
   useEffect(() => {
     if (deliveryRequest === 0) return;
@@ -611,7 +613,6 @@ export function WorkspacePanel({
               deliveryDisabled={deliveryDisabled}
               automaticDelivery={automaticDelivery}
               defaultCommitMessage={taskTitle}
-              generatePullRequestDescription={generatePullRequestDescription}
               onPreflightDelivery={adapter.preflightDelivery}
               onApplyDelivery={adapter.applyDelivery}
               onCommitDelivery={adapter.commitDelivery}
@@ -631,6 +632,7 @@ export function WorkspacePanel({
               automaticDelivery={automaticDelivery}
               disabled={deliveryDisabled}
               defaultCommitMessage={taskTitle}
+              generatePullRequestDescription={generatePullRequestDescription}
               onRetryAutomaticDelivery={onRetryAutomaticDelivery}
               onUndoAutomaticDelivery={onUndoAutomaticDelivery}
             />

@@ -7,6 +7,7 @@ import {
   FileView,
   FileSource,
   GitHubDeliveryCard,
+  GitHubDeliveryDialog,
   isPlanDocumentPath,
   PlanDocument,
   ReviewChangesTree,
@@ -298,10 +299,63 @@ describe("ReviewView", () => {
 
     expect(html).toContain("acme/threadlight");
     expect(html).toContain("#42 Deliver task");
+    expect(html).toContain("打开 PR");
+    expect(html).toContain(
+      'href="https://github.test/acme/threadlight/pull/42"',
+    );
     expect(html).toContain("CI 失败");
     expect(html).toContain("test");
     expect(html).toContain("src/index.ts:42");
     expect(html).toContain("Please cover the error path.");
+  });
+
+  it("offers ready and Draft PR creation after the branch is pushed", () => {
+    const html = renderToStaticMarkup(
+      <GitHubDeliveryCard
+        status={{
+          provider: "github",
+          available: true,
+          repository: "acme/threadlight",
+          remote: "origin",
+          taskBranch: "threadlight/task",
+          baseBranch: "main",
+          pushed: true,
+          ahead: 0,
+        }}
+        loading={false}
+        disabled={false}
+        onRefresh={vi.fn()}
+        onCommitPush={vi.fn()}
+        onCreatePr={vi.fn()}
+        onCreateDraftPr={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("创建 PR");
+    expect(html).toContain("创建 Draft PR");
+  });
+
+  it("shows an explicit loading state while the model writes PR copy", () => {
+    const html = renderToStaticMarkup(
+      <GitHubDeliveryDialog
+        action="pr"
+        value={{
+          action: "pr",
+          title: "",
+          body: "",
+          draft: false,
+          generation: "loading",
+        }}
+        busy={false}
+        onChange={vi.fn()}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("正在生成 PR 说明…");
+    expect(html).toContain("模型正在梳理改动、实现细节与测试结果");
+    expect(html).toContain("disabled");
   });
 
   it("explains that a missing remote is not a GitHub CLI installation problem", () => {
@@ -637,7 +691,7 @@ describe("WorkspacePanel", () => {
     expect(center).toContain("管理手动同步、恢复点与 GitHub 发布状态");
     expect(center).toContain("目标分支");
     expect(center).toContain("同步历史");
-    expect(center).toContain("撤回点");
+    expect(center).toContain("<details");
   });
 });
 

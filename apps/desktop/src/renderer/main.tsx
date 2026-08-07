@@ -60,6 +60,8 @@ const settings: SettingsAdapter = {
 };
 const diagnostics: DiagnosticsAdapter = {
   load: (projectId) => window.threadlightDesktop.getDiagnostics(projectId),
+  exportBundle: (projectId) =>
+    window.threadlightDesktop.exportDiagnostics(projectId),
 };
 const projects: ProjectsAdapter = {
   load: () => window.threadlightDesktop.getProjects(),

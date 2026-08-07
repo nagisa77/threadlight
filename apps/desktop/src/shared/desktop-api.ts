@@ -3,6 +3,7 @@ import type {
   ConversationAccessMode,
   HostDirectoryListing,
   HostFileListing,
+  HostProjectDiagnosticBundle,
   JsonRpcOutgoing,
   JsonRpcRequest,
   TerminalSessionEvent,
@@ -16,6 +17,8 @@ export const DESKTOP_SETTINGS_GET_CHANNEL = "threadlight:settings:get";
 export const DESKTOP_SETTINGS_UPDATE_CHANNEL = "threadlight:settings:update";
 export const DESKTOP_DIAGNOSTICS_GET_CHANNEL =
   "threadlight:diagnostics:get";
+export const DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL =
+  "threadlight:diagnostics:export";
 export const DESKTOP_PROVIDER_TEST_CHANNEL =
   "threadlight:provider:test";
 export const DESKTOP_CLIPBOARD_WRITE_CHANNEL = "threadlight:clipboard:write";
@@ -221,6 +224,7 @@ export interface DesktopToolCallDiagnostic {
   name: string;
   durationMs: number;
   isError: boolean;
+  errorCode?: string;
 }
 
 export interface DesktopTurnDiagnostic {
@@ -245,6 +249,8 @@ export interface DesktopProjectDiagnosticsSnapshot {
   totals: DesktopDiagnosticsTotals;
   turns: readonly DesktopTurnDiagnostic[];
 }
+
+export type DesktopProjectDiagnosticBundle = HostProjectDiagnosticBundle;
 
 export interface DesktopProviderTestRequest {
   provider: DesktopModelProvider;
@@ -830,6 +836,7 @@ export interface DesktopApi {
     update: DesktopSettingsUpdate,
   ): Promise<DesktopSettingsSnapshot>;
   getDiagnostics(projectId: string): Promise<DesktopProjectDiagnosticsSnapshot>;
+  exportDiagnostics(projectId: string): Promise<DesktopProjectDiagnosticBundle>;
   testProvider(
     request: DesktopProviderTestRequest,
   ): Promise<DesktopProviderDiagnostic>;

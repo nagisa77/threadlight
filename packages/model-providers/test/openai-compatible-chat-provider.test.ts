@@ -124,6 +124,98 @@ describe("OpenAICompatibleChatProvider", () => {
     expect(second.text).toBe("The answer is 42");
   });
 
+  it("closes pending tool calls before appending injected user input", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(
+        chunks([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: "call-stale",
+                      function: {
+                        name: "write",
+                        arguments: "{}",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        chunks([{ choices: [{ delta: { content: "Re-evaluated" } }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "deepseek",
+      baseURL: "https://api.deepseek.test",
+      defaultModel: "deepseek-v4-pro",
+      client,
+    });
+
+    const first = await provider.generate({
+      instructions: "Use tools",
+      input: "Make the stale edit",
+      tools: [
+        {
+          name: "write",
+          description: "Write a file",
+          parameters: { type: "object" },
+        },
+      ],
+    });
+    await provider.generate({
+      instructions: "Use tools",
+      input:
+        "[Additional user instruction received while the run was active]\nDo not edit; explain instead",
+      state: first.state,
+      toolResults: [
+        {
+          callId: "call-stale",
+          name: "write",
+          output: "Skipped because the user added a newer instruction.",
+          isError: true,
+        },
+      ],
+      tools: [],
+    });
+
+    expect(create.mock.calls[1]?.[0].messages).toEqual([
+      { role: "system", content: "Use tools" },
+      { role: "user", content: "Make the stale edit" },
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call-stale",
+            type: "function",
+            function: { name: "write", arguments: "{}" },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        tool_call_id: "call-stale",
+        content: "Skipped because the user added a newer instruction.",
+      },
+      {
+        role: "user",
+        content:
+          "[Additional user instruction received while the run was active]\nDo not edit; explain instead",
+      },
+    ]);
+  });
+
   it("falls back to visible history instead of replaying another provider's state", async () => {
     const create = vi.fn().mockResolvedValue(
       chunks([{ choices: [{ delta: { content: "Fresh" } }] }]),

@@ -368,6 +368,51 @@ describe("GitHubCliProvider", () => {
       "gh pr create --draft --head threadlight/task --base main",
     );
   });
+
+  it("creates ready pull requests without the Draft flag", async () => {
+    const commands: string[] = [];
+    const provider = new GitHubCliProvider({
+      run: async (command, args) => {
+        const key = `${command} ${args.join(" ")}`;
+        commands.push(key);
+        if (key.startsWith("gh pr create ")) return output("");
+        if (key === "gh repo view --json nameWithOwner") {
+          return output('{"nameWithOwner":"acme/threadlight"}');
+        }
+        if (key.startsWith("gh pr view ")) {
+          return output(
+            JSON.stringify({
+              number: 8,
+              url: "https://github.test/acme/threadlight/pull/8",
+              title: "Ready task",
+              isDraft: false,
+              state: "OPEN",
+              headRefName: "threadlight/task",
+              baseRefName: "main",
+              statusCheckRollup: [],
+              reviews: [],
+              comments: [],
+            }),
+          );
+        }
+        if (key.includes("/pulls/8/comments")) return output("[]");
+        throw new Error(`Unexpected command: ${key}`);
+      },
+    });
+
+    const pullRequest = await provider.createPullRequest(
+      "/repository",
+      "threadlight/task",
+      "main",
+      { title: "Ready task", body: "Body", draft: false },
+    );
+
+    expect(pullRequest.draft).toBe(false);
+    expect(commands[0]).toContain(
+      "gh pr create --head threadlight/task --base main",
+    );
+    expect(commands[0]).not.toContain("--draft");
+  });
 });
 
 class ScriptedProvider implements CodeHostProvider {

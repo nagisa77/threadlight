@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   AgentLoop,
+  ToolExecutionError,
   defineAgent,
   defineTool,
   type ModelProvider,
@@ -114,6 +115,82 @@ describe("turn diagnostics", () => {
             },
           },
         ],
+      },
+    });
+  });
+
+  it("persists scripted tool error codes for badcase exports", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    let generation = 0;
+    const provider: ModelProvider = {
+      async generate() {
+        generation += 1;
+        return generation === 1
+          ? {
+              text: "checking",
+              toolCalls: [
+                { id: "check-1", name: "check", arguments: {} },
+              ],
+            }
+          : { text: "handled", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Reply",
+        tools: [
+          defineTool({
+            name: "check",
+            description: "Check",
+            parameters: { type: "object" },
+            async execute() {
+              throw new ToolExecutionError("The check failed", {
+                code: "scripted_check_failed",
+                retryable: false,
+              });
+            },
+          }),
+        ],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Check" },
+    });
+    await completed.promise;
+
+    const notification = messages.find(
+      (message) =>
+        "method" in message && message.method === "turn/completed",
+    );
+    expect(notification).toMatchObject({
+      params: {
+        diagnostics: {
+          toolCalls: [
+            {
+              callId: "check-1",
+              isError: true,
+              errorCode: "scripted_check_failed",
+            },
+          ],
+        },
       },
     });
   });

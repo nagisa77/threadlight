@@ -105,16 +105,18 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       request.history,
     );
 
-    if (request.input) {
-      messages.push({ role: "user", content: request.input });
-    }
-
+    // Tool results must immediately follow the assistant tool_calls message.
+    // Injected user input is appended only after every pending call is closed.
     for (const result of request.toolResults ?? []) {
       messages.push({
         role: "tool",
         tool_call_id: result.callId,
         content: result.output,
       });
+    }
+
+    if (request.input) {
+      messages.push({ role: "user", content: request.input });
     }
 
     const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {

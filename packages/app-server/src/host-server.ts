@@ -32,6 +32,7 @@ import {
   type AudioTranscriptionOptions,
   type AudioTranscriptionRequest,
   MAX_TRANSCRIPTION_BYTES,
+  projectDiagnosticBundle,
   projectDiagnostics,
   ProjectSearchService,
   TaskWorkspaceManager,
@@ -428,6 +429,29 @@ export class ThreadlightHostServer {
         throw new Error(`Unknown project: ${diagnosticsProjectId}`);
       }
       this.writeJson(response, 200, projectDiagnostics(project));
+      return true;
+    }
+    const diagnosticBundleProjectId = hostDiagnosticBundleProjectId(
+      url.pathname,
+    );
+    if (request.method === "GET" && diagnosticBundleProjectId) {
+      const project = this.options.projects.project(diagnosticBundleProjectId);
+      if (!project) {
+        throw new Error(`Unknown project: ${diagnosticBundleProjectId}`);
+      }
+      this.writeJson(
+        response,
+        200,
+        await projectDiagnosticBundle(project, {
+          changes: this.conversationChanges,
+          environment: {
+            runtime: "host",
+            platform: process.platform,
+            architecture: process.arch,
+            nodeVersion: process.version,
+          },
+        }),
+      );
       return true;
     }
     const automationsProjectId = hostAutomationsProjectId(url.pathname);
@@ -2326,6 +2350,19 @@ function hostOAuthCallbackRoute(
 function hostDiagnosticsProjectId(pathname: string): string | undefined {
   const match =
     /^\/v1\/host\/projects\/([^/]+)\/diagnostics$/.exec(pathname);
+  if (!match?.[1]) return;
+  const projectId = decodeURIComponent(match[1]);
+  if (!projectId || projectId.length > 256) {
+    throw new Error("Invalid project id");
+  }
+  return projectId;
+}
+
+function hostDiagnosticBundleProjectId(
+  pathname: string,
+): string | undefined {
+  const match =
+    /^\/v1\/host\/projects\/([^/]+)\/diagnostics\/bundle$/.exec(pathname);
   if (!match?.[1]) return;
   const projectId = decodeURIComponent(match[1]);
   if (!projectId || projectId.length > 256) {

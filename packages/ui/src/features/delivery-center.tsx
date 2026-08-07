@@ -72,7 +72,11 @@ export function DeliveryCenterView({
     useState<CodeHostDeliveryStatus>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  const [busyAction, setBusyAction] = useState<"retry" | "undo">();
+  const [busyAction, setBusyAction] = useState<
+    "sync" | "retry" | "undo"
+  >();
+  const [pendingManualSync, setPendingManualSync] =
+    useState<WorktreeDeliveryPreflight>();
   const [pendingCodeHostAction, setPendingCodeHostAction] =
     useState<PendingGitHubAction>();
   const pullRequestDescriptionRequest = useRef(0);
@@ -150,6 +154,20 @@ export function DeliveryCenterView({
   const deliveryHasNoChanges =
     (liveState?.status === "synced" && liveState.result?.files === 0) ||
     (!liveState && latestHasNoChanges);
+  const currentRevisionIsSynced = Boolean(
+    revision &&
+      (history?.currentRevision === revision ||
+        (liveState?.revision === revision && liveState.status === "synced")),
+  );
+  const canStartManualSync = Boolean(
+    revision &&
+      adapter.preflightDelivery &&
+      adapter.applyDelivery &&
+      !currentRevisionIsSynced &&
+      !canRetry &&
+      liveState?.status !== "syncing" &&
+      liveState?.status !== "undoing",
+  );
   const syncTone = deliveryHasNoChanges
     ? ("success" as const)
     : visibleSyncStatus === "conflict" || visibleSyncStatus === "failed"
@@ -186,6 +204,51 @@ export function DeliveryCenterView({
     }
   }
 
+  async function beginManualSync() {
+    if (
+      !threadId ||
+      !revision ||
+      !adapter.preflightDelivery ||
+      busyAction
+    ) {
+      return;
+    }
+    setBusyAction("sync");
+    setError(undefined);
+    try {
+      setPendingManualSync(
+        await adapter.preflightDelivery(projectId, threadId, revision),
+      );
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
+  async function confirmManualSync() {
+    if (
+      !pendingManualSync ||
+      !threadId ||
+      !revision ||
+      !adapter.applyDelivery ||
+      busyAction
+    ) {
+      return;
+    }
+    setBusyAction("sync");
+    setError(undefined);
+    try {
+      await adapter.applyDelivery(projectId, threadId, revision);
+      setPendingManualSync(undefined);
+      await refresh();
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusyAction(undefined);
+    }
+  }
+
   async function undoDeliveryPoint() {
     const undoPoint = history?.undoPoint;
     if (!threadId || !undoPoint || !adapter.undoDelivery || busyAction) return;
@@ -207,8 +270,7 @@ export function DeliveryCenterView({
 
   function openPullRequestDialog(draft: boolean) {
     const fallback = {
-      title:
-        defaultCommitMessage?.trim() || t("defaultPullRequestTitle"),
+      title: defaultCommitMessage?.trim() || t("defaultPullRequestTitle"),
       body: t("defaultPullRequestBody"),
     };
     const value: Extract<PendingGitHubAction, { action: "pr" }> = {
@@ -342,13 +404,20 @@ export function DeliveryCenterView({
           </div>
         )}
 
-        <section className="delivery-overview" aria-label={t("deliveryOverview")}>
+        <section
+          className="delivery-overview"
+          aria-label={t("deliveryOverview")}
+        >
           <div className="delivery-overview-item">
-            <span aria-hidden="true"><GitMerge size={15} /></span>
+            <span aria-hidden="true">
+              <GitMerge size={15} />
+            </span>
             <div>
               <small>{t("targetBranch")}</small>
               <strong>{targetBranch ?? t("notRecorded")}</strong>
-              {taskBranch && <em>{t("fromTaskBranch", { branch: taskBranch })}</em>}
+              {taskBranch && (
+                <em>{t("fromTaskBranch", { branch: taskBranch })}</em>
+              )}
             </div>
           </div>
           <div className={`delivery-overview-item ${syncTone ?? ""}`}>
@@ -378,6 +447,31 @@ export function DeliveryCenterView({
             </div>
           </div>
         </section>
+
+        {canStartManualSync && (
+          <section className="delivery-sync-card">
+            <span aria-hidden="true">
+              <GitMerge size={15} />
+            </span>
+            <div>
+              <strong>{t("automaticDelivery")}</strong>
+              <small>{t("automaticDeliveryReady")}</small>
+            </div>
+            <button
+              type="button"
+              className="github-delivery-button primary pressable"
+              disabled={disabled || loading || Boolean(busyAction)}
+              onClick={() => void beginManualSync()}
+            >
+              {busyAction === "sync" ? (
+                <LoaderCircle className="spin" size={14} />
+              ) : (
+                <GitMerge size={14} />
+              )}
+              {t("applyToOriginal")}
+            </button>
+          </section>
+        )}
 
         {(canRetry || history?.undoPoint) && (
           <section className="delivery-recovery-card">
@@ -581,8 +675,7 @@ export function DeliveryCenterView({
           onRegenerate={
             pendingCodeHostAction.action === "pr" &&
             generatePullRequestDescription
-              ? () =>
-                  void requestPullRequestDescription(pendingCodeHostAction)
+              ? () => void requestPullRequestDescription(pendingCodeHostAction)
               : undefined
           }
           error={error}
@@ -594,6 +687,22 @@ export function DeliveryCenterView({
             }
           }}
           onConfirm={() => void confirmCodeHostAction()}
+        />
+      )}
+      {pendingManualSync && (
+        <WorktreeDeliveryDialog
+          action="apply"
+          preflight={pendingManualSync}
+          message=""
+          busy={busyAction === "sync"}
+          error={error}
+          onMessageChange={() => undefined}
+          onCancel={() => {
+            if (busyAction) return;
+            setPendingManualSync(undefined);
+            setError(undefined);
+          }}
+          onConfirm={() => void confirmManualSync()}
         />
       )}
     </div>
@@ -955,7 +1064,7 @@ function codeHostSetupCommand(
   return undefined;
 }
 
-type PendingGitHubAction =
+export type PendingGitHubAction =
   | { action: "push"; message: string }
   | {
       action: "pr";
@@ -966,7 +1075,7 @@ type PendingGitHubAction =
       generationError?: string;
     };
 
-function GitHubDeliveryDialog({
+export function GitHubDeliveryDialog({
   action,
   value,
   busy,
@@ -1026,13 +1135,16 @@ function GitHubDeliveryDialog({
         className="delivery-dialog github-delivery-dialog"
         role="dialog"
         aria-modal="true"
+        aria-busy={generating}
         aria-labelledby="github-delivery-dialog-title"
       >
         <span className="delivery-dialog-icon" aria-hidden="true">
           {action === "push" ? (
             <UploadCloud size={18} />
-          ) : (
+          ) : value.action === "pr" && value.draft ? (
             <GitPullRequestDraft size={18} />
+          ) : (
+            <GitPullRequest size={18} />
           )}
         </span>
         <form onSubmit={submit}>
@@ -1136,7 +1248,7 @@ function GitHubDeliveryDialog({
               ref={cancelButton}
               type="button"
               className="dialog-button secondary pressable"
-              disabled={busy || generating}
+              disabled={busy}
               onClick={onCancel}
             >
               {t("cancel")}

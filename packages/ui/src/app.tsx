@@ -3924,7 +3924,8 @@ function ThreadlightAppContent({
                         </div>
                       )}
 
-                      {automaticDelivery && !state.isRunning && (
+                      {currentConversation?.workspace?.mode === "worktree" &&
+                        !state.isRunning && (
                         <DeliveryTurnStatus
                           delivery={automaticDelivery}
                           disabled={
@@ -3943,7 +3944,7 @@ function ThreadlightAppContent({
                               : undefined
                           }
                         />
-                      )}
+                        )}
                     </div>
                   )}
                 </div>
@@ -4394,14 +4395,15 @@ function ThreadlightAppContent({
                   ? () =>
                       client.generatePullRequestDescription(
                         state.threadId as string,
-                        conversationChanges.files.map((file) => ({
-                          path: file.path,
-                          status: file.status,
-                          additions: file.additions,
-                          deletions: file.deletions,
-                          binary: file.binary,
-                          localOnly: file.localOnly,
-                        })),
+                        conversationChanges.files
+                          .filter((file) => !file.localOnly)
+                          .map((file) => ({
+                            path: file.path,
+                            status: file.status,
+                            additions: file.additions,
+                            deletions: file.deletions,
+                            binary: file.binary,
+                          })),
                       )
                   : undefined
               }

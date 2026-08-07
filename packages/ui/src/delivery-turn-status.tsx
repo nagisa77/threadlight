@@ -21,7 +21,7 @@ export function DeliveryTurnStatus({
   onRetry,
   onUndo,
 }: {
-  delivery: AutomaticDeliveryState;
+  delivery?: AutomaticDeliveryState;
   disabled?: boolean;
   onOpen(): void;
   onRetry?(): void;
@@ -29,26 +29,31 @@ export function DeliveryTurnStatus({
 }) {
   const { t } = useI18n();
   const attention =
-    delivery.status === "conflict" || delivery.status === "failed";
-  const conflicts = delivery.preflight?.conflicts ?? [];
-  const label = deliveryTurnLabel(delivery, t);
-  const detail = deliveryTurnDetail(delivery, t);
+    delivery?.status === "conflict" || delivery?.status === "failed";
+  const conflicts = delivery?.preflight?.conflicts ?? [];
+  const label = delivery
+    ? deliveryTurnLabel(delivery, t)
+    : t("deliveryStatusWaiting");
+  const detail = delivery
+    ? deliveryTurnDetail(delivery, t)
+    : t("automaticDeliveryReady");
+  const status = delivery?.status ?? "ready";
 
   return (
     <section
-      className={`turn-delivery-status ${delivery.status} ${attention ? "attention" : ""}`}
+      className={`turn-delivery-status ${status} ${attention ? "attention" : ""}`}
       role={attention ? "alert" : "status"}
       aria-live="polite"
       aria-label={`${t("automaticDelivery")}: ${label}`}
     >
       <span className="turn-delivery-icon" aria-hidden="true">
-        {delivery.status === "syncing" || delivery.status === "undoing" ? (
+        {delivery?.status === "syncing" || delivery?.status === "undoing" ? (
           <LoaderCircle className="spin" size={16} />
         ) : attention ? (
           <TriangleAlert size={16} />
-        ) : delivery.status === "undone" ? (
+        ) : delivery?.status === "undone" ? (
           <RotateCcw size={16} />
-        ) : delivery.result?.files === 0 ? (
+        ) : delivery?.result?.files === 0 ? (
           <Check size={16} />
         ) : (
           <GitMerge size={16} />
@@ -85,7 +90,7 @@ export function DeliveryTurnStatus({
             {t("retry")}
           </button>
         )}
-        {delivery.status === "synced" &&
+        {delivery?.status === "synced" &&
           delivery.result?.undoAvailable &&
           onUndo && (
             <button

@@ -37,6 +37,7 @@ import {
   DESKTOP_CONVERSATION_UPDATE_CHANNEL,
   DESKTOP_CONVERSATION_UPSERT_CHANNEL,
   DESKTOP_DIAGNOSTICS_GET_CHANNEL,
+  DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL,
   DESKTOP_HOST_ACTIVATE_CHANNEL,
   DESKTOP_HOST_DELETE_CHANNEL,
   DESKTOP_HOST_DIRECTORIES_CHANNEL,
@@ -109,6 +110,9 @@ const api: DesktopApi = {
   },
   getDiagnostics(projectId) {
     return ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_GET_CHANNEL, projectId);
+  },
+  exportDiagnostics(projectId) {
+    return ipcRenderer.invoke(DESKTOP_DIAGNOSTICS_EXPORT_CHANNEL, projectId);
   },
   testProvider(request) {
     return ipcRenderer.invoke(DESKTOP_PROVIDER_TEST_CHANNEL, request);

@@ -110,6 +110,7 @@ function readConversationDiagnostics(
           name: tool.name,
           durationMs: tool.durationMs,
           isError: tool.isError,
+          ...(tool.errorCode ? { errorCode: tool.errorCode } : {}),
         })),
       },
     ];
@@ -133,6 +134,7 @@ interface StoredDiagnostics {
     name: string;
     durationMs: number;
     isError: boolean;
+    errorCode?: string;
   }>;
 }
 
@@ -166,7 +168,8 @@ function isTurnDiagnostics(value: unknown): value is StoredDiagnostics {
         typeof tool.callId === "string" &&
         typeof tool.name === "string" &&
         isNonNegativeNumber(tool.durationMs) &&
-        typeof tool.isError === "boolean",
+        typeof tool.isError === "boolean" &&
+        (tool.errorCode === undefined || typeof tool.errorCode === "string"),
     )
   );
 }

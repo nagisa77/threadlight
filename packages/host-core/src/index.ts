@@ -38,6 +38,12 @@ export {
   type DiagnosticsProject,
 } from "./project-diagnostics.js";
 export {
+  diagnosticBundleFilename,
+  projectDiagnosticBundle,
+  type DiagnosticBundleProject,
+  type ProjectDiagnosticBundleOptions,
+} from "./project-diagnostic-bundle.js";
+export {
   ProjectSearchService,
   matchScore,
   matchingSnippet,

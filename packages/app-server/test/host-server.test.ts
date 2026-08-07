@@ -388,6 +388,24 @@ describe("ThreadlightHostServer", () => {
     expect(
       JSON.stringify(await hostClient.diagnostics("project-1")),
     ).not.toContain("private response content");
+    await expect(hostClient.diagnosticBundle("project-1")).resolves.toMatchObject({
+      schemaVersion: 1,
+      environment: { runtime: "host" },
+      conversations: [
+        {
+          threadId: "usage-thread",
+          messages: [{ text: "private response content" }],
+        },
+      ],
+      timeline: [
+        expect.objectContaining({
+          kind: "turn",
+          durationMs: 1_250,
+        }),
+        expect.objectContaining({ kind: "model", durationMs: 900 }),
+        expect.objectContaining({ kind: "tool", durationMs: 200 }),
+      ],
+    });
     await expect(
       hostClient.search({
         projectId: "project-1",

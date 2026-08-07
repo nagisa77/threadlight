@@ -16,7 +16,7 @@ describe("diagnostics center", () => {
   it("renders an accessible loading state before project totals arrive", () => {
     const html = renderToStaticMarkup(
       <DiagnosticsPage
-        adapter={{ load: vi.fn() }}
+        adapter={{ load: vi.fn(), exportBundle: vi.fn() }}
         projectId="project-1"
         projectName="Threadlight"
       />,
@@ -25,6 +25,7 @@ describe("diagnostics center", () => {
     expect(html).toContain("用量与诊断");
     expect(html).toContain("Threadlight");
     expect(html).toContain("正在读取诊断数据");
+    expect(html).toContain("导出诊断包");
     expect(html).toContain('type="button"');
   });
 });

@@ -11,6 +11,7 @@ import type {
   HostProviderDiagnostic,
   HostProviderTestRequest,
   HostProjectsSnapshot,
+  HostProjectDiagnosticBundle,
   HostProjectDiagnosticsSnapshot,
   HostSearchRequest,
   HostSearchResult,
@@ -39,6 +40,10 @@ export class RemoteHostConnection {
 
   diagnostics(projectId: string): Promise<HostProjectDiagnosticsSnapshot> {
     return this.client.diagnostics(projectId);
+  }
+
+  diagnosticBundle(projectId: string): Promise<HostProjectDiagnosticBundle> {
+    return this.client.diagnosticBundle(projectId);
   }
 
   automations(projectId: string): Promise<HostAutomationsSnapshot> {

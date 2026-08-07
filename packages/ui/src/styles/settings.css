@@ -219,6 +219,7 @@
 }
 
 .diagnostics-refresh,
+.diagnostics-export,
 .provider-test-button {
   display: inline-flex;
   height: 30px;
@@ -235,6 +236,30 @@
   cursor: pointer;
 }
 
+.diagnostics-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.diagnostics-refresh {
+  width: 30px;
+  justify-content: center;
+  padding: 0;
+}
+
+.diagnostics-export {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--line-strong));
+  color: var(--panel);
+  background: color-mix(in srgb, var(--accent) 76%, var(--ink));
+}
+
+.diagnostics-export:disabled,
+.diagnostics-refresh:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
 .diagnostics-scroll {
   min-height: 0;
   overflow-y: auto;
@@ -246,6 +271,54 @@
   width: min(100%, 920px);
   margin: 0 auto;
   padding: 34px 38px 42px;
+}
+
+.diagnostics-export-note,
+.diagnostics-export-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+}
+
+.diagnostics-export-note {
+  margin-bottom: 12px;
+  color: color-mix(in srgb, var(--accent) 72%, var(--ink));
+}
+
+.diagnostics-export-note svg,
+.diagnostics-export-feedback svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.diagnostics-export-note strong {
+  display: block;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.diagnostics-export-note p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.diagnostics-export-feedback {
+  margin-bottom: 12px;
+  color: var(--success);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.diagnostics-export-feedback.error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, var(--panel));
 }
 
 .diagnostics-metrics {
@@ -1315,4 +1388,3 @@
   font-size: 12px;
   line-height: 1.6;
 }
-
