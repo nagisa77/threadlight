@@ -1,5 +1,11 @@
 import { useRef, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, ChevronUp } from "lucide-react";
+import {
+  Brain,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+} from "lucide-react";
 
 import {
   ActionPopover,
@@ -177,6 +183,12 @@ export function ModelSelector({
         aria-controls={open ? "composer-model-menu" : undefined}
         title={t("modelSelectorTitle", { model: effectiveModel })}
       >
+        <Brain
+          className="composer-model-icon"
+          size={17}
+          strokeWidth={2}
+          aria-hidden="true"
+        />
         <span className="composer-model-label">
           {modelShortLabel(effectiveModel)}
         </span>

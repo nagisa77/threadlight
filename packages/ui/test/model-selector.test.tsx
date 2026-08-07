@@ -24,13 +24,13 @@ function translate(key: string): string {
 }
 
 describe("ModelSelector", () => {
-  it("renders a compact trigger with an up arrow and no decorative icon", () => {
+  it("provides a responsive brain icon alongside the full model label", () => {
     const html = renderToStaticMarkup(
       <ModelSelector disabled={false} t={translate as Translate} onSelect={() => undefined} />,
     );
 
     expect(html).toContain("lucide-chevron-up");
-    expect(html).not.toContain("lucide-cpu");
+    expect(html).toContain("lucide-brain");
     expect(html).toContain("gpt-5.6-sol");
   });
 

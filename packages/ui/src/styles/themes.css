@@ -785,7 +785,9 @@ html[data-theme="dark"] :is(
     .project-open-menu-trigger:hover:not(:disabled),
     .composer-action.voice:hover:not(:disabled):not(.recording),
     .composer-action.attach:hover:not(:disabled),
-    .composer-action.model:hover:not(:disabled):not(.active)
+    .composer-action.model:hover:not(:disabled):not(.active),
+    .development-mode-trigger:hover:not(:disabled):not([aria-expanded="true"]),
+    .conversation-access-trigger:not(.full):hover:not(:disabled):not([aria-expanded="true"])
   ) {
     color: var(--ink);
     background: #303135;

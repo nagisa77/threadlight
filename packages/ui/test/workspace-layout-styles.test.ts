@@ -44,4 +44,22 @@ describe("expanded composer layout", () => {
       /\.composer-toolbar\s*\{[^}]*align-items:\s*center;[^}]*justify-content:\s*space-between;[^}]*margin-top:\s*auto;/s,
     );
   });
+
+  it("responds to composer width with icon-only controls", () => {
+    expect(styles).toMatch(
+      /\.composer\s*\{[^}]*--composer-control-size:\s*32px;[^}]*container:\s*composer \/ inline-size;/s,
+    );
+    expect(styles).toMatch(
+      /@container composer \(max-width: 600px\)\s*\{[\s\S]*?\.development-mode-trigger,[\s\S]*?\.conversation-access-trigger,[\s\S]*?\.composer-action\.model\s*\{[^}]*width:\s*var\(--composer-control-size\);[^}]*justify-content:\s*center;[^}]*padding:\s*0;/s,
+    );
+    expect(styles).toMatch(
+      /@container composer \(max-width: 600px\)[\s\S]*?\.composer-action\.model \.composer-model-icon\s*\{[^}]*display:\s*block;/s,
+    );
+  });
+
+  it("uses 44px composer targets on coarse touch pointers", () => {
+    expect(styles).toMatch(
+      /@media \(hover: none\) and \(pointer: coarse\)\s*\{\s*\.composer\s*\{[^}]*--composer-control-size:\s*44px;/s,
+    );
+  });
 });

@@ -61,6 +61,7 @@ export function DevelopmentModeControl({
         className={`development-mode-trigger pressable ${mode}${keyboardOpen && position ? " keyboard-open" : ""}`}
         aria-haspopup="menu"
         aria-expanded={Boolean(position)}
+        aria-label={`${t("developmentMode")}: ${label}`}
         disabled={disabled}
         title={`${t("developmentMode")}: ${label}`}
         onClick={(event) => (position ? close() : open(event.detail === 0))}

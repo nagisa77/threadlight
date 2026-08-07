@@ -1270,6 +1270,9 @@
 }
 
 .composer {
+  --composer-control-radius: 9px;
+  --composer-control-size: 32px;
+
   position: relative;
   display: flex;
   width: min(100%, 714px);
@@ -1290,6 +1293,7 @@
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease;
+  container: composer / inline-size;
 }
 
 .capability-menu {
@@ -2032,18 +2036,18 @@
 
 .composer-action {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: var(--composer-control-size);
+  height: var(--composer-control-size);
   flex: 0 0 auto;
   place-items: center;
-  border-radius: 9px;
+  border-radius: var(--composer-control-radius);
   cursor: pointer;
 }
 
 .composer-action.plan-mode {
   display: flex;
   width: auto;
-  min-width: 32px;
+  min-width: var(--composer-control-size);
   gap: 5px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -2073,19 +2077,25 @@
 .development-mode-trigger,
 .conversation-access-trigger {
   display: flex;
-  height: 32px;
+  min-width: var(--composer-control-size);
+  height: var(--composer-control-size);
   flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 9px;
+  border-radius: var(--composer-control-radius);
   color: var(--muted);
   background: transparent;
   font: inherit;
   font-size: 10px;
   font-weight: 620;
   cursor: pointer;
+  transition:
+    color 140ms ease,
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms var(--ease-out);
 }
 
 .development-mode-trigger {
@@ -2256,7 +2266,7 @@
   display: flex;
   width: auto;
   max-width: 164px;
-  min-width: 32px;
+  min-width: var(--composer-control-size);
   gap: 5px;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -2284,6 +2294,11 @@
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.composer-model-icon {
+  display: none;
+  flex: 0 0 auto;
 }
 
 .composer-action.send {
@@ -2428,6 +2443,44 @@
   border: 1px solid #dcc0bc;
   color: var(--danger);
   background: #fbefed;
+}
+
+@container composer (max-width: 600px) {
+  .composer-toolbar,
+  .composer-toolbar-start,
+  .composer-toolbar-end {
+    gap: 2px;
+  }
+
+  .development-mode-trigger,
+  .conversation-access-trigger,
+  .composer-action.model {
+    width: var(--composer-control-size);
+    min-width: var(--composer-control-size);
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+
+  .development-mode-trigger > span,
+  .conversation-access-trigger > span,
+  .development-mode-chevron,
+  .conversation-access-chevron,
+  .composer-action.model .composer-model-label,
+  .composer-action.model .model-trigger-arrow {
+    display: none;
+  }
+
+  .composer-action.model .composer-model-icon {
+    display: block;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .composer {
+    --composer-control-radius: 11px;
+    --composer-control-size: 44px;
+  }
 }
 
 .composer-hint {

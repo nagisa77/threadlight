@@ -326,6 +326,9 @@ export function ConversationAccessControl({
         className={`conversation-access-trigger pressable ${mode}${keyboardOpen && position ? " keyboard-open" : ""}`}
         aria-haspopup="menu"
         aria-expanded={Boolean(position)}
+        aria-label={`${labels.access}: ${
+          mode === "full" ? labels.fullAccess : labels.requestApproval
+        }`}
         disabled={disabled || busy}
         title={labels.access}
         onClick={(event) => (position ? close() : open(event.detail === 0))}

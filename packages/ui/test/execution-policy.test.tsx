@@ -28,6 +28,7 @@ describe("conversation access", () => {
     expect(html).toContain("完全访问");
     expect(html).toContain("conversation-access-trigger pressable full");
     expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('aria-label="访问权限: 完全访问"');
     expect(html).toContain("lucide-chevron-up");
   });
 

@@ -17,6 +17,7 @@ describe("DevelopmentModeControl", () => {
 
     expect(html).toContain('class="development-mode-trigger pressable local"');
     expect(html).toContain('aria-haspopup="menu"');
+    expect(html).toContain('aria-label="启动模式: 本地开发"');
     expect(html).toContain("本地开发");
     expect(html).toContain("lucide-laptop");
     expect(html).toContain("lucide-chevron-up");
