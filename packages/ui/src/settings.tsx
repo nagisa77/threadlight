@@ -88,6 +88,7 @@ export interface SettingsSnapshot {
   geminiBaseUrl: string;
   grokBaseUrl: string;
   customBaseUrl: string;
+  customModel: string;
   model: string;
 }
 
@@ -111,6 +112,7 @@ export interface SettingsUpdate {
   geminiBaseUrl: string;
   grokBaseUrl: string;
   customBaseUrl: string;
+  customModel: string;
   model: string;
 }
 
@@ -206,6 +208,7 @@ export function SettingsPage({
   const [geminiBaseUrl, setGeminiBaseUrl] = useState(DEFAULT_GEMINI_BASE_URL);
   const [grokBaseUrl, setGrokBaseUrl] = useState(DEFAULT_GROK_BASE_URL);
   const [customBaseUrl, setCustomBaseUrl] = useState(DEFAULT_CUSTOM_BASE_URL);
+  const [customModel, setCustomModel] = useState("llama3.2");
   const [model, setModel] = useState<string>(MODEL_OPTIONS[0].value);
   const [language, setLanguage] = useState<Language>("zh-CN");
   const [theme, setTheme] = useState<ThemePreference>("system");
@@ -258,6 +261,7 @@ export function SettingsPage({
         setGeminiBaseUrl(snapshot.geminiBaseUrl);
         setGrokBaseUrl(snapshot.grokBaseUrl);
         setCustomBaseUrl(snapshot.customBaseUrl);
+        setCustomModel(snapshot.customModel);
         setModel(snapshot.model);
       })
       .catch((reason) => {
@@ -296,6 +300,7 @@ export function SettingsPage({
       geminiBaseUrl.trim() !== settings.geminiBaseUrl ||
       grokBaseUrl.trim() !== settings.grokBaseUrl ||
       customBaseUrl.trim() !== settings.customBaseUrl ||
+      customModel.trim() !== settings.customModel ||
       model !== settings.model ||
       preferredProjectOpener !== settings.preferredProjectOpener
     : false;
@@ -312,6 +317,7 @@ export function SettingsPage({
       geminiBaseUrl.trim() !== settings.geminiBaseUrl ||
       grokBaseUrl.trim() !== settings.grokBaseUrl ||
       customBaseUrl.trim() !== settings.customBaseUrl ||
+      customModel.trim() !== settings.customModel ||
       model !== settings.model
     : false;
 
@@ -421,6 +427,7 @@ export function SettingsPage({
           geminiBaseUrl,
           grokBaseUrl,
           customBaseUrl,
+          customModel,
           model,
           language,
           theme,
@@ -614,7 +621,11 @@ export function SettingsPage({
                     onChange={(value) => {
                       const nextProvider = value as ModelProviderId;
                       setProvider(nextProvider);
-                      setModel(providerDetails(nextProvider).defaultModel);
+                      setModel(
+                        nextProvider === "custom"
+                          ? customModel
+                          : providerDetails(nextProvider).defaultModel,
+                      );
                       markEdited();
                     }}
                     options={PROVIDER_OPTIONS.map((option) => ({
@@ -633,6 +644,7 @@ export function SettingsPage({
                       icon="model"
                       onChange={(value) => {
                         setModel(value);
+                        setCustomModel(value);
                         markEdited();
                       }}
                     />
@@ -1253,6 +1265,7 @@ export function createSettingsUpdate(
   geminiBaseUrl: string,
   grokBaseUrl: string,
   customBaseUrl: string,
+  customModel: string,
   model: string,
   language: Language = "zh-CN",
   theme: ThemePreference = "system",
@@ -1269,6 +1282,7 @@ export function createSettingsUpdate(
     geminiBaseUrl: geminiBaseUrl.trim(),
     grokBaseUrl: grokBaseUrl.trim(),
     customBaseUrl: customBaseUrl.trim(),
+    customModel: customModel.trim(),
     model,
     ...secretUpdate("openAIApiKey", providerKeys.openai),
     ...secretUpdate("deepSeekApiKey", providerKeys.deepseek),
@@ -1295,6 +1309,7 @@ export function createAppearanceSettingsUpdate(
     settings.geminiBaseUrl,
     settings.grokBaseUrl,
     settings.customBaseUrl,
+    settings.customModel,
     settings.model,
     settings.language,
     settings.theme,

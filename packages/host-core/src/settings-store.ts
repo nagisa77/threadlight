@@ -43,6 +43,7 @@ interface StoredSettings {
   geminiBaseUrl?: string;
   grokBaseUrl?: string;
   customBaseUrl?: string;
+  customModel?: string;
   model?: string;
 }
 
@@ -101,6 +102,7 @@ export class SettingsStore {
 
   snapshot(environment: NodeJS.ProcessEnv = process.env): DesktopSettingsSnapshot {
     const settings = this.runtimeSettings(environment);
+    const stored = this.read();
     return {
       language: parseLanguage(this.read().language),
       theme: parseTheme(this.read().theme),
@@ -123,6 +125,7 @@ export class SettingsStore {
       geminiBaseUrl: settings.geminiBaseUrl,
       grokBaseUrl: settings.grokBaseUrl,
       customBaseUrl: settings.customBaseUrl,
+      customModel: nonEmpty(stored.customModel) ?? DEFAULT_CUSTOM_MODEL,
       model: settings.model,
     };
   }
@@ -154,6 +157,7 @@ export class SettingsStore {
         update.customBaseUrl,
         "Custom Base URL",
       ),
+      customModel: requireNonEmpty(update.customModel, "Custom model"),
       model: requireNonEmpty(update.model, "Model"),
     };
 
@@ -423,6 +427,7 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.geminiBaseUrl) &&
     optionalString(settings.grokBaseUrl) &&
     optionalString(settings.customBaseUrl) &&
+    optionalString(settings.customModel) &&
     optionalString(settings.model) &&
     optionalLanguage(settings.language) &&
     optionalTheme(settings.theme) &&

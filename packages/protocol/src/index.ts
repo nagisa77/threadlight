@@ -107,6 +107,8 @@ export interface HostSettingsSnapshot {
   geminiBaseUrl: string;
   grokBaseUrl: string;
   customBaseUrl: string;
+  /** Last saved model ID for the custom OpenAI-compatible provider. */
+  customModel: string;
   model: string;
 }
 
@@ -130,6 +132,8 @@ export interface HostSettingsUpdate {
   geminiBaseUrl: string;
   grokBaseUrl: string;
   customBaseUrl: string;
+  /** Last saved model ID for the custom OpenAI-compatible provider. */
+  customModel: string;
   model: string;
 }
 

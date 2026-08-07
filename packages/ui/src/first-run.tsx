@@ -65,6 +65,7 @@ export function firstRunSettingsUpdate(
     geminiBaseUrl: settings.geminiBaseUrl,
     grokBaseUrl: settings.grokBaseUrl,
     customBaseUrl: settings.customBaseUrl,
+    customModel: provider === "custom" ? model.trim() : settings.customModel,
     model: model.trim(),
     ...(key ? providerSecretUpdate(provider, key) : {}),
   };

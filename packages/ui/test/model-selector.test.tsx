@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ModelSelector } from "../src/model-selector.js";
+import {
+  ModelSelector,
+  isCurrentModelSelection,
+} from "../src/model-selector.js";
 import {
   isKnownModel,
   modelDescription,
@@ -28,6 +31,19 @@ describe("ModelSelector", () => {
     expect(html).toContain("lucide-chevron-up");
     expect(html).not.toContain("lucide-cpu");
     expect(html).toContain("gpt-5.6-sol");
+  });
+
+  it("marks a model selected only when both provider and model match", () => {
+    expect(
+      isCurrentModelSelection("openai", "gpt-5.6-sol", "openai", "gpt-5.6-sol"),
+    ).toBe(true);
+    expect(
+      isCurrentModelSelection("openai", "gpt-5.6-sol", "deepseek", "gpt-5.6-sol"),
+    ).toBe(false);
+  });
+
+  it("does not append an active provider's unknown model to another provider", () => {
+    expect(selectorSource).toContain("level.provider !== effectiveProvider");
   });
 
   it("always anchors its popover strictly above the trigger", () => {

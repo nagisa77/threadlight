@@ -26,6 +26,15 @@ export interface ModelSelection {
 
 const POPOVER_WIDTH = 264;
 
+export function isCurrentModelSelection(
+  activeProvider: ModelProviderId,
+  activeModel: string,
+  optionProvider: ModelProviderId,
+  optionModel: string,
+): boolean {
+  return activeProvider === optionProvider && activeModel === optionModel;
+}
+
 function isProviderId(value: string | undefined): value is ModelProviderId {
   return PROVIDER_OPTIONS.some((option) => option.value === value);
 }
@@ -104,10 +113,18 @@ export function ModelSelector({
       ? [
           ...providerDetails(level.provider).models.map((option) => ({
             ...option,
-            selected: option.value === effectiveModel,
+            selected:
+              isCurrentModelSelection(
+                effectiveProvider,
+                effectiveModel,
+                level.provider,
+                option.value,
+              ),
           })),
-          ...(isKnownModel(level.provider, effectiveModel)
-            ? []
+          ...(
+            level.provider !== effectiveProvider ||
+            isKnownModel(level.provider, effectiveModel)
+              ? []
             : [
                 {
                   value: effectiveModel,

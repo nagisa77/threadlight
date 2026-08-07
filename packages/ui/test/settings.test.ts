@@ -178,6 +178,7 @@ describe("settings", () => {
         DEFAULT_GEMINI_BASE_URL,
         DEFAULT_GROK_BASE_URL,
         DEFAULT_CUSTOM_BASE_URL,
+        "llama3.2",
         "deepseek-v4-pro",
       ),
     ).toEqual({
@@ -196,6 +197,7 @@ describe("settings", () => {
       geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
       grokBaseUrl: DEFAULT_GROK_BASE_URL,
       customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
+      customModel: "llama3.2",
       model: "deepseek-v4-pro",
     });
   });
@@ -221,6 +223,7 @@ describe("settings", () => {
         `  ${DEFAULT_GEMINI_BASE_URL}  `,
         `  ${DEFAULT_GROK_BASE_URL}  `,
         `  ${DEFAULT_CUSTOM_BASE_URL}  `,
+        "llama3.2",
         "qwen3.7-plus",
       ),
     ).toEqual({
@@ -234,6 +237,7 @@ describe("settings", () => {
       geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
       grokBaseUrl: DEFAULT_GROK_BASE_URL,
       customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
+      customModel: "llama3.2",
       model: "qwen3.7-plus",
     });
   });
@@ -259,12 +263,35 @@ describe("settings", () => {
         DEFAULT_GROK_BASE_URL,
         "  http://localhost:1234/v1  ",
         "local/model",
+        "local/model",
       ),
     ).toMatchObject({
       provider: "custom",
       customApiKey: "local-token",
       customBaseUrl: "http://localhost:1234/v1",
       model: "local/model",
+    });
+  });
+
+  it("stores the custom model separately from the active provider model", () => {
+    const update = createSettingsUpdate(
+      Object.fromEntries(PROVIDER_OPTIONS.map(({ value }) => [value, { value: "", cleared: false }])) as Parameters<typeof createSettingsUpdate>[0],
+      { value: "", cleared: false },
+      "openai",
+      DEFAULT_QWEN_BASE_URL,
+      DEFAULT_KIMI_BASE_URL,
+      DEFAULT_DOUBAO_BASE_URL,
+      DEFAULT_GEMINI_BASE_URL,
+      DEFAULT_GROK_BASE_URL,
+      DEFAULT_CUSTOM_BASE_URL,
+      "local/model",
+      "gpt-5.6-sol",
+    );
+
+    expect(update).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.6-sol",
+      customModel: "local/model",
     });
   });
 
@@ -289,6 +316,7 @@ describe("settings", () => {
         DEFAULT_GEMINI_BASE_URL,
         DEFAULT_GROK_BASE_URL,
         DEFAULT_CUSTOM_BASE_URL,
+        "llama3.2",
         "gpt-5.6-sol",
         "ja",
       ).language,
@@ -316,6 +344,7 @@ describe("settings", () => {
         DEFAULT_GEMINI_BASE_URL,
         DEFAULT_GROK_BASE_URL,
         DEFAULT_CUSTOM_BASE_URL,
+        "llama3.2",
         "gpt-5.6-sol",
         "zh-CN",
         "dark",
@@ -344,6 +373,7 @@ describe("settings", () => {
       geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
       grokBaseUrl: DEFAULT_GROK_BASE_URL,
       customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
+      customModel: "llama3.2",
       model: "kimi-k3",
     };
 
@@ -382,6 +412,7 @@ describe("settings", () => {
         DEFAULT_GEMINI_BASE_URL,
         DEFAULT_GROK_BASE_URL,
         DEFAULT_CUSTOM_BASE_URL,
+        "llama3.2",
         "gpt-5.6-sol",
         "zh-CN",
         "system",

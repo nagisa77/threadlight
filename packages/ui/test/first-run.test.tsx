@@ -40,6 +40,7 @@ const settings: SettingsSnapshot = {
   geminiBaseUrl: "https://gemini.example/v1",
   grokBaseUrl: "https://grok.example/v1",
   customBaseUrl: "http://localhost:11434/v1",
+  customModel: "llama3.2",
   model: "gpt-5.6-sol",
 };
 
