@@ -13,6 +13,10 @@ import {
   activateVoiceInputFromClick,
   activateVoiceInputFromPointerDown,
 } from "../src/features/composer/voice-input-button.js";
+import {
+  COMPOSER_ERROR_DISMISS_MS,
+  scheduleComposerErrorDismissal,
+} from "../src/features/composer/controller.js";
 
 const appSource = readFileSync(
   new URL("../src/app.tsx", import.meta.url),
@@ -70,9 +74,29 @@ describe("voice composer", () => {
     expect(appSource).toContain(
       'voiceStatus !== "idle" ? " is-voice-active" : ""',
     );
-    expect(appSource).toMatch(
+    expect(appSource).not.toMatch(
       /selectedCapabilities\.length > 0 \|\|\s*voiceError/,
     );
+    expect(appSource).toContain("dismissComposerErrors();");
+  });
+
+  it("automatically dismisses composer errors after five seconds", () => {
+    const dismiss = vi.fn();
+    const clearTimeout = vi.fn();
+    let timeout: (() => void) | undefined;
+    const dispose = scheduleComposerErrorDismissal(dismiss, {
+      setTimeout(callback, delay) {
+        expect(delay).toBe(COMPOSER_ERROR_DISMISS_MS);
+        timeout = callback;
+        return 7;
+      },
+      clearTimeout,
+    });
+
+    timeout?.();
+    expect(dismiss).toHaveBeenCalledOnce();
+    dispose();
+    expect(clearTimeout).toHaveBeenCalledWith(7);
   });
 
   it("starts voice input during pointerdown before the mobile composer can move", () => {

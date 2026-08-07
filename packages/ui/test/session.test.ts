@@ -575,9 +575,7 @@ describe("sessionReducer", () => {
       type: "connection.ready",
       threadId: "thread-1",
       revision: 4,
-      messages: [
-        { id: "user-1", role: "user", text: "检查项目" },
-      ],
+      messages: [{ id: "user-1", role: "user", text: "检查项目" }],
       activeTurn: {
         turnId: "turn-1",
         revision: 4,
@@ -649,6 +647,10 @@ describe("sessionReducer", () => {
       submissionError: "conversation could not be persisted",
       messages: [],
     });
+
+    expect(
+      sessionReducer(state, { type: "submission.cleared" }).submissionError,
+    ).toBeUndefined();
   });
 
   it("keeps uploaded attachments outside the optimistic user text", () => {
@@ -978,19 +980,13 @@ describe("sessionReducer", () => {
           id: "call-1",
           name: "computer",
           arguments: {
-            actions: [
-              { type: "screenshot" },
-              { type: "click", x: 120, y: 80 },
-            ],
+            actions: [{ type: "screenshot" }, { type: "click", x: 120, y: 80 }],
           },
         },
       },
     });
     expect(state.progress[0]?.activities[0]?.detail).toBe(
-      [
-        "操作 1 · screenshot",
-        "操作 2 · click · 坐标 (120, 80)",
-      ].join("\n"),
+      ["操作 1 · screenshot", "操作 2 · click · 坐标 (120, 80)"].join("\n"),
     );
     state = sessionReducer(state, {
       type: "agent.event",
@@ -1204,5 +1200,4 @@ describe("sessionReducer", () => {
       { id: "call-1", status: "completed" },
     ]);
   });
-
 });

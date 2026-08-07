@@ -16,6 +16,21 @@ export interface PendingAttachment {
 export type VoiceInputStatus =
   "idle" | "requesting" | "recording" | "transcribing";
 
+export const COMPOSER_ERROR_DISMISS_MS = 5_000;
+
+interface ComposerErrorTimer {
+  setTimeout(callback: () => void, delay: number): number;
+  clearTimeout(handle: number): void;
+}
+
+export function scheduleComposerErrorDismissal(
+  dismiss: () => void,
+  timer: ComposerErrorTimer = window,
+): () => void {
+  const handle = timer.setTimeout(dismiss, COMPOSER_ERROR_DISMISS_MS);
+  return () => timer.clearTimeout(handle);
+}
+
 export function shouldIgnoreComposerKey(
   composing: boolean,
   nativeEvent: Pick<globalThis.KeyboardEvent, "isComposing" | "keyCode">,

@@ -250,6 +250,7 @@ import {
 } from "./features/navigation/project-dialogs.js";
 import {
   activateComposerMenuOnPointerDown,
+  scheduleComposerErrorDismissal,
   preserveComposerFocusOnPointerDown,
   shouldIgnoreComposerKey,
   useComposerController,
@@ -597,6 +598,7 @@ function ThreadlightAppContent({
     injectQueuedTurn,
     reorderQueuedTurn,
     cancelQueuedTurn,
+    clearSubmissionError,
     interrupt,
     terminateProcess,
     runningThreadIds,
@@ -1842,6 +1844,23 @@ function ThreadlightAppContent({
     setVoiceStatus("idle");
     setVoiceError(undefined);
   }, [releaseVoiceCapture]);
+
+  const dismissComposerErrors = useCallback(() => {
+    setVoiceError(undefined);
+    setAttachmentError(undefined);
+    setNewTaskDraftError(undefined);
+    if (state.threadId) clearSubmissionError(state.threadId);
+  }, [clearSubmissionError, setNewTaskDraftError, state.threadId]);
+
+  useEffect(() => {
+    if (!voiceError && !attachmentError && !state.submissionError) return;
+    return scheduleComposerErrorDismissal(dismissComposerErrors);
+  }, [
+    attachmentError,
+    dismissComposerErrors,
+    state.submissionError,
+    voiceError,
+  ]);
 
   const connectProject = useCallback(
     async (snapshot: ProjectsSnapshot, preferredThreadId?: string) => {
@@ -3449,7 +3468,6 @@ function ThreadlightAppContent({
     pendingAttachments.length > 0 ||
     state.queuedTurns.length > 0 ||
     selectedCapabilities.length > 0 ||
-    voiceError ||
     capabilityQuery ||
     addMenuOpen,
   );
@@ -4015,7 +4033,7 @@ function ThreadlightAppContent({
                           event.target.selectionStart,
                         );
                       }
-                      setVoiceError(undefined);
+                      dismissComposerErrors();
                     }}
                     onCompositionStart={handleCompositionStart}
                     onCompositionEnd={handleCompositionEnd}

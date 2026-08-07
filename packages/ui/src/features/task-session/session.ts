@@ -137,6 +137,7 @@ export type SessionAction =
       precedingAssistantMessage?: ConversationMessageData;
     }
   | { type: "submission.failed"; error: string }
+  | { type: "submission.cleared" }
   | { type: "model.selected"; provider: string; model: string };
 
 export const initialSessionState: SessionState = {
@@ -331,6 +332,10 @@ export function sessionReducer(
     }
     case "submission.failed":
       return { ...state, submissionError: action.error };
+    case "submission.cleared":
+      return state.submissionError === undefined
+        ? state
+        : { ...state, submissionError: undefined };
     case "model.selected":
       return {
         ...state,
@@ -1187,6 +1192,14 @@ export function useThreadlightSession(
     [updateSession],
   );
 
+  const clearSubmissionError = useCallback(
+    (threadId?: string) => {
+      const target = threadId ?? activeThreadId.current;
+      if (target) updateSession(target, { type: "submission.cleared" });
+    },
+    [updateSession],
+  );
+
   return {
     state,
     sessions,
@@ -1204,5 +1217,6 @@ export function useThreadlightSession(
     interrupt,
     terminateProcess,
     setThreadModel,
+    clearSubmissionError,
   };
 }
