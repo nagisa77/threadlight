@@ -304,7 +304,7 @@ Threadlight uses a versioned, SHA-256-hashed Prompt Composer to combine host rul
 
 Skills use the Agent Skills-compatible `SKILL.md` format and progressive disclosure:
 
-- Project Skills: `<project>/.agents/skills/<skill-name>/SKILL.md`
+- Project Skills: `<project>/.agents/skills/<skill-name>/SKILL.md` (with read-only compatibility for `<project>/.codex/skills/<skill-name>/SKILL.md`; `.agents/skills` wins name collisions)
 - User Skills: `~/.agents/skills/<skill-name>/SKILL.md` (with read-only compatibility for `~/.codex/skills/<skill-name>/SKILL.md`; `~/.agents/skills` wins name collisions)
 - Explicit activation: include `$skill-name` in the request
 - Desktop selection: type `@` in the composer to search Skills or fixed MCP capabilities; selections appear as chips and apply only to the current turn

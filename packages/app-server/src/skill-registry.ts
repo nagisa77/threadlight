@@ -141,7 +141,7 @@ export class SkillRegistry {
       const discovered = await discoverSource(source, maxSkillChars, warnings);
       for (const skill of discovered) {
         // The same canonical SKILL.md can be reachable from several sources
-        // (for example ~/.agents/skills and ~/.codex/skills). Skip the
+        // (for example .agents/skills and .codex/skills). Skip the
         // duplicate silently; the same file may still load under a different
         // plugin namespace.
         if (

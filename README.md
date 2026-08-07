@@ -374,7 +374,7 @@ Threadlight 使用带版本和 SHA-256 hash 的 Prompt Composer，将 Host 规�
 
 Skills 使用兼容 Agent Skills 的 `SKILL.md` 格式，并按渐进披露加载：
 
-- 项目 Skills：`<project>/.agents/skills/<skill-name>/SKILL.md`
+- 项目 Skills：`<project>/.agents/skills/<skill-name>/SKILL.md`（并只读兼容 `<project>/.codex/skills/<skill-name>/SKILL.md`；重名时以 `.agents/skills` 优先）
 - 用户 Skills：`~/.agents/skills/<skill-name>/SKILL.md`（并只读兼容 `~/.codex/skills/<skill-name>/SKILL.md`；重名时以 `~/.agents/skills` 优先）
 - 显式调用：在请求中写 `$skill-name`
 - 桌面端选择：在输入框中键入 `@`，按“工具 / 技能”分组搜索；仓库级 Skills 与精选能力会直接显示，用户全局和其他长尾 Skills 输入关键词后出现；选择结果以 chip 显示，并仅对当前一轮生效

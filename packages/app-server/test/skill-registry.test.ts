@@ -626,33 +626,126 @@ describe("Skill Registry", () => {
     ).toContain("name: geo-teacher");
   });
 
-  it("deduplicates the same canonical skill file across sources", async () => {
+  it("deduplicates the same canonical project skill across .agents and .codex", async () => {
     const root = temporaryDirectory("threadlight-skill-dedup-path-");
-    const userSkills = join(root, "home", ".agents", "skills");
-    const codexSkills = join(root, "home", ".codex", "skills");
-    mkdirSync(join(root, "home", ".agents"), { recursive: true });
+    const agentSkills = join(root, ".agents", "skills");
+    const codexSkills = join(root, ".codex", "skills");
+    mkdirSync(join(root, ".agents"), { recursive: true });
     writeSkill(
       codexSkills,
       "emil-design-eng",
       "Apply Emil Kowalski's design engineering philosophy.",
       "DESIGN_ENGINEERING_WORKFLOW",
     );
-    symlinkSync(codexSkills, userSkills, "dir");
+    symlinkSync(codexSkills, agentSkills, "dir");
 
-    const registry = await SkillRegistry.discover({
-      sources: [
-        { scope: "user", root: userSkills },
-        { scope: "user", root: codexSkills },
-      ],
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [],
+      userSkillRoots: [],
+      pluginRoots: [],
     });
 
-    expect(registry.descriptors()).toHaveLength(1);
-    expect(registry.descriptors()[0]).toMatchObject({
+    expect(runtime.snapshot.skills.skills).toHaveLength(1);
+    expect(runtime.snapshot.skills.skills[0]).toMatchObject({
       name: "emil-design-eng",
       invocationName: "emil-design-eng",
-      scope: "user",
+      scope: "repo",
     });
-    expect(registry.warnings).toEqual([]);
+    expect(runtime.snapshot.skills.warnings).toEqual([]);
+  });
+
+  it("loads project .codex skills and prefers .agents on name collisions", async () => {
+    const root = temporaryDirectory("threadlight-project-codex-skills-");
+    const agentSkills = join(root, ".agents", "skills");
+    const codexSkills = join(root, ".codex", "skills");
+    writeSkill(
+      agentSkills,
+      "shared-helper",
+      "Run the primary project workflow.",
+      "PRIMARY_PROJECT_WORKFLOW",
+    );
+    writeSkill(
+      codexSkills,
+      "shared-helper",
+      "Run the compatibility project workflow.",
+      "DUPLICATE_PROJECT_WORKFLOW",
+    );
+    writeSkill(
+      codexSkills,
+      "resume-interview",
+      "Continue a structured resume interview.",
+      "CODEX_PROJECT_INTERVIEW_WORKFLOW",
+    );
+
+    const runtimeOptions = {
+      workspaceRoot: root,
+      userHome: join(root, "home"),
+      builtinSkillRoots: [] as const,
+      userSkillRoots: [] as const,
+      pluginRoots: [] as const,
+    };
+    const runtime = await createSkillPluginThreadRuntime(runtimeOptions);
+    const skills = runtime.snapshot.skills.skills;
+    expect(skills).toHaveLength(2);
+    expect(
+      skills.find((skill) => skill.name === "shared-helper")?.source,
+    ).toContain("PRIMARY_PROJECT_WORKFLOW");
+    expect(
+      skills.find((skill) => skill.name === "resume-interview")?.path,
+    ).toContain(".codex");
+    expect(runtime.snapshot.skills.warnings).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("$shared-helper is already registered"),
+      ]),
+    );
+
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          expect(request.instructions).toContain("$resume-interview");
+          return {
+            text: "I’ll load the project skill.",
+            toolCalls: [
+              {
+                id: "read-project-codex-skill",
+                name: "skill_read",
+                arguments: { skill: "resume-interview" },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]?.name).toBe("skill_read");
+        expect(request.toolResults?.[0]?.output).toContain(
+          "CODEX_PROJECT_INTERVIEW_WORKFLOW",
+        );
+        return { text: "Project skill loaded.", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "skills", instructions: "Base prompt." }),
+      threadRuntimeFactory: (snapshot) =>
+        createSkillPluginThreadRuntime(runtimeOptions, snapshot),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await runTurn(
+      server,
+      messages,
+      threadId,
+      3,
+      "Use $resume-interview to continue.",
+    );
+
+    expect(requests).toHaveLength(2);
   });
 
   it("scans ~/.codex/skills as an extra user source and prefers ~/.agents/skills on name collisions", async () => {

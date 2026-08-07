@@ -162,6 +162,7 @@ export async function createSkillPluginThreadRuntime(
       ),
       ...(options.repoSkillRoots ?? [
         join(workspaceRoot, ".agents", "skills"),
+        join(workspaceRoot, ".codex", "skills"),
       ]).map((root) => ({ scope: "repo" as const, root })),
       ...(options.userSkillRoots ?? [
         join(userHome, ".agents", "skills"),
