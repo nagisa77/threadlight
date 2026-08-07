@@ -61,6 +61,42 @@ describe("TaskWorkspaceManager", () => {
     });
   });
 
+  it("uses the project checkout directly when local development is selected", async () => {
+    const root = await temporaryDirectory();
+    const repository = join(root, "repository");
+    await mkdir(repository);
+    await git(repository, ["init"]);
+    await git(repository, ["config", "user.name", "Threadlight Test"]);
+    await git(repository, [
+      "config",
+      "user.email",
+      "threadlight@example.invalid",
+    ]);
+    await writeFile(join(repository, "tracked.txt"), "local\n");
+    await git(repository, ["add", "."]);
+    await git(repository, ["commit", "-m", "Initial"]);
+    const manager = new TaskWorkspaceManager(join(root, "worktrees"));
+
+    await expect(
+      manager.prepare("project-1", repository, "local"),
+    ).resolves.toEqual({
+      mode: "folder",
+      path: await realpath(repository),
+    });
+    await expect(access(join(root, "worktrees"))).rejects.toThrow();
+  });
+
+  it("reports that explicit worktree development requires Git", async () => {
+    const root = await temporaryDirectory();
+    const project = join(root, "plain-project");
+    await mkdir(project);
+    const manager = new TaskWorkspaceManager(join(root, "worktrees"));
+
+    await expect(
+      manager.prepare("project-1", project, "worktree"),
+    ).rejects.toThrow("requires a Git repository");
+  });
+
   it("creates an isolated worktree with the current working state", async () => {
     const root = await temporaryDirectory();
     const repository = join(root, "repository");

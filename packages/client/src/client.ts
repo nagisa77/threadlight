@@ -8,6 +8,7 @@ import type {
   JsonRpcRequest,
   MethodParams,
   MethodResult,
+  TaskDevelopmentMode,
   ThreadlightMethod,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
@@ -107,8 +108,11 @@ export class ThreadlightClient {
     );
   }
 
-  startThread() {
-    return this.request("thread/start");
+  startThread(developmentMode?: TaskDevelopmentMode) {
+    return this.request(
+      "thread/start",
+      developmentMode ? { developmentMode } : undefined,
+    );
   }
 
   resumeThread(threadId: string) {

@@ -22,6 +22,8 @@ import {
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 
+import type { TaskDevelopmentMode } from "@threadlight/protocol";
+
 import {
   workspaceEphemeralMatcher,
   workspaceRuntimeLinkMatcher,
@@ -81,10 +83,19 @@ export class TaskWorkspaceManager {
   async prepare(
     projectId: string,
     projectPath: string,
+    developmentMode?: TaskDevelopmentMode,
   ): Promise<TaskWorkspace> {
     const canonicalProjectPath = await realpath(projectPath);
+    if (developmentMode === "local") {
+      return { mode: "folder", path: canonicalProjectPath };
+    }
     const repository = await this.repository(canonicalProjectPath);
     if (!repository) {
+      if (developmentMode === "worktree") {
+        throw new Error(
+          "Worktree development requires a Git repository with at least one commit.",
+        );
+      }
       return { mode: "folder", path: canonicalProjectPath };
     }
 

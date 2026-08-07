@@ -69,10 +69,10 @@ describe("TerminalPanel", () => {
     expect(html).toContain('aria-label="底部面板"');
     expect(html).toContain('class="lucide lucide-terminal"');
     expect(html).not.toContain("lucide-square-terminal");
-    expect(html).toContain("任务 worktree · threadlight/task-1 · 1");
+    expect(html).toContain("工作树 · threadlight/task-1 · 1");
     expect(html).toContain('aria-label="新建面板标签"');
-    expect(html).toContain(">任务 worktree · threadlight/task-1</span>");
-    expect(html).toContain(">原工作区 · main</span>");
+    expect(html).toContain(">工作树 · threadlight/task-1</span>");
+    expect(html).toContain(">本地工作区 · main</span>");
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="关闭底部面板"');
     expect(html).toContain("正在启动终端");
@@ -99,8 +99,8 @@ describe("TerminalPanel", () => {
       />,
     );
 
-    expect(html).toContain("原工作区 · main · 1");
-    expect(html).not.toContain("任务 worktree");
+    expect(html).toContain("本地工作区 · main · 1");
+    expect(html).not.toContain("工作树");
   });
 });
 
@@ -109,7 +109,7 @@ describe("nextTabsAfterClose", () => {
     const result = nextTabsAfterClose(
       [
         { id: "tab-1", kind: "terminal", title: "终端 1" },
-        { id: "tab-2", kind: "original-terminal", title: "原工作区 · main · 2" },
+        { id: "tab-2", kind: "original-terminal", title: "本地工作区 · main · 2" },
         { id: "tab-3", kind: "file", title: "文件" },
       ],
       "tab-1",
@@ -125,7 +125,7 @@ describe("nextTabsAfterClose", () => {
     const result = nextTabsAfterClose(
       [
         { id: "tab-1", kind: "terminal", title: "终端 1" },
-        { id: "tab-2", kind: "original-terminal", title: "原工作区 · main · 2" },
+        { id: "tab-2", kind: "original-terminal", title: "本地工作区 · main · 2" },
       ],
       "tab-2",
       "tab-1",

@@ -65,6 +65,7 @@ import type {
   JsonRpcOutgoing,
   JsonRpcRequest,
   JsonRpcResponse,
+  TaskDevelopmentMode,
   ThreadlightHostHealth,
   TerminalSessionEvent,
 } from "@threadlight/protocol";
@@ -1102,7 +1103,11 @@ export class ThreadlightHostServer {
       workspace =
         this.options.projects.project(projectId)?.scope === "standalone"
           ? await this.taskWorkspaces.prepareStandalone()
-          : await this.taskWorkspaces.prepare(projectId, projectRoot);
+          : await this.taskWorkspaces.prepare(
+              projectId,
+              projectRoot,
+              developmentModeForThreadStart(message),
+            );
       pendingSnapshotId = `host:${randomUUID()}`;
       try {
         await this.conversationChanges.beginPendingSnapshot(
@@ -1243,11 +1248,6 @@ export class ThreadlightHostServer {
       }
     }
     this.recordNotification(projectId, message);
-    try {
-      await this.synchronizeCompletedWorktree(projectId, message);
-    } catch {
-      // Delivery failures are persisted as attention and published to clients.
-    }
     this.resolveAutomationTurn(projectId, message);
     const event = serverSentEvent(message);
     for (const client of this.projectEventClients(projectId)) {
@@ -1285,52 +1285,6 @@ export class ThreadlightHostServer {
     } catch {
       // Late notifications may arrive after a task is deleted.
     }
-  }
-
-  private async synchronizeCompletedWorktree(
-    projectId: string,
-    message: JsonRpcOutgoing,
-  ): Promise<void> {
-    if (!("method" in message) || message.method !== "turn/completed") {
-      return;
-    }
-    const threadId = (
-      message.params as { threadId?: unknown } | undefined
-    )?.threadId;
-    if (typeof threadId !== "string") return;
-    const project = this.options.projects.project(projectId);
-    const workspace = project?.conversations.find(
-      (conversation) => conversation.id === threadId,
-    )?.workspace;
-    if (!project || workspace?.mode !== "worktree") return;
-    let changes;
-    try {
-      changes = await this.conversationChanges.changes(
-        projectId,
-        threadId,
-        workspace.path,
-      );
-    } catch (error) {
-      this.recordDeliveryConversationState(projectId, threadId, "failed");
-      this.publishDeliveryNotification(projectId, {
-        jsonrpc: "2.0",
-        method: "delivery/failed",
-        params: {
-          projectId,
-          threadId,
-          source: "lifecycle",
-          error: error instanceof Error ? error.message : String(error),
-        },
-      });
-      throw error;
-    }
-    await this.applyAutomaticDelivery({
-      projectId,
-      threadId,
-      revision: changes.revision,
-      projectPath: project.basePath,
-      workspace,
-    }, "lifecycle");
   }
 
   private applyAutomaticDelivery(
@@ -2343,6 +2297,19 @@ function parseAutomationTarget(
     throw new Error("Invalid automation target");
   }
   return { projectId: target.projectId, id: target.id };
+}
+
+function developmentModeForThreadStart(
+  request: JsonRpcRequest,
+): TaskDevelopmentMode {
+  const params =
+    request.params && typeof request.params === "object"
+      ? (request.params as Record<string, unknown>)
+      : undefined;
+  const mode = params?.developmentMode;
+  if (mode === undefined) return "local";
+  if (mode === "local" || mode === "worktree") return mode;
+  throw new Error("Invalid task development mode");
 }
 
 function hostOAuthCallbackRoute(

@@ -11,7 +11,7 @@ import {
 } from "../src/session.js";
 
 describe("sessionReducer", () => {
-  it("binds a new task draft to its eagerly created thread until the first turn is submitted", async () => {
+  it("keeps a new task as a workspace-free draft until the first turn is submitted", async () => {
     const established = {
       ...initialSessionState,
       connection: "ready" as const,
@@ -25,12 +25,12 @@ describe("sessionReducer", () => {
     const draft = newTaskDraftState(established, "Could not start task");
     expect(draft).toMatchObject({
       connection: "ready",
-      threadId: "thread-1",
-      revision: 3,
       messages: [],
       isRunning: false,
       submissionError: "Could not start task",
     });
+    expect(draft.threadId).toBeUndefined();
+    expect(draft.revision).toBe(0);
 
     const calls: string[] = [];
     const created: string[] = [];
@@ -38,8 +38,8 @@ describe("sessionReducer", () => {
       initialize: async () => {
         calls.push("initialize");
       },
-      startThread: async () => {
-        calls.push("thread/start");
+      startThread: async (developmentMode?: string) => {
+        calls.push(`thread/start:${developmentMode}`);
         return { threadId: "thread-2" };
       },
       startTurn: async (threadId: string, text: string) => {
@@ -57,12 +57,13 @@ describe("sessionReducer", () => {
       "approval",
       undefined,
       undefined,
+      "worktree",
       (threadId) => created.push(threadId),
     );
 
     expect(calls).toEqual([
       "initialize",
-      "thread/start",
+      "thread/start:worktree",
       "turn/start:thread-2:First question",
     ]);
     expect(created).toEqual(["thread-2"]);

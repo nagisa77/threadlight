@@ -217,7 +217,7 @@ describe("ReviewView", () => {
     expect(html).not.toContain(">重试<");
   });
 
-  it("labels local data while automatic sync remains available", () => {
+  it("labels local data while manual worktree delivery remains available", () => {
     const html = renderToStaticMarkup(
       <ReviewView
         changes={{
@@ -248,8 +248,8 @@ describe("ReviewView", () => {
 
     expect(html).toContain("本地数据");
     expect(html).toContain("1 个本地数据文件");
-    expect(html).toContain("等待首次同步");
-    expect(html).toContain("任务完成后，修改会自动应用到原工作区");
+    expect(html).toContain("尚未手动同步");
+    expect(html).toContain("修改会保留在工作树中；需要时手动同步到本地工作区");
     expect(html).toContain('class="review-delivery-indicator ready pressable"');
     expect(html).not.toContain("暂存并提交");
   });
@@ -524,8 +524,8 @@ describe("WorkspacePanel", () => {
     expect(html).toContain('aria-label="打开系统文件…"');
     expect(html).toContain('aria-label="新建面板标签"');
     expect(html).toContain('role="menuitem"');
-    expect(html).toContain(">任务 worktree · threadlight/task-1</span>");
-    expect(html).toContain(">原工作区 · main</span>");
+    expect(html).toContain(">工作树 · threadlight/task-1</span>");
+    expect(html).toContain(">本地工作区 · main</span>");
     expect(html).toContain(">文件</span>");
     expect(html).toContain('aria-label="调整聊天与右侧面板宽度"');
     expect(html).toContain('aria-orientation="vertical"');
@@ -634,7 +634,7 @@ describe("WorkspacePanel", () => {
     );
 
     expect(panel).toContain(">交付中心</span>");
-    expect(center).toContain("追踪原工作区同步、恢复点与 GitHub 发布状态");
+    expect(center).toContain("管理手动同步、恢复点与 GitHub 发布状态");
     expect(center).toContain("目标分支");
     expect(center).toContain("同步历史");
     expect(center).toContain("撤回点");

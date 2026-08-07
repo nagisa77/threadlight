@@ -1041,7 +1041,7 @@ describe("ThreadlightHostServer", () => {
     webSession.dispose();
   });
 
-  it("owns remote task recovery, worktree delivery, push, and draft PR flows", async () => {
+  it("owns remote local/worktree selection and keeps completed worktree changes isolated", async () => {
     const root = temporaryDirectory("threadlight-host-delivery-");
     const projectPath = createWorkspace(root, "project", "baseline");
     writeFileSync(
@@ -1122,14 +1122,14 @@ describe("ThreadlightHostServer", () => {
               ? "turn-failed"
               : conflict
                 ? "turn-conflict"
-                : "turn-automatic";
+                : "turn-worktree";
             writeFileSync(
               join(projectRoot, "src", "index.ts"),
               failed
                 ? "export const value = 'failed turn';\n"
                 : conflict
                   ? "export const value = 'conflicting turn';\n"
-                  : "export const value = 'automatic';\n",
+                  : "export const value = 'worktree turn';\n",
             );
             emit({
               jsonrpc: "2.0",
@@ -1145,7 +1145,7 @@ describe("ThreadlightHostServer", () => {
                   turnId,
                   ...(failed
                     ? { error: "Scripted turn failed" }
-                    : { output: "Applied automatically" }),
+                    : { output: "Updated worktree" }),
                 },
               });
             });
@@ -1185,6 +1185,7 @@ describe("ThreadlightHostServer", () => {
           jsonrpc: "2.0",
           id: 1,
           method: "thread/start",
+          params: { developmentMode: "worktree" },
         },
       }),
     ).resolves.toMatchObject({
@@ -1398,39 +1399,40 @@ describe("ThreadlightHostServer", () => {
       },
     });
 
-    const automaticDeliveryStates: string[] = [];
-    let deliveryConflict:
-      | { source: string; preflight: { conflicts: readonly unknown[] } }
-      | undefined;
-    let deliveryFailed: { source: string; error: string } | undefined;
+    const deliveryStates: string[] = [];
+    let completedTurnObserved = false;
     let failedTurnObserved = false;
     const unsubscribeDeliverySyncing = webSession.client.on(
       "delivery/syncing",
       ({ threadId }) => {
-        if (threadId === "thread-1") automaticDeliveryStates.push("syncing");
+        if (threadId === "thread-1") deliveryStates.push("syncing");
       },
     );
     const unsubscribeDeliverySynced = webSession.client.on(
       "delivery/synced",
       ({ threadId }) => {
-        if (threadId === "thread-1") automaticDeliveryStates.push("synced");
+        if (threadId === "thread-1") deliveryStates.push("synced");
       },
     );
     const unsubscribeDeliveryConflict = webSession.client.on(
       "delivery/conflict",
       (event) => {
         if (event.threadId !== "thread-1") return;
-        automaticDeliveryStates.push("conflict");
-        deliveryConflict = event;
+        deliveryStates.push("conflict");
       },
     );
     const unsubscribeDeliveryFailed = webSession.client.on(
       "delivery/failed",
       (event) => {
         if (event.threadId === "thread-1") {
-          automaticDeliveryStates.push("failed");
-          deliveryFailed = event;
+          deliveryStates.push("failed");
         }
+      },
+    );
+    const unsubscribeCompletedTurn = webSession.client.on(
+      "turn/completed",
+      ({ threadId }) => {
+        if (threadId === "thread-1") completedTurnObserved = true;
       },
     );
     const unsubscribeFailedTurn = webSession.client.on(
@@ -1440,89 +1442,70 @@ describe("ThreadlightHostServer", () => {
       },
     );
 
-    await authenticatedJson(
-      `${endpoint}/v1/projects/project-1/runtime/rpc`,
-      {
-        method: "POST",
-        body: {
-          jsonrpc: "2.0",
-          id: 2,
-          method: "turn/start",
-          params: { threadId: "thread-1", input: "Update the value" },
-        },
+    const originalBeforeCompletedTurn = readFileSync(
+      join(projectPath, "src", "index.ts"),
+      "utf8",
+    );
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "turn/start",
+        params: { threadId: "thread-1", input: "Update the value" },
       },
+    });
+    await waitFor(() => completedTurnObserved);
+    expect(readFileSync(join(taskPath, "src", "index.ts"), "utf8")).toBe(
+      "export const value = 'worktree turn';\n",
     );
-    await waitFor(
-      () =>
-        readFileSync(join(projectPath, "src", "index.ts"), "utf8") ===
-        "export const value = 'automatic';\n",
+    expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
+      originalBeforeCompletedTurn,
     );
-    await waitFor(() => automaticDeliveryStates.includes("synced"));
-    expect(automaticDeliveryStates).toEqual(["syncing", "synced"]);
+    expect(deliveryStates).toEqual([]);
 
     writeFileSync(
       join(projectPath, "src", "index.ts"),
       "export const value = 'manual original';\n",
     );
-    await authenticatedJson(
-      `${endpoint}/v1/projects/project-1/runtime/rpc`,
-      {
-        method: "POST",
-        body: {
-          jsonrpc: "2.0",
-          id: 4,
-          method: "turn/start",
-          params: { threadId: "thread-1", input: "Conflict sync" },
-        },
+    completedTurnObserved = false;
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "turn/start",
+        params: { threadId: "thread-1", input: "Conflict sync" },
       },
-    );
-    await waitFor(() => automaticDeliveryStates.includes("conflict"));
-    expect(automaticDeliveryStates).toEqual([
-      "syncing",
-      "synced",
-      "syncing",
-      "conflict",
-    ]);
-    expect(deliveryConflict).toMatchObject({
-      source: "lifecycle",
-      preflight: { conflicts: [expect.objectContaining({ path: "src/index.ts" })] },
     });
+    await waitFor(() => completedTurnObserved);
+    expect(deliveryStates).toEqual([]);
     expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
       "export const value = 'manual original';\n",
     );
-    const attentionConversation = (await host.projects()).projects[0]
-      ?.conversations.find(({ id }) => id === "thread-1");
-    expect(attentionConversation).toMatchObject({
-      status: "attention",
-      unread: true,
-    });
+    const completedConversation = (
+      await host.projects()
+    ).projects[0]?.conversations.find(({ id }) => id === "thread-1");
+    expect(completedConversation).toMatchObject({ status: "completed" });
 
-    await authenticatedJson(
-      `${endpoint}/v1/projects/project-1/runtime/rpc`,
-      {
-        method: "POST",
-        body: {
-          jsonrpc: "2.0",
-          id: 3,
-          method: "turn/start",
-          params: { threadId: "thread-1", input: "Fail safely" },
-        },
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "turn/start",
+        params: { threadId: "thread-1", input: "Fail safely" },
       },
-    );
+    });
     await waitFor(() => failedTurnObserved);
     expect(readFileSync(join(projectPath, "src", "index.ts"), "utf8")).toBe(
       "export const value = 'manual original';\n",
     );
-    expect(automaticDeliveryStates).toEqual([
-      "syncing",
-      "synced",
-      "syncing",
-      "conflict",
-    ]);
+    expect(deliveryStates).toEqual([]);
 
     writeFileSync(
       join(projectPath, "src", "index.ts"),
-      "export const value = 'automatic';\n",
+      "export const value = 'manual original';\n",
     );
     execFileSync("git", ["switch", "-c", "other"], { cwd: projectPath });
     const failedDeliveryChanges = await host.conversationChanges(
@@ -1536,23 +1519,11 @@ describe("ThreadlightHostServer", () => {
         failedDeliveryChanges.revision,
       ),
     ).rejects.toThrow("original worktree is now on other");
-    await waitFor(() => automaticDeliveryStates.includes("failed"));
-    expect(automaticDeliveryStates).toEqual([
-      "syncing",
-      "synced",
-      "syncing",
-      "conflict",
-      "syncing",
-      "failed",
-    ]);
-    expect(deliveryFailed).toMatchObject({
-      source: "retry",
-      error: expect.stringContaining("original worktree is now on other"),
-    });
     unsubscribeDeliverySyncing();
     unsubscribeDeliverySynced();
     unsubscribeDeliveryConflict();
     unsubscribeDeliveryFailed();
+    unsubscribeCompletedTurn();
     unsubscribeFailedTurn();
     const deliveryJournalDirectory = join(
       projectPath,

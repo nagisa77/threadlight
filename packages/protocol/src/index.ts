@@ -315,6 +315,9 @@ export interface HostSearchResult {
 
 export type HostConversationStatus = "pending" | "completed" | "attention";
 
+/** Selects whether a new task shares the project checkout or gets an isolated Git worktree. */
+export type TaskDevelopmentMode = "local" | "worktree";
+
 export type HostTaskWorkspace =
   | {
       mode: "folder";
@@ -959,7 +962,7 @@ export interface ThreadlightMethodMap {
     result: { name: string; protocolVersion: string };
   };
   "thread/start": {
-    params: undefined;
+    params: { developmentMode?: TaskDevelopmentMode } | undefined;
     result: { threadId: string };
   };
   "thread/resume": {

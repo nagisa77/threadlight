@@ -25,6 +25,7 @@ import {
   type JsonRpcId,
   type JsonRpcOutgoing,
   type JsonRpcRequest,
+  type TaskDevelopmentMode,
   type TerminalSessionEvent,
   type ThreadlightMethod,
 } from "@threadlight/protocol";
@@ -505,11 +506,6 @@ function ensureAppServer(
           projectId,
           messageWorkspace,
           message,
-          (notification) => {
-            if (rendererWindow && !rendererWindow.isDestroyed()) {
-              sendToRenderer(rendererWindow, notification);
-            }
-          },
         );
         if (rendererWindow && !rendererWindow.isDestroyed()) {
           sendToRenderer(rendererWindow, message);
@@ -683,7 +679,6 @@ async function recordProjectMessage(
   projectId: string,
   workspace: DesktopTaskWorkspace,
   message: JsonRpcOutgoing,
-  publish: (message: JsonRpcOutgoing) => void,
 ): Promise<void> {
   if ("method" in message) {
     const threadId = (message.params as { threadId?: unknown } | undefined)
@@ -734,72 +729,6 @@ async function recordProjectMessage(
         projectStore?.markConversationCompleted(completedTarget);
       } catch {
         // A task can be removed while a late runtime notification is queued.
-      }
-    }
-    if (
-      message.method === "turn/completed" &&
-      typeof threadId === "string" &&
-      workspace.mode === "worktree" &&
-      currentProject(projectId)?.runtime?.kind !== "remote"
-    ) {
-      const project = currentProject(projectId);
-      if (project && conversationChangeTracker && worktreeDeliveryManager) {
-        let revision: string | undefined;
-        try {
-          const changes = await conversationChangeTracker.changes(
-            projectId,
-            threadId,
-            workspace.path,
-          );
-          revision = changes.revision;
-          await applyAutomaticWorktreeDelivery(
-            worktreeDeliveryManager,
-            {
-              projectId,
-              threadId,
-              revision: changes.revision,
-              projectPath: project.basePath,
-              workspace,
-            },
-            (state) => {
-              recordDeliveryConversationState(
-                projectId,
-                threadId,
-                state.status,
-                "lifecycle",
-                state.error,
-              );
-              publish(
-                automaticDeliveryNotification(
-                  projectId,
-                  threadId,
-                  state,
-                  "lifecycle",
-                ),
-              );
-            },
-          );
-        } catch (error) {
-          if (!revision) {
-            const reason = errorMessage(error);
-            recordDeliveryConversationState(
-              projectId,
-              threadId,
-              "failed",
-              "lifecycle",
-              reason,
-            );
-            publish(
-              deliveryFailedNotification(
-                projectId,
-                threadId,
-                "lifecycle",
-                reason,
-              ),
-            );
-          }
-          // Versioned failures have already published conflict/failed details.
-        }
       }
     }
     const suppressCompletionNotification = Boolean(
@@ -1161,6 +1090,19 @@ function workspaceForThread(
   );
 }
 
+function developmentModeForThreadStart(
+  request: JsonRpcRequest,
+): TaskDevelopmentMode {
+  const params =
+    request.params && typeof request.params === "object"
+      ? (request.params as Record<string, unknown>)
+      : undefined;
+  const mode = params?.developmentMode;
+  if (mode === undefined) return "local";
+  if (mode === "local" || mode === "worktree") return mode;
+  throw new Error("Invalid task development mode");
+}
+
 async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void> {
   if (
     !mainWindow ||
@@ -1205,6 +1147,7 @@ async function handleRequest(event: IpcMainEvent, value: unknown): Promise<void>
             : await taskWorkspaceManager.prepare(
                 project.id,
                 project.basePath,
+                developmentModeForThreadStart(value),
               );
         await conversationChangeTracker?.beginPendingSnapshot(
           project.id,

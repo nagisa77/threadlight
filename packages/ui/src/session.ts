@@ -25,6 +25,7 @@ import {
   type MessageSourceData,
   type ProcessSnapshotData,
   type QueuedTurnData,
+  type TaskDevelopmentMode,
   type TurnDiagnosticsData,
   type TurnMode,
 } from "@threadlight/protocol";
@@ -518,7 +519,9 @@ export async function requestTurnStart(
 export async function requestNewThreadTurnStart(
   client: {
     initialize(): Promise<unknown>;
-    startThread(): Promise<{ threadId: string }>;
+    startThread(
+      developmentMode?: TaskDevelopmentMode,
+    ): Promise<{ threadId: string }>;
     startTurn(
       threadId: string,
       text: string,
@@ -537,13 +540,14 @@ export async function requestNewThreadTurnStart(
   accessMode: ConversationAccessMode,
   provider: string | undefined,
   model: string | undefined,
+  developmentMode: TaskDevelopmentMode,
   onThreadCreated: (threadId: string) => void,
 ): Promise<{
   threadId: string;
   started: { ok: true } | { ok: false; error: string };
 }> {
   await client.initialize();
-  const { threadId } = await client.startThread();
+  const { threadId } = await client.startThread(developmentMode);
   onThreadCreated(threadId);
   return {
     threadId,
@@ -567,13 +571,11 @@ export function newTaskDraftState(
 ): SessionState {
   return {
     ...initialSessionState,
-    connection: state.connection,
+    // A draft has no runtime-owned thread or workspace until the first send,
+    // so the user can still choose Local or Worktree without creating and
+    // discarding hidden checkouts.
+    connection: state.connection === "error" ? "error" : "ready",
     connectionError: state.connectionError,
-    // The draft is bound to the eagerly created thread so the empty state
-    // can load suggested questions, capabilities (the "@" menu), and the
-    // conversation access-mode control before the first message is sent.
-    threadId: state.threadId,
-    revision: state.revision,
     ...(state.provider ? { provider: state.provider } : {}),
     ...(state.model ? { model: state.model } : {}),
     submissionError,
@@ -831,12 +833,14 @@ export function useThreadlightSession(
     };
   }, [client, runningProcessKey, updateSession]);
 
-  const newThread = useCallback(async () => {
+  const newThread = useCallback(async (
+    developmentMode?: TaskDevelopmentMode,
+  ) => {
     try {
       // A freshly switched project runtime requires initialization before
       // any thread can be created, so initialize unconditionally.
       await client.initialize();
-      const { threadId } = await client.startThread();
+      const { threadId } = await client.startThread(developmentMode);
       activateThread(threadId);
       updateSession(threadId, { type: "connection.ready", threadId });
       return threadId;
@@ -945,6 +949,7 @@ export function useThreadlightSession(
       accessMode: ConversationAccessMode = "approval",
       provider?: string,
       model?: string,
+      developmentMode: TaskDevelopmentMode = "local",
     ) => {
       const text = value.trim();
       if (!text && attachments.length === 0) return;
@@ -961,6 +966,7 @@ export function useThreadlightSession(
           accessMode,
           provider,
           model,
+          developmentMode,
           (threadId) => {
             activateThread(threadId);
             updateSession(threadId, {

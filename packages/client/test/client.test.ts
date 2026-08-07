@@ -313,6 +313,25 @@ describe("ThreadlightClient", () => {
     await expect(started).resolves.toEqual({ threadId: "thread-1" });
   });
 
+  it("sends the selected development mode when starting a thread", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const started = client.startThread("worktree");
+    const request = transport.sent[0];
+    expect(request).toMatchObject({
+      method: "thread/start",
+      params: { developmentMode: "worktree" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: request.id ?? null,
+      result: { threadId: "thread-worktree" },
+    });
+
+    await expect(started).resolves.toEqual({ threadId: "thread-worktree" });
+  });
+
   it("exposes typed notification subscriptions", () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

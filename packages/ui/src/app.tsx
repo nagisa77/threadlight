@@ -21,6 +21,7 @@ import type {
   ConversationAccessMode,
   HostDirectoryEntry,
   HostDirectoryListing,
+  TaskDevelopmentMode,
   TurnMode,
 } from "@threadlight/protocol";
 import {
@@ -172,6 +173,7 @@ import {
   type PopoverPosition,
 } from "./popover.js";
 import { ModelSelector } from "./model-selector.js";
+import { DevelopmentModeControl } from "./development-mode.js";
 
 import {
   ComputerPermissionCard,
@@ -598,7 +600,6 @@ function ThreadlightAppContent({
     state: activeState,
     retry,
     openThread,
-    newThread,
     deleteThread,
     send,
     sendNewThread,
@@ -612,6 +613,14 @@ function ThreadlightAppContent({
   } = useThreadlightSession(client, { autoConnect: !projects });
   const [newTaskDraft, setNewTaskDraft] = useState(false);
   const [newTaskDraftError, setNewTaskDraftError] = useState<string>();
+  const [developmentMode, setDevelopmentMode] =
+    useState<TaskDevelopmentMode>("local");
+  const [draftAccessMode, setDraftAccessMode] =
+    useState<ConversationAccessMode>("approval");
+  const [draftModel, setDraftModel] = useState<{
+    provider: string;
+    model: string;
+  }>();
   const state = newTaskDraft
     ? newTaskDraftState(activeState, newTaskDraftError)
     : activeState;
@@ -752,6 +761,29 @@ function ThreadlightAppContent({
   const currentConversation = currentProject?.conversations.find(
     (conversation) => conversation.id === state.threadId,
   );
+  const currentDevelopmentMode: TaskDevelopmentMode = newTaskDraft
+    ? developmentMode
+    : currentConversation?.workspace?.mode === "worktree"
+      ? "worktree"
+      : "local";
+  const showDevelopmentMode = Boolean(
+    projects &&
+    currentProject &&
+    currentProject.scope !== "standalone" &&
+    !currentProject.runtime,
+  );
+  const developmentModeEditable = Boolean(
+    showDevelopmentMode && newTaskDraft && !state.threadId,
+  );
+  const selectedAccessMode = newTaskDraft
+    ? draftAccessMode
+    : (currentConversation?.accessMode ?? "approval");
+  const selectedProvider = newTaskDraft
+    ? (draftModel?.provider ?? state.provider)
+    : state.provider;
+  const selectedModel = newTaskDraft
+    ? (draftModel?.model ?? state.model)
+    : state.model;
   // Prefer the persisted conversation title (same source the sidebar uses);
   // fall back to the first user message until a generated title exists, then
   // to the generic placeholder.
@@ -778,9 +810,8 @@ function ThreadlightAppContent({
     (currentConversation?.workspace?.mode === "worktree"
       ? currentConversation.workspace.sourceBranch
       : undefined);
-  const defaultTerminalWorkspace = currentConversation?.workspace
-    ? "task"
-    : "original";
+  const defaultTerminalWorkspace =
+    currentConversation?.workspace?.mode === "worktree" ? "task" : "original";
   const defaultTerminalContext = terminalWorkspaceContextLabel(
     defaultTerminalWorkspace,
     defaultTerminalWorkspace === "task"
@@ -1838,6 +1869,15 @@ function ThreadlightAppContent({
         preferredThreadId ??
         project.conversations.find((conversation) => !conversation.archivedAt)
           ?.id;
+      if (!requestedThreadId) {
+        setDevelopmentMode("local");
+        setDraftAccessMode("approval");
+        setDraftModel(undefined);
+        setNewTaskDraftError(undefined);
+        setNewTaskDraft(true);
+        return;
+      }
+      setNewTaskDraft(false);
       const openedThreadId = await openThread(requestedThreadId);
       if (
         openedThreadId &&
@@ -2206,16 +2246,17 @@ function ThreadlightAppContent({
       let submittedThreadId: string | undefined;
       let submitted = false;
       if (newTaskDraft && !state.threadId) {
-        // The eager thread could not be created (for example while the
-        // runtime was still connecting); fall back to creating one on submit.
+        // Create the task only after the user has chosen its development
+        // mode, so no hidden checkout needs to be replaced.
         const result = await sendNewThread(
           value,
           stagedAttachments,
           composerMode,
           selectedCapabilities,
-          "approval",
-          state.provider,
-          state.model,
+          draftAccessMode,
+          selectedProvider,
+          selectedModel,
+          developmentMode,
         );
         if (result) {
           if ("error" in result) {
@@ -2238,7 +2279,7 @@ function ThreadlightAppContent({
           stagedAttachments,
           composerMode,
           selectedCapabilities,
-          currentConversation?.accessMode ?? "approval",
+          selectedAccessMode,
           state.provider,
           state.model,
         )
@@ -2324,11 +2365,10 @@ function ThreadlightAppContent({
     }
     closeConversationPanels();
     setNewTaskDraftError(undefined);
+    setDevelopmentMode("local");
+    setDraftAccessMode("approval");
+    setDraftModel(undefined);
     setNewTaskDraft(true);
-    // Create the thread eagerly so the empty state can load suggested
-    // questions, capabilities (the "@" menu), and the access-mode control
-    // before the first message is submitted.
-    await newThread();
     requestAnimationFrame(() => textarea.current?.focus());
   }
 
@@ -2347,11 +2387,10 @@ function ThreadlightAppContent({
       closeConversationPanels();
       setView("thread");
       setNewTaskDraftError(undefined);
+      setDevelopmentMode("local");
+      setDraftAccessMode("approval");
+      setDraftModel(undefined);
       setNewTaskDraft(true);
-      // Create the thread eagerly on the newly activated project runtime so
-      // suggestions, capabilities, and the access-mode control are available
-      // before the first message is submitted.
-      await newThread();
       requestAnimationFrame(() => textarea.current?.focus());
     } catch (error) {
       setProjectError(errorMessage(error));
@@ -2373,20 +2412,10 @@ function ThreadlightAppContent({
     setProjectError(undefined);
     try {
       const snapshot = await projects.createStandalone();
-      const standalone = snapshot.projects.find(
-        (project) => project.scope === "standalone",
-      );
       setProjectSnapshot(snapshot);
       closeConversationPanels();
       setView("thread");
       await connectProject(snapshot);
-      if (
-        standalone?.conversations.some(
-          (conversation) => !conversation.archivedAt,
-        )
-      ) {
-        await newThread();
-      }
       requestAnimationFrame(() => textarea.current?.focus());
     } catch (error) {
       setProjectError(errorMessage(error));
@@ -2549,6 +2578,9 @@ function ThreadlightAppContent({
       "default",
       [],
       accessMode,
+      undefined,
+      undefined,
+      "local",
     );
     if (!result) throw new Error(t("demoTaskStartFailed"));
     if ("error" in result) throw new Error(result.error);
@@ -3732,6 +3764,7 @@ function ThreadlightAppContent({
                           : []
                       }
                       suggestionsLoading={
+                        Boolean(state.threadId) &&
                         state.connection === "ready" &&
                         (suggestedQuestions?.key !== suggestionKey ||
                           suggestedQuestions.status === "loading")
@@ -4150,12 +4183,28 @@ function ThreadlightAppContent({
                       >
                         <Plus size={18} />
                       </button>
+                      {showDevelopmentMode && (
+                        <DevelopmentModeControl
+                          mode={currentDevelopmentMode}
+                          disabled={
+                            !developmentModeEditable ||
+                            submitting ||
+                            preparingAttachments ||
+                            voiceStatus !== "idle"
+                          }
+                          onOpen={() => {
+                            setAddMenuOpen(false);
+                            setCapabilityQuery(undefined);
+                          }}
+                          onChange={setDevelopmentMode}
+                        />
+                      )}
                       {executionPolicy &&
                         projects &&
                         currentProject &&
-                        state.threadId && (
+                        (state.threadId || newTaskDraft) && (
                           <ConversationAccessControl
-                            mode={currentConversation?.accessMode ?? "approval"}
+                            mode={selectedAccessMode}
                             disabled={
                               state.connection !== "ready" ||
                               state.isRunning ||
@@ -4166,15 +4215,19 @@ function ThreadlightAppContent({
                               setAddMenuOpen(false);
                               setCapabilityQuery(undefined);
                             }}
-                            onChange={updateConversationAccessMode}
+                            onChange={
+                              newTaskDraft
+                                ? (mode) => setDraftAccessMode(mode)
+                                : updateConversationAccessMode
+                            }
                           />
                         )}
                     </div>
                     <div className="composer-toolbar-end">
                       <ModelSelector
                         settings={runtimeSettings}
-                        provider={state.provider}
-                        model={state.model}
+                        provider={selectedProvider}
+                        model={selectedModel}
                         disabled={
                           state.connection !== "ready" ||
                           !providerReady ||
@@ -4185,7 +4238,9 @@ function ThreadlightAppContent({
                         }
                         t={t}
                         onSelect={(selection) => {
-                          if (state.threadId) {
+                          if (newTaskDraft) {
+                            setDraftModel(selection);
+                          } else if (state.threadId) {
                             setThreadModel(
                               state.threadId,
                               selection.provider,

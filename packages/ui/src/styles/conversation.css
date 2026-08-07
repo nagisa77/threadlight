@@ -1822,6 +1822,7 @@
   background: color-mix(in srgb, var(--ink) 7%, transparent);
 }
 
+.development-mode-trigger,
 .conversation-access-trigger {
   display: flex;
   height: 32px;
@@ -1837,6 +1838,98 @@
   font-size: 10px;
   font-weight: 620;
   cursor: pointer;
+}
+
+.development-mode-trigger {
+  max-width: 176px;
+}
+
+.development-mode-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.development-mode-trigger[aria-expanded="true"] {
+  border-color: var(--line);
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.development-mode-trigger:disabled {
+  cursor: default;
+}
+
+.development-mode-chevron {
+  flex: 0 0 auto;
+  color: var(--subtle);
+  transition: transform 150ms var(--ease-out);
+}
+
+.development-mode-trigger[aria-expanded="true"] .development-mode-chevron {
+  transform: rotate(180deg);
+}
+
+.development-mode-popover {
+  width: min(344px, calc(100vw - 16px));
+  gap: 2px;
+}
+
+.development-mode-popover.keyboard-open {
+  transition-duration: 0ms;
+}
+
+.development-mode-heading {
+  padding: 6px 10px 4px;
+  color: var(--subtle);
+  font-size: 10px;
+  font-weight: 680;
+  letter-spacing: 0.02em;
+}
+
+.action-popover .development-mode-option {
+  min-height: 58px;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.development-mode-option[aria-checked="true"] {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+
+.development-mode-option-icon,
+.development-mode-check {
+  display: grid;
+  width: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding-top: 1px;
+  color: var(--muted);
+}
+
+.development-mode-option-copy {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+
+.development-mode-option-copy strong {
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.development-mode-option-copy small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+}
+
+.development-mode-check {
+  color: var(--ink);
 }
 
 .conversation-access-trigger[aria-expanded="true"] {
@@ -2147,4 +2240,3 @@
 .composer-hint.error {
   color: var(--danger);
 }
-
