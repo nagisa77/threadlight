@@ -6,6 +6,7 @@ import {
   NewTaskProjectPrompt,
   ProjectPickerPopover,
   filterProjectsForPicker,
+  projectSupportsDevelopmentMode,
 } from "../src/app.js";
 import type { ProjectSummary } from "../src/projects.js";
 
@@ -188,5 +189,12 @@ describe("empty state", () => {
     expect(filterProjectsForPicker([...projects, standalone], "")).toEqual(
       projects,
     );
+  });
+
+  it("offers development mode selection for both local and remote projects", () => {
+    expect(projectSupportsDevelopmentMode(projects[0])).toBe(true);
+    expect(projectSupportsDevelopmentMode(projects[1])).toBe(true);
+    expect(projectSupportsDevelopmentMode({ scope: "standalone" })).toBe(false);
+    expect(projectSupportsDevelopmentMode(undefined)).toBe(false);
   });
 });

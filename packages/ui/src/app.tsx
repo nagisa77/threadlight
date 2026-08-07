@@ -428,6 +428,12 @@ export function composerProviderIsReady(
     : true;
 }
 
+export function projectSupportsDevelopmentMode(
+  project: Pick<ProjectSummary, "scope"> | undefined,
+): boolean {
+  return Boolean(project && project.scope !== "standalone");
+}
+
 function storedFirstRunComplete(): boolean {
   if (typeof window === "undefined") return false;
   try {
@@ -767,10 +773,7 @@ function ThreadlightAppContent({
       ? "worktree"
       : "local";
   const showDevelopmentMode = Boolean(
-    projects &&
-    currentProject &&
-    currentProject.scope !== "standalone" &&
-    !currentProject.runtime,
+    projects && projectSupportsDevelopmentMode(currentProject),
   );
   const developmentModeEditable = Boolean(
     showDevelopmentMode && newTaskDraft && !state.threadId,
