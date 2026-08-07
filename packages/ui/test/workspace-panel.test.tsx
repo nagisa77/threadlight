@@ -75,13 +75,18 @@ describe("ReviewView", () => {
     });
   });
 
-  it("reduces diff code sizing on mobile without hiding table cells", () => {
+  it("keeps mobile diff rows and collapsed ranges on the same two-column grid", () => {
     expect(reviewDiffStylesForLayout("unified")).toMatchObject({
       diffContainer: {
         "@media (max-width: 720px)": { fontSize: "11px" },
       },
       contentText: {
         "@media (max-width: 720px)": { padding: "0 8px" },
+      },
+      codeFold: {
+        "@media (max-width: 720px)": {
+          "& > td:nth-of-type(n + 3)": { display: "none" },
+        },
       },
     });
     expect(reviewDiffStylesForLayout("unified")).not.toHaveProperty("gutter");

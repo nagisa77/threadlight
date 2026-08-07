@@ -42,4 +42,10 @@ describe("review panel layout", () => {
       /@media \(max-width: 720px\)[\s\S]*?\.file-source\s*\{[^}]*font-size:\s*11px;[\s\S]*?\.file-source-line\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*?\.file-source-line-number\s*\{[^}]*display:\s*none;[\s\S]*?\.file-source-line code\s*\{[^}]*padding-inline:\s*10px;/s,
     );
   });
+
+  it("removes the split-layout control on mobile", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{\s*\.diff-layout-toggle\s*\{[^}]*display:\s*none;/s,
+    );
+  });
 });

@@ -50,22 +50,24 @@ export function ReviewDiffViewer({
   language?: string;
   styles: ComponentProps<typeof DiffViewer>["styles"];
 }) {
-  const hideLineNumbers = useSyncExternalStore(
+  const mobileViewport = useSyncExternalStore(
     subscribeToMobileDiffViewport,
     isMobileDiffViewport,
     serverMobileDiffViewport,
   );
+  const effectiveLayout = mobileViewport ? "unified" : layout;
 
   return (
     <DiffViewer
+      key={`${effectiveLayout}-${mobileViewport ? "compact" : "full"}`}
       oldValue={oldValue}
       newValue={newValue}
-      splitView={layout === "split"}
+      splitView={effectiveLayout === "split"}
       useDarkTheme={dark}
       showDiffOnly
       extraLinesSurroundingDiff={3}
       hideSummary
-      hideLineNumbers={hideLineNumbers}
+      hideLineNumbers={mobileViewport}
       disableWorker
       highlightLanguage={language}
       styles={styles}

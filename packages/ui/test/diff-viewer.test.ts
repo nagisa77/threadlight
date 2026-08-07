@@ -26,12 +26,12 @@ describe("mobile diff viewport", () => {
     expect(matchMedia).toHaveBeenCalledWith(MOBILE_DIFF_QUERY);
   });
 
-  it("omits line-number cells from the mobile diff table", () => {
+  it("forces a two-column unified table when split layout is requested", () => {
     const html = renderToStaticMarkup(
       ReviewDiffViewer({
         oldValue: "const value = 1;\n",
         newValue: "const value = 2;\n",
-        layout: "unified",
+        layout: "split",
         dark: false,
         language: "typescript",
         styles: {},
@@ -39,6 +39,7 @@ describe("mobile diff viewport", () => {
     );
 
     expect(html).not.toContain("line-number");
+    expect(html).not.toContain("split-view");
     expect(html).toContain(
       '<colgroup><col width="28px"/><col width="auto"/></colgroup>',
     );

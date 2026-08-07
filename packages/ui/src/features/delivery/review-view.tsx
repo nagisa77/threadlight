@@ -955,6 +955,13 @@ const diffStyles = {
       padding: "0 8px",
     },
   },
+  codeFold: {
+    "@media (max-width: 720px)": {
+      "& > td:nth-of-type(n + 3)": {
+        display: "none",
+      },
+    },
+  },
 } as const;
 
 const unifiedDiffStyles = {

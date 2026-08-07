@@ -2217,6 +2217,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 @media (max-width: 720px) {
+  .diff-layout-toggle {
+    display: none;
+  }
+
   .file-source {
     font-size: 11px;
   }
