@@ -89,6 +89,124 @@ describe("project diagnostics", () => {
     expect(JSON.stringify(snapshot)).not.toContain("secret answer");
   });
 
+  it("uses total scoped metrics when aggregating multi-agent turns", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-diagnostics-scoped-"));
+    directories.push(root);
+    const conversationDirectory = join(root, ".threadlight", "conversations");
+    mkdirSync(conversationDirectory, { recursive: true });
+    const rootStep = {
+      step: 1,
+      durationMs: 100,
+      usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 },
+      agentId: "root-agent",
+      agentRole: "root",
+    };
+    const childSteps = [
+      {
+        step: 1,
+        durationMs: 80,
+        usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 },
+        agentId: "child-agent",
+        agentRole: "explorer",
+      },
+      {
+        step: 2,
+        durationMs: 70,
+        usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 },
+        agentId: "child-agent",
+        agentRole: "explorer",
+      },
+    ];
+    const rootTool = {
+      callId: "spawn-agent",
+      name: "spawn_agent",
+      durationMs: 2,
+      isError: false,
+      agentId: "root-agent",
+      agentRole: "root",
+    };
+    const childTool = {
+      callId: "inspect",
+      name: "workspace_inspect",
+      durationMs: 3,
+      isError: false,
+      agentId: "child-agent",
+      agentRole: "explorer",
+    };
+    writeFileSync(
+      join(conversationDirectory, "thread-1.json"),
+      JSON.stringify({
+        messages: [
+          {
+            id: "assistant-1",
+            role: "assistant",
+            text: "done",
+            diagnostics: {
+              status: "completed",
+              startedAt: "2026-08-08T00:00:00.000Z",
+              completedAt: "2026-08-08T00:00:01.000Z",
+              durationMs: 1_000,
+              usage: { inputTokens: 13, outputTokens: 3, totalTokens: 16 },
+              modelSteps: [rootStep],
+              toolCalls: [rootTool],
+              metrics: {
+                root: {
+                  usage: { inputTokens: 5, outputTokens: 1, totalTokens: 6 },
+                  modelSteps: [rootStep],
+                  toolCalls: [rootTool],
+                },
+                children: {
+                  usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 },
+                  modelSteps: childSteps,
+                  toolCalls: [childTool],
+                },
+                total: {
+                  usage: { inputTokens: 13, outputTokens: 3, totalTokens: 16 },
+                  modelSteps: [rootStep, ...childSteps],
+                  toolCalls: [rootTool, childTool],
+                },
+              },
+            },
+          },
+        ],
+      }),
+    );
+
+    const snapshot = projectDiagnostics({
+      id: "project-1",
+      name: "Scoped",
+      basePath: root,
+      conversations: [{ id: "thread-1", title: "Multi-agent" }],
+    });
+
+    expect(snapshot.totals).toMatchObject({
+      inputTokens: 13,
+      outputTokens: 3,
+      totalTokens: 16,
+      modelSteps: 3,
+      toolCalls: 2,
+      toolDurationMs: 5,
+    });
+    expect(snapshot.turns[0]).toMatchObject({
+      inputTokens: 13,
+      totalTokens: 16,
+      modelSteps: [
+        { agentRole: "root" },
+        { agentRole: "explorer" },
+        { agentRole: "explorer" },
+      ],
+      toolCalls: [
+        { agentRole: "root" },
+        { agentRole: "explorer" },
+      ],
+      metrics: {
+        root: { totalTokens: 6, modelSteps: 1, toolCalls: 1 },
+        children: { totalTokens: 10, modelSteps: 2, toolCalls: 1 },
+        total: { totalTokens: 16, modelSteps: 3, toolCalls: 2 },
+      },
+    });
+  });
+
   it("exports redacted task conversations, timings, errors, and changed file bodies", async () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-bundle-"));
     const snapshots = mkdtempSync(join(tmpdir(), "threadlight-snapshots-"));
@@ -202,6 +320,11 @@ describe("project diagnostics", () => {
                       startedAt: "2026-08-07T01:00:00.500Z",
                       completedAt: "2026-08-07T01:00:00.800Z",
                       durationMs: 300,
+                      usage: {
+                        inputTokens: 3,
+                        outputTokens: 1,
+                        totalTokens: 4,
+                      },
                     },
                     {
                       id: "agent-tool",
@@ -249,7 +372,7 @@ describe("project diagnostics", () => {
               completedAt: "2026-08-07T01:00:02.000Z",
               durationMs: 2_000,
               model: "scripted-model",
-              usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
+              usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
               modelSteps: [
                 {
                   step: 1,
@@ -266,6 +389,107 @@ describe("project diagnostics", () => {
                   errorCode: "command_failed",
                 },
               ],
+              metrics: {
+                root: {
+                  usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
+                  modelSteps: [
+                    {
+                      step: 1,
+                      durationMs: 800,
+                      usage: {
+                        inputTokens: 4,
+                        outputTokens: 2,
+                        totalTokens: 6,
+                      },
+                      agentId: "root-agent",
+                      agentRole: "root",
+                    },
+                  ],
+                  toolCalls: [
+                    {
+                      callId: "tool-1",
+                      name: "exec_command",
+                      durationMs: 500,
+                      isError: true,
+                      errorCode: "command_failed",
+                      agentId: "root-agent",
+                      agentRole: "root",
+                    },
+                  ],
+                },
+                children: {
+                  usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+                  modelSteps: [
+                    {
+                      step: 1,
+                      durationMs: 300,
+                      usage: {
+                        inputTokens: 3,
+                        outputTokens: 1,
+                        totalTokens: 4,
+                      },
+                      agentId: "child-agent",
+                      agentRole: "explorer",
+                    },
+                  ],
+                  toolCalls: [
+                    {
+                      callId: "agent-tool",
+                      name: "workspace_inspect",
+                      durationMs: 200,
+                      isError: false,
+                      agentId: "child-agent",
+                      agentRole: "explorer",
+                    },
+                  ],
+                },
+                total: {
+                  usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+                  modelSteps: [
+                    {
+                      step: 1,
+                      durationMs: 800,
+                      usage: {
+                        inputTokens: 4,
+                        outputTokens: 2,
+                        totalTokens: 6,
+                      },
+                      agentId: "root-agent",
+                      agentRole: "root",
+                    },
+                    {
+                      step: 1,
+                      durationMs: 300,
+                      usage: {
+                        inputTokens: 3,
+                        outputTokens: 1,
+                        totalTokens: 4,
+                      },
+                      agentId: "child-agent",
+                      agentRole: "explorer",
+                    },
+                  ],
+                  toolCalls: [
+                    {
+                      callId: "tool-1",
+                      name: "exec_command",
+                      durationMs: 500,
+                      isError: true,
+                      errorCode: "command_failed",
+                      agentId: "root-agent",
+                      agentRole: "root",
+                    },
+                    {
+                      callId: "agent-tool",
+                      name: "workspace_inspect",
+                      durationMs: 200,
+                      isError: false,
+                      agentId: "child-agent",
+                      agentRole: "explorer",
+                    },
+                  ],
+                },
+              },
             },
           },
         ],
@@ -355,6 +579,14 @@ describe("project diagnostics", () => {
       "model",
       "tool",
     ]);
+    expect(bundle.summary.totals).toMatchObject({
+      inputTokens: 7,
+      outputTokens: 3,
+      totalTokens: 10,
+      modelSteps: 2,
+      toolCalls: 2,
+      toolDurationMs: 700,
+    });
     expect(bundle.agents).toEqual([
       expect.objectContaining({
         agentId: "root-agent",

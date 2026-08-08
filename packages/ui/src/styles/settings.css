@@ -854,6 +854,41 @@
   font-variant-numeric: tabular-nums;
 }
 
+.diagnostics-scope-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.diagnostics-scope-summary > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.diagnostics-scope-summary strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.diagnostics-scope-summary small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 680px) {
+  .diagnostics-scope-summary {
+    grid-template-columns: 1fr;
+  }
+}
+
 .diagnostics-detail-group h3 {
   margin: 0 0 5px;
   color: var(--muted);

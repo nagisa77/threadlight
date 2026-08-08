@@ -280,7 +280,8 @@ function isAgentTask(value: unknown): boolean {
       status === "running" ||
       status === "completed" ||
       status === "failed" ||
-      status === "cancelled") &&
+      status === "cancelled" ||
+      status === "interrupted") &&
     (phase === "queued" ||
       phase === "thinking" ||
       phase === "working" ||
@@ -341,6 +342,7 @@ function isAgentTranscriptEntry(value: unknown): boolean {
       Number.isInteger(entry.step) &&
       Number(entry.step) > 0 &&
       typeof entry.text === "string" &&
+      (entry.usage === undefined || isTokenUsage(entry.usage)) &&
       (entry.outputVisibility === undefined ||
         entry.outputVisibility === "user" ||
         entry.outputVisibility === "provisional")
@@ -351,7 +353,8 @@ function isAgentTranscriptEntry(value: unknown): boolean {
     typeof entry.name === "string" &&
     typeof entry.arguments === "string" &&
     (entry.output === undefined || typeof entry.output === "string") &&
-    (entry.isError === undefined || typeof entry.isError === "boolean")
+    (entry.isError === undefined || typeof entry.isError === "boolean") &&
+    (entry.errorCode === undefined || typeof entry.errorCode === "string")
   );
 }
 
@@ -392,33 +395,63 @@ function isTurnDiagnostics(value: unknown): boolean {
       typeof diagnostics.model === "string") &&
     isTokenUsage(diagnostics.usage) &&
     Array.isArray(diagnostics.modelSteps) &&
-    diagnostics.modelSteps.every((step) => {
-      if (!step || typeof step !== "object" || Array.isArray(step)) {
-        return false;
-      }
-      const candidate = step as Record<string, unknown>;
-      return (
-        Number.isInteger(candidate.step) &&
-        Number(candidate.step) > 0 &&
-        isNonNegativeNumber(candidate.durationMs) &&
-        isTokenUsage(candidate.usage)
-      );
-    }) &&
+    diagnostics.modelSteps.every(isModelStepDiagnostics) &&
     Array.isArray(diagnostics.toolCalls) &&
-    diagnostics.toolCalls.every((tool) => {
-      if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
-        return false;
-      }
-      const candidate = tool as Record<string, unknown>;
-      return (
-        typeof candidate.callId === "string" &&
-        typeof candidate.name === "string" &&
-        isNonNegativeNumber(candidate.durationMs) &&
-        typeof candidate.isError === "boolean" &&
-        (candidate.errorCode === undefined ||
-          typeof candidate.errorCode === "string")
-      );
-    })
+    diagnostics.toolCalls.every(isToolCallDiagnostics) &&
+    (diagnostics.metrics === undefined ||
+      (isDiagnosticsScopeSet(diagnostics.metrics) &&
+        isDiagnosticsScope(diagnostics.metrics.root) &&
+        isDiagnosticsScope(diagnostics.metrics.children) &&
+        isDiagnosticsScope(diagnostics.metrics.total)))
+  );
+}
+
+function isDiagnosticsScopeSet(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isDiagnosticsScope(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const scope = value as Record<string, unknown>;
+  return (
+    isTokenUsage(scope.usage) &&
+    Array.isArray(scope.modelSteps) &&
+    scope.modelSteps.every(isModelStepDiagnostics) &&
+    Array.isArray(scope.toolCalls) &&
+    scope.toolCalls.every(isToolCallDiagnostics)
+  );
+}
+
+function isModelStepDiagnostics(step: unknown): boolean {
+  if (!step || typeof step !== "object" || Array.isArray(step)) return false;
+  const candidate = step as Record<string, unknown>;
+  return (
+    Number.isInteger(candidate.step) &&
+    Number(candidate.step) > 0 &&
+    isNonNegativeNumber(candidate.durationMs) &&
+    isTokenUsage(candidate.usage) &&
+    (candidate.agentId === undefined || typeof candidate.agentId === "string") &&
+    (candidate.agentRole === undefined ||
+      typeof candidate.agentRole === "string")
+  );
+}
+
+function isToolCallDiagnostics(tool: unknown): boolean {
+  if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
+    return false;
+  }
+  const candidate = tool as Record<string, unknown>;
+  return (
+    typeof candidate.callId === "string" &&
+    typeof candidate.name === "string" &&
+    isNonNegativeNumber(candidate.durationMs) &&
+    typeof candidate.isError === "boolean" &&
+    (candidate.errorCode === undefined ||
+      typeof candidate.errorCode === "string") &&
+    (candidate.agentId === undefined ||
+      typeof candidate.agentId === "string") &&
+    (candidate.agentRole === undefined ||
+      typeof candidate.agentRole === "string")
   );
 }
 

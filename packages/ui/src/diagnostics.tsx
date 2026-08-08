@@ -26,6 +26,8 @@ export interface ModelStepDiagnostic {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  agentId?: string;
+  agentRole?: string;
 }
 
 export interface ToolCallDiagnostic {
@@ -34,6 +36,17 @@ export interface ToolCallDiagnostic {
   durationMs: number;
   isError: boolean;
   errorCode?: string;
+  agentId?: string;
+  agentRole?: string;
+}
+
+export interface TurnDiagnosticScope {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  modelSteps: number;
+  toolCalls: number;
+  toolDurationMs: number;
 }
 
 export interface TurnDiagnostic {
@@ -49,6 +62,11 @@ export interface TurnDiagnostic {
   totalTokens: number;
   modelSteps: readonly ModelStepDiagnostic[];
   toolCalls: readonly ToolCallDiagnostic[];
+  metrics?: {
+    root: TurnDiagnosticScope;
+    children: TurnDiagnosticScope;
+    total: TurnDiagnosticScope;
+  };
 }
 
 export interface ProjectDiagnosticsSnapshot {
@@ -303,7 +321,7 @@ export function DiagnosticsPage({
               {snapshot?.turns.length ? (
                 <div className="diagnostics-turn-list">
                   {snapshot.turns.map((turn, index) => (
-                    <TurnRow
+                    <DiagnosticsTurnRow
                       key={`${turn.threadId}-${turn.completedAt}-${index}`}
                       turn={turn}
                       language={language}
@@ -594,7 +612,7 @@ function Metric({
   );
 }
 
-function TurnRow({
+export function DiagnosticsTurnRow({
   turn,
   language,
 }: {
@@ -602,6 +620,12 @@ function TurnRow({
   language: string;
 }) {
   const { t } = useI18n();
+  const showAgentScope = Boolean(
+    turn.metrics &&
+      (turn.metrics.children.modelSteps > 0 ||
+        turn.metrics.children.toolCalls > 0 ||
+        turn.metrics.children.totalTokens > 0),
+  );
   return (
     <details className={`diagnostics-turn ${turn.status}`}>
       <summary>
@@ -647,12 +671,32 @@ function TurnRow({
             </strong>
           </span>
         </div>
+        {turn.metrics && showAgentScope && (
+            <div className="diagnostics-scope-summary">
+              {(
+                [
+                  [t("diagnosticRoot"), turn.metrics.root],
+                  [t("diagnosticChildren"), turn.metrics.children],
+                  [t("diagnosticTotal"), turn.metrics.total],
+                ] as const
+              ).map(([label, scope]) => (
+                <span key={label}>
+                  <strong>{label}</strong>
+                  <small>
+                    {formatNumber(scope.totalTokens, language)} {t("tokens")} ·{" "}
+                    {scope.modelSteps} {t("modelSteps")} · {scope.toolCalls}{" "}
+                    {t("toolCalls")}
+                  </small>
+                </span>
+              ))}
+            </div>
+          )}
         {turn.modelSteps.length > 0 && (
           <DiagnosticTable
             title={t("modelSteps")}
             rows={turn.modelSteps.map((step) => ({
-              id: String(step.step),
-              name: `${t("step")} ${step.step}`,
+              id: `${step.agentId ?? step.agentRole ?? "root"}:${step.step}`,
+              name: `${showAgentScope ? `${diagnosticAgentLabel(step.agentRole, t("diagnosticRoot"))} · ` : ""}${t("step")} ${step.step}`,
               duration: formatDuration(step.durationMs),
               detail: `${formatNumber(step.totalTokens, language)} ${t("tokens")}`,
               error: false,
@@ -663,8 +707,8 @@ function TurnRow({
           <DiagnosticTable
             title={t("toolCalls")}
             rows={turn.toolCalls.map((tool) => ({
-              id: tool.callId,
-              name: tool.name,
+              id: `${tool.agentId ?? tool.agentRole ?? "root"}:${tool.callId}`,
+              name: `${showAgentScope ? `${diagnosticAgentLabel(tool.agentRole, t("diagnosticRoot"))} · ` : ""}${tool.name}`,
               duration: formatDuration(tool.durationMs),
               detail: tool.isError
                 ? `${t("failed")}${tool.errorCode ? ` · ${tool.errorCode}` : ""}`
@@ -676,6 +720,13 @@ function TurnRow({
       </div>
     </details>
   );
+}
+
+function diagnosticAgentLabel(
+  agentRole: string | undefined,
+  rootLabel: string,
+): string {
+  return !agentRole || agentRole === "root" ? rootLabel : agentRole;
 }
 
 export function downloadDiagnosticBundle(

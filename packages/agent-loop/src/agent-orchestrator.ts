@@ -5,6 +5,8 @@ import type {
   Agent,
   AgentEvent,
   AgentOrchestratorOptions,
+  AgentRunCheckpoint,
+  AgentRuntimeSnapshot,
   AgentTaskSnapshot,
   AgentTreeEvent,
   AgentTreeSnapshot,
@@ -19,6 +21,7 @@ import type {
   Tool,
   ToolCall,
   ToolResult,
+  TokenUsage,
 } from "./types.js";
 
 const SPAWN_AGENT_TOOL = "spawn_agent";
@@ -38,6 +41,9 @@ interface AgentTaskRecord {
   completion: Deferred<AgentTaskSnapshot>;
   pendingInput: string[];
   collected: boolean;
+  modelState?: unknown;
+  checkpointStep?: number;
+  checkpointPhase?: AgentRunCheckpoint["phase"];
 }
 
 /**
@@ -60,6 +66,7 @@ export class AgentOrchestrator {
   private rootSignal?: AbortSignal;
   private rootAgent?: Agent;
   private closed = false;
+  private runtimeCheckpointWrites: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly loop: AgentLoop,
@@ -93,11 +100,36 @@ export class AgentOrchestrator {
     };
   }
 
+  get runtimeSnapshot(): AgentRuntimeSnapshot {
+    return {
+      version: 1,
+      rootId: this.rootId,
+      maxConcurrent: this.maxConcurrent,
+      updatedAt: this.wallNow().toISOString(),
+      agents: [...this.records.values()].map((record) => ({
+        task: cloneSnapshot(record.snapshot),
+        ...(record.profile ? { profileName: record.profile.name } : {}),
+        pendingInput: [...record.pendingInput],
+        collected: record.collected,
+        ...(record.modelState === undefined
+          ? {}
+          : { modelState: record.modelState }),
+        ...(record.checkpointStep === undefined
+          ? {}
+          : { checkpointStep: record.checkpointStep }),
+        ...(record.checkpointPhase === undefined
+          ? {}
+          : { checkpointPhase: record.checkpointPhase }),
+      })),
+    };
+  }
+
   async run(rootAgent: Agent, input: string): Promise<RunResult> {
     if (this.rootAgent) throw new Error("AgentOrchestrator can only run once");
     this.rootAgent = rootAgent;
     this.rootSignal = this.options.signal;
     const root = this.createRootRecord(rootAgent, input);
+    await this.flushRuntimeCheckpoints();
     const tools = [
       ...(rootAgent.tools ?? []),
       this.spawnTool(),
@@ -118,9 +150,15 @@ export class AgentOrchestrator {
     );
 
     try {
+      const runOptions = rootRunOptions(this.options);
       const result = await this.loop.run(orchestratedAgent, input, {
-        ...rootRunOptions(this.options),
+        ...runOptions,
         controller,
+        onCheckpoint: async (checkpoint) => {
+          this.recordCheckpoint(root, checkpoint);
+          await runOptions.onCheckpoint?.(checkpoint);
+          await this.flushRuntimeCheckpoints();
+        },
         onEvent: (event) => {
           this.updateFromAgentEvent(root, event);
           this.options.onEvent?.(event);
@@ -128,6 +166,7 @@ export class AgentOrchestrator {
       });
       this.completeRecord(root, result);
       this.closed = true;
+      await this.flushRuntimeCheckpoints();
       return {
         ...result,
         usage: this.childRecords().reduce(
@@ -142,7 +181,12 @@ export class AgentOrchestrator {
       this.closed = true;
       this.cancelRemaining("Parent agent stopped");
       await Promise.allSettled([...this.childPromises]);
+      await this.flushRuntimeCheckpoints();
     }
+  }
+
+  flushRuntimeCheckpoints(): Promise<void> {
+    return this.runtimeCheckpointWrites;
   }
 
   cancel(agentId: string): boolean {
@@ -159,6 +203,7 @@ export class AgentOrchestrator {
       this.removeFromQueue(agentId);
     }
     this.cancelRecord(record, "Stopped by user");
+    this.scheduleRuntimeCheckpoint();
     this.pump();
     return true;
   }
@@ -178,6 +223,7 @@ export class AgentOrchestrator {
     this.patchRecord(record, "steered", {
       latestActivity: "Direction updated",
     });
+    this.scheduleRuntimeCheckpoint();
     return true;
   }
 
@@ -267,6 +313,7 @@ export class AgentOrchestrator {
       transcript: [],
     });
     this.emit(record, "created");
+    this.scheduleRuntimeCheckpoint();
     return record;
   }
 
@@ -304,6 +351,7 @@ export class AgentOrchestrator {
     );
     this.queue.push(id);
     this.emit(record, "created");
+    this.scheduleRuntimeCheckpoint();
     this.pump();
     return cloneSnapshot(record.snapshot);
   }
@@ -339,6 +387,7 @@ export class AgentOrchestrator {
       startedAt,
       latestActivity: "Thinking",
     });
+    this.scheduleRuntimeCheckpoint();
     const childOptions = this.options.createChildRunOptions?.({
       agentId: record.snapshot.id,
       parentId: this.rootId,
@@ -358,20 +407,30 @@ export class AgentOrchestrator {
       tools: childTools(rootAgent.tools ?? [], profile),
       maxSteps: profile.maxSteps ?? rootAgent.maxSteps,
     };
+    const delegatedCheckpoint = childOptions?.onCheckpoint;
     const promise = this.loop
       .run(childAgent, record.snapshot.task, {
         ...childOptions,
         signal,
         takeAdditionalInput: () => record.pendingInput.shift(),
+        onCheckpoint: async (checkpoint) => {
+          this.recordCheckpoint(record, checkpoint);
+          await delegatedCheckpoint?.(checkpoint);
+          await this.flushRuntimeCheckpoints();
+        },
         onEvent: (event) => this.updateFromAgentEvent(record, event),
       })
-      .then((result) => this.completeRecord(record, result))
-      .catch((error: unknown) => {
+      .then(async (result) => {
+        this.completeRecord(record, result);
+        await this.flushRuntimeCheckpoints();
+      })
+      .catch(async (error: unknown) => {
         if (record.controller.signal.aborted || this.rootSignal?.aborted) {
           this.cancelRecord(record, errorMessage(error));
         } else {
           this.failRecord(record, error);
         }
+        await this.flushRuntimeCheckpoints();
       })
       .finally(() => {
         this.running.delete(record.snapshot.id);
@@ -460,6 +519,9 @@ export class AgentOrchestrator {
                 ...(event.durationMs === undefined
                   ? {}
                   : { durationMs: event.durationMs }),
+                ...(event.usage
+                  ? { usage: normalizedTokenUsage(event.usage) }
+                  : {}),
                 ...(event.outputVisibility
                   ? { outputVisibility: event.outputVisibility }
                   : {}),
@@ -532,6 +594,9 @@ export class AgentOrchestrator {
                   : ("completed" as const),
                 output: truncate(event.result.output, MAX_TRANSCRIPT_FIELD),
                 ...(event.result.isError ? { isError: true } : {}),
+                ...(event.result.error?.code
+                  ? { errorCode: event.result.error.code }
+                  : {}),
                 completedAt,
                 ...(event.durationMs === undefined
                   ? {}
@@ -562,6 +627,8 @@ export class AgentOrchestrator {
       steps: result.steps,
       usage: { ...result.usage },
     });
+    record.modelState = result.modelState;
+    this.scheduleRuntimeCheckpoint();
     record.completion.resolve(cloneSnapshot(record.snapshot));
   }
 
@@ -576,6 +643,7 @@ export class AgentOrchestrator {
       error: message,
       summary: message,
     });
+    this.scheduleRuntimeCheckpoint();
     record.completion.resolve(cloneSnapshot(record.snapshot));
   }
 
@@ -589,6 +657,7 @@ export class AgentOrchestrator {
       error: reason,
       summary: reason,
     });
+    this.scheduleRuntimeCheckpoint();
     record.completion.resolve(cloneSnapshot(record.snapshot));
   }
 
@@ -633,6 +702,29 @@ export class AgentOrchestrator {
     this.options.onAgentTreeEvent?.(event);
   }
 
+  private recordCheckpoint(
+    record: AgentTaskRecord,
+    checkpoint: AgentRunCheckpoint,
+  ): void {
+    record.modelState = checkpoint.modelState;
+    record.checkpointStep = checkpoint.step;
+    record.checkpointPhase = checkpoint.phase;
+    record.snapshot = {
+      ...record.snapshot,
+      usage: { ...checkpoint.usage },
+    };
+    this.scheduleRuntimeCheckpoint();
+  }
+
+  private scheduleRuntimeCheckpoint(): void {
+    const persist = this.options.onRuntimeCheckpoint;
+    if (!persist) return;
+    const checkpoint = this.runtimeSnapshot;
+    this.runtimeCheckpointWrites = this.runtimeCheckpointWrites.then(() =>
+      persist(checkpoint),
+    );
+  }
+
   private spawnTool(): Tool {
     return {
       name: SPAWN_AGENT_TOOL,
@@ -658,10 +750,12 @@ export class AgentOrchestrator {
       mutability: "read",
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
-        return this.spawn(
+        const snapshot = this.spawn(
           stringArgument(values.role, "role"),
           stringArgument(values.task, "task"),
         );
+        await this.flushRuntimeCheckpoints();
+        return snapshot;
       },
     };
   }
@@ -707,6 +801,8 @@ export class AgentOrchestrator {
           context.signal,
         );
         for (const record of records) record.collected = true;
+        this.scheduleRuntimeCheckpoint();
+        await this.flushRuntimeCheckpoints();
         return {
           agents: results.map((result) => ({
             id: result.id,
@@ -805,6 +901,7 @@ function rootRunOptions(options: AgentOrchestratorOptions): RunOptions {
     maxAgents: _maxAgents,
     wallNow: _wallNow,
     onAgentTreeEvent: _onAgentTreeEvent,
+    onRuntimeCheckpoint: _onRuntimeCheckpoint,
     createChildRunOptions: _createChildRunOptions,
     controller: _controller,
     onEvent: _onEvent,
@@ -852,7 +949,20 @@ function cloneSnapshot(snapshot: AgentTaskSnapshot): AgentTaskSnapshot {
     ...snapshot,
     ...(snapshot.usage ? { usage: { ...snapshot.usage } } : {}),
     activities: snapshot.activities.map((activity) => ({ ...activity })),
-    transcript: snapshot.transcript.map((entry) => ({ ...entry })),
+    transcript: snapshot.transcript.map((entry) => ({
+      ...entry,
+      ...(entry.kind === "model" && entry.usage
+        ? { usage: { ...entry.usage } }
+        : {}),
+    })),
+  };
+}
+
+function normalizedTokenUsage(usage: Partial<TokenUsage>): TokenUsage {
+  return {
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    totalTokens: usage.totalTokens ?? 0,
   };
 }
 
@@ -902,7 +1012,10 @@ function serializeTranscriptValue(value: unknown): string {
 
 function isTerminal(status: AgentTaskSnapshot["status"]): boolean {
   return (
-    status === "completed" || status === "failed" || status === "cancelled"
+    status === "completed" ||
+    status === "failed" ||
+    status === "cancelled" ||
+    status === "interrupted"
   );
 }
 

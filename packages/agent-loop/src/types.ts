@@ -192,6 +192,22 @@ export interface RunOptions {
   /** Monotonic clock used for duration measurements. */
   now?: () => number;
   onEvent?: (event: AgentEvent) => void;
+  /**
+   * Persists opaque provider state at safe model/tool boundaries.
+   *
+   * The loop never interprets `modelState`. Hosts may encrypt, compact, or
+   * otherwise prepare it before writing it to durable storage.
+   */
+  onCheckpoint?: (
+    checkpoint: AgentRunCheckpoint,
+  ) => void | Promise<void>;
+}
+
+export interface AgentRunCheckpoint {
+  step: number;
+  phase: "model_completed" | "tool_completed";
+  modelState?: unknown;
+  usage: TokenUsage;
 }
 
 export interface RunControllerContext {
@@ -279,7 +295,12 @@ export interface SubagentProfile {
 }
 
 export type AgentTaskStatus =
-  "queued" | "running" | "completed" | "failed" | "cancelled";
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 
 export type AgentTaskPhase =
   "queued" | "thinking" | "working" | "waiting" | "done";
@@ -303,6 +324,7 @@ export type AgentTaskTranscriptEntry =
       startedAt: string;
       completedAt?: string;
       durationMs?: number;
+      usage?: TokenUsage;
     }
   | {
       id: string;
@@ -312,6 +334,7 @@ export type AgentTaskTranscriptEntry =
       arguments: string;
       output?: string;
       isError?: boolean;
+      errorCode?: string;
       startedAt: string;
       completedAt?: string;
       durationMs?: number;
@@ -369,15 +392,40 @@ export interface ChildAgentRunContext {
   profile: SubagentProfile;
 }
 
+export interface AgentRuntimeTaskSnapshot {
+  task: AgentTaskSnapshot;
+  profileName?: string;
+  pendingInput: readonly string[];
+  collected: boolean;
+  modelState?: unknown;
+  checkpointStep?: number;
+  checkpointPhase?: AgentRunCheckpoint["phase"];
+}
+
+/** Durable, provider-neutral checkpoint for one orchestrated agent run. */
+export interface AgentRuntimeSnapshot {
+  version: 1;
+  rootId: string;
+  maxConcurrent: number;
+  updatedAt: string;
+  agents: readonly AgentRuntimeTaskSnapshot[];
+}
+
 export interface AgentOrchestratorOptions extends RunOptions {
   profiles: readonly SubagentProfile[];
   maxConcurrent?: number;
   maxAgents?: number;
   wallNow?: () => Date;
   onAgentTreeEvent?: (event: AgentTreeEvent) => void;
+  onRuntimeCheckpoint?: (
+    checkpoint: AgentRuntimeSnapshot,
+  ) => void | Promise<void>;
   createChildRunOptions?: (
     context: ChildAgentRunContext,
-  ) => Pick<RunOptions, "controller" | "toolScopeId" | "history">;
+  ) => Pick<
+    RunOptions,
+    "controller" | "toolScopeId" | "history" | "onCheckpoint"
+  >;
 }
 
 export function defineAgent(agent: Agent): Agent {

@@ -200,6 +200,8 @@ export interface HostModelStepDiagnostic {
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
+  agentId?: string;
+  agentRole?: string;
 }
 
 export interface HostToolCallDiagnostic {
@@ -208,6 +210,23 @@ export interface HostToolCallDiagnostic {
   durationMs: number;
   isError: boolean;
   errorCode?: string;
+  agentId?: string;
+  agentRole?: string;
+}
+
+export interface HostTurnDiagnosticScope {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  modelSteps: number;
+  toolCalls: number;
+  toolDurationMs: number;
+}
+
+export interface HostTurnDiagnosticMetrics {
+  root: HostTurnDiagnosticScope;
+  children: HostTurnDiagnosticScope;
+  total: HostTurnDiagnosticScope;
 }
 
 export interface HostTurnDiagnostic {
@@ -223,6 +242,8 @@ export interface HostTurnDiagnostic {
   totalTokens: number;
   modelSteps: readonly HostModelStepDiagnostic[];
   toolCalls: readonly HostToolCallDiagnostic[];
+  /** Present for turns recorded with scoped multi-agent diagnostics. */
+  metrics?: HostTurnDiagnosticMetrics;
 }
 
 export interface HostProjectDiagnosticsSnapshot {
@@ -827,6 +848,8 @@ export interface ModelStepDiagnosticsData {
   step: number;
   durationMs: number;
   usage: TokenUsageData;
+  agentId?: string;
+  agentRole?: string;
 }
 
 export interface ToolCallDiagnosticsData {
@@ -835,6 +858,20 @@ export interface ToolCallDiagnosticsData {
   durationMs: number;
   isError: boolean;
   errorCode?: string;
+  agentId?: string;
+  agentRole?: string;
+}
+
+export interface TurnDiagnosticsScopeData {
+  usage: TokenUsageData;
+  modelSteps: readonly ModelStepDiagnosticsData[];
+  toolCalls: readonly ToolCallDiagnosticsData[];
+}
+
+export interface TurnDiagnosticsMetricsData {
+  root: TurnDiagnosticsScopeData;
+  children: TurnDiagnosticsScopeData;
+  total: TurnDiagnosticsScopeData;
 }
 
 export interface TurnDiagnosticsData {
@@ -846,6 +883,11 @@ export interface TurnDiagnosticsData {
   usage: TokenUsageData;
   modelSteps: readonly ModelStepDiagnosticsData[];
   toolCalls: readonly ToolCallDiagnosticsData[];
+  /**
+   * Scoped metrics for multi-agent turns. Optional so conversations written
+   * before scoped diagnostics remain readable.
+   */
+  metrics?: TurnDiagnosticsMetricsData;
 }
 
 export interface ProcessSnapshotData {
@@ -886,7 +928,12 @@ export interface ConversationProgressData {
 }
 
 export type AgentTaskStatusData =
-  "queued" | "running" | "completed" | "failed" | "cancelled";
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "interrupted";
 
 export type AgentTaskPhaseData =
   "queued" | "thinking" | "working" | "waiting" | "done";
@@ -909,6 +956,7 @@ export type AgentTaskTranscriptEntryData =
       startedAt: string;
       completedAt?: string;
       durationMs?: number;
+      usage?: TokenUsageData;
     }
   | {
       id: string;
@@ -918,6 +966,7 @@ export type AgentTaskTranscriptEntryData =
       arguments: string;
       output?: string;
       isError?: boolean;
+      errorCode?: string;
       startedAt: string;
       completedAt?: string;
       durationMs?: number;

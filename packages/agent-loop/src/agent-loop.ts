@@ -132,6 +132,12 @@ export class AgentLoop {
 
       state = turn.state;
       addUsage(usage, turn.usage);
+      await options.onCheckpoint?.({
+        step,
+        phase: "model_completed",
+        modelState: state,
+        usage: { ...usage },
+      });
 
       const additionalInput = options.takeAdditionalInput
         ? await options.takeAdditionalInput()
@@ -193,6 +199,12 @@ export class AgentLoop {
             emit,
           ),
         );
+        await options.onCheckpoint?.({
+          step,
+          phase: "tool_completed",
+          modelState: state,
+          usage: { ...usage },
+        });
         const additionalInput = options.takeAdditionalInput
           ? await options.takeAdditionalInput()
           : undefined;

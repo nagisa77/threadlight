@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DiagnosticExportDialog,
+  DiagnosticsTurnRow,
   DiagnosticsPage,
   exportSingleConversationDiagnostic,
   formatDuration,
@@ -68,6 +69,63 @@ describe("diagnostics center", () => {
     expect(html).toContain("已选择 1 个聊天");
     expect(html).toContain('type="checkbox"');
     expect(html).toContain("完整字段结构");
+  });
+
+  it("labels root, child, and total metrics for multi-agent turns", () => {
+    const scope = {
+      inputTokens: 4,
+      outputTokens: 1,
+      totalTokens: 5,
+      modelSteps: 1,
+      toolCalls: 1,
+      toolDurationMs: 20,
+    };
+    const html = renderToStaticMarkup(
+      <DiagnosticsTurnRow
+        language="zh-CN"
+        turn={{
+          threadId: "thread-1",
+          title: "多 Agent 诊断",
+          status: "completed",
+          startedAt: "2026-08-08T00:00:00.000Z",
+          completedAt: "2026-08-08T00:00:01.000Z",
+          durationMs: 1_000,
+          inputTokens: 8,
+          outputTokens: 2,
+          totalTokens: 10,
+          modelSteps: [
+            {
+              step: 1,
+              durationMs: 100,
+              inputTokens: 4,
+              outputTokens: 1,
+              totalTokens: 5,
+              agentId: "child-agent",
+              agentRole: "explorer",
+            },
+          ],
+          toolCalls: [],
+          metrics: {
+            root: scope,
+            children: scope,
+            total: {
+              ...scope,
+              inputTokens: 8,
+              outputTokens: 2,
+              totalTokens: 10,
+              modelSteps: 2,
+              toolCalls: 2,
+              toolDurationMs: 40,
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain("主 Agent");
+    expect(html).toContain("子 Agent");
+    expect(html).toContain("合计");
+    expect(html).toContain("explorer · 步骤 1");
   });
 
   it("exports only the selected standalone conversation", async () => {

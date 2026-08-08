@@ -84,6 +84,7 @@ function readConversationDiagnostics(
       return [];
     }
     const diagnostics = message.diagnostics;
+    const total = diagnostics.metrics?.total ?? diagnostics;
     return [
       {
         threadId,
@@ -95,23 +96,36 @@ function readConversationDiagnostics(
         ...(typeof diagnostics.model === "string"
           ? { model: diagnostics.model }
           : {}),
-        inputTokens: diagnostics.usage.inputTokens,
-        outputTokens: diagnostics.usage.outputTokens,
-        totalTokens: diagnostics.usage.totalTokens,
-        modelSteps: diagnostics.modelSteps.map((step) => ({
+        inputTokens: total.usage.inputTokens,
+        outputTokens: total.usage.outputTokens,
+        totalTokens: total.usage.totalTokens,
+        modelSteps: total.modelSteps.map((step) => ({
           step: step.step,
           durationMs: step.durationMs,
           inputTokens: step.usage.inputTokens,
           outputTokens: step.usage.outputTokens,
           totalTokens: step.usage.totalTokens,
+          ...(step.agentId ? { agentId: step.agentId } : {}),
+          ...(step.agentRole ? { agentRole: step.agentRole } : {}),
         })),
-        toolCalls: diagnostics.toolCalls.map((tool) => ({
+        toolCalls: total.toolCalls.map((tool) => ({
           callId: tool.callId,
           name: tool.name,
           durationMs: tool.durationMs,
           isError: tool.isError,
           ...(tool.errorCode ? { errorCode: tool.errorCode } : {}),
+          ...(tool.agentId ? { agentId: tool.agentId } : {}),
+          ...(tool.agentRole ? { agentRole: tool.agentRole } : {}),
         })),
+        ...(diagnostics.metrics
+          ? {
+              metrics: {
+                root: hostScope(diagnostics.metrics.root),
+                children: hostScope(diagnostics.metrics.children),
+                total: hostScope(diagnostics.metrics.total),
+              },
+            }
+          : {}),
       },
     ];
   });
@@ -124,18 +138,37 @@ interface StoredDiagnostics {
   durationMs: number;
   model?: string;
   usage: Usage;
-  modelSteps: Array<{
-    step: number;
-    durationMs: number;
-    usage: Usage;
-  }>;
-  toolCalls: Array<{
-    callId: string;
-    name: string;
-    durationMs: number;
-    isError: boolean;
-    errorCode?: string;
-  }>;
+  modelSteps: ModelStep[];
+  toolCalls: ToolCall[];
+  metrics?: {
+    root: DiagnosticScope;
+    children: DiagnosticScope;
+    total: DiagnosticScope;
+  };
+}
+
+interface DiagnosticScope {
+  usage: Usage;
+  modelSteps: ModelStep[];
+  toolCalls: ToolCall[];
+}
+
+interface ModelStep {
+  step: number;
+  durationMs: number;
+  usage: Usage;
+  agentId?: string;
+  agentRole?: string;
+}
+
+interface ToolCall {
+  callId: string;
+  name: string;
+  durationMs: number;
+  isError: boolean;
+  errorCode?: string;
+  agentId?: string;
+  agentRole?: string;
 }
 
 interface Usage {
@@ -153,25 +186,71 @@ function isTurnDiagnostics(value: unknown): value is StoredDiagnostics {
     isNonNegativeNumber(value.durationMs) &&
     (value.model === undefined || typeof value.model === "string") &&
     isUsage(value.usage) &&
-    Array.isArray(value.modelSteps) &&
-    value.modelSteps.every(
+    isModelSteps(value.modelSteps) &&
+    isToolCalls(value.toolCalls) &&
+    (value.metrics === undefined || isDiagnosticMetrics(value.metrics))
+  );
+}
+
+function isDiagnosticMetrics(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isDiagnosticScope(value.root) &&
+    isDiagnosticScope(value.children) &&
+    isDiagnosticScope(value.total)
+  );
+}
+
+function isDiagnosticScope(value: unknown): value is DiagnosticScope {
+  return (
+    isRecord(value) &&
+    isUsage(value.usage) &&
+    isModelSteps(value.modelSteps) &&
+    isToolCalls(value.toolCalls)
+  );
+}
+
+function isModelSteps(value: unknown): value is ModelStep[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
       (step) =>
         isRecord(step) &&
         Number.isInteger(step.step) &&
         isNonNegativeNumber(step.durationMs) &&
-        isUsage(step.usage),
-    ) &&
-    Array.isArray(value.toolCalls) &&
-    value.toolCalls.every(
+        isUsage(step.usage) &&
+        (step.agentId === undefined || typeof step.agentId === "string") &&
+        (step.agentRole === undefined || typeof step.agentRole === "string"),
+    )
+  );
+}
+
+function isToolCalls(value: unknown): value is ToolCall[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
       (tool) =>
         isRecord(tool) &&
         typeof tool.callId === "string" &&
         typeof tool.name === "string" &&
         isNonNegativeNumber(tool.durationMs) &&
         typeof tool.isError === "boolean" &&
-        (tool.errorCode === undefined || typeof tool.errorCode === "string"),
+        (tool.errorCode === undefined || typeof tool.errorCode === "string") &&
+        (tool.agentId === undefined || typeof tool.agentId === "string") &&
+        (tool.agentRole === undefined || typeof tool.agentRole === "string"),
     )
   );
+}
+
+function hostScope(scope: DiagnosticScope) {
+  return {
+    inputTokens: scope.usage.inputTokens,
+    outputTokens: scope.usage.outputTokens,
+    totalTokens: scope.usage.totalTokens,
+    modelSteps: scope.modelSteps.length,
+    toolCalls: scope.toolCalls.length,
+    toolDurationMs: sum(scope.toolCalls, ({ durationMs }) => durationMs),
+  };
 }
 
 function isUsage(value: unknown): value is Usage {

@@ -9,7 +9,10 @@ import {
 } from "@threadlight/agent-loop";
 
 import { AppServer } from "../src/app-server.js";
-import type { JsonRpcOutgoing } from "../src/protocol.js";
+import type {
+  JsonRpcOutgoing,
+  TurnDiagnosticsData,
+} from "../src/protocol.js";
 
 describe("turn diagnostics", () => {
   it("persists scripted token, model-step, and tool timing snapshots", async () => {
@@ -117,6 +120,175 @@ describe("turn diagnostics", () => {
         ],
       },
     });
+  });
+
+  it("separates root, child, and total metrics for a scripted multi-agent turn", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const completed = Promise.withResolvers<void>();
+    let rootTurns = 0;
+    let childTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          childTurns += 1;
+          return childTurns === 1
+            ? {
+                text: "inspecting",
+                toolCalls: [
+                  { id: "child-check", name: "check", arguments: {} },
+                ],
+                usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+              }
+            : {
+                text: "child complete",
+                toolCalls: [],
+                usage: { inputTokens: 2, outputTokens: 1, totalTokens: 3 },
+              };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "delegating",
+            toolCalls: [
+              {
+                id: "spawn-explorer",
+                name: "spawn_agent",
+                arguments: { role: "explorer", task: "Inspect the workspace" },
+              },
+            ],
+            usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
+          };
+        }
+        if (rootTurns === 2) {
+          return {
+            text: "collecting",
+            toolCalls: [
+              { id: "wait-explorer", name: "wait_for_agents", arguments: {} },
+            ],
+            usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 },
+          };
+        }
+        return {
+          text: "done",
+          toolCalls: [],
+          usage: { inputTokens: 3, outputTokens: 1, totalTokens: 4 },
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      modelName: "scripted-model",
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Reply",
+        tools: [
+          defineTool({
+            name: "check",
+            description: "Check",
+            parameters: { type: "object" },
+            mutability: "read",
+            async execute() {
+              return "ok";
+            },
+          }),
+        ],
+      }),
+      multiAgent: {
+        profiles: [
+          {
+            name: "explorer",
+            description: "Inspect",
+            instructions: "Inspect read-only",
+            toolAccess: "read-only",
+          },
+        ],
+      },
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Inspect" },
+    });
+    await completed.promise;
+
+    const notification = messages.find(
+      (message) =>
+        "method" in message && message.method === "turn/completed",
+    );
+    expect(notification).toMatchObject({
+      params: {
+        diagnostics: {
+          usage: { inputTokens: 16, outputTokens: 6, totalTokens: 22 },
+          toolCalls: [
+            { callId: "spawn-explorer" },
+            { callId: "wait-explorer" },
+          ],
+          metrics: {
+            root: {
+              usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16 },
+              modelSteps: [
+                { agentRole: "root" },
+                { agentRole: "root" },
+                { agentRole: "root" },
+              ],
+              toolCalls: [
+                { callId: "spawn-explorer", agentRole: "root" },
+                { callId: "wait-explorer", agentRole: "root" },
+              ],
+            },
+            children: {
+              usage: { inputTokens: 4, outputTokens: 2, totalTokens: 6 },
+              modelSteps: [
+                { agentRole: "explorer", usage: { totalTokens: 3 } },
+                { agentRole: "explorer", usage: { totalTokens: 3 } },
+              ],
+              toolCalls: [
+                { callId: "child-check", agentRole: "explorer" },
+              ],
+            },
+            total: {
+              usage: { inputTokens: 16, outputTokens: 6, totalTokens: 22 },
+              modelSteps: expect.arrayContaining([
+                expect.objectContaining({ agentRole: "root" }),
+                expect.objectContaining({ agentRole: "explorer" }),
+              ]),
+              toolCalls: expect.arrayContaining([
+                expect.objectContaining({
+                  callId: "spawn-explorer",
+                  agentRole: "root",
+                }),
+                expect.objectContaining({
+                  callId: "child-check",
+                  agentRole: "explorer",
+                }),
+              ]),
+            },
+          },
+        },
+      },
+    });
+    const diagnostics = (
+      notification as { params: { diagnostics: TurnDiagnosticsData } }
+    ).params.diagnostics;
+    expect(diagnostics.modelSteps).toHaveLength(3);
+    expect(diagnostics.toolCalls).toHaveLength(2);
+    expect(diagnostics.metrics.total.modelSteps).toHaveLength(5);
+    expect(diagnostics.metrics.total.toolCalls).toHaveLength(3);
   });
 
   it("persists scripted tool error codes for badcase exports", async () => {

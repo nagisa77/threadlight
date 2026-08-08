@@ -1335,7 +1335,7 @@ export class AppServer {
         "completed",
         this.now(),
         result.durationMs,
-        result.usage,
+        thread.activeTurn?.agentTree,
       );
       const appliedCapabilities = mergeMessageCapabilities(
         capabilities,
@@ -1404,7 +1404,12 @@ export class AppServer {
     } catch (error) {
       const failureText =
         error instanceof Error ? error.message : String(error);
-      const turnDiagnostics = diagnostics.complete("failed", this.now());
+      const turnDiagnostics = diagnostics.complete(
+        "failed",
+        this.now(),
+        undefined,
+        thread.activeTurn?.agentTree,
+      );
       const assistantMessage: ConversationMessageData = {
         id: randomUUID(),
         role: "assistant",
@@ -2003,8 +2008,27 @@ class TurnDiagnosticsRecorder {
     status: TurnDiagnosticsData["status"],
     completedAt: Date,
     durationMs?: number,
-    usage?: Partial<TokenUsageData>,
+    agentTree?: AgentTreeSnapshot,
   ): TurnDiagnosticsData {
+    const rootAgentId = agentTree?.rootId;
+    const root = diagnosticsScope(
+      this.modelSteps.map((step) => ({
+        ...step,
+        ...(rootAgentId ? { agentId: rootAgentId } : {}),
+        agentRole: "root",
+      })),
+      this.toolCalls.map((tool) => ({
+        ...tool,
+        ...(rootAgentId ? { agentId: rootAgentId } : {}),
+        agentRole: "root",
+      })),
+    );
+    const children = childDiagnosticsScope(agentTree);
+    const total = diagnosticsScope(
+      [...root.modelSteps, ...children.modelSteps],
+      [...root.toolCalls, ...children.toolCalls],
+      addTokenUsage(root.usage, children.usage),
+    );
     return {
       status,
       startedAt: this.startedAt.toISOString(),
@@ -2014,21 +2038,79 @@ class TurnDiagnosticsRecorder {
         (this.durationMs ||
           Math.max(0, Math.round(performance.now() - this.startedMonotonic))),
       ...(this.model ? { model: this.model } : {}),
-      usage:
-        usage === undefined
-          ? this.modelSteps.reduce<TokenUsageData>(
-              (total, step) => ({
-                inputTokens: total.inputTokens + step.usage.inputTokens,
-                outputTokens: total.outputTokens + step.usage.outputTokens,
-                totalTokens: total.totalTokens + step.usage.totalTokens,
-              }),
-              normalizedUsage(),
-            )
-          : normalizedUsage(usage),
+      usage: total.usage,
+      // Legacy arrays remain root-only. Scoped consumers should use metrics.
       modelSteps: this.modelSteps,
       toolCalls: this.toolCalls,
+      metrics: { root, children, total },
     };
   }
+}
+
+type DiagnosticsScope = NonNullable<
+  TurnDiagnosticsData["metrics"]
+>["root"];
+
+function childDiagnosticsScope(
+  tree: AgentTreeSnapshot | undefined,
+): DiagnosticsScope {
+  if (!tree) return diagnosticsScope([], []);
+  const children = tree.agents.filter(
+    ({ parentId }) => parentId === tree.rootId,
+  );
+  const modelSteps: DiagnosticsScope["modelSteps"][number][] = [];
+  const toolCalls: DiagnosticsScope["toolCalls"][number][] = [];
+  for (const child of children) {
+    for (const entry of child.transcript) {
+      if (entry.status === "running") continue;
+      if (entry.kind === "model") {
+        modelSteps.push({
+          step: entry.step,
+          durationMs: entry.durationMs ?? 0,
+          usage: normalizedUsage(entry.usage),
+          agentId: child.id,
+          agentRole: child.role,
+        });
+        continue;
+      }
+      toolCalls.push({
+        callId: entry.id,
+        name: entry.name,
+        durationMs: entry.durationMs ?? 0,
+        isError: entry.status === "failed" || entry.isError === true,
+        ...(entry.errorCode ? { errorCode: entry.errorCode } : {}),
+        agentId: child.id,
+        agentRole: child.role,
+      });
+    }
+  }
+  return diagnosticsScope(modelSteps, toolCalls);
+}
+
+function diagnosticsScope(
+  modelSteps: DiagnosticsScope["modelSteps"],
+  toolCalls: DiagnosticsScope["toolCalls"],
+  usage: Partial<TokenUsageData> = modelSteps.reduce<TokenUsageData>(
+    (total, step) => addTokenUsage(total, step.usage),
+    normalizedUsage(),
+  ),
+): DiagnosticsScope {
+  return {
+    usage: normalizedUsage(usage),
+    modelSteps,
+    toolCalls,
+  };
+}
+
+function addTokenUsage(
+  left: Partial<TokenUsageData>,
+  right: Partial<TokenUsageData> | undefined,
+): TokenUsageData {
+  return {
+    inputTokens: (left.inputTokens ?? 0) + (right?.inputTokens ?? 0),
+    outputTokens: (left.outputTokens ?? 0) + (right?.outputTokens ?? 0),
+    totalTokens: (left.totalTokens ?? 0) + (right?.totalTokens ?? 0),
+  };
 }
 
 function normalizedUsage(usage: Partial<TokenUsageData> = {}): TokenUsageData {

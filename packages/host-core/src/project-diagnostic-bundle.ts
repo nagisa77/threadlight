@@ -411,9 +411,18 @@ function sanitizedDiagnosticsSnapshot(
       ...turn,
       title: sanitizer.text(turn.title).value,
       ...(turn.model ? { model: sanitizer.text(turn.model).value } : {}),
+      modelSteps: turn.modelSteps.map((step) => ({
+        ...step,
+        ...(step.agentRole
+          ? { agentRole: sanitizer.text(step.agentRole).value }
+          : {}),
+      })),
       toolCalls: turn.toolCalls.map((tool) => ({
         ...tool,
         name: sanitizer.text(tool.name).value,
+        ...(tool.agentRole
+          ? { agentRole: sanitizer.text(tool.agentRole).value }
+          : {}),
         ...(tool.errorCode
           ? { errorCode: sanitizer.text(tool.errorCode).value }
           : {}),
@@ -947,7 +956,8 @@ function isAgentStatus(value: unknown): value is HostDiagnosticAgent["status"] {
     value === "running" ||
     value === "completed" ||
     value === "failed" ||
-    value === "cancelled"
+    value === "cancelled" ||
+    value === "interrupted"
   );
 }
 
@@ -955,7 +965,7 @@ function agentTimelineStatus(
   status: HostDiagnosticAgent["status"],
 ): HostDiagnosticTimelineEvent["status"] {
   if (status === "failed") return "failed";
-  if (status === "cancelled") return "terminated";
+  if (status === "cancelled" || status === "interrupted") return "terminated";
   if (status === "completed") return "completed";
   return "running";
 }
