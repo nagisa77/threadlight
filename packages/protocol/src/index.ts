@@ -869,6 +869,49 @@ export interface ConversationProgressData {
   activities: readonly ConversationActivityData[];
 }
 
+export type AgentTaskStatusData =
+  "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type AgentTaskPhaseData =
+  "queued" | "thinking" | "working" | "waiting" | "done";
+
+export interface AgentTaskActivityData {
+  id: string;
+  name: string;
+  status: "running" | "completed" | "failed";
+  durationMs?: number;
+}
+
+/** Display-safe projection of one provider-neutral agent task. */
+export interface AgentTaskData {
+  id: string;
+  parentId?: string;
+  retryOf?: string;
+  runId?: string;
+  name: string;
+  role: string;
+  task: string;
+  status: AgentTaskStatusData;
+  phase: AgentTaskPhaseData;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  elapsedMs: number;
+  latestActivity?: string;
+  summary?: string;
+  output?: string;
+  error?: string;
+  steps?: number;
+  usage?: TokenUsageData;
+  activities: readonly AgentTaskActivityData[];
+}
+
+export interface AgentTreeData {
+  rootId: string;
+  maxConcurrent: number;
+  agents: readonly AgentTaskData[];
+}
+
 /**
  * Host-owned projection of a turn that is still running.
  *
@@ -883,6 +926,7 @@ export interface ActiveTurnData {
   streamingText: string;
   progress: readonly ConversationProgressData[];
   plan?: AgentPlanData;
+  agentTree?: AgentTreeData;
 }
 
 export type CapabilityKind = "skill" | "tool";
@@ -973,6 +1017,8 @@ export interface ConversationMessageData {
   mode?: TurnMode;
   plan?: AgentPlanData;
   progress?: readonly ConversationProgressData[];
+  /** Final inspectable snapshot for turns that delegated to subagents. */
+  agentTree?: AgentTreeData;
   diagnostics?: TurnDiagnosticsData;
   /** Web sources cited by this assistant message. */
   sources?: readonly MessageSourceData[];
@@ -1136,6 +1182,18 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: { interrupted: boolean };
   };
+  "agent/cancel": {
+    params: { threadId: string; agentId: string };
+    result: { cancelled: boolean };
+  };
+  "agent/steer": {
+    params: { threadId: string; agentId: string; input: string };
+    result: { accepted: boolean };
+  };
+  "agent/retry": {
+    params: { threadId: string; agentId: string };
+    result: { agent?: AgentTaskData };
+  };
   "turn/follow-up": {
     params: {
       threadId: string;
@@ -1205,6 +1263,9 @@ export const THREADLIGHT_METHODS = [
   "connector/disconnect",
   "turn/start",
   "turn/interrupt",
+  "agent/cancel",
+  "agent/steer",
+  "agent/retry",
   "turn/follow-up",
   "turn/queue/inject",
   "turn/queue/reorder",
@@ -1267,6 +1328,22 @@ export interface ThreadlightNotificationMap {
     revision: number;
     activeTurn: ActiveTurnData;
     event: AgentEventData;
+  };
+  "agent/tree-updated": {
+    threadId: string;
+    turnId: string;
+    revision: number;
+    activeTurn: ActiveTurnData;
+    changedAgentId: string;
+    reason:
+      | "created"
+      | "started"
+      | "progress"
+      | "completed"
+      | "failed"
+      | "cancelled"
+      | "steered";
+    tree: AgentTreeData;
   };
   "turn/queue/updated": {
     threadId: string;

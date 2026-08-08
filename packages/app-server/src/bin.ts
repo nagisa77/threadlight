@@ -87,8 +87,7 @@ const MODEL_PROVIDER_IDS: readonly ModelProviderId[] = [
 ];
 
 const providerId = parseProvider(process.env.THREADLIGHT_PROVIDER);
-const modelName =
-  process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId);
+const modelName = process.env.THREADLIGHT_MODEL ?? defaultModelFor(providerId);
 
 // Build one backend per configured vendor so a conversation can route to any
 // provider whose key is present in the environment; the previously selected
@@ -202,6 +201,42 @@ const agentFactory = createWorkspaceAgentFactory({
 const send = jsonLineSender(process.stdout);
 const server = new AppServer({
   loop,
+  multiAgent: {
+    maxConcurrent: 3,
+    maxAgents: 8,
+    profiles: [
+      {
+        name: "explorer",
+        description:
+          "Quickly inspect the workspace, trace code paths, and return evidence without changing state.",
+        instructions:
+          "Search broadly enough to answer the delegated question, cite concrete files and symbols, and do not modify workspace or external state.",
+        toolAccess: "read-only",
+      },
+      {
+        name: "worker",
+        description:
+          "Implement one well-scoped change with exclusive workspace write ownership.",
+        instructions:
+          "Implement only the delegated change, preserve unrelated user work, verify the result proportionally, and report changed files plus test evidence.",
+        toolAccess: "all",
+        excludedTools: [
+          "update_plan",
+          "advance_plan",
+          "request_plan_input",
+          "project_memory",
+        ],
+      },
+      {
+        name: "reviewer",
+        description:
+          "Review an implementation for correctness, regressions, and missing tests without changing state.",
+        instructions:
+          "Inspect the relevant implementation and tests. Report actionable findings ordered by severity, or state clearly when no issue is found.",
+        toolAccess: "read-only",
+      },
+    ],
+  },
   generateConversationTitles: true,
   modelName,
   attachmentProvider: provider,
@@ -227,9 +262,7 @@ const server = new AppServer({
         workspaceRoot,
         projectStateRoot,
         mcpRuntime: runtime,
-        ...(desktopConnections
-          ? { connections: desktopConnections }
-          : {}),
+        ...(desktopConnections ? { connections: desktopConnections } : {}),
         mentionableTools: [
           MENTIONABLE_TOOL_CAPABILITIES.plan,
           ...(computerUseEnabled

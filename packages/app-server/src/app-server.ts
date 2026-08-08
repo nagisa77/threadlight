@@ -6,8 +6,12 @@ import type {
   Agent,
   AgentEvent,
   AgentLoop,
+  AgentTreeEvent,
+  AgentTreeSnapshot,
+  SubagentProfile,
   Tool,
 } from "@threadlight/agent-loop";
+import { AgentOrchestrator } from "@threadlight/agent-loop";
 import {
   createRequestPlanInputTool,
   PlanExecutionController,
@@ -103,6 +107,8 @@ interface ThreadState {
     streamingText: string;
     controller: AbortController;
     sourceCitations?: SourceCitationRunController;
+    orchestrator?: AgentOrchestrator;
+    agentTree?: AgentTreeSnapshot;
   };
   pendingAssistantOutput?: {
     text: string;
@@ -140,6 +146,11 @@ interface SharedAppServerOptions {
   turnCleanup?(context: TurnCleanupContext): void | Promise<void>;
   modelName?: string;
   generateConversationTitles?: boolean;
+  multiAgent?: {
+    profiles: readonly SubagentProfile[];
+    maxConcurrent?: number;
+    maxAgents?: number;
+  };
 }
 
 export type AgentFactory = () => Agent | Promise<Agent>;
@@ -167,11 +178,11 @@ export interface ThreadRuntime {
     activation?: CapabilityActivation,
   ):
     | {
-      promptBlocks: readonly PromptBlock[];
-      tools: readonly Tool[];
-      resources?: readonly CapabilityResource[];
-      skillReads?: readonly SkillReadRequirement[];
-    }
+        promptBlocks: readonly PromptBlock[];
+        tools: readonly Tool[];
+        resources?: readonly CapabilityResource[];
+        skillReads?: readonly SkillReadRequirement[];
+      }
     | Promise<{
         promptBlocks: readonly PromptBlock[];
         tools: readonly Tool[];
@@ -197,9 +208,9 @@ export interface ThreadRuntime {
   dispose?(): void | Promise<void>;
 }
 
-export type ThreadRuntimeFactory = (restoredSnapshot?: unknown) =>
-  | ThreadRuntime
-  | Promise<ThreadRuntime>;
+export type ThreadRuntimeFactory = (
+  restoredSnapshot?: unknown,
+) => ThreadRuntime | Promise<ThreadRuntime>;
 
 export type AppServerOptions = SharedAppServerOptions &
   (
@@ -223,6 +234,7 @@ export class AppServer {
   private readonly turnCleanup?: SharedAppServerOptions["turnCleanup"];
   private readonly modelName?: string;
   private readonly generateConversationTitles: boolean;
+  private readonly multiAgent?: SharedAppServerOptions["multiAgent"];
   private readonly threads = new Map<string, ThreadState>();
   private readonly suggestionRequests = new Map<
     SuggestionLanguage,
@@ -267,6 +279,7 @@ export class AppServer {
     this.modelName = options.modelName;
     this.generateConversationTitles =
       options.generateConversationTitles ?? false;
+    this.multiAgent = options.multiAgent;
   }
 
   async receive(message: JsonRpcRequest): Promise<void> {
@@ -324,6 +337,12 @@ export class AppServer {
         return this.startTurn(params);
       case "turn/interrupt":
         return this.interruptTurn(params);
+      case "agent/cancel":
+        return this.cancelAgent(params);
+      case "agent/steer":
+        return this.steerAgent(params);
+      case "agent/retry":
+        return this.retryAgent(params);
       case "turn/follow-up":
         return this.addFollowUp(params);
       case "turn/queue/inject":
@@ -360,16 +379,11 @@ export class AppServer {
         : {}),
       messages: [],
     };
-    this.threads.set(
-      threadId,
-      await this.createThreadState(conversation),
-    );
+    this.threads.set(threadId, await this.createThreadState(conversation));
     return { threadId };
   }
 
-  private async resumeThread(
-    params: unknown,
-  ): Promise<{
+  private async resumeThread(params: unknown): Promise<{
     threadId: string;
     messages: readonly ConversationMessageData[];
     queuedTurns: readonly QueuedTurnData[];
@@ -390,15 +404,15 @@ export class AppServer {
         void this.startNextQueuedTurn(threadId, thread!);
       }, 0);
     }
-    const pendingApprovals = [...this.pendingExecutionApprovals.values()]
-      .filter((pending) => pending.request.threadId === threadId);
+    const pendingApprovals = [
+      ...this.pendingExecutionApprovals.values(),
+    ].filter((pending) => pending.request.threadId === threadId);
     if (pendingApprovals.length > 0) {
       setTimeout(() => {
         for (const pending of pendingApprovals) {
           if (
-            this.pendingExecutionApprovals.get(
-              pending.request.requestId,
-            ) === pending
+            this.pendingExecutionApprovals.get(pending.request.requestId) ===
+            pending
           ) {
             this.notify("execution/approval-required", pending.request);
           }
@@ -438,9 +452,7 @@ export class AppServer {
     throw new RpcError(-32001, `Unknown thread: ${threadId}`);
   }
 
-  private async deleteThread(
-    params: unknown,
-  ): Promise<{ deleted: boolean }> {
+  private async deleteThread(params: unknown): Promise<{ deleted: boolean }> {
     const { threadId } = objectParams(params);
     requireString(threadId, "threadId");
 
@@ -581,15 +593,13 @@ export class AppServer {
     requireString(threadId, "threadId");
     const thread = await this.requireThread(threadId);
     return {
-      capabilities: (thread.runtime?.capabilities ?? []).map(
-        (capability) => ({ ...capability }),
-      ),
+      capabilities: (thread.runtime?.capabilities ?? []).map((capability) => ({
+        ...capability,
+      })),
     };
   }
 
-  private async connectorStatus(
-    params: unknown,
-  ): Promise<ConnectorStatusData> {
+  private async connectorStatus(params: unknown): Promise<ConnectorStatusData> {
     const { runtime, capabilityId } = await this.connectorRequest(params);
     if (!runtime.connectorStatus) {
       throw new RpcError(-32040, "Connector management is unavailable");
@@ -741,10 +751,7 @@ export class AppServer {
       (ref) => !availableCapabilityIds.has(ref),
     );
     if (unknownCapability) {
-      throw new RpcError(
-        -32602,
-        `Unknown capability: ${unknownCapability}`,
-      );
+      throw new RpcError(-32602, `Unknown capability: ${unknownCapability}`);
     }
     const capabilities = snapshotCapabilities(
       capabilityRefs,
@@ -794,8 +801,7 @@ export class AppServer {
     };
     thread.progress = [];
     thread.injectedInputPendingModelResponse = false;
-    thread.plan =
-      mode === "plan" ? { source: "user", items: [] } : undefined;
+    thread.plan = mode === "plan" ? { source: "user", items: [] } : undefined;
     const userMessage: ConversationMessageData = {
       id: randomUUID(),
       role: "user",
@@ -969,9 +975,7 @@ export class AppServer {
     return { queuedTurns: thread.conversation.queuedTurns ?? [] };
   }
 
-  private async cancelQueuedTurn(
-    params: unknown,
-  ): Promise<{
+  private async cancelQueuedTurn(params: unknown): Promise<{
     canceled: boolean;
     queuedTurns: readonly QueuedTurnData[];
   }> {
@@ -1010,6 +1014,35 @@ export class AppServer {
 
     activeTurn.controller.abort(new Error("Turn interrupted by client"));
     return { interrupted: true };
+  }
+
+  private cancelAgent(params: unknown): { cancelled: boolean } {
+    const { threadId, agentId } = objectParams(params);
+    requireString(threadId, "threadId");
+    requireString(agentId, "agentId");
+    const orchestrator = this.threads.get(threadId)?.activeTurn?.orchestrator;
+    return { cancelled: orchestrator?.cancel(agentId) ?? false };
+  }
+
+  private steerAgent(params: unknown): { accepted: boolean } {
+    const { threadId, agentId, input } = objectParams(params);
+    requireString(threadId, "threadId");
+    requireString(agentId, "agentId");
+    requireString(input, "input");
+    const orchestrator = this.threads.get(threadId)?.activeTurn?.orchestrator;
+    return { accepted: orchestrator?.steer(agentId, input) ?? false };
+  }
+
+  private retryAgent(params: unknown): {
+    agent?: AgentTreeSnapshot["agents"][number];
+  } {
+    const { threadId, agentId } = objectParams(params);
+    requireString(threadId, "threadId");
+    requireString(agentId, "agentId");
+    const agent = this.threads
+      .get(threadId)
+      ?.activeTurn?.orchestrator?.retry(agentId);
+    return agent ? { agent } : {};
   }
 
   private requireLocalAttachment(attachment: AttachmentData): void {
@@ -1067,7 +1100,10 @@ export class AppServer {
         snapshot,
       );
       if (messages === thread.conversation.messages) continue;
-      const conversation = this.updateConversation(thread.conversation, messages);
+      const conversation = this.updateConversation(
+        thread.conversation,
+        messages,
+      );
       await this.conversationStore.save(conversation);
       thread.conversation = conversation;
     }
@@ -1121,10 +1157,9 @@ export class AppServer {
           : attachments,
       );
       let attachmentToolInstalled = attachments.length > 0;
-      const explicitSkillRefs =
-        thread.runtime?.explicitSkillRefsForInput
-          ? await thread.runtime.explicitSkillRefsForInput(input)
-          : [];
+      const explicitSkillRefs = thread.runtime?.explicitSkillRefsForInput
+        ? await thread.runtime.explicitSkillRefsForInput(input)
+        : [];
       const capabilityRefsForTurn = [...capabilityRefs, ...explicitSkillRefs];
       const capabilityRuntime = thread.runtime?.resolveCapabilities
         ? await thread.runtime.resolveCapabilities(
@@ -1157,23 +1192,16 @@ export class AppServer {
           ? new TurnCapabilityController({
               capabilities: thread.runtime.capabilities ?? [],
               initialRefs: capabilityRefsForTurn,
-              resolve: thread.runtime.resolveCapabilities.bind(
-                thread.runtime,
-              ),
+              resolve: thread.runtime.resolveCapabilities.bind(thread.runtime),
               addTools: (tools) => appendToolsInPlace(turnTools, tools),
               addResources: (resources) => {
                 if (capabilityResources.add(resources)) {
-                  appendToolsInPlace(turnTools, [
-                    capabilityResources.tool(),
-                  ]);
+                  appendToolsInPlace(turnTools, [capabilityResources.tool()]);
                 }
               },
             })
           : undefined;
-      appendToolsInPlace(
-        turnTools,
-        capabilityController?.tools() ?? [],
-      );
+      appendToolsInPlace(turnTools, capabilityController?.tools() ?? []);
       const sourceCitationController = new SourceCitationRunController();
       if (thread.activeTurn?.id === turnId) {
         thread.activeTurn.sourceCitations = sourceCitationController;
@@ -1224,49 +1252,84 @@ export class AppServer {
         instructions: turnPrompt.instructions,
         tools: turnTools,
       };
-      const result = await this.loop.run(
-        turnAgent,
-        attachmentRuntime.input,
-        {
-          toolScopeId: threadId,
-          modelState: thread.conversation.modelState,
-          history: thread.conversation.messages
-            .slice(0, -1)
-            .filter((message) => message.text.length > 0)
-            .map(({ role, text }) => ({ role, text })),
-          controller: runController,
-          signal: controller.signal,
-          takeAdditionalInput: async () => {
-            const injected = await this.consumeInjectedInput(
-              threadId,
-              turnId,
-              thread,
-            );
-            if (!injected) return;
-            const injectedAttachments = provider
-              ? (injected.attachments ?? []).map((attachment) => ({
-                  ...attachment,
-                  provider,
-                }))
-              : (injected.attachments ?? []);
-            if (injectedAttachments.length > 0 && !attachmentToolInstalled) {
-              appendToolsInPlace(turnTools, [attachmentRuntime.tool]);
-              attachmentToolInstalled = true;
-            }
-            return attachmentRuntime.addInput(
-              injected.input,
-              injectedAttachments,
-            );
-          },
-          onEvent: (event) => {
-            runId = event.runId;
-            diagnostics.record(event);
-            this.forwardEvent(threadId, turnId, thread, event);
-          },
+      const runOptions = {
+        toolScopeId: threadId,
+        modelState: thread.conversation.modelState,
+        history: thread.conversation.messages
+          .slice(0, -1)
+          .filter((message) => message.text.length > 0)
+          .map(({ role, text }) => ({ role, text })),
+        controller: runController,
+        signal: controller.signal,
+        takeAdditionalInput: async () => {
+          const injected = await this.consumeInjectedInput(
+            threadId,
+            turnId,
+            thread,
+          );
+          if (!injected) return;
+          const injectedAttachments = provider
+            ? (injected.attachments ?? []).map((attachment) => ({
+                ...attachment,
+                provider,
+              }))
+            : (injected.attachments ?? []);
+          if (injectedAttachments.length > 0 && !attachmentToolInstalled) {
+            appendToolsInPlace(turnTools, [attachmentRuntime.tool]);
+            attachmentToolInstalled = true;
+          }
+          return attachmentRuntime.addInput(
+            injected.input,
+            injectedAttachments,
+          );
         },
+        onEvent: (event: AgentEvent) => {
+          runId = event.runId;
+          diagnostics.record(event);
+          this.forwardEvent(threadId, turnId, thread, event);
+        },
+      };
+      const multiAgentProfiles =
+        mode === "plan"
+          ? (this.multiAgent?.profiles.filter(
+              ({ toolAccess }) => toolAccess !== "all",
+            ) ?? [])
+          : (this.multiAgent?.profiles ?? []);
+      const orchestrator =
+        this.multiAgent && multiAgentProfiles.length > 0
+          ? new AgentOrchestrator(this.loop, {
+              ...runOptions,
+              profiles: multiAgentProfiles,
+              maxConcurrent: this.multiAgent.maxConcurrent,
+              maxAgents: this.multiAgent.maxAgents,
+              wallNow: this.now,
+              createChildRunOptions: () => ({
+                toolScopeId: threadId,
+                controller: new UserActionRunController(
+                  composeRunControllers([
+                    this.executionApprovalsEnabled && accessMode !== "full"
+                      ? new ExecutionPolicyRunController(
+                          threadId,
+                          this.executionApprovals,
+                          controller.signal,
+                        )
+                      : undefined,
+                  ]),
+                ),
+              }),
+              onAgentTreeEvent: (event) =>
+                this.forwardAgentTree(threadId, turnId, thread, event),
+            })
+          : undefined;
+      if (orchestrator && thread.activeTurn?.id === turnId) {
+        thread.activeTurn.orchestrator = orchestrator;
+      }
+      const result = orchestrator
+        ? await orchestrator.run(turnAgent, attachmentRuntime.input)
+        : await this.loop.run(turnAgent, attachmentRuntime.input, runOptions);
+      const persistedModelState = this.modelStatePersistence.prepare(
+        result.modelState,
       );
-      const persistedModelState =
-        this.modelStatePersistence.prepare(result.modelState);
       const sourcedOutput = sourceCitationController.finalize(result.output);
       const turnDiagnostics = diagnostics.complete(
         "completed",
@@ -1292,10 +1355,11 @@ export class AppServer {
         id: randomUUID(),
         role: "assistant",
         text: sourcedOutput.text,
-        ...(thread.progress.length > 0
-          ? { progress: thread.progress }
-          : {}),
+        ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
         ...(thread.plan ? { plan: thread.plan } : {}),
+        ...(visibleAgentTree(thread.activeTurn?.agentTree)
+          ? { agentTree: thread.activeTurn?.agentTree }
+          : {}),
         ...(appliedCapabilities.length > 0
           ? { capabilities: appliedCapabilities }
           : {}),
@@ -1307,14 +1371,12 @@ export class AppServer {
           : {}),
         diagnostics: turnDiagnostics,
       };
-      await this.mutateConversation(
-        thread,
-        (conversation) =>
-          this.updateConversation(
-            conversation,
-            [...conversation.messages, assistantMessage],
-            { modelState: persistedModelState },
-          ),
+      await this.mutateConversation(thread, (conversation) =>
+        this.updateConversation(
+          conversation,
+          [...conversation.messages, assistantMessage],
+          { modelState: persistedModelState },
+        ),
       );
       await cleanup();
       thread.revision += 1;
@@ -1348,10 +1410,11 @@ export class AppServer {
         role: "assistant",
         text: failureText,
         error: true,
-        ...(thread.progress.length > 0
-          ? { progress: thread.progress }
-          : {}),
+        ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
         ...(thread.plan ? { plan: thread.plan } : {}),
+        ...(visibleAgentTree(thread.activeTurn?.agentTree)
+          ? { agentTree: thread.activeTurn?.agentTree }
+          : {}),
         diagnostics: turnDiagnostics,
       };
       try {
@@ -1398,10 +1461,9 @@ export class AppServer {
     let message: ConversationMessageData | undefined;
     let precedingAssistantMessage: ConversationMessageData | undefined;
     const pendingAssistantOutput = thread.pendingAssistantOutput;
-    const finalizedPendingOutput =
-      thread.activeTurn?.sourceCitations?.finalize(
-        pendingAssistantOutput?.text ?? "",
-      );
+    const finalizedPendingOutput = thread.activeTurn?.sourceCitations?.finalize(
+      pendingAssistantOutput?.text ?? "",
+    );
     await this.mutateConversation(thread, (conversation) => {
       consumed = (conversation.queuedTurns ?? []).find(
         ({ delivery }) => delivery === "inject",
@@ -1421,9 +1483,7 @@ export class AppServer {
           id: randomUUID(),
           role: "assistant",
           text: finalizedPendingOutput?.text ?? pendingAssistantOutput.text,
-          ...(thread.progress.length > 0
-            ? { progress: thread.progress }
-            : {}),
+          ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
           ...(finalizedPendingOutput?.sources.length
             ? {
                 sources: finalizedPendingOutput.sources,
@@ -1441,9 +1501,7 @@ export class AppServer {
         },
         [
           ...conversation.messages,
-          ...(precedingAssistantMessage
-            ? [precedingAssistantMessage]
-            : []),
+          ...(precedingAssistantMessage ? [precedingAssistantMessage] : []),
           message,
         ],
       );
@@ -1465,9 +1523,7 @@ export class AppServer {
       threadId,
       itemId: consumed.id,
       message,
-      ...(precedingAssistantMessage
-        ? { precedingAssistantMessage }
-        : {}),
+      ...(precedingAssistantMessage ? { precedingAssistantMessage } : {}),
     });
     return consumed;
   }
@@ -1641,8 +1697,7 @@ export class AppServer {
       if (activeTurn) {
         activeTurn.isThinking = false;
         activeTurn.streamingText =
-          event.toolCalls.length > 0 ||
-          event.outputVisibility === "provisional"
+          event.toolCalls.length > 0 || event.outputVisibility === "provisional"
             ? ""
             : event.text;
       }
@@ -1676,6 +1731,28 @@ export class AppServer {
     });
   }
 
+  private forwardAgentTree(
+    threadId: string,
+    turnId: string,
+    thread: ThreadState,
+    event: AgentTreeEvent,
+  ): void {
+    const activeTurn =
+      thread.activeTurn?.id === turnId ? thread.activeTurn : undefined;
+    if (!activeTurn) return;
+    activeTurn.agentTree = event.tree;
+    thread.revision += 1;
+    this.notify("agent/tree-updated", {
+      threadId,
+      turnId,
+      revision: thread.revision,
+      activeTurn: this.requireActiveTurnSnapshot(thread),
+      changedAgentId: event.changedAgentId,
+      reason: event.reason,
+      tree: event.tree,
+    });
+  }
+
   private activeTurnSnapshot(thread: ThreadState): ActiveTurnData | undefined {
     const activeTurn = thread.activeTurn;
     if (!activeTurn) return;
@@ -1691,6 +1768,9 @@ export class AppServer {
       streamingText: activeTurn.streamingText,
       progress: thread.progress,
       ...(thread.plan ? { plan: thread.plan } : {}),
+      ...(visibleAgentTree(activeTurn.agentTree)
+        ? { agentTree: activeTurn.agentTree }
+        : {}),
     };
   }
 
@@ -1882,9 +1962,8 @@ class TurnDiagnosticsRecorder {
   private readonly modelSteps: Array<
     TurnDiagnosticsData["modelSteps"][number]
   > = [];
-  private readonly toolCalls: Array<
-    TurnDiagnosticsData["toolCalls"][number]
-  > = [];
+  private readonly toolCalls: Array<TurnDiagnosticsData["toolCalls"][number]> =
+    [];
   private durationMs = 0;
   private readonly startedMonotonic = performance.now();
 
@@ -1938,12 +2017,9 @@ class TurnDiagnosticsRecorder {
         usage === undefined
           ? this.modelSteps.reduce<TokenUsageData>(
               (total, step) => ({
-                inputTokens:
-                  total.inputTokens + step.usage.inputTokens,
-                outputTokens:
-                  total.outputTokens + step.usage.outputTokens,
-                totalTokens:
-                  total.totalTokens + step.usage.totalTokens,
+                inputTokens: total.inputTokens + step.usage.inputTokens,
+                outputTokens: total.outputTokens + step.usage.outputTokens,
+                totalTokens: total.totalTokens + step.usage.totalTokens,
               }),
               normalizedUsage(),
             )
@@ -1954,9 +2030,7 @@ class TurnDiagnosticsRecorder {
   }
 }
 
-function normalizedUsage(
-  usage: Partial<TokenUsageData> = {},
-): TokenUsageData {
+function normalizedUsage(usage: Partial<TokenUsageData> = {}): TokenUsageData {
   return {
     inputTokens: usage.inputTokens ?? 0,
     outputTokens: usage.outputTokens ?? 0,
@@ -1992,15 +2066,10 @@ function parseTurnMode(value: unknown): TurnMode {
   throw new RpcError(-32602, "mode must be default or plan");
 }
 
-function parseConversationAccessMode(
-  value: unknown,
-): ConversationAccessMode {
+function parseConversationAccessMode(value: unknown): ConversationAccessMode {
   if (value === undefined || value === "approval") return "approval";
   if (value === "full") return value;
-  throw new RpcError(
-    -32602,
-    "accessMode must be approval or full",
-  );
+  throw new RpcError(-32602, "accessMode must be approval or full");
 }
 
 const SUGGESTION_LANGUAGES = new Set<SuggestionLanguage>([
@@ -2073,7 +2142,9 @@ interface PullRequestChangeInput {
   localOnly: boolean;
 }
 
-function parsePullRequestChanges(value: unknown): readonly PullRequestChangeInput[] {
+function parsePullRequestChanges(
+  value: unknown,
+): readonly PullRequestChangeInput[] {
   if (!Array.isArray(value) || value.length > 500) {
     throw new RpcError(-32602, "changes must be an array of at most 500 files");
   }
@@ -2164,7 +2235,11 @@ function normalizePullRequestBullets(
   minimum: number,
   maximum: number,
 ): readonly string[] {
-  if (!Array.isArray(value) || value.length < minimum || value.length > maximum) {
+  if (
+    !Array.isArray(value) ||
+    value.length < minimum ||
+    value.length > maximum
+  ) {
     throw new Error("Invalid PR bullet count");
   }
   return value.map((item) => normalizePullRequestLine(item, 500));
@@ -2266,10 +2341,7 @@ function parseCapabilityRefs(value: unknown): readonly string[] {
     !Array.isArray(value) ||
     value.length > 16 ||
     !value.every(
-      (ref) =>
-        typeof ref === "string" &&
-        ref.length > 0 &&
-        ref.length <= 256,
+      (ref) => typeof ref === "string" && ref.length > 0 && ref.length <= 256,
     )
   ) {
     throw new RpcError(
@@ -2284,7 +2356,9 @@ function snapshotCapabilities(
   refs: readonly string[],
   available: readonly CapabilityDescriptor[],
 ): readonly MessageCapabilityData[] {
-  const byId = new Map(available.map((capability) => [capability.id, capability]));
+  const byId = new Map(
+    available.map((capability) => [capability.id, capability]),
+  );
   return refs.map((ref) => {
     const capability = byId.get(ref);
     if (!capability) {
@@ -2332,6 +2406,12 @@ function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
   };
 }
 
+function visibleAgentTree(
+  tree: AgentTreeSnapshot | undefined,
+): tree is AgentTreeSnapshot {
+  return tree?.agents.some(({ parentId }) => parentId === tree.rootId) ?? false;
+}
+
 function appendTurnTools(
   tools: readonly Tool[] | undefined,
   additions: readonly Tool[],
@@ -2347,10 +2427,7 @@ function appendTurnTools(
   return combined;
 }
 
-function appendToolsInPlace(
-  target: Tool[],
-  additions: readonly Tool[],
-): void {
+function appendToolsInPlace(target: Tool[], additions: readonly Tool[]): void {
   const names = new Set(target.map(({ name }) => name));
   for (const tool of additions) {
     if (names.has(tool.name)) {

@@ -203,6 +203,18 @@ export class ThreadlightClient {
     return this.request("turn/interrupt", { threadId });
   }
 
+  cancelAgent(threadId: string, agentId: string) {
+    return this.request("agent/cancel", { threadId, agentId });
+  }
+
+  steerAgent(threadId: string, agentId: string, input: string) {
+    return this.request("agent/steer", { threadId, agentId, input });
+  }
+
+  retryAgent(threadId: string, agentId: string) {
+    return this.request("agent/retry", { threadId, agentId });
+  }
+
   addFollowUp(
     threadId: string,
     input: string,
@@ -221,11 +233,7 @@ export class ThreadlightClient {
     return this.request("turn/queue/inject", { threadId, itemId });
   }
 
-  reorderQueuedTurn(
-    threadId: string,
-    itemId: string,
-    beforeItemId?: string,
-  ) {
+  reorderQueuedTurn(threadId: string, itemId: string, beforeItemId?: string) {
     return this.request("turn/queue/reorder", {
       threadId,
       itemId,

@@ -105,10 +105,7 @@ export interface ModelRequest {
   history?: readonly ModelConversationMessage[];
   state?: unknown;
   toolResults?: readonly ToolResult[];
-  tools: readonly Pick<
-    Tool,
-    "name" | "description" | "parameters" | "kind"
-  >[];
+  tools: readonly Pick<Tool, "name" | "description" | "parameters" | "kind">[];
   signal?: AbortSignal;
 }
 
@@ -191,10 +188,7 @@ export interface RunOptions {
    * The loop polls only at safe model/tool boundaries. Adapters keep their
    * provider-specific message formats; the loop forwards plain text.
    */
-  takeAdditionalInput?: () =>
-    | string
-    | undefined
-    | Promise<string | undefined>;
+  takeAdditionalInput?: () => string | undefined | Promise<string | undefined>;
   /** Monotonic clock used for duration measurements. */
   now?: () => number;
   onEvent?: (event: AgentEvent) => void;
@@ -236,16 +230,12 @@ export interface RunControllerToolDecision {
 export interface RunController {
   beforeModel?(
     context: RunControllerContext,
-  ):
-    | RunControllerModelDirective
-    | Promise<RunControllerModelDirective>;
+  ): RunControllerModelDirective | Promise<RunControllerModelDirective>;
   beforeToolCall?(
     call: ToolCall,
     tool: Tool | undefined,
     context: RunControllerContext,
-  ):
-    | RunControllerToolDecision
-    | Promise<RunControllerToolDecision>;
+  ): RunControllerToolDecision | Promise<RunControllerToolDecision>;
   afterToolCall?(
     call: ToolCall,
     result: ToolResult,
@@ -272,6 +262,95 @@ export interface RunResult {
   durationMs: number;
   modelState?: unknown;
   usage: TokenUsage;
+}
+
+export type SubagentToolAccess = "read-only" | "all";
+
+/** Product-configurable role used by the provider-neutral orchestrator. */
+export interface SubagentProfile {
+  name: string;
+  description: string;
+  instructions: string;
+  toolAccess?: SubagentToolAccess;
+  excludedTools?: readonly string[];
+  model?: string;
+  provider?: string;
+  maxSteps?: number;
+}
+
+export type AgentTaskStatus =
+  "queued" | "running" | "completed" | "failed" | "cancelled";
+
+export type AgentTaskPhase =
+  "queued" | "thinking" | "working" | "waiting" | "done";
+
+export interface AgentTaskActivity {
+  id: string;
+  name: string;
+  status: "running" | "completed" | "failed";
+  durationMs?: number;
+}
+
+export interface AgentTaskSnapshot {
+  id: string;
+  parentId?: string;
+  retryOf?: string;
+  runId?: string;
+  name: string;
+  role: string;
+  task: string;
+  status: AgentTaskStatus;
+  phase: AgentTaskPhase;
+  createdAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  elapsedMs: number;
+  latestActivity?: string;
+  summary?: string;
+  output?: string;
+  error?: string;
+  steps?: number;
+  usage?: TokenUsage;
+  activities: readonly AgentTaskActivity[];
+}
+
+export interface AgentTreeSnapshot {
+  rootId: string;
+  maxConcurrent: number;
+  agents: readonly AgentTaskSnapshot[];
+}
+
+export type AgentTreeUpdateReason =
+  | "created"
+  | "started"
+  | "progress"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "steered";
+
+export interface AgentTreeEvent {
+  type: "agent.tree.updated";
+  changedAgentId: string;
+  reason: AgentTreeUpdateReason;
+  tree: AgentTreeSnapshot;
+}
+
+export interface ChildAgentRunContext {
+  agentId: string;
+  parentId: string;
+  profile: SubagentProfile;
+}
+
+export interface AgentOrchestratorOptions extends RunOptions {
+  profiles: readonly SubagentProfile[];
+  maxConcurrent?: number;
+  maxAgents?: number;
+  wallNow?: () => Date;
+  onAgentTreeEvent?: (event: AgentTreeEvent) => void;
+  createChildRunOptions?: (
+    context: ChildAgentRunContext,
+  ) => Pick<RunOptions, "controller" | "toolScopeId" | "history">;
 }
 
 export function defineAgent(agent: Agent): Agent {

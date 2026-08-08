@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import type { AttachmentData } from "@threadlight/protocol";
+import type {
+  AgentTaskData,
+  AgentTreeData,
+  AttachmentData,
+} from "@threadlight/protocol";
+import type { ThreadlightClient } from "@threadlight/client";
 import {
+  Bot,
   Check,
   ChevronRight,
   CircleStop,
+  Clock3,
   FileText,
+  GitBranch,
   Link2,
   LoaderCircle,
+  RotateCcw,
+  SendHorizontal,
+  Square,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -62,6 +73,342 @@ export function ProgressList({
       ))}
     </div>
   );
+}
+
+type AgentTreePanelProps = {
+  tree?: AgentTreeData;
+  live?: boolean;
+  controls?: {
+    client: Pick<
+      ThreadlightClient,
+      "cancelAgent" | "retryAgent" | "steerAgent"
+    >;
+    threadId?: string;
+  };
+};
+
+export function AgentTreePanel(props: AgentTreePanelProps) {
+  return props.tree ? <AgentTreeContent {...props} tree={props.tree} /> : null;
+}
+
+function AgentTreeContent({
+  tree,
+  live = false,
+  controls,
+}: AgentTreePanelProps & { tree: AgentTreeData }) {
+  const { t } = useI18n();
+  const agents = tree.agents.filter(({ parentId }) => parentId === tree.rootId);
+  const activeCount = agents.filter(
+    ({ status }) => status === "queued" || status === "running",
+  ).length;
+  const attentionCount = agents.filter(
+    ({ status }) => status === "failed" || status === "cancelled",
+  ).length;
+  const [expanded, setExpanded] = useState(live || attentionCount > 0);
+  const [selectedId, setSelectedId] = useState<string>();
+  const selected = agents.find(({ id }) => id === selectedId);
+  const threadId = controls?.threadId;
+  const onCancel =
+    controls && threadId
+      ? async (agentId: string) => {
+          const { cancelled } = await controls.client.cancelAgent(
+            threadId,
+            agentId,
+          );
+          if (!cancelled) throw new Error(t("agentActionUnavailable"));
+        }
+      : undefined;
+  const onRetry =
+    controls && threadId
+      ? async (agentId: string) => {
+          const { agent } = await controls.client.retryAgent(threadId, agentId);
+          if (!agent) throw new Error(t("agentActionUnavailable"));
+        }
+      : undefined;
+  const onSteer =
+    controls && threadId
+      ? async (agentId: string, input: string) => {
+          const { accepted } = await controls.client.steerAgent(
+            threadId,
+            agentId,
+            input,
+          );
+          if (!accepted) throw new Error(t("agentActionUnavailable"));
+        }
+      : undefined;
+
+  if (agents.length === 0) return null;
+
+  return (
+    <details
+      className={`agent-tree${live ? " live" : ""}`}
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="agent-tree-heading">
+        <GitBranch size={14} aria-hidden="true" />
+        <span>{t("agents")}</span>
+        <span className="agent-tree-count">
+          {activeCount > 0
+            ? t("agentActiveCount", { count: activeCount })
+            : t("agentDoneCount", { count: agents.length })}
+        </span>
+        <ChevronRight
+          className="agent-tree-chevron"
+          size={13}
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="agent-tree-content">
+        <div className="agent-tree-list" role="list">
+          {agents.map((agent) => (
+            <button
+              type="button"
+              className={`agent-row pressable${selectedId === agent.id ? " selected" : ""}`}
+              key={agent.id}
+              role="listitem"
+              aria-expanded={selectedId === agent.id}
+              onClick={() =>
+                setSelectedId((current) =>
+                  current === agent.id ? undefined : agent.id,
+                )
+              }
+            >
+              <AgentStatusIcon agent={agent} />
+              <span className="agent-row-copy">
+                <span className="agent-row-title">
+                  <strong>{agent.name}</strong>
+                  <small>{agent.task}</small>
+                </span>
+                <span className="agent-row-meta">
+                  <span>{agentStatusLabel(agent, t)}</span>
+                  {agent.latestActivity && (
+                    <span className="agent-row-activity">
+                      {agent.latestActivity}
+                    </span>
+                  )}
+                </span>
+              </span>
+              <span className="agent-row-time">
+                <Clock3 size={11} aria-hidden="true" />
+                {formatAgentDuration(agent.elapsedMs, t)}
+              </span>
+              <ChevronRight
+                className="agent-row-chevron"
+                size={13}
+                aria-hidden="true"
+              />
+            </button>
+          ))}
+        </div>
+        {selected && (
+          <AgentInspector
+            key={selected.id}
+            agent={selected}
+            live={live}
+            onCancel={onCancel}
+            onRetry={onRetry}
+            onSteer={onSteer}
+          />
+        )}
+      </div>
+    </details>
+  );
+}
+
+function AgentInspector({
+  agent,
+  live,
+  onCancel,
+  onRetry,
+  onSteer,
+}: {
+  agent: AgentTaskData;
+  live: boolean;
+  onCancel?(agentId: string): Promise<unknown>;
+  onRetry?(agentId: string): Promise<unknown>;
+  onSteer?(agentId: string, input: string): Promise<unknown>;
+}) {
+  const { t } = useI18n();
+  const [direction, setDirection] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string>();
+  const active = agent.status === "queued" || agent.status === "running";
+  const retryable = agent.status === "failed" || agent.status === "cancelled";
+
+  const act = async (action: () => Promise<unknown>): Promise<boolean> => {
+    if (busy) return false;
+    setBusy(true);
+    setActionError(undefined);
+    try {
+      await action();
+      return true;
+    } catch (error) {
+      setActionError(errorMessage(error));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="agent-inspector" aria-label={t("agentDetails")}>
+      <div className="agent-inspector-header">
+        <span>
+          <strong>{agent.name}</strong>
+          <small>{agent.task}</small>
+        </span>
+        {live && active && onCancel && (
+          <button
+            type="button"
+            className="agent-action danger pressable"
+            disabled={busy}
+            onClick={() => void act(() => onCancel(agent.id))}
+          >
+            <Square size={11} fill="currentColor" />
+            {t("stopAgent")}
+          </button>
+        )}
+        {live && retryable && onRetry && (
+          <button
+            type="button"
+            className="agent-action pressable"
+            disabled={busy}
+            onClick={() => void act(() => onRetry(agent.id))}
+          >
+            <RotateCcw size={12} />
+            {t("retryAgent")}
+          </button>
+        )}
+      </div>
+      {(agent.steps !== undefined || (agent.usage?.totalTokens ?? 0) > 0) && (
+        <div className="agent-inspector-stats">
+          {agent.steps !== undefined && (
+            <span>
+              {agent.steps} {t("step")}
+            </span>
+          )}
+          {(agent.usage?.totalTokens ?? 0) > 0 && (
+            <span>
+              {agent.usage?.totalTokens.toLocaleString()} {t("tokens")}
+            </span>
+          )}
+        </div>
+      )}
+      {agent.activities.length > 0 && (
+        <div className="agent-activities" aria-label={t("agentActivity")}>
+          {agent.activities.map((activity) => (
+            <span key={activity.id} data-status={activity.status}>
+              {activity.status === "running" ? (
+                <LoaderCircle className="spin" size={12} />
+              ) : activity.status === "failed" ? (
+                <X size={12} />
+              ) : (
+                <Check size={12} />
+              )}
+              <code>{activity.name}</code>
+            </span>
+          ))}
+        </div>
+      )}
+      {(agent.output || agent.error) && (
+        <div className={`agent-output${agent.error ? " error" : ""}`}>
+          <MarkdownContent>{agent.output ?? agent.error ?? ""}</MarkdownContent>
+        </div>
+      )}
+      {live && active && onSteer && (
+        <form
+          className="agent-steer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const input = direction.trim();
+            if (!input) return;
+            void act(() => onSteer(agent.id, input)).then((sent) => {
+              if (sent) setDirection("");
+            });
+          }}
+        >
+          <input
+            value={direction}
+            disabled={busy}
+            aria-label={t("steerAgent")}
+            placeholder={t("steerAgentPlaceholder")}
+            onChange={(event) => setDirection(event.currentTarget.value)}
+          />
+          <button
+            type="submit"
+            className="agent-steer-send pressable"
+            disabled={busy || !direction.trim()}
+            aria-label={t("sendDirection")}
+          >
+            <SendHorizontal size={13} />
+          </button>
+        </form>
+      )}
+      {actionError && (
+        <p className="agent-action-error" role="alert">
+          {actionError}
+        </p>
+      )}
+    </section>
+  );
+}
+
+function AgentStatusIcon({ agent }: { agent: AgentTaskData }) {
+  if (agent.status === "running") {
+    return (
+      <span className="agent-status running">
+        {agent.phase === "thinking" ? (
+          <LoaderCircle className="spin" size={14} />
+        ) : (
+          <Bot size={14} />
+        )}
+      </span>
+    );
+  }
+  if (agent.status === "queued") {
+    return (
+      <span className="agent-status queued">
+        <Clock3 size={14} />
+      </span>
+    );
+  }
+  if (agent.status === "failed") {
+    return (
+      <span className="agent-status failed">
+        <X size={14} />
+      </span>
+    );
+  }
+  if (agent.status === "cancelled") {
+    return (
+      <span className="agent-status cancelled">
+        <CircleStop size={14} />
+      </span>
+    );
+  }
+  return (
+    <span className="agent-status completed">
+      <Check size={14} />
+    </span>
+  );
+}
+
+function agentStatusLabel(agent: AgentTaskData, t: Translate): string {
+  if (agent.status === "queued") return t("agentQueued");
+  if (agent.status === "failed") return t("agentFailed");
+  if (agent.status === "cancelled") return t("agentCancelled");
+  if (agent.status === "completed") return t("agentCompleted");
+  if (agent.phase === "working") return t("agentWorking");
+  if (agent.phase === "waiting") return t("agentWaiting");
+  return t("agentThinking");
+}
+
+function formatAgentDuration(elapsedMs: number, t: Translate): string {
+  if (elapsedMs < 1_000) return t("agentNow");
+  if (elapsedMs < 60_000)
+    return `${Math.max(1, Math.round(elapsedMs / 1_000))}s`;
+  return `${Math.round(elapsedMs / 60_000)}m`;
 }
 
 export function ActivityList({

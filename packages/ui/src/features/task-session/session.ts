@@ -13,6 +13,7 @@ import {
   type ActiveTurnData,
   type AttachmentData,
   type AgentPlanData,
+  type AgentTreeData,
   type AgentEventData,
   type CapabilityDescriptor,
   type ConversationAccessMode,
@@ -45,6 +46,7 @@ export interface ConversationMessage {
   mode?: TurnMode;
   plan?: AgentPlanData;
   progress?: readonly ConversationProgress[];
+  agentTree?: AgentTreeData;
   activities?: readonly ToolActivity[];
   diagnostics?: TurnDiagnosticsData;
   sources?: readonly MessageSourceData[];
@@ -68,6 +70,7 @@ export interface SessionState {
   messages: readonly ConversationMessage[];
   queuedTurns: readonly QueuedTurnData[];
   progress: readonly ConversationProgress[];
+  agentTree?: AgentTreeData;
   plan?: AgentPlanData;
   streamingText: string;
   submissionError?: string;
@@ -125,6 +128,12 @@ export type SessionAction =
   | {
       type: "agent.event";
       event: AgentEventData;
+      revision?: number;
+      activeTurn?: ActiveTurnData;
+    }
+  | {
+      type: "agent.tree";
+      tree: AgentTreeData;
       revision?: number;
       activeTurn?: ActiveTurnData;
     }
@@ -189,6 +198,7 @@ export function sessionReducer(
         isRunning: action.activeTurn !== undefined,
         isThinking: action.activeTurn?.isThinking ?? false,
         progress: action.activeTurn?.progress ?? [],
+        agentTree: action.activeTurn?.agentTree,
         plan: action.activeTurn?.plan,
         streamingText: action.activeTurn?.streamingText ?? "",
       };
@@ -218,6 +228,7 @@ export function sessionReducer(
         isRunning: true,
         isThinking: true,
         progress: [],
+        agentTree: undefined,
         plan:
           action.mode === "plan" ? { source: "user", items: [] } : undefined,
         streamingText: "",
@@ -300,6 +311,19 @@ export function sessionReducer(
         return hydrateActiveTurn(state, action.activeTurn);
       }
       return reduceAgentEvent(state, action.event);
+    case "agent.tree":
+      if (action.activeTurn) {
+        if (action.activeTurn.revision < state.revision) return state;
+        return hydrateActiveTurn(state, action.activeTurn);
+      }
+      if (action.revision !== undefined && action.revision < state.revision) {
+        return state;
+      }
+      return {
+        ...state,
+        revision: action.revision ?? state.revision,
+        agentTree: action.tree,
+      };
     case "process.updated":
       return updateSessionProcess(state, action.process);
     case "queue.updated":
@@ -448,6 +472,7 @@ function completeTurn(
     error,
     ...(state.progress.length > 0 ? { progress: state.progress } : {}),
     ...(state.plan ? { plan: state.plan } : {}),
+    ...(state.agentTree ? { agentTree: state.agentTree } : {}),
     ...(!error && capabilities.length > 0 ? { capabilities } : {}),
     ...(diagnostics ? { diagnostics } : {}),
     ...(sources.length > 0 ? { sources, citations } : {}),
@@ -458,6 +483,7 @@ function completeTurn(
     isRunning: false,
     isThinking: false,
     progress: [],
+    agentTree: undefined,
     plan: undefined,
     streamingText: "",
     messages: mergeMessages(state.messages, [assistantMessage]),
@@ -474,6 +500,7 @@ function hydrateActiveTurn(
     isRunning: true,
     isThinking: activeTurn.isThinking,
     progress: activeTurn.progress,
+    agentTree: activeTurn.agentTree,
     plan: activeTurn.plan,
     streamingText: activeTurn.streamingText,
   };
@@ -831,6 +858,17 @@ export function useThreadlightSession(
           activeTurn,
         });
       }),
+      client.on(
+        "agent/tree-updated",
+        ({ threadId, revision, activeTurn, tree }) => {
+          updateSession(threadId, {
+            type: "agent.tree",
+            tree,
+            revision,
+            activeTurn,
+          });
+        },
+      ),
       client.on("turn/queue/updated", ({ threadId, queuedTurns }) => {
         updateSession(threadId, { type: "queue.updated", queuedTurns });
       }),

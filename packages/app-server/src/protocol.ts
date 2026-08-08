@@ -1,5 +1,7 @@
 export type {
   ActiveTurnData,
+  AgentTaskData,
+  AgentTreeData,
   AttachmentData,
   AgentPlanData,
   CapabilityDescriptor,

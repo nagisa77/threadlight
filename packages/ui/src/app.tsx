@@ -188,6 +188,7 @@ import {
 import { NavigationSidebar } from "./features/navigation/navigation-sidebar.js";
 import {
   ActivityList,
+  AgentTreePanel,
   ComposerAttachments,
   ConnectionError,
   MissingThreadRecovery,
@@ -3795,6 +3796,9 @@ function ThreadlightAppContent({
                                     onTerminateProcess={terminateProcess}
                                   />
                                 )}
+                              {message.role === "assistant" && (
+                                <AgentTreePanel tree={message.agentTree} />
+                              )}
                               {message.role === "assistant" ? (
                                 <MarkdownContent
                                   onOpenLocalFile={openLocalFile}
@@ -3899,6 +3903,11 @@ function ThreadlightAppContent({
               </section>
 
               <footer className="composer-wrap">
+                <AgentTreePanel
+                  tree={state.agentTree}
+                  live
+                  controls={{ client, threadId: state.threadId }}
+                />
                 {(state.plan ||
                   (hasConversationChanges && conversationChanges)) && (
                   <TurnStatusPill

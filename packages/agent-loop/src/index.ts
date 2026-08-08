@@ -1,10 +1,20 @@
 export { AgentLoop } from "./agent-loop.js";
+export { AgentOrchestrator } from "./agent-orchestrator.js";
 export { ToolExecutionError, toolErrorMetadata } from "./tool-error.js";
 export { defineAgent, defineTool } from "./types.js";
 
 export type {
   Agent,
   AgentEvent,
+  AgentOrchestratorOptions,
+  AgentTaskActivity,
+  AgentTaskPhase,
+  AgentTaskSnapshot,
+  AgentTaskStatus,
+  AgentTreeEvent,
+  AgentTreeSnapshot,
+  AgentTreeUpdateReason,
+  ChildAgentRunContext,
   JsonSchema,
   ModelGenerateOptions,
   ModelAttachment,
@@ -19,6 +29,8 @@ export type {
   RunControllerToolDecision,
   RunOptions,
   RunResult,
+  SubagentProfile,
+  SubagentToolAccess,
   TokenUsage,
   Tool,
   ToolCall,

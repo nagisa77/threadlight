@@ -246,7 +246,77 @@ function isConversationMessage(value: unknown): boolean {
     (message.progress === undefined ||
       (Array.isArray(message.progress) &&
         message.progress.every(isConversationProgress))) &&
+    (message.agentTree === undefined || isAgentTree(message.agentTree)) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isAgentTree(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const tree = value as Record<string, unknown>;
+  return (
+    typeof tree.rootId === "string" &&
+    Number.isInteger(tree.maxConcurrent) &&
+    Number(tree.maxConcurrent) > 0 &&
+    Array.isArray(tree.agents) &&
+    tree.agents.every(isAgentTask)
+  );
+}
+
+function isAgentTask(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const task = value as Record<string, unknown>;
+  const status = task.status;
+  const phase = task.phase;
+  return (
+    typeof task.id === "string" &&
+    (task.parentId === undefined || typeof task.parentId === "string") &&
+    (task.retryOf === undefined || typeof task.retryOf === "string") &&
+    (task.runId === undefined || typeof task.runId === "string") &&
+    typeof task.name === "string" &&
+    typeof task.role === "string" &&
+    typeof task.task === "string" &&
+    (status === "queued" ||
+      status === "running" ||
+      status === "completed" ||
+      status === "failed" ||
+      status === "cancelled") &&
+    (phase === "queued" ||
+      phase === "thinking" ||
+      phase === "working" ||
+      phase === "waiting" ||
+      phase === "done") &&
+    typeof task.createdAt === "string" &&
+    (task.startedAt === undefined || typeof task.startedAt === "string") &&
+    (task.completedAt === undefined || typeof task.completedAt === "string") &&
+    isNonNegativeNumber(task.elapsedMs) &&
+    (task.latestActivity === undefined ||
+      typeof task.latestActivity === "string") &&
+    (task.summary === undefined || typeof task.summary === "string") &&
+    (task.output === undefined || typeof task.output === "string") &&
+    (task.error === undefined || typeof task.error === "string") &&
+    (task.steps === undefined ||
+      (Number.isInteger(task.steps) && Number(task.steps) >= 0)) &&
+    (task.usage === undefined || isTokenUsage(task.usage)) &&
+    Array.isArray(task.activities) &&
+    task.activities.every((activity) => {
+      if (
+        !activity ||
+        typeof activity !== "object" ||
+        Array.isArray(activity)
+      ) {
+        return false;
+      }
+      const item = activity as Record<string, unknown>;
+      return (
+        typeof item.id === "string" &&
+        typeof item.name === "string" &&
+        (item.status === "running" ||
+          item.status === "completed" ||
+          item.status === "failed") &&
+        (item.durationMs === undefined || isNonNegativeNumber(item.durationMs))
+      );
+    })
   );
 }
 
@@ -259,8 +329,7 @@ function isMessageSource(value: unknown): boolean {
     typeof source.url === "string" &&
     /^https?:\/\//.test(source.url) &&
     typeof source.domain === "string" &&
-    (source.description === undefined ||
-      typeof source.description === "string")
+    (source.description === undefined || typeof source.description === "string")
   );
 }
 
@@ -280,8 +349,7 @@ function isTurnDiagnostics(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const diagnostics = value as Record<string, unknown>;
   return (
-    (diagnostics.status === "completed" ||
-      diagnostics.status === "failed") &&
+    (diagnostics.status === "completed" || diagnostics.status === "failed") &&
     typeof diagnostics.startedAt === "string" &&
     typeof diagnostics.completedAt === "string" &&
     isNonNegativeNumber(diagnostics.durationMs) &&
@@ -353,8 +421,7 @@ function isAgentPlan(value: unknown): boolean {
   const plan = value as Record<string, unknown>;
   return (
     (plan.source === "user" || plan.source === "model") &&
-    (plan.explanation === undefined ||
-      typeof plan.explanation === "string") &&
+    (plan.explanation === undefined || typeof plan.explanation === "string") &&
     (plan.documentPath === undefined ||
       (typeof plan.documentPath === "string" &&
         /^\.threadlight\/plans\/[A-Za-z0-9_-]+\.md$/.test(
