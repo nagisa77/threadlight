@@ -12,6 +12,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Download,
   FileText,
   Folder,
   FolderOpen,
@@ -411,6 +412,7 @@ export function RecentTasksGroup({
   onRename,
   onTogglePinned,
   onArchive,
+  onExportDiagnostic,
   onDelete,
 }: {
   project: ProjectSummary;
@@ -426,6 +428,7 @@ export function RecentTasksGroup({
     conversation: ConversationSummary,
     archived: boolean,
   ): Promise<void>;
+  onExportDiagnostic?(conversation: ConversationSummary): Promise<void>;
   onDelete?(conversation: ConversationSummary): void;
 }) {
   const { t } = useI18n();
@@ -470,6 +473,11 @@ export function RecentTasksGroup({
               onArchive={
                 onArchive
                   ? (archived) => onArchive(conversation, archived)
+                  : undefined
+              }
+              onExportDiagnostic={
+                onExportDiagnostic
+                  ? () => onExportDiagnostic(conversation)
                   : undefined
               }
               onDelete={onDelete ? () => onDelete(conversation) : undefined}
@@ -892,6 +900,7 @@ export function ProjectConversationItem({
   onRename,
   onTogglePinned,
   onArchive,
+  onExportDiagnostic,
   onDelete,
 }: {
   conversation: ConversationSummary;
@@ -903,6 +912,7 @@ export function ProjectConversationItem({
   onRename?(title: string): Promise<void>;
   onTogglePinned?(): Promise<void>;
   onArchive?(archived: boolean): Promise<void>;
+  onExportDiagnostic?(): Promise<void>;
   onDelete?(): void;
 }) {
   const { t } = useI18n();
@@ -914,8 +924,15 @@ export function ProjectConversationItem({
   const [actionError, setActionError] = useState<string>();
   const menuRoot = useRef<HTMLDivElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
+  const menuActionCount = [
+    onRename,
+    onTogglePinned && !conversation.archivedAt ? onTogglePinned : undefined,
+    onArchive,
+    onExportDiagnostic,
+    onDelete && conversation.archivedAt ? onDelete : undefined,
+  ].filter(Boolean).length;
   const manageable = Boolean(
-    onRename || onTogglePinned || onArchive || onDelete,
+    onRename || onTogglePinned || onArchive || onExportDiagnostic || onDelete,
   );
 
   useEffect(() => {
@@ -1099,7 +1116,7 @@ export function ProjectConversationItem({
               const open = !menuOpen;
               if (open) {
                 const bounds = event.currentTarget.getBoundingClientRect();
-                const menuHeight = conversation.archivedAt ? 132 : 103;
+                const menuHeight = 8 + menuActionCount * 31;
                 const top =
                   window.innerHeight - bounds.bottom >= menuHeight + 8
                     ? bounds.bottom + 4
@@ -1167,6 +1184,16 @@ export function ProjectConversationItem({
                   {conversation.archivedAt
                     ? t("restoreArchivedTask")
                     : t("archiveTask")}
+                </button>
+              )}
+              {onExportDiagnostic && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => void runAction(onExportDiagnostic)}
+                >
+                  <Download size={13} />
+                  {t("exportDiagnosticBundle")}
                 </button>
               )}
               {onDelete && conversation.archivedAt && (

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  THEME_PREFERENCES,
-  isThemePreference,
-} from "../src/theme.js";
+import { THEME_PREFERENCES, isThemePreference } from "../src/theme.js";
 import { readUiStyles } from "./style-source.js";
 
 describe("theme", () => {
@@ -39,14 +36,15 @@ describe("theme", () => {
     expect(css).toMatch(
       /html\[data-theme="dark"\] \.composer-share-action:hover:not\(:disabled\)\s*\{[^}]*background:\s*#34353a;/s,
     );
+    expect(css).toMatch(
+      /html\[data-theme="dark"\] \.agent-transcript-tool pre\s*\{[^}]*color:\s*#e3e2de;[^}]*background:\s*#292a2e;/s,
+    );
   });
 
   it("gives the theme field breathing room below its section heading", () => {
     const css = readUiStyles();
 
-    expect(css).toMatch(
-      /\.theme-picker\s*\{[^}]*padding:\s*19px 0 17px;/s,
-    );
+    expect(css).toMatch(/\.theme-picker\s*\{[^}]*padding:\s*19px 0 17px;/s);
   });
 
   it("renders plan progress surfaces as readable frosted glass", () => {

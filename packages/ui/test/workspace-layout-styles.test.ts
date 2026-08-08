@@ -38,6 +38,20 @@ describe("workspace titlebar hit regions", () => {
   });
 });
 
+describe("agent panel layout", () => {
+  it("keeps the agent list on the right and lets the transcript reclaim its space", () => {
+    expect(styles).toMatch(
+      /\.agent-panel-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(176px, 32%\);/s,
+    );
+    expect(styles).toMatch(
+      /\.agent-panel-list\s*\{[^}]*border-left:\s*1px solid var\(--line\);/s,
+    );
+    expect(styles).toMatch(
+      /\.agent-panel-layout\.collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s,
+    );
+  });
+});
+
 describe("expanded composer layout", () => {
   it("starts with a roomy top-aligned editor above the action toolbar", () => {
     expect(styles).toMatch(

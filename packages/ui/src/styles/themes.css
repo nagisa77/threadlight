@@ -121,6 +121,16 @@ html[data-theme="dark"] .markdown-content h2 {
   border-bottom-color: var(--line);
 }
 
+html[data-theme="dark"] .agent-transcript-tool label {
+  color: #b8b7b2;
+}
+
+html[data-theme="dark"] .agent-transcript-tool pre {
+  border-color: var(--line-strong);
+  color: #e3e2de;
+  background: #292a2e;
+}
+
 html[data-theme="dark"] :is(
   .delete-dialog,
   .connector-dialog,

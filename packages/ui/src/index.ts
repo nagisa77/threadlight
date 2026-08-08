@@ -36,6 +36,8 @@ export { CommandPalette, paletteEntryMatches } from "./command-palette.js";
 export {
   DiagnosticExportDialog,
   DiagnosticsPage,
+  downloadDiagnosticBundle,
+  exportSingleConversationDiagnostic,
   formatDuration,
 } from "./diagnostics.js";
 export { AutomationsPage } from "./automations.js";

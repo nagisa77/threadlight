@@ -7,6 +7,10 @@ import {
 } from "lucide-react";
 
 import { useI18n } from "../../i18n.js";
+import {
+  exportSingleConversationDiagnostic,
+  type DiagnosticsAdapter,
+} from "../../diagnostics.js";
 import type {
   ConversationSummary,
   HostSummary,
@@ -52,7 +56,7 @@ export interface NavigationSidebarProps {
   searchAvailable: boolean;
   memoryEnabled: boolean;
   securityEnabled: boolean;
-  diagnosticsEnabled: boolean;
+  diagnostics?: Pick<DiagnosticsAdapter, "exportBundle">;
   canRevealProjects: boolean;
   canUpdateProjects: boolean;
   canDeleteProjects: boolean;
@@ -106,7 +110,7 @@ export function NavigationSidebar({
   searchAvailable,
   memoryEnabled,
   securityEnabled,
-  diagnosticsEnabled,
+  diagnostics,
   canRevealProjects,
   canUpdateProjects,
   canDeleteProjects,
@@ -220,7 +224,7 @@ export function NavigationSidebar({
                         : undefined
                     }
                     onOpenDiagnostics={
-                      diagnosticsEnabled
+                      diagnostics
                         ? () => onOpenProjectView(project.id, "diagnostics")
                         : undefined
                     }
@@ -289,6 +293,16 @@ export function NavigationSidebar({
                           conversation,
                           { archived },
                         )
+                      }
+                      onExportDiagnostic={
+                        diagnostics
+                          ? (conversation) =>
+                              exportSingleConversationDiagnostic(
+                                diagnostics,
+                                standaloneProject.id,
+                                conversation.id,
+                              )
+                          : undefined
                       }
                       onDelete={(conversation) =>
                         onDeleteConversation(standaloneProject.id, conversation)

@@ -3495,7 +3495,7 @@ function ThreadlightAppContent({
         searchAvailable={Boolean(search)}
         memoryEnabled={Boolean(memory)}
         securityEnabled={Boolean(executionPolicy)}
-        diagnosticsEnabled={Boolean(diagnostics)}
+        diagnostics={diagnostics}
         canRevealProjects={Boolean(workspace?.revealSystemFile)}
         canUpdateProjects={Boolean(projects?.updateProject)}
         canDeleteProjects={Boolean(projects?.deleteProject)}

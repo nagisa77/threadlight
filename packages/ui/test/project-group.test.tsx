@@ -368,6 +368,7 @@ describe("RecentTasksGroup", () => {
           activeThreadId="thread-1"
           disabled={false}
           onSelect={vi.fn()}
+          onExportDiagnostic={vi.fn()}
         />
       </I18nProvider>,
     );
@@ -375,6 +376,7 @@ describe("RecentTasksGroup", () => {
     expect(html).toContain('aria-label="最近"');
     expect(html).toContain('aria-expanded="true"');
     expect(html).toContain("查看最新邮件");
+    expect(html).toContain('aria-label="管理任务“查看最新邮件”"');
   });
 });
 

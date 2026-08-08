@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AgentTreePanel } from "../src/features/task-session/conversation-content.js";
 import { AgentPanel } from "../src/features/task-session/agent-panel.js";
@@ -45,13 +45,19 @@ describe("AgentTreePanel", () => {
   };
 
   it("keeps the root implicit and starts a live child-agent tree expanded", () => {
-    const html = renderToStaticMarkup(<AgentTreePanel tree={tree} live />);
+    const html = renderToStaticMarkup(
+      <AgentTreePanel tree={tree} live onOpenInPanel={vi.fn()} />,
+    );
 
     expect(html).toContain('<details class="agent-tree live" open="">');
     expect(html).toContain("1 个运行中");
     expect(html).toContain("explorer");
     expect(html).toContain("Trace the protocol");
     expect(html).not.toContain("Implement multi-agent support");
+    expect(html).toContain('aria-label="在右侧面板查看"');
+    expect(html.indexOf('class="agent-tree-open-panel')).toBeLessThan(
+      html.indexOf('class="agent-tree-count"'),
+    );
   });
 
   it("starts a completed historical tree collapsed", () => {
@@ -109,5 +115,10 @@ describe("AgentTreePanel", () => {
     expect(html).toContain("packages/protocol");
     expect(html).toContain("Found the active-turn snapshot.");
     expect(html).toContain("不包含 Provider 的隐藏推理");
+    expect(html).toContain('aria-label="收起 Agent 列表"');
+    expect(html).toContain('aria-expanded="true"');
+    expect(html.indexOf('class="agent-conversation"')).toBeLessThan(
+      html.indexOf('class="agent-panel-list"'),
+    );
   });
 });

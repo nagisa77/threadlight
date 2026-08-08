@@ -288,6 +288,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   height: 100%;
   overflow: hidden;
   background: color-mix(in srgb, var(--surface) 28%, var(--panel));
+  container: agent-panel / inline-size;
 }
 
 .agent-panel[hidden] {
@@ -326,19 +327,48 @@ body.is-resizing-workspace .workspace-split-handle::after {
   white-space: nowrap;
 }
 
+.agent-panel-summary-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-panel-list-toggle {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
 .agent-panel-layout {
   display: grid;
   min-width: 0;
   min-height: 0;
   height: calc(100% - 45px);
-  grid-template-columns: minmax(148px, 32%) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(176px, 32%);
+}
+
+.agent-panel-layout.collapsed {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .agent-panel-list {
   min-width: 0;
   overflow: auto;
-  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
   background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+
+.agent-panel-list[hidden] {
+  display: none;
 }
 
 .agent-panel-agent {
@@ -565,7 +595,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 .agent-transcript-tool label {
   display: block;
   margin-bottom: 5px;
-  color: var(--subtle);
+  color: var(--muted);
   font-size: 8px;
   font-weight: 650;
   letter-spacing: 0.03em;
@@ -577,9 +607,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
   margin: 0 0 9px;
   overflow: auto;
   padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
   border-radius: 6px;
-  color: #4d4b45;
-  background: color-mix(in srgb, var(--ink) 4%, var(--panel));
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 5%, var(--panel));
   font:
     9px/1.55 ui-monospace,
     SFMono-Regular,
@@ -637,6 +668,22 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .agent-panel-agent:hover:not(.selected),
   .agent-transcript-tool summary:hover {
     background: color-mix(in srgb, var(--ink) 4%, transparent);
+  }
+
+  .agent-panel-list-toggle:hover {
+    border-color: var(--line);
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 4%, transparent);
+  }
+}
+
+@container agent-panel (max-width: 560px) {
+  .agent-panel-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(156px, 42%);
+  }
+
+  .agent-panel-layout.collapsed {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -83,6 +83,18 @@ export interface DiagnosticConversationOption {
   updatedAt: string;
 }
 
+export async function exportSingleConversationDiagnostic(
+  adapter: Pick<DiagnosticsAdapter, "exportBundle">,
+  projectId: string,
+  conversationId: string,
+  save: (
+    bundle: HostProjectDiagnosticBundle,
+  ) => void = downloadDiagnosticBundle,
+): Promise<void> {
+  const bundle = await adapter.exportBundle(projectId, [conversationId]);
+  save(bundle);
+}
+
 export function DiagnosticsPage({
   adapter,
   projectId,
@@ -666,7 +678,9 @@ function TurnRow({
   );
 }
 
-function downloadDiagnosticBundle(bundle: HostProjectDiagnosticBundle): void {
+export function downloadDiagnosticBundle(
+  bundle: HostProjectDiagnosticBundle,
+): void {
   const blob = new Blob([`${JSON.stringify(bundle, null, 2)}\n`], {
     type: "application/json;charset=utf-8",
   });

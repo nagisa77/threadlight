@@ -852,6 +852,8 @@ export const ja: Messages = {
   agents: "Agents",
   mainAgent: "メイン Agent",
   agentList: "Agent 一覧",
+  hideAgentList: "Agent 一覧を折りたたむ",
+  showAgentList: "Agent 一覧を展開",
   agentConcurrency: "同時実行上限 {count}",
   openAgentsPanel: "右パネルで表示",
   noAgentRuns: "マルチ Agent の履歴はありません",

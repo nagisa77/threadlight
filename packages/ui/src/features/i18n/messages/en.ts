@@ -865,6 +865,8 @@ export const en: Messages = {
   agents: "Agents",
   mainAgent: "Main agent",
   agentList: "Agent list",
+  hideAgentList: "Collapse agent list",
+  showAgentList: "Expand agent list",
   agentConcurrency: "Concurrency {count}",
   openAgentsPanel: "View in right panel",
   noAgentRuns: "No multi-agent activity",

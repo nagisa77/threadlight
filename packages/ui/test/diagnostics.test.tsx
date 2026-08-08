@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   DiagnosticExportDialog,
   DiagnosticsPage,
+  exportSingleConversationDiagnostic,
   formatDuration,
 } from "../src/diagnostics.js";
+import type { HostProjectDiagnosticBundle } from "@threadlight/protocol";
 
 describe("diagnostics center", () => {
   it("formats subsecond, second, and minute durations compactly", () => {
@@ -66,5 +68,23 @@ describe("diagnostics center", () => {
     expect(html).toContain("已选择 1 个聊天");
     expect(html).toContain('type="checkbox"');
     expect(html).toContain("完整字段结构");
+  });
+
+  it("exports only the selected standalone conversation", async () => {
+    const bundle = {
+      filename: "threadlight-diagnostics-standalone-thread-1.json",
+    } as HostProjectDiagnosticBundle;
+    const exportBundle = vi.fn(async () => bundle);
+    const save = vi.fn();
+
+    await exportSingleConversationDiagnostic(
+      { exportBundle },
+      "standalone",
+      "thread-1",
+      save,
+    );
+
+    expect(exportBundle).toHaveBeenCalledWith("standalone", ["thread-1"]);
+    expect(save).toHaveBeenCalledWith(bundle);
   });
 });

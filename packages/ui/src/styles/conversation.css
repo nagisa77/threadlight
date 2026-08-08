@@ -683,7 +683,6 @@
 }
 
 .agent-tree-count {
-  margin-left: auto;
   color: var(--subtle);
   font-size: 9px;
   font-weight: 560;
@@ -715,18 +714,17 @@
 }
 
 .agent-tree-open-panel {
-  display: flex;
-  min-height: 31px;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 10px 2px auto;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
   color: var(--muted);
-  background: var(--panel);
-  font-size: 9px;
-  font-weight: 620;
+  background: transparent;
   cursor: pointer;
   transition:
     transform 140ms var(--ease-out),
@@ -1016,6 +1014,7 @@
   }
 
   .agent-tree-open-panel:hover {
+    border-color: var(--line);
     color: var(--ink);
     background: color-mix(in srgb, var(--ink) 4%, var(--panel));
   }

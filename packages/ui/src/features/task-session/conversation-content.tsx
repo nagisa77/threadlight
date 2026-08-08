@@ -151,6 +151,21 @@ function AgentTreeContent({
       <summary className="agent-tree-heading">
         <GitBranch size={14} aria-hidden="true" />
         <span>{t("agents")}</span>
+        {onOpenInPanel && (
+          <button
+            type="button"
+            className="agent-tree-open-panel pressable"
+            aria-label={t("openAgentsPanel")}
+            title={t("openAgentsPanel")}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onOpenInPanel(tree);
+            }}
+          >
+            <PanelRightOpen size={14} />
+          </button>
+        )}
         <span className="agent-tree-count">
           {activeCount > 0
             ? t("agentActiveCount", { count: activeCount })
@@ -163,16 +178,6 @@ function AgentTreeContent({
         />
       </summary>
       <div className="agent-tree-content">
-        {onOpenInPanel && (
-          <button
-            type="button"
-            className="agent-tree-open-panel pressable"
-            onClick={() => onOpenInPanel(tree)}
-          >
-            <PanelRightOpen size={13} />
-            {t("openAgentsPanel")}
-          </button>
-        )}
         <div className="agent-tree-list" role="list">
           {agents.map((agent) => (
             <button

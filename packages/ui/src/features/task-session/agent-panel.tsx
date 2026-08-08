@@ -12,6 +12,8 @@ import {
   Clock3,
   GitBranch,
   LoaderCircle,
+  PanelRightClose,
+  PanelRightOpen,
   RotateCcw,
   SendHorizontal,
   Sparkles,
@@ -53,6 +55,7 @@ export function AgentPanel({
     [agents, tree?.rootId],
   );
   const [selectedId, setSelectedId] = useState(preferredId);
+  const [listCollapsed, setListCollapsed] = useState(false);
 
   useEffect(() => {
     if (!agents.some(({ id }) => id === selectedId)) {
@@ -85,16 +88,50 @@ export function AgentPanel({
               <GitBranch size={15} />
               <strong>{t("agents")}</strong>
             </span>
-            <small>
-              {active > 0
-                ? t("agentActiveCount", { count: active })
-                : t("agentDoneCount", { count: agents.length - 1 })}
-              {" · "}
-              {t("agentConcurrency", { count: tree.maxConcurrent })}
-            </small>
+            <div className="agent-panel-summary-actions">
+              <small>
+                {active > 0
+                  ? t("agentActiveCount", { count: active })
+                  : t("agentDoneCount", { count: agents.length - 1 })}
+                {" · "}
+                {t("agentConcurrency", { count: tree.maxConcurrent })}
+              </small>
+              <button
+                type="button"
+                className="agent-panel-list-toggle pressable"
+                aria-controls="agent-panel-list"
+                aria-expanded={!listCollapsed}
+                aria-label={
+                  listCollapsed ? t("showAgentList") : t("hideAgentList")
+                }
+                title={listCollapsed ? t("showAgentList") : t("hideAgentList")}
+                onClick={() => setListCollapsed((collapsed) => !collapsed)}
+              >
+                {listCollapsed ? (
+                  <PanelRightOpen size={14} />
+                ) : (
+                  <PanelRightClose size={14} />
+                )}
+              </button>
+            </div>
           </header>
-          <div className="agent-panel-layout">
-            <nav className="agent-panel-list" aria-label={t("agentList")}>
+          <div
+            className={`agent-panel-layout${listCollapsed ? " collapsed" : ""}`}
+          >
+            {selected && (
+              <AgentConversation
+                agent={selected}
+                isRoot={selected.id === tree.rootId}
+                live={live}
+                controls={controls}
+              />
+            )}
+            <nav
+              id="agent-panel-list"
+              className="agent-panel-list"
+              aria-label={t("agentList")}
+              hidden={listCollapsed}
+            >
               {agents.map((agent) => (
                 <button
                   type="button"
@@ -114,14 +151,6 @@ export function AgentPanel({
                 </button>
               ))}
             </nav>
-            {selected && (
-              <AgentConversation
-                agent={selected}
-                isRoot={selected.id === tree.rootId}
-                live={live}
-                controls={controls}
-              />
-            )}
           </div>
         </>
       )}
