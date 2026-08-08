@@ -722,7 +722,7 @@ export const en: Messages = {
   exportingDiagnosticBundle: "Generating…",
   diagnosticBundleContents: "Export scope",
   diagnosticBundleDescription:
-    "Includes the event timeline, model and tool timing, error codes, runtime environment, task conversation text, and changed text-file bodies. Common credentials are redacted; review before sharing.",
+    "Includes the event timeline, multi-agent activity, model and tool timing, error codes, runtime environment, task conversation text, and changed text-file bodies. Common credentials are redacted; review before sharing.",
   diagnosticBundleExported: "Downloaded {filename}",
   diagnosticBundleExportFailed: "Export failed: {error}",
   diagnosticExportDialogDescription:
@@ -863,6 +863,19 @@ export const en: Messages = {
   newFileTab: "New file tab",
   review: "Review",
   agents: "Agents",
+  mainAgent: "Main agent",
+  agentList: "Agent list",
+  agentConcurrency: "Concurrency {count}",
+  openAgentsPanel: "View in right panel",
+  noAgentRuns: "No multi-agent activity",
+  noAgentRunsDescription:
+    "When the main agent delegates work, each agent's visible activity appears here live.",
+  noAgentActivity: "No visible activity yet",
+  agentVisibleProcessNote:
+    "Shows model-authored visible updates, not hidden provider reasoning.",
+  agentModelStep: "Model step {step}",
+  toolArguments: "Arguments",
+  toolOutput: "Tool output",
   agentActiveCount: "{count} active",
   agentDoneCount: "{count} done",
   agentDetails: "Agent details",

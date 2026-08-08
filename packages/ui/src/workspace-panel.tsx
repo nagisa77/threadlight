@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { createBrowserUuid } from "@threadlight/client";
+import type { AgentTreeData } from "@threadlight/protocol";
 
 import { PanelAddMenu, type PanelViewKind } from "./panel-add-menu.js";
 import { Dialog } from "./dialog.js";
@@ -50,6 +51,10 @@ import { useTheme } from "./theme.js";
 import { languageForPath } from "./source-language.js";
 import type { HighlightSegment } from "./syntax-highlighter.js";
 import { TerminalView, type TerminalAdapter } from "./terminal.js";
+import {
+  AgentPanel,
+  type AgentPanelControls,
+} from "./features/task-session/agent-panel.js";
 import {
   terminalTabLabel,
   terminalWorkspaceContextLabel,
@@ -142,14 +147,15 @@ export interface WorkspacePanelRequestSnapshot {
   scope: string;
   reviewRequest: number;
   deliveryRequest: number;
+  agentRequest?: number;
   fileOpenRequest?: number;
 }
 
 export function workspacePanelRequestSteps(
   previous: WorkspacePanelRequestSnapshot | undefined,
   next: WorkspacePanelRequestSnapshot,
-): readonly ("reset" | "review" | "delivery" | "file")[] {
-  const steps: ("reset" | "review" | "delivery" | "file")[] = [];
+): readonly ("reset" | "review" | "delivery" | "agents" | "file")[] {
+  const steps: ("reset" | "review" | "delivery" | "agents" | "file")[] = [];
   if (!previous || previous.scope !== next.scope) steps.push("reset");
   if (
     next.reviewRequest !== 0 &&
@@ -162,6 +168,12 @@ export function workspacePanelRequestSteps(
     previous?.deliveryRequest !== next.deliveryRequest
   ) {
     steps.push("delivery");
+  }
+  if (
+    (next.agentRequest ?? 0) !== 0 &&
+    previous?.agentRequest !== next.agentRequest
+  ) {
+    steps.push("agents");
   }
   if (
     next.fileOpenRequest !== undefined &&
@@ -185,6 +197,8 @@ export function WorkspacePanel({
   reviewRequest,
   deliveryRequest = 0,
   fileOpenRequest,
+  agentPanel,
+  agentControls,
   hidden,
   onResizeStart,
   onResizeBy,
@@ -217,6 +231,12 @@ export function WorkspacePanel({
   reviewRequest: number;
   deliveryRequest?: number;
   fileOpenRequest?: WorkspaceFileOpenRequest;
+  agentPanel?: {
+    tree?: AgentTreeData;
+    live: boolean;
+    request: number;
+  };
+  agentControls?: AgentPanelControls;
   hidden: boolean;
   onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void;
   onResizeBy(delta: number): void;
@@ -250,6 +270,7 @@ export function WorkspacePanel({
     scope: `${projectId}\u0000${remoteFileRoot ?? ""}\u0000${threadId ?? ""}`,
     reviewRequest,
     deliveryRequest,
+    agentRequest: agentPanel?.request ?? 0,
     fileOpenRequest: fileOpenRequest?.id,
   };
   const previousRequestSnapshot = useRef<
@@ -286,6 +307,10 @@ export function WorkspacePanel({
       }
       if (step === "delivery") {
         openDeliveryCenter();
+        continue;
+      }
+      if (step === "agents") {
+        openAgentPanel();
         continue;
       }
       if (!fileOpenRequest) continue;
@@ -354,6 +379,7 @@ export function WorkspacePanel({
     }
   }, [
     deliveryRequest,
+    agentPanel?.request,
     fileOpenRequest?.id,
     projectId,
     remoteFileRoot,
@@ -368,25 +394,27 @@ export function WorkspacePanel({
         title:
           tab.kind === "review"
             ? t("review")
-            : tab.kind === "delivery"
-              ? t("deliveryCenter")
-              : tab.kind === "terminal"
-                ? terminalTabLabel(
-                    "task",
-                    tab.branch ?? taskBranch,
-                    undefined,
-                    t,
-                  )
-                : tab.kind === "original-terminal"
+            : tab.kind === "agents"
+              ? t("agents")
+              : tab.kind === "delivery"
+                ? t("deliveryCenter")
+                : tab.kind === "terminal"
                   ? terminalTabLabel(
-                      "original",
-                      tab.branch ?? originalBranch,
+                      "task",
+                      tab.branch ?? taskBranch,
                       undefined,
                       t,
                     )
-                  : tab.path
-                    ? tab.title
-                    : t("openFile"),
+                  : tab.kind === "original-terminal"
+                    ? terminalTabLabel(
+                        "original",
+                        tab.branch ?? originalBranch,
+                        undefined,
+                        t,
+                      )
+                    : tab.path
+                      ? tab.title
+                      : t("openFile"),
       })),
     );
   }, [originalBranch, taskBranch, t]);
@@ -407,7 +435,9 @@ export function WorkspacePanel({
           )
         : kind === "delivery"
           ? createDeliveryTab(t)
-          : createFileTab(t);
+          : kind === "agents"
+            ? createAgentTab(t)
+            : createFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
   }
@@ -424,6 +454,19 @@ export function WorkspacePanel({
         return current;
       }
       const next = createDeliveryTab(t);
+      setActiveTabId(next.id);
+      return [...current, next];
+    });
+  }
+
+  function openAgentPanel() {
+    setTabs((current) => {
+      const existing = current.find((tab) => tab.kind === "agents");
+      if (existing) {
+        setActiveTabId(existing.id);
+        return current;
+      }
+      const next = createAgentTab(t);
       setActiveTabId(next.id);
       return [...current, next];
     });
@@ -554,6 +597,8 @@ export function WorkspacePanel({
                 >
                   {tab.kind === "review" ? (
                     <FileDiff size={14} />
+                  ) : tab.kind === "agents" ? (
+                    <GitBranch size={14} />
                   ) : tab.kind === "delivery" ? (
                     <PackageCheck size={14} />
                   ) : tab.kind === "terminal" ||
@@ -593,11 +638,18 @@ export function WorkspacePanel({
                         : []),
                       "original-terminal",
                       ...(deliveryEnabled ? (["delivery"] as const) : []),
+                      ...(agentPanel?.tree ? (["agents"] as const) : []),
                       "file",
                     ]
                   : deliveryEnabled
-                    ? ["delivery", "file"]
-                    : ["file"]
+                    ? [
+                        "delivery",
+                        ...(agentPanel?.tree ? (["agents"] as const) : []),
+                        "file",
+                      ]
+                    : agentPanel?.tree
+                      ? ["agents", "file"]
+                      : ["file"]
               }
               taskTerminalLabel={terminalWorkspaceContextLabel(
                 "task",
@@ -683,6 +735,12 @@ export function WorkspacePanel({
               onRefresh={onRefreshChanges}
               onRestore={onRestoreChanges}
               restoreDisabled={restoreDisabled}
+            />
+          ) : activeTab?.kind === "agents" ? (
+            <AgentPanel
+              tree={agentPanel?.tree}
+              live={agentPanel?.live}
+              controls={agentControls}
             />
           ) : activeTab?.kind === "delivery" ? (
             <DeliveryCenterView
@@ -1581,6 +1639,14 @@ function createDeliveryTab(t: Translate): WorkspaceTab {
     id: createBrowserUuid(),
     kind: "delivery",
     title: t("deliveryCenter"),
+  };
+}
+
+function createAgentTab(t: Translate): WorkspaceTab {
+  return {
+    id: createBrowserUuid(),
+    kind: "agents",
+    title: t("agents"),
   };
 }
 

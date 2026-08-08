@@ -714,6 +714,25 @@
   display: grid;
 }
 
+.agent-tree-open-panel {
+  display: flex;
+  min-height: 31px;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 10px 2px auto;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  background: var(--panel);
+  font-size: 9px;
+  font-weight: 620;
+  cursor: pointer;
+  transition:
+    transform 140ms var(--ease-out),
+    background-color 160ms ease;
+}
+
 .agent-row {
   display: grid;
   width: 100%;
@@ -992,6 +1011,11 @@
   }
 
   .agent-action:hover:not(:disabled) {
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 4%, var(--panel));
+  }
+
+  .agent-tree-open-panel:hover {
     color: var(--ink);
     background: color-mix(in srgb, var(--ink) 4%, var(--panel));
   }

@@ -725,7 +725,8 @@ function ThreadlightAppContent({
     activePlanDocument,
     deliveryAwaitingScopes,
     workspaceRoot,
-  } = useDeliveryController();
+    workspaceAgentPanel,
+  } = useDeliveryController(state);
   const currentProject = activeProject(projectSnapshot);
   useInitialViewReady({
     onReady: onInitialViewReady,
@@ -3038,18 +3039,15 @@ function ThreadlightAppContent({
   function stopRunningTurn() {
     void interrupt();
   }
-
   function openReviewPanel() {
     setWorkspacePanelOpen(true);
     setWorkspaceReviewRequest((request) => request + 1);
     void refreshConversationChanges();
   }
-
   function openDeliveryCenter() {
     setWorkspacePanelOpen(true);
     setWorkspaceDeliveryRequest((request) => request + 1);
   }
-
   function openLocalFile(reference: LocalFileReference) {
     if (!workspace || !currentProject || !currentWorkspacePath) return;
     const file = fileReaderReference(reference, currentWorkspacePath);
@@ -3907,6 +3905,7 @@ function ThreadlightAppContent({
                   tree={state.agentTree}
                   live
                   controls={{ client, threadId: state.threadId }}
+                  onOpenInPanel={workspaceAgentPanel.open}
                 />
                 {(state.plan ||
                   (hasConversationChanges && conversationChanges)) && (
@@ -4320,6 +4319,8 @@ function ThreadlightAppContent({
               reviewRequest={workspaceReviewRequest}
               deliveryRequest={workspaceDeliveryRequest}
               fileOpenRequest={workspaceFileOpenRequest}
+              agentPanel={workspaceAgentPanel}
+              agentControls={{ client, threadId: state.threadId }}
               hidden={!workspacePanelOpen}
               onResizeStart={beginWorkspacePanelResize}
               onResizeBy={resizeWorkspacePanelBy}

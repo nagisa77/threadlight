@@ -15,6 +15,7 @@ import {
   GitBranch,
   Link2,
   LoaderCircle,
+  PanelRightOpen,
   RotateCcw,
   SendHorizontal,
   Square,
@@ -85,6 +86,7 @@ type AgentTreePanelProps = {
     >;
     threadId?: string;
   };
+  onOpenInPanel?(tree: AgentTreeData): void;
 };
 
 export function AgentTreePanel(props: AgentTreePanelProps) {
@@ -95,6 +97,7 @@ function AgentTreeContent({
   tree,
   live = false,
   controls,
+  onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
   const agents = tree.agents.filter(({ parentId }) => parentId === tree.rootId);
@@ -160,6 +163,16 @@ function AgentTreeContent({
         />
       </summary>
       <div className="agent-tree-content">
+        {onOpenInPanel && (
+          <button
+            type="button"
+            className="agent-tree-open-panel pressable"
+            onClick={() => onOpenInPanel(tree)}
+          >
+            <PanelRightOpen size={13} />
+            {t("openAgentsPanel")}
+          </button>
+        )}
         <div className="agent-tree-list" role="list">
           {agents.map((agent) => (
             <button

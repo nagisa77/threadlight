@@ -316,7 +316,42 @@ function isAgentTask(value: unknown): boolean {
           item.status === "failed") &&
         (item.durationMs === undefined || isNonNegativeNumber(item.durationMs))
       );
-    })
+    }) &&
+    (task.transcript === undefined ||
+      (Array.isArray(task.transcript) &&
+        task.transcript.every(isAgentTranscriptEntry)))
+  );
+}
+
+function isAgentTranscriptEntry(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  const common =
+    typeof entry.id === "string" &&
+    (entry.status === "running" ||
+      entry.status === "completed" ||
+      entry.status === "failed") &&
+    typeof entry.startedAt === "string" &&
+    (entry.completedAt === undefined ||
+      typeof entry.completedAt === "string") &&
+    (entry.durationMs === undefined || isNonNegativeNumber(entry.durationMs));
+  if (!common) return false;
+  if (entry.kind === "model") {
+    return (
+      Number.isInteger(entry.step) &&
+      Number(entry.step) > 0 &&
+      typeof entry.text === "string" &&
+      (entry.outputVisibility === undefined ||
+        entry.outputVisibility === "user" ||
+        entry.outputVisibility === "provisional")
+    );
+  }
+  return (
+    entry.kind === "tool" &&
+    typeof entry.name === "string" &&
+    typeof entry.arguments === "string" &&
+    (entry.output === undefined || typeof entry.output === "string") &&
+    (entry.isError === undefined || typeof entry.isError === "boolean")
   );
 }
 

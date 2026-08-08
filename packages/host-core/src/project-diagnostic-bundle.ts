@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import type {
   HostDiagnosticConversation,
+  HostDiagnosticAgent,
   HostDiagnosticEnvironment,
   HostDiagnosticError,
   HostDiagnosticFile,
@@ -141,6 +142,7 @@ export async function projectDiagnosticBundle(
   const conversations: HostDiagnosticConversation[] = [];
   const files: HostDiagnosticFile[] = [];
   const errors: HostDiagnosticError[] = [];
+  const agents: HostDiagnosticAgent[] = [];
   const timeline: OrderedTimelineEvent[] = [];
   let timelineOrder = 0;
   let missingSnapshots = 0;
@@ -241,6 +243,16 @@ export async function projectDiagnosticBundle(
           conversation.id,
           message.id,
           sanitizer,
+          timeline,
+          errors,
+          () => timelineOrder++,
+        );
+        collectAgentEvents(
+          value,
+          conversation.id,
+          message.id,
+          sanitizer,
+          agents,
           timeline,
           errors,
           () => timelineOrder++,
@@ -374,6 +386,7 @@ export async function projectDiagnosticBundle(
     summary,
     timeline: sortedTimeline,
     errors,
+    agents,
     conversations,
     files,
     redaction: {
@@ -497,11 +510,11 @@ class DiagnosticTextSanitizer {
       (_match, prefix) => `${prefix}${REDACTION}@`,
     );
     replace(
-      /((?:"|')?(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)(?:"|')?\s*:\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}\r\n]+)/gi,
+      /((?:"|')?(?:api[_-]?key|token|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)(?:"|')?\s*:\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,}\r\n]+)/gi,
       (_match, prefix) => `${prefix}"${REDACTION}"`,
     );
     replace(
-      /\b((?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)\s*=\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;\r\n]+)/gi,
+      /\b((?:api[_-]?key|token|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)\s*=\s*)("[^"\r\n]*"|'[^'\r\n]*'|[^\s,;\r\n]+)/gi,
       (_match, prefix, secret) => {
         const quote = secret.startsWith('"')
           ? '"'
@@ -512,7 +525,7 @@ class DiagnosticTextSanitizer {
       },
     );
     replace(
-      /(^|\n)(\s*(?:api[_-]?key|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)\s*=\s*)[^\r\n]+/gi,
+      /(^|\n)(\s*(?:api[_-]?key|token|access[_-]?token|auth[_-]?token|client[_-]?secret|secret|password|passwd)\s*=\s*)[^\r\n]+/gi,
       (_match, lineStart, prefix) => `${lineStart}${prefix}${REDACTION}`,
     );
     replace(
@@ -766,6 +779,185 @@ function collectProcessEvents(
       });
     }
   }
+}
+
+function collectAgentEvents(
+  value: unknown,
+  threadId: string,
+  messageId: string,
+  sanitizer: DiagnosticTextSanitizer,
+  agents: HostDiagnosticAgent[],
+  timeline: OrderedTimelineEvent[],
+  errors: HostDiagnosticError[],
+  nextOrder: () => number,
+): void {
+  if (!isRecord(value) || !isRecord(value.agentTree)) return;
+  const tree = value.agentTree;
+  if (
+    typeof tree.rootId !== "string" ||
+    !Number.isInteger(tree.maxConcurrent) ||
+    !Array.isArray(tree.agents)
+  ) {
+    return;
+  }
+
+  for (const candidate of tree.agents) {
+    if (
+      !isRecord(candidate) ||
+      typeof candidate.id !== "string" ||
+      typeof candidate.name !== "string" ||
+      typeof candidate.role !== "string" ||
+      !isAgentStatus(candidate.status)
+    ) {
+      continue;
+    }
+    const record = sanitizedJsonValue(candidate, sanitizer) as Readonly<
+      Record<string, unknown>
+    >;
+    const agentId = candidate.id;
+    const parentId = stringValue(candidate.parentId);
+    const name = stringValue(record.name) ?? "agent";
+    const role = stringValue(record.role) ?? "agent";
+    const createdAt = stringValue(candidate.createdAt);
+    const startedAt = stringValue(candidate.startedAt) ?? createdAt;
+    const completedAt = stringValue(candidate.completedAt);
+    const status = candidate.status;
+
+    agents.push({
+      threadId,
+      messageId,
+      rootId: tree.rootId,
+      maxConcurrent: Number(tree.maxConcurrent),
+      agentId,
+      ...(parentId ? { parentId } : {}),
+      name,
+      role,
+      status,
+      record,
+    });
+
+    timeline.push({
+      sortAt: startedAt ?? createdAt ?? "",
+      order: nextOrder(),
+      event: {
+        threadId,
+        messageId,
+        agentId,
+        kind: "agent",
+        name: `agent.${role}`,
+        status: agentTimelineStatus(status),
+        ...(startedAt ? { startedAt } : {}),
+        ...(completedAt ? { completedAt } : {}),
+        ...(isNonNegativeNumber(candidate.elapsedMs)
+          ? { durationMs: candidate.elapsedMs }
+          : {}),
+        ...(status === "failed"
+          ? { errorCode: "AGENT_FAILED" }
+          : status === "cancelled"
+            ? { errorCode: "AGENT_CANCELLED" }
+            : {}),
+      },
+    });
+
+    if (status === "failed" || status === "cancelled") {
+      const code = status === "failed" ? "AGENT_FAILED" : "AGENT_CANCELLED";
+      errors.push({
+        threadId,
+        messageId,
+        source: "agent",
+        code,
+        message:
+          stringValue(record.error) ?? stringValue(record.summary) ?? name,
+        occurredAt: completedAt ?? startedAt,
+      });
+    }
+
+    if (!parentId || !Array.isArray(candidate.transcript)) continue;
+    for (const rawEntry of candidate.transcript) {
+      if (!isRecord(rawEntry) || typeof rawEntry.id !== "string") continue;
+      const entry = sanitizedJsonValue(rawEntry, sanitizer) as Readonly<
+        Record<string, unknown>
+      >;
+      const entryStartedAt = stringValue(rawEntry.startedAt) ?? startedAt;
+      const entryCompletedAt = stringValue(rawEntry.completedAt);
+      const durationMs = isNonNegativeNumber(rawEntry.durationMs)
+        ? rawEntry.durationMs
+        : undefined;
+      if (rawEntry.kind === "model" && Number.isInteger(rawEntry.step)) {
+        timeline.push({
+          sortAt: entryStartedAt ?? "",
+          order: nextOrder(),
+          event: {
+            threadId,
+            messageId,
+            agentId,
+            kind: "model",
+            name: `agent.${role}.model.step.${Number(rawEntry.step)}`,
+            status: rawEntry.status === "running" ? "running" : "completed",
+            ...(entryStartedAt ? { startedAt: entryStartedAt } : {}),
+            ...(entryCompletedAt ? { completedAt: entryCompletedAt } : {}),
+            ...(durationMs === undefined ? {} : { durationMs }),
+          },
+        });
+        continue;
+      }
+      if (rawEntry.kind !== "tool" || typeof rawEntry.name !== "string") {
+        continue;
+      }
+      const failed = rawEntry.status === "failed" || rawEntry.isError === true;
+      const toolName = stringValue(entry.name) ?? "tool";
+      timeline.push({
+        sortAt: entryStartedAt ?? "",
+        order: nextOrder(),
+        event: {
+          threadId,
+          messageId,
+          agentId,
+          kind: "tool",
+          name: `agent.${role}.${toolName}`,
+          status:
+            rawEntry.status === "running"
+              ? "running"
+              : failed
+                ? "failed"
+                : "completed",
+          ...(entryStartedAt ? { startedAt: entryStartedAt } : {}),
+          ...(entryCompletedAt ? { completedAt: entryCompletedAt } : {}),
+          ...(durationMs === undefined ? {} : { durationMs }),
+          ...(failed ? { errorCode: "AGENT_TOOL_ERROR" } : {}),
+        },
+      });
+      if (failed) {
+        errors.push({
+          threadId,
+          messageId,
+          source: "agent",
+          code: "AGENT_TOOL_ERROR",
+          message: toolName,
+          occurredAt: entryCompletedAt ?? entryStartedAt,
+        });
+      }
+    }
+  }
+}
+
+function isAgentStatus(value: unknown): value is HostDiagnosticAgent["status"] {
+  return (
+    value === "queued" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
+function agentTimelineStatus(
+  status: HostDiagnosticAgent["status"],
+): HostDiagnosticTimelineEvent["status"] {
+  if (status === "failed") return "failed";
+  if (status === "cancelled") return "terminated";
+  if (status === "completed") return "completed";
+  return "running";
 }
 
 function pathAliases(project: DiagnosticBundleProject): readonly {

@@ -24,6 +24,7 @@ import type {
 const SPAWN_AGENT_TOOL = "spawn_agent";
 const WAIT_FOR_AGENTS_TOOL = "wait_for_agents";
 const MAX_PERSISTED_OUTPUT = 20_000;
+const MAX_TRANSCRIPT_FIELD = 20_000;
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -263,6 +264,7 @@ export class AgentOrchestrator {
       elapsedMs: 0,
       latestActivity: "Planning",
       activities: [],
+      transcript: [],
     });
     this.emit(record, "created");
     return record;
@@ -296,6 +298,7 @@ export class AgentOrchestrator {
         elapsedMs: 0,
         latestActivity: "Queued",
         activities: [],
+        transcript: [],
       },
       profile,
     );
@@ -388,9 +391,86 @@ export class AgentOrchestrator {
       return;
     }
     if (event.type === "model.started") {
+      const id = modelTranscriptId(event.step);
+      const transcript = record.snapshot.transcript.some(
+        (entry) => entry.id === id,
+      )
+        ? record.snapshot.transcript
+        : [
+            ...record.snapshot.transcript,
+            {
+              id,
+              kind: "model" as const,
+              step: event.step,
+              status: "running" as const,
+              text: "",
+              startedAt: this.wallNow().toISOString(),
+            },
+          ];
       this.patchRecord(record, "progress", {
         phase: "thinking",
         latestActivity: "Thinking",
+        transcript,
+      });
+      return;
+    }
+    if (event.type === "model.output_text.delta") {
+      const id = modelTranscriptId(event.step);
+      const transcript = updateTranscript(
+        record.snapshot.transcript,
+        id,
+        (entry) =>
+          entry.kind === "model"
+            ? {
+                ...entry,
+                text: truncate(
+                  `${entry.text}${event.delta}`,
+                  MAX_TRANSCRIPT_FIELD,
+                ),
+                ...(event.outputVisibility
+                  ? { outputVisibility: event.outputVisibility }
+                  : {}),
+              }
+            : entry,
+      );
+      this.patchRecord(record, "progress", {
+        phase: "thinking",
+        latestActivity: "Thinking",
+        transcript,
+      });
+      return;
+    }
+    if (event.type === "model.completed") {
+      const id = modelTranscriptId(event.step);
+      const completedAt = this.wallNow().toISOString();
+      const transcript = updateTranscript(
+        ensureModelTranscript(
+          record.snapshot.transcript,
+          event.step,
+          completedAt,
+        ),
+        id,
+        (entry) =>
+          entry.kind === "model"
+            ? {
+                ...entry,
+                status: "completed" as const,
+                text: truncate(event.text, MAX_TRANSCRIPT_FIELD),
+                completedAt,
+                ...(event.durationMs === undefined
+                  ? {}
+                  : { durationMs: event.durationMs }),
+                ...(event.outputVisibility
+                  ? { outputVisibility: event.outputVisibility }
+                  : {}),
+              }
+            : entry,
+      );
+      this.patchRecord(record, "progress", {
+        phase: event.toolCalls.length > 0 ? "working" : "thinking",
+        latestActivity:
+          event.toolCalls.length > 0 ? "Preparing tools" : "Responding",
+        transcript,
       });
       return;
     }
@@ -403,10 +483,25 @@ export class AgentOrchestrator {
           status: "running" as const,
         },
       ];
+      const transcript = [
+        ...record.snapshot.transcript,
+        {
+          id: event.call.id,
+          kind: "tool" as const,
+          name: event.call.name,
+          status: "running" as const,
+          arguments: truncate(
+            serializeTranscriptValue(event.call.arguments),
+            MAX_TRANSCRIPT_FIELD,
+          ),
+          startedAt: this.wallNow().toISOString(),
+        },
+      ];
       this.patchRecord(record, "progress", {
         phase: "working",
         latestActivity: event.call.name,
         activities,
+        transcript,
       });
       return;
     }
@@ -424,10 +519,31 @@ export class AgentOrchestrator {
             }
           : activity,
       );
+      const completedAt = this.wallNow().toISOString();
+      const transcript = updateTranscript(
+        record.snapshot.transcript,
+        event.result.callId,
+        (entry) =>
+          entry.kind === "tool"
+            ? {
+                ...entry,
+                status: event.result.isError
+                  ? ("failed" as const)
+                  : ("completed" as const),
+                output: truncate(event.result.output, MAX_TRANSCRIPT_FIELD),
+                ...(event.result.isError ? { isError: true } : {}),
+                completedAt,
+                ...(event.durationMs === undefined
+                  ? {}
+                  : { durationMs: event.durationMs }),
+              }
+            : entry,
+      );
       this.patchRecord(record, "progress", {
         phase: "thinking",
         latestActivity: event.result.name,
         activities,
+        transcript,
       });
     }
   }
@@ -736,7 +852,52 @@ function cloneSnapshot(snapshot: AgentTaskSnapshot): AgentTaskSnapshot {
     ...snapshot,
     ...(snapshot.usage ? { usage: { ...snapshot.usage } } : {}),
     activities: snapshot.activities.map((activity) => ({ ...activity })),
+    transcript: snapshot.transcript.map((entry) => ({ ...entry })),
   };
+}
+
+function modelTranscriptId(step: number): string {
+  return `model:${step}`;
+}
+
+function ensureModelTranscript(
+  transcript: AgentTaskSnapshot["transcript"],
+  step: number,
+  startedAt: string,
+): AgentTaskSnapshot["transcript"] {
+  const id = modelTranscriptId(step);
+  return transcript.some((entry) => entry.id === id)
+    ? transcript
+    : [
+        ...transcript,
+        {
+          id,
+          kind: "model",
+          step,
+          status: "running",
+          text: "",
+          startedAt,
+        },
+      ];
+}
+
+function updateTranscript(
+  transcript: AgentTaskSnapshot["transcript"],
+  id: string,
+  update: (
+    entry: AgentTaskSnapshot["transcript"][number],
+  ) => AgentTaskSnapshot["transcript"][number],
+): AgentTaskSnapshot["transcript"] {
+  return transcript.map((entry) => (entry.id === id ? update(entry) : entry));
+}
+
+function serializeTranscriptValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2) ?? "null";
+  } catch {
+    return String(value);
+  }
 }
 
 function isTerminal(status: AgentTaskSnapshot["status"]): boolean {

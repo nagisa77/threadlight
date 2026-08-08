@@ -28,11 +28,7 @@ describe("project diagnostics", () => {
   it("aggregates persisted turns without exposing conversation content", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-diagnostics-"));
     directories.push(root);
-    const conversationDirectory = join(
-      root,
-      ".threadlight",
-      "conversations",
-    );
+    const conversationDirectory = join(root, ".threadlight", "conversations");
     mkdirSync(conversationDirectory, { recursive: true });
     writeFileSync(
       join(conversationDirectory, "thread-1.json"),
@@ -98,18 +94,17 @@ describe("project diagnostics", () => {
     const snapshots = mkdtempSync(join(tmpdir(), "threadlight-snapshots-"));
     directories.push(root, snapshots);
     mkdirSync(join(root, "src"), { recursive: true });
-    writeFileSync(join(root, "src", "config.ts"), "export const mode = 'before';\n");
+    writeFileSync(
+      join(root, "src", "config.ts"),
+      "export const mode = 'before';\n",
+    );
     const tracker = new ConversationChangeTracker(snapshots);
     await tracker.ensureSnapshot("project-1", "thread-1", root);
     writeFileSync(
       join(root, "src", "config.ts"),
       "export const apiKey = 'sk-1234567890abcdefghijkl';\n",
     );
-    const conversationDirectory = join(
-      root,
-      ".threadlight",
-      "conversations",
-    );
+    const conversationDirectory = join(root, ".threadlight", "conversations");
     mkdirSync(conversationDirectory, { recursive: true });
     writeFileSync(
       join(conversationDirectory, "thread-1.json"),
@@ -165,6 +160,64 @@ describe("project diagnostics", () => {
             role: "assistant",
             text: "Tool failed with password=hunter2",
             error: true,
+            agentTree: {
+              rootId: "root-agent",
+              maxConcurrent: 3,
+              agents: [
+                {
+                  id: "root-agent",
+                  name: "threadlight",
+                  role: "root",
+                  task: "Diagnose the failure",
+                  status: "completed",
+                  phase: "done",
+                  createdAt: "2026-08-07T01:00:00.250Z",
+                  startedAt: "2026-08-07T01:00:00.250Z",
+                  completedAt: "2026-08-07T01:00:01.750Z",
+                  elapsedMs: 1_500,
+                  activities: [],
+                  transcript: [],
+                },
+                {
+                  id: "child-agent",
+                  parentId: "root-agent",
+                  name: "explorer",
+                  role: "explorer",
+                  task: "Inspect password=agent-task-secret",
+                  status: "completed",
+                  phase: "done",
+                  createdAt: "2026-08-07T01:00:00.500Z",
+                  startedAt: "2026-08-07T01:00:00.500Z",
+                  completedAt: "2026-08-07T01:00:01.500Z",
+                  elapsedMs: 1_000,
+                  output: "Found password=agent-output-secret",
+                  activities: [],
+                  transcript: [
+                    {
+                      id: "model:1",
+                      kind: "model",
+                      step: 1,
+                      status: "completed",
+                      text: "Inspecting password=agent-model-secret",
+                      startedAt: "2026-08-07T01:00:00.500Z",
+                      completedAt: "2026-08-07T01:00:00.800Z",
+                      durationMs: 300,
+                    },
+                    {
+                      id: "agent-tool",
+                      kind: "tool",
+                      name: "workspace_inspect",
+                      status: "completed",
+                      arguments: '{"token":"agent-argument-secret"}',
+                      output: "ok",
+                      startedAt: "2026-08-07T01:00:00.800Z",
+                      completedAt: "2026-08-07T01:00:01.000Z",
+                      durationMs: 200,
+                    },
+                  ],
+                },
+              ],
+            },
             progress: [
               {
                 text: "running",
@@ -269,17 +322,13 @@ describe("project diagnostics", () => {
       queuedTurns: [
         expect.objectContaining({
           input: "Follow up",
-          attachments: [
-            expect.objectContaining({ path: "<attachment-path>" }),
-          ],
+          attachments: [expect.objectContaining({ path: "<attachment-path>" })],
         }),
       ],
       messages: [
         {
           text: "Inspect <workspace:thread-1>; Authorization: Bearer [REDACTED]",
-          attachments: [
-            { name: "badcase.png", path: "<attachment-path>" },
-          ],
+          attachments: [{ name: "badcase.png", path: "<attachment-path>" }],
         },
         expect.objectContaining({
           text: "Tool failed with password=[REDACTED]",
@@ -301,6 +350,25 @@ describe("project diagnostics", () => {
       "model",
       "tool",
       "process",
+      "agent",
+      "agent",
+      "model",
+      "tool",
+    ]);
+    expect(bundle.agents).toEqual([
+      expect.objectContaining({
+        agentId: "root-agent",
+        role: "root",
+      }),
+      expect.objectContaining({
+        agentId: "child-agent",
+        parentId: "root-agent",
+        role: "explorer",
+        record: expect.objectContaining({
+          task: "Inspect password=[REDACTED]",
+          output: "Found password=[REDACTED]",
+        }),
+      }),
     ]);
     expect(bundle.errors.map(({ code }) => code)).toEqual([
       "PROCESS_EXIT_2",
@@ -315,6 +383,10 @@ describe("project diagnostics", () => {
     expect(serialized).not.toContain("provider-state-secret");
     expect(serialized).not.toContain("query-leak-secret");
     expect(serialized).not.toContain("sk-1234567890abcdefghijkl");
+    expect(serialized).not.toContain("agent-task-secret");
+    expect(serialized).not.toContain("agent-output-secret");
+    expect(serialized).not.toContain("agent-model-secret");
+    expect(serialized).not.toContain("agent-argument-secret");
     expect(serialized).not.toContain("/Users/alice/private/badcase.png");
     expect(serialized).toContain("include-model-state");
     expect(serialized).toContain("include-agent-snapshot");
@@ -324,11 +396,7 @@ describe("project diagnostics", () => {
     const root = mkdtempSync(join(tmpdir(), "threadlight-bundle-selection-"));
     const snapshots = mkdtempSync(join(tmpdir(), "threadlight-snapshots-"));
     directories.push(root, snapshots);
-    const conversationDirectory = join(
-      root,
-      ".threadlight",
-      "conversations",
-    );
+    const conversationDirectory = join(root, ".threadlight", "conversations");
     mkdirSync(conversationDirectory, { recursive: true });
     for (const id of ["thread-1", "thread-2"]) {
       writeFileSync(

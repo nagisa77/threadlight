@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AgentTreePanel } from "../src/features/task-session/conversation-content.js";
+import { AgentPanel } from "../src/features/task-session/agent-panel.js";
 
 describe("AgentTreePanel", () => {
   const tree = {
@@ -67,5 +68,46 @@ describe("AgentTreePanel", () => {
     expect(html).toContain('<details class="agent-tree">');
     expect(html).not.toContain('<details class="agent-tree" open="">');
     expect(html).toContain("1 个已完成");
+  });
+
+  it("renders a conversation-like side panel with model, tool, and output details", () => {
+    const detailed = {
+      ...tree,
+      agents: tree.agents.map((agent) =>
+        agent.id !== "explorer"
+          ? agent
+          : {
+              ...agent,
+              transcript: [
+                {
+                  id: "model:1",
+                  kind: "model" as const,
+                  step: 1,
+                  status: "completed" as const,
+                  text: "I’ll inspect the protocol.",
+                  startedAt: "2026-08-08T08:00:01.000Z",
+                },
+                {
+                  id: "inspect",
+                  kind: "tool" as const,
+                  name: "workspace_inspect",
+                  status: "completed" as const,
+                  arguments: '{"path":"packages/protocol"}',
+                  output: "Found the active-turn snapshot.",
+                  startedAt: "2026-08-08T08:00:02.000Z",
+                },
+              ],
+            },
+      ),
+    };
+    const html = renderToStaticMarkup(<AgentPanel tree={detailed} live />);
+
+    expect(html).toContain('role="tabpanel"');
+    expect(html).toContain("主 Agent");
+    expect(html).toContain("I’ll inspect the protocol.");
+    expect(html).toContain("workspace_inspect");
+    expect(html).toContain("packages/protocol");
+    expect(html).toContain("Found the active-turn snapshot.");
+    expect(html).toContain("不包含 Provider 的隐藏推理");
   });
 });

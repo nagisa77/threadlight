@@ -708,7 +708,7 @@ export const ja: Messages = {
   exportingDiagnosticBundle: "生成中…",
   diagnosticBundleContents: "出力範囲",
   diagnosticBundleDescription:
-    "イベント時系列、モデル・ツール時間、エラーコード、実行環境、タスク会話本文、変更されたテキストファイル本文を含みます。一般的な認証情報はマスクされますが、共有前に確認してください。",
+    "イベント時系列、マルチ Agent の進捗、モデル・ツール時間、エラーコード、実行環境、タスク会話本文、変更されたテキストファイル本文を含みます。一般的な認証情報はマスクされますが、共有前に確認してください。",
   diagnosticBundleExported: "{filename} をダウンロードしました",
   diagnosticBundleExportFailed: "出力に失敗しました：{error}",
   diagnosticExportDialogDescription:
@@ -850,6 +850,19 @@ export const ja: Messages = {
   newFileTab: "新しいファイルタブ",
   review: "レビュー",
   agents: "Agents",
+  mainAgent: "メイン Agent",
+  agentList: "Agent 一覧",
+  agentConcurrency: "同時実行上限 {count}",
+  openAgentsPanel: "右パネルで表示",
+  noAgentRuns: "マルチ Agent の履歴はありません",
+  noAgentRunsDescription:
+    "メイン Agent が作業を委任すると、各 Agent の表示可能な進捗がここに表示されます。",
+  noAgentActivity: "表示できるアクティビティはありません",
+  agentVisibleProcessNote:
+    "モデルが出力した可視の進捗のみを表示し、Provider の非公開推論は含みません。",
+  agentModelStep: "モデルステップ {step}",
+  toolArguments: "引数",
+  toolOutput: "ツール出力",
   agentActiveCount: "{count} 件実行中",
   agentDoneCount: "{count} 件完了",
   agentDetails: "Agent の詳細",

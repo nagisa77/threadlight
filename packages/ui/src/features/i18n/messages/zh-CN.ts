@@ -655,7 +655,7 @@ export const zh = {
   exportingDiagnosticBundle: "正在生成…",
   diagnosticBundleContents: "导出范围",
   diagnosticBundleDescription:
-    "包含事件时间线、模型与工具耗时、错误码、运行环境、任务对话正文和变更文本文件正文。常见密钥会自动脱敏，分享前仍建议检查。",
+    "包含事件时间线、多 Agent 过程、模型与工具耗时、错误码、运行环境、任务对话正文和变更文本文件正文。常见密钥会自动脱敏，分享前仍建议检查。",
   diagnosticBundleExported: "已下载 {filename}",
   diagnosticBundleExportFailed: "导出失败：{error}",
   diagnosticExportDialogDescription: "选择要从 {project} 导出的诊断范围。",
@@ -787,6 +787,19 @@ export const zh = {
   newFileTab: "新建文件标签",
   review: "审阅",
   agents: "Agents",
+  mainAgent: "主 Agent",
+  agentList: "Agent 列表",
+  agentConcurrency: "并发上限 {count}",
+  openAgentsPanel: "在右侧面板查看",
+  noAgentRuns: "暂无多 Agent 记录",
+  noAgentRunsDescription:
+    "当主 Agent 委派任务后，这里会实时显示各 Agent 的执行过程。",
+  noAgentActivity: "暂无可展示的执行记录",
+  agentVisibleProcessNote:
+    "这里展示模型主动输出的可见过程，不包含 Provider 的隐藏推理。",
+  agentModelStep: "模型步骤 {step}",
+  toolArguments: "调用参数",
+  toolOutput: "工具输出",
   agentActiveCount: "{count} 个运行中",
   agentDoneCount: "{count} 个已完成",
   agentDetails: "Agent 详情",

@@ -1740,7 +1740,8 @@ export class AppServer {
     const activeTurn =
       thread.activeTurn?.id === turnId ? thread.activeTurn : undefined;
     if (!activeTurn) return;
-    activeTurn.agentTree = event.tree;
+    const tree = clientSafeAgentTree(event.tree);
+    activeTurn.agentTree = tree;
     thread.revision += 1;
     this.notify("agent/tree-updated", {
       threadId,
@@ -1749,7 +1750,7 @@ export class AppServer {
       activeTurn: this.requireActiveTurnSnapshot(thread),
       changedAgentId: event.changedAgentId,
       reason: event.reason,
-      tree: event.tree,
+      tree,
     });
   }
 
@@ -2403,6 +2404,26 @@ function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
       ...event.result,
       output: '{"type":"computer_screenshot","status":"captured"}',
     },
+  };
+}
+
+function clientSafeAgentTree(tree: AgentTreeSnapshot): AgentTreeSnapshot {
+  return {
+    ...tree,
+    agents: tree.agents.map((agent) => ({
+      ...agent,
+      transcript: agent.transcript.map((entry) =>
+        entry.kind === "tool" &&
+        entry.name === "computer" &&
+        !entry.isError &&
+        entry.output !== undefined
+          ? {
+              ...entry,
+              output: '{"type":"computer_screenshot","status":"captured"}',
+            }
+          : entry,
+      ),
+    })),
   };
 }
 

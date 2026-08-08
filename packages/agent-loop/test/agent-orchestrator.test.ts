@@ -12,6 +12,108 @@ import type {
 } from "../src/types.js";
 
 describe("AgentOrchestrator", () => {
+  it("persists an ordered visible transcript for scripted child model and tool events", async () => {
+    let rootTurns = 0;
+    let childTurns = 0;
+    const inspect = defineTool({
+      name: "workspace_inspect",
+      description: "Inspect the workspace",
+      parameters: { type: "object" },
+      mutability: "read",
+      async execute(arguments_) {
+        expect(arguments_).toEqual({ path: "src/index.ts" });
+        return { content: "export const ready = true;" };
+      },
+    });
+    const provider: ModelProvider = {
+      async generate(request, options) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          childTurns += 1;
+          if (childTurns === 1) {
+            options?.onEvent?.({
+              type: "output_text.delta",
+              delta: "Inspecting the entry point.",
+            });
+            return {
+              text: "Inspecting the entry point.",
+              toolCalls: [
+                {
+                  id: "inspect-entry",
+                  name: "workspace_inspect",
+                  arguments: { path: "src/index.ts" },
+                },
+              ],
+            };
+          }
+          expect(request.toolResults?.[0]?.output).toContain("ready");
+          return { text: "The entry point is ready.", toolCalls: [] };
+        }
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Delegating inspection.",
+            toolCalls: [
+              {
+                id: "spawn-explorer",
+                name: "spawn_agent",
+                arguments: { role: "explorer", task: "Inspect the entry" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          return {
+            text: "Collecting inspection.",
+            toolCalls: [
+              { id: "wait-explorer", name: "wait_for_agents", arguments: {} },
+            ],
+          };
+        }
+        return { text: "Inspection complete.", toolCalls: [] };
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "explorer",
+          description: "Inspect",
+          instructions: "Inspect read-only",
+          toolAccess: "read-only",
+        },
+      ],
+    });
+
+    await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT", tools: [inspect] }),
+      "Check the workspace",
+    );
+
+    const child = orchestrator.snapshot.agents.find(
+      ({ parentId }) => parentId === orchestrator.snapshot.rootId,
+    );
+    expect(child?.transcript).toEqual([
+      expect.objectContaining({
+        kind: "model",
+        step: 1,
+        status: "completed",
+        text: "Inspecting the entry point.",
+      }),
+      expect.objectContaining({
+        kind: "tool",
+        name: "workspace_inspect",
+        status: "completed",
+        arguments: '{\n  "path": "src/index.ts"\n}',
+        output: '{"content":"export const ready = true;"}',
+      }),
+      expect.objectContaining({
+        kind: "model",
+        step: 2,
+        status: "completed",
+        text: "The entry point is ready.",
+      }),
+    ]);
+  });
+
   it("runs scripted subagents concurrently, isolates model state, and makes the parent collect results", async () => {
     const requests: ModelRequest[] = [];
     const waiting: Array<(turn: ModelTurn) => void> = [];

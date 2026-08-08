@@ -273,12 +273,13 @@ export interface HostDiagnosticFile {
 }
 
 export type HostDiagnosticTimelineEventKind =
-  "turn" | "model" | "tool" | "process";
+  "turn" | "agent" | "model" | "tool" | "process";
 
 export interface HostDiagnosticTimelineEvent {
   sequence: number;
   threadId: string;
   messageId?: string;
+  agentId?: string;
   kind: HostDiagnosticTimelineEventKind;
   name: string;
   status: "running" | "completed" | "failed" | "terminated";
@@ -291,10 +292,24 @@ export interface HostDiagnosticTimelineEvent {
 export interface HostDiagnosticError {
   threadId: string;
   messageId?: string;
-  source: "turn" | "tool" | "process";
+  source: "turn" | "agent" | "tool" | "process";
   code: string;
   message?: string;
   occurredAt?: string;
+}
+
+export interface HostDiagnosticAgent {
+  threadId: string;
+  messageId: string;
+  rootId: string;
+  maxConcurrent: number;
+  agentId: string;
+  parentId?: string;
+  name: string;
+  role: string;
+  status: AgentTaskStatusData;
+  /** Recursively redacted agent snapshot, including its visible transcript. */
+  record: Readonly<Record<string, unknown>>;
 }
 
 export interface HostProjectDiagnosticBundle {
@@ -313,6 +328,7 @@ export interface HostProjectDiagnosticBundle {
   summary: HostProjectDiagnosticsSnapshot;
   timeline: readonly HostDiagnosticTimelineEvent[];
   errors: readonly HostDiagnosticError[];
+  agents: readonly HostDiagnosticAgent[];
   conversations: readonly HostDiagnosticConversation[];
   files: readonly HostDiagnosticFile[];
   redaction: {
@@ -882,6 +898,31 @@ export interface AgentTaskActivityData {
   durationMs?: number;
 }
 
+export type AgentTaskTranscriptEntryData =
+  | {
+      id: string;
+      kind: "model";
+      step: number;
+      status: "running" | "completed" | "failed";
+      text: string;
+      outputVisibility?: "user" | "provisional";
+      startedAt: string;
+      completedAt?: string;
+      durationMs?: number;
+    }
+  | {
+      id: string;
+      kind: "tool";
+      name: string;
+      status: "running" | "completed" | "failed";
+      arguments: string;
+      output?: string;
+      isError?: boolean;
+      startedAt: string;
+      completedAt?: string;
+      durationMs?: number;
+    };
+
 /** Display-safe projection of one provider-neutral agent task. */
 export interface AgentTaskData {
   id: string;
@@ -904,6 +945,8 @@ export interface AgentTaskData {
   steps?: number;
   usage?: TokenUsageData;
   activities: readonly AgentTaskActivityData[];
+  /** Ordered visible model/tool activity. Hidden provider reasoning is excluded. */
+  transcript?: readonly AgentTaskTranscriptEntryData[];
 }
 
 export interface AgentTreeData {

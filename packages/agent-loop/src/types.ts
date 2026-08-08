@@ -291,6 +291,32 @@ export interface AgentTaskActivity {
   durationMs?: number;
 }
 
+/** Display-safe, provider-neutral record of one visible subagent event. */
+export type AgentTaskTranscriptEntry =
+  | {
+      id: string;
+      kind: "model";
+      step: number;
+      status: "running" | "completed" | "failed";
+      text: string;
+      outputVisibility?: ModelOutputVisibility;
+      startedAt: string;
+      completedAt?: string;
+      durationMs?: number;
+    }
+  | {
+      id: string;
+      kind: "tool";
+      name: string;
+      status: "running" | "completed" | "failed";
+      arguments: string;
+      output?: string;
+      isError?: boolean;
+      startedAt: string;
+      completedAt?: string;
+      durationMs?: number;
+    };
+
 export interface AgentTaskSnapshot {
   id: string;
   parentId?: string;
@@ -312,6 +338,7 @@ export interface AgentTaskSnapshot {
   steps?: number;
   usage?: TokenUsage;
   activities: readonly AgentTaskActivity[];
+  transcript: readonly AgentTaskTranscriptEntry[];
 }
 
 export interface AgentTreeSnapshot {

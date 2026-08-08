@@ -663,7 +663,7 @@ export const zhTW: Messages = {
   exportingDiagnosticBundle: "正在產生…",
   diagnosticBundleContents: "匯出範圍",
   diagnosticBundleDescription:
-    "包含事件時間線、模型與工具耗時、錯誤碼、執行環境、任務對話正文和變更文字檔案正文。常見密鑰會自動遮罩，分享前仍建議檢查。",
+    "包含事件時間線、多 Agent 過程、模型與工具耗時、錯誤碼、執行環境、任務對話正文和變更文字檔案正文。常見密鑰會自動遮罩，分享前仍建議檢查。",
   diagnosticBundleExported: "已下載 {filename}",
   diagnosticBundleExportFailed: "匯出失敗：{error}",
   diagnosticExportDialogDescription: "選擇要從 {project} 匯出的診斷範圍。",
@@ -792,6 +792,19 @@ export const zhTW: Messages = {
   newFileTab: "新增檔案分頁",
   review: "檢閱",
   agents: "Agents",
+  mainAgent: "主 Agent",
+  agentList: "Agent 清單",
+  agentConcurrency: "並行上限 {count}",
+  openAgentsPanel: "在右側面板查看",
+  noAgentRuns: "暫無多 Agent 記錄",
+  noAgentRunsDescription:
+    "當主 Agent 委派任務後，這裡會即時顯示各 Agent 的執行過程。",
+  noAgentActivity: "暫無可顯示的執行記錄",
+  agentVisibleProcessNote:
+    "這裡顯示模型主動輸出的可見過程，不包含 Provider 的隱藏推理。",
+  agentModelStep: "模型步驟 {step}",
+  toolArguments: "呼叫參數",
+  toolOutput: "工具輸出",
   agentActiveCount: "{count} 個執行中",
   agentDoneCount: "{count} 個已完成",
   agentDetails: "Agent 詳情",

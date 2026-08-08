@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Files, PackageCheck, Plus, Terminal } from "lucide-react";
+import { Files, GitBranch, PackageCheck, Plus, Terminal } from "lucide-react";
 import { useI18n } from "./i18n.js";
 
 export type PanelViewKind =
-  | "terminal"
-  | "original-terminal"
-  | "delivery"
-  | "file";
+  "terminal" | "original-terminal" | "delivery" | "agents" | "file";
 
 export function PanelAddMenu({
   available,
@@ -113,6 +110,20 @@ export function PanelAddMenu({
           >
             <PackageCheck size={16} />
             <span>{t("deliveryCenter")}</span>
+          </button>
+        )}
+        {available.includes("agents") && (
+          <button
+            type="button"
+            className="panel-add-option pressable"
+            role="menuitem"
+            onClick={() => {
+              onSelect("agents");
+              setOpen(false);
+            }}
+          >
+            <GitBranch size={16} />
+            <span>{t("agents")}</span>
           </button>
         )}
       </div>

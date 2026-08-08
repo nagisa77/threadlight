@@ -707,7 +707,7 @@ export const ko: Messages = {
   exportingDiagnosticBundle: "생성 중…",
   diagnosticBundleContents: "내보내기 범위",
   diagnosticBundleDescription:
-    "이벤트 타임라인, 모델·도구 시간, 오류 코드, 실행 환경, 작업 대화 본문과 변경된 텍스트 파일 본문이 포함됩니다. 일반적인 자격 증명은 마스킹되지만 공유 전에 확인하세요.",
+    "이벤트 타임라인, 멀티 Agent 진행, 모델·도구 시간, 오류 코드, 실행 환경, 작업 대화 본문과 변경된 텍스트 파일 본문이 포함됩니다. 일반적인 자격 증명은 마스킹되지만 공유 전에 확인하세요.",
   diagnosticBundleExported: "{filename} 다운로드 완료",
   diagnosticBundleExportFailed: "내보내기 실패: {error}",
   diagnosticExportDialogDescription:
@@ -847,6 +847,19 @@ export const ko: Messages = {
   newFileTab: "새 파일 탭",
   review: "검토",
   agents: "Agents",
+  mainAgent: "메인 Agent",
+  agentList: "Agent 목록",
+  agentConcurrency: "동시 실행 한도 {count}",
+  openAgentsPanel: "오른쪽 패널에서 보기",
+  noAgentRuns: "멀티 Agent 기록 없음",
+  noAgentRunsDescription:
+    "메인 Agent가 작업을 위임하면 각 Agent의 표시 가능한 진행 상황이 여기에 나타납니다.",
+  noAgentActivity: "표시할 활동이 없습니다",
+  agentVisibleProcessNote:
+    "모델이 출력한 공개 진행만 표시하며 Provider의 숨겨진 추론은 포함하지 않습니다.",
+  agentModelStep: "모델 단계 {step}",
+  toolArguments: "호출 인자",
+  toolOutput: "도구 출력",
   agentActiveCount: "{count}개 실행 중",
   agentDoneCount: "{count}개 완료",
   agentDetails: "Agent 세부 정보",

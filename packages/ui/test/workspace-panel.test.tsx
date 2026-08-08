@@ -565,6 +565,14 @@ describe("WorkspacePanel", () => {
         scope: "project-1\u0000\u0000thread-1",
         reviewRequest: 0,
         deliveryRequest: 0,
+        agentRequest: 1,
+      }),
+    ).toEqual(["reset", "agents"]);
+    expect(
+      workspacePanelRequestSteps(undefined, {
+        scope: "project-1\u0000\u0000thread-1",
+        reviewRequest: 0,
+        deliveryRequest: 0,
         fileOpenRequest: 1,
       }),
     ).toEqual(["reset", "file"]);
@@ -586,7 +594,7 @@ describe("WorkspacePanel", () => {
     ).toEqual(["reset"]);
   });
 
-  it("defaults to a file tab and offers file or terminal views from add", () => {
+  it("defaults to a file tab and offers file, terminal, or agent views from add", () => {
     const adapter: WorkspaceAdapter = {
       getChanges: vi.fn(),
       list: vi.fn(async () => []),
@@ -611,6 +619,39 @@ describe("WorkspacePanel", () => {
         projectName="threadlight"
         taskBranch="threadlight/task-1"
         originalBranch="main"
+        agentPanel={{
+          live: true,
+          request: 0,
+          tree: {
+            rootId: "root-agent",
+            maxConcurrent: 3,
+            agents: [
+              {
+                id: "root-agent",
+                name: "threadlight",
+                role: "root",
+                task: "Implement",
+                status: "running",
+                phase: "thinking",
+                createdAt: "2026-08-08T08:00:00.000Z",
+                elapsedMs: 100,
+                activities: [],
+              },
+              {
+                id: "child-agent",
+                parentId: "root-agent",
+                name: "explorer",
+                role: "explorer",
+                task: "Inspect",
+                status: "running",
+                phase: "working",
+                createdAt: "2026-08-08T08:00:01.000Z",
+                elapsedMs: 50,
+                activities: [],
+              },
+            ],
+          },
+        }}
         changesLoading={false}
         reviewRequest={0}
         hidden={false}
@@ -630,6 +671,7 @@ describe("WorkspacePanel", () => {
     expect(html).toContain(">工作树 · threadlight/task-1</span>");
     expect(html).toContain(">本地工作区 · main</span>");
     expect(html).toContain(">文件</span>");
+    expect(html).toContain(">Agents</span>");
     expect(html).toContain('aria-label="调整聊天与右侧面板宽度"');
     expect(html).toContain('aria-orientation="vertical"');
     expect(html).toContain('aria-label="文件路径"');

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { AgentTreeData } from "@threadlight/protocol";
 
 import type {
   AutomaticDeliveryState,
@@ -6,7 +7,10 @@ import type {
   WorkspaceFileOpenRequest,
 } from "./workspace-types.js";
 
-export function useDeliveryController() {
+export function useDeliveryController(session?: {
+  agentTree?: AgentTreeData;
+  messages: readonly { agentTree?: AgentTreeData }[];
+}) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const workspacePanelMounted = useRef(false);
@@ -14,6 +18,7 @@ export function useDeliveryController() {
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState<number>();
   const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
   const [workspaceDeliveryRequest, setWorkspaceDeliveryRequest] = useState(0);
+  const [workspaceAgentRequest, setWorkspaceAgentRequest] = useState(0);
   const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] =
     useState<WorkspaceFileOpenRequest>();
   const [conversationChanges, setConversationChanges] =
@@ -30,6 +35,20 @@ export function useDeliveryController() {
   const activePlanDocument = useRef<string | undefined>(undefined);
   const deliveryAwaitingScopes = useRef(new Set<string>());
   const workspaceRoot = useRef<HTMLElement>(null);
+  const latestAgentTree = [...(session?.messages ?? [])]
+    .reverse()
+    .find(({ agentTree }) => agentTree)?.agentTree;
+  const currentAgentTree = session?.agentTree ?? latestAgentTree;
+  const workspaceAgentPanel = {
+    tree: currentAgentTree,
+    live: Boolean(session?.agentTree),
+    request: workspaceAgentRequest,
+    open(tree: AgentTreeData = currentAgentTree!) {
+      if (!tree) return;
+      setWorkspacePanelOpen(true);
+      setWorkspaceAgentRequest((request) => request + 1);
+    },
+  };
 
   return {
     terminalOpen,
@@ -43,6 +62,7 @@ export function useDeliveryController() {
     setWorkspaceReviewRequest,
     workspaceDeliveryRequest,
     setWorkspaceDeliveryRequest,
+    workspaceAgentPanel,
     workspaceFileOpenRequest,
     setWorkspaceFileOpenRequest,
     conversationChanges,
