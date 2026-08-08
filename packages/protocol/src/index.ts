@@ -976,7 +976,10 @@ export type AgentTaskTranscriptEntryData =
 export interface AgentTaskData {
   id: string;
   parentId?: string;
+  agentThreadId?: string;
   retryOf?: string;
+  followUpOf?: string;
+  closedAt?: string;
   runId?: string;
   name: string;
   role: string;
@@ -1002,6 +1005,44 @@ export interface AgentTreeData {
   rootId: string;
   maxConcurrent: number;
   agents: readonly AgentTaskData[];
+}
+
+export type AgentRunStatusData =
+  | "active"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+/**
+ * Queryable, display-safe projection of one persisted agent thread.
+ *
+ * Opaque provider state remains host-owned. Clients can see whether a
+ * checkpoint exists without receiving provider-specific wire data.
+ */
+export interface AgentThreadData {
+  id: string;
+  agentThreadId: string;
+  hostThreadId: string;
+  turnId: string;
+  rootId: string;
+  maxConcurrent: number;
+  runStatus: AgentRunStatusData;
+  updatedAt: string;
+  profileName?: string;
+  agent: AgentTaskData;
+  pendingInput: readonly string[];
+  collected: boolean;
+  closedAt?: string;
+  interruption?: {
+    previousStatus: "queued" | "running";
+    interruptedAt: string;
+    reason: string;
+  };
+  checkpoint?: {
+    step: number;
+    phase: "model_completed" | "tool_started" | "tool_completed";
+    hasModelState: boolean;
+  };
 }
 
 /**
@@ -1286,6 +1327,14 @@ export interface ThreadlightMethodMap {
     params: { threadId: string; agentId: string };
     result: { agent?: AgentTaskData };
   };
+  "agent/list": {
+    params: { threadId: string; turnId?: string; includeRoot?: boolean };
+    result: { agents: readonly AgentThreadData[] };
+  };
+  "agent/read": {
+    params: { threadId: string; agentId: string };
+    result: { agent: AgentThreadData };
+  };
   "turn/follow-up": {
     params: {
       threadId: string;
@@ -1358,6 +1407,8 @@ export const THREADLIGHT_METHODS = [
   "agent/cancel",
   "agent/steer",
   "agent/retry",
+  "agent/list",
+  "agent/read",
   "turn/follow-up",
   "turn/queue/inject",
   "turn/queue/reorder",
@@ -1434,6 +1485,9 @@ export interface ThreadlightNotificationMap {
       | "completed"
       | "failed"
       | "cancelled"
+      | "interrupted"
+      | "followed_up"
+      | "closed"
       | "steered";
     tree: AgentTreeData;
   };

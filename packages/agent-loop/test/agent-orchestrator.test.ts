@@ -4,6 +4,7 @@ import { AgentLoop } from "../src/agent-loop.js";
 import { AgentOrchestrator } from "../src/agent-orchestrator.js";
 import { defineAgent, defineTool } from "../src/types.js";
 import type {
+  AgentRuntimeSnapshot,
   AgentTreeEvent,
   ModelProvider,
   ModelRequest,
@@ -388,7 +389,8 @@ describe("AgentOrchestrator", () => {
 
     expect(orchestrator.cancel(childId)).toBe(true);
     const retried = orchestrator.retry(childId);
-    expect(retried).toMatchObject({ retryOf: childId, status: "queued" });
+    expect(retried).toMatchObject({ retryOf: childId });
+    expect(["queued", "running"]).toContain(retried?.status);
 
     const result = await resultPromise;
     expect(result.output).toBe("Parent completed after retry");
@@ -398,6 +400,672 @@ describe("AgentOrchestrator", () => {
         expect.objectContaining({ retryOf: childId, status: "completed" }),
       ]),
     );
+  });
+
+  it("lets the parent spawn, steer, wait, follow up, interrupt, and close one persistent child thread", async () => {
+    const releaseInitialChild = Promise.withResolvers<void>();
+    const holdStarted = Promise.withResolvers<void>();
+    const childRequests: ModelRequest[] = [];
+    const treeEvents: AgentTreeEvent[] = [];
+    const checkpoints: AgentRuntimeSnapshot[] = [];
+    let rootTurns = 0;
+    let stableAgentId = "";
+    let replacementAgentId = "";
+    let replacementRuns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          childRequests.push(request);
+          if (request.input === "Inspect collaboration controls") {
+            await releaseInitialChild.promise;
+            expect(request.state).toBeUndefined();
+            return {
+              text: "Initial inspection complete.",
+              toolCalls: [],
+              state: { round: 1 },
+            };
+          }
+          if (request.input?.includes("Additional user instruction")) {
+            expect(request.input).toContain("Focus on lifecycle state");
+            expect(request.state).toEqual({ round: 1 });
+            return {
+              text: "Steered inspection complete.",
+              toolCalls: [],
+              state: { round: 1, steered: true },
+            };
+          }
+          if (request.input === "Run a deeper check") {
+            expect(request.state).toEqual({ round: 1, steered: true });
+            expect(request.history).toEqual([
+              { role: "user", text: "Inspect collaboration controls" },
+              { role: "assistant", text: "Steered inspection complete." },
+            ]);
+            return {
+              text: "Starting a deeper check.",
+              toolCalls: [
+                { id: "hold-follow-up", name: "hold_read", arguments: {} },
+              ],
+              state: { round: 2 },
+            };
+          }
+          if (request.input === "Inspect replacement") {
+            expect(request.state).toBeUndefined();
+            replacementRuns += 1;
+            return {
+              text: `Replacement attempt ${replacementRuns} complete.`,
+              toolCalls: [],
+              state: { replacement: replacementRuns },
+            };
+          }
+          expect(request.input).toBe("Summarize safely");
+          expect(request.state).toEqual({ round: 2 });
+          expect(request.history).toEqual([
+            { role: "user", text: "Inspect collaboration controls" },
+            { role: "assistant", text: "Steered inspection complete." },
+          ]);
+          return {
+            text: "Safe summary complete.",
+            toolCalls: [],
+            state: { round: 3 },
+          };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          expect(request.tools.map(({ name }) => name)).toEqual(
+            expect.arrayContaining([
+              "spawn_agent",
+              "follow_up_agent",
+              "retry_agent",
+              "check_agents",
+              "wait_for_agents",
+              "steer_agent",
+              "interrupt_agent",
+              "close_agent",
+            ]),
+          );
+          return {
+            text: "Spawning an explorer.",
+            toolCalls: [
+              {
+                id: "spawn-explorer",
+                name: "spawn_agent",
+                arguments: {
+                  role: "explorer",
+                  task: "Inspect collaboration controls",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          const spawned = JSON.parse(request.toolResults![0]!.output) as {
+            id: string;
+            agentThreadId: string;
+          };
+          stableAgentId = spawned.agentThreadId;
+          expect(spawned.id).toBe(stableAgentId);
+          return {
+            text: "Steering the explorer.",
+            toolCalls: [
+              {
+                id: "steer-explorer",
+                name: "steer_agent",
+                arguments: {
+                  agentId: stableAgentId,
+                  input: "Focus on lifecycle state",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          releaseInitialChild.resolve();
+          return {
+            text: "Waiting for the steered result.",
+            toolCalls: [
+              {
+                id: "wait-initial",
+                name: "wait_for_agents",
+                arguments: { agentIds: [stableAgentId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 4) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Steered inspection complete",
+          );
+          return {
+            text: "Following up with the same thread.",
+            toolCalls: [
+              {
+                id: "follow-up-deeper",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: stableAgentId,
+                  input: "Run a deeper check",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 5) {
+          await holdStarted.promise;
+          return {
+            text: "Interrupting only the current turn.",
+            toolCalls: [
+              {
+                id: "interrupt-deeper",
+                name: "interrupt_agent",
+                arguments: { agentId: stableAgentId },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 6) {
+          return {
+            text: "Continuing from the interrupted checkpoint.",
+            toolCalls: [
+              {
+                id: "follow-up-summary",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: stableAgentId,
+                  input: "Summarize safely",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 7) {
+          return {
+            text: "Collecting the final follow-up.",
+            toolCalls: [
+              {
+                id: "wait-summary",
+                name: "wait_for_agents",
+                arguments: { agentIds: [stableAgentId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 8) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Safe summary complete",
+          );
+          return {
+            text: "Closing the child thread.",
+            toolCalls: [
+              {
+                id: "close-explorer",
+                name: "close_agent",
+                arguments: { agentId: stableAgentId },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 9) {
+          return {
+            text: "Verifying that close is final.",
+            toolCalls: [
+              {
+                id: "follow-up-after-close",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: stableAgentId,
+                  input: "This must not run",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 10) {
+          expect(request.toolResults?.[0]).toMatchObject({ isError: true });
+          expect(request.toolResults?.[0]?.output).toContain(
+            "unavailable for follow-up",
+          );
+          return {
+            text: "Reusing the released agent slot.",
+            toolCalls: [
+              {
+                id: "spawn-replacement",
+                name: "spawn_agent",
+                arguments: {
+                  role: "explorer",
+                  task: "Inspect replacement",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 11) {
+          const spawned = JSON.parse(request.toolResults![0]!.output) as {
+            agentThreadId: string;
+          };
+          replacementAgentId = spawned.agentThreadId;
+          expect(replacementAgentId).not.toBe(stableAgentId);
+          return {
+            text: "Waiting for the replacement.",
+            toolCalls: [
+              {
+                id: "wait-replacement",
+                name: "wait_for_agents",
+                arguments: { agentIds: [replacementAgentId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 12) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Replacement attempt 1 complete",
+          );
+          return {
+            text: "Retrying the replacement from fresh state.",
+            toolCalls: [
+              {
+                id: "retry-replacement",
+                name: "retry_agent",
+                arguments: { agentId: replacementAgentId },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 13) {
+          const retried = JSON.parse(request.toolResults![0]!.output) as {
+            agentThreadId: string;
+            retryOf: string;
+          };
+          expect(retried.agentThreadId).toBe(replacementAgentId);
+          expect(retried.retryOf).toBe(replacementAgentId);
+          return {
+            text: "Waiting for the retry.",
+            toolCalls: [
+              {
+                id: "wait-retry",
+                name: "wait_for_agents",
+                arguments: { agentIds: [replacementAgentId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 14) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Replacement attempt 2 complete",
+          );
+          return {
+            text: "Closing the replacement after retry.",
+            toolCalls: [
+              {
+                id: "close-replacement",
+                name: "close_agent",
+                arguments: { agentId: replacementAgentId },
+              },
+            ],
+          };
+        }
+        return { text: "Collaboration lifecycle complete.", toolCalls: [] };
+      },
+    };
+    const holdRead = defineTool({
+      name: "hold_read",
+      description: "Wait until interrupted",
+      parameters: { type: "object" },
+      mutability: "read",
+      async execute(_arguments, context) {
+        holdStarted.resolve();
+        return new Promise<string>((_resolve, reject) => {
+          const rejectInterrupted = () => reject(context.signal.reason);
+          if (context.signal.aborted) rejectInterrupted();
+          else {
+            context.signal.addEventListener("abort", rejectInterrupted, {
+              once: true,
+            });
+          }
+        });
+      },
+    });
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "explorer",
+          description: "Inspect",
+          instructions: "PROFILE_EXPLORER",
+          toolAccess: "read-only",
+        },
+      ],
+      maxAgents: 1,
+      onAgentTreeEvent: (event) => treeEvents.push(event),
+      onRuntimeCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({
+        name: "root",
+        instructions: "ROOT",
+        tools: [holdRead],
+      }),
+      "Exercise collaboration",
+    );
+
+    expect(result.output).toBe("Collaboration lifecycle complete.");
+    expect(childRequests).toHaveLength(6);
+    const allChildTurns = orchestrator.snapshot.agents.filter(
+      ({ parentId }) => parentId === orchestrator.snapshot.rootId,
+    );
+    const childTurns = allChildTurns.filter(
+      ({ agentThreadId }) => agentThreadId === stableAgentId,
+    );
+    expect(allChildTurns).toHaveLength(5);
+    expect(childTurns).toEqual([
+      expect.objectContaining({
+        id: stableAgentId,
+        agentThreadId: stableAgentId,
+        status: "completed",
+      }),
+      expect.objectContaining({
+        agentThreadId: stableAgentId,
+        followUpOf: stableAgentId,
+        status: "interrupted",
+      }),
+      expect.objectContaining({
+        agentThreadId: stableAgentId,
+        followUpOf: childTurns[1]!.id,
+        status: "completed",
+        output: "Safe summary complete.",
+      }),
+    ]);
+    expect(childTurns.every(({ closedAt }) => closedAt !== undefined)).toBe(
+      true,
+    );
+    const replacementTurns = allChildTurns.filter(
+      ({ agentThreadId }) => agentThreadId === replacementAgentId,
+    );
+    expect(replacementTurns).toEqual([
+      expect.objectContaining({
+        id: replacementAgentId,
+        status: "completed",
+        closedAt: expect.any(String),
+      }),
+      expect.objectContaining({
+        retryOf: replacementAgentId,
+        status: "completed",
+        closedAt: expect.any(String),
+      }),
+    ]);
+    expect(treeEvents.map(({ reason }) => reason)).toEqual(
+      expect.arrayContaining([
+        "steered",
+        "followed_up",
+        "interrupted",
+        "closed",
+      ]),
+    );
+    const finalCheckpoint = checkpoints.at(-1)!;
+    expect(
+      finalCheckpoint.agents
+        .filter(({ task }) => task.parentId === finalCheckpoint.rootId)
+        .map(({ task, modelState }) => ({
+          followUpOf: task.followUpOf,
+          status: task.status,
+          closedAt: task.closedAt,
+          modelState,
+        })),
+    ).toEqual([
+      expect.objectContaining({
+        status: "completed",
+        modelState: { round: 1, steered: true },
+      }),
+      expect.objectContaining({
+        status: "interrupted",
+        modelState: { round: 2 },
+      }),
+      expect.objectContaining({
+        status: "completed",
+        modelState: { round: 3 },
+      }),
+      expect.objectContaining({
+        status: "completed",
+        modelState: { replacement: 1 },
+      }),
+      expect.objectContaining({
+        status: "completed",
+        modelState: { replacement: 2 },
+      }),
+    ]);
+  });
+
+  it("checks status and returns partial mailbox or timeout snapshots without waiting for every agent", async () => {
+    const releaseFast = Promise.withResolvers<void>();
+    let rootTurns = 0;
+    let fastAgentId = "";
+    let stuckAgentId = "";
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          if (request.input === "Fast check") {
+            await releaseFast.promise;
+            return { text: "Fast result", toolCalls: [] };
+          }
+          if (request.input === "Recover after interrupt") {
+            return { text: "Recovered follow-up", toolCalls: [] };
+          }
+          expect(request.input).toBe("Stuck check");
+          return new Promise<ModelTurn>(() => undefined);
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Starting a fast and a stuck check.",
+            toolCalls: [
+              {
+                id: "spawn-fast",
+                name: "spawn_agent",
+                arguments: { role: "explorer", task: "Fast check" },
+              },
+              {
+                id: "spawn-stuck",
+                name: "spawn_agent",
+                arguments: { role: "explorer", task: "Stuck check" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          const fast = JSON.parse(request.toolResults![0]!.output) as {
+            agentThreadId: string;
+          };
+          const stuck = JSON.parse(request.toolResults![1]!.output) as {
+            agentThreadId: string;
+          };
+          fastAgentId = fast.agentThreadId;
+          stuckAgentId = stuck.agentThreadId;
+          return {
+            text: "Checking without blocking.",
+            toolCalls: [
+              {
+                id: "check-both",
+                name: "check_agents",
+                arguments: { agentIds: [fastAgentId, stuckAgentId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          const checked = JSON.parse(request.toolResults![0]!.output) as {
+            activeAgentIds: string[];
+            agents: Array<{ id: string; status: string }>;
+          };
+          expect(checked.agents).toEqual([
+            expect.objectContaining({ id: fastAgentId, status: "running" }),
+            expect.objectContaining({ id: stuckAgentId, status: "running" }),
+          ]);
+          expect(checked.activeAgentIds).toEqual([fastAgentId, stuckAgentId]);
+          setTimeout(() => releaseFast.resolve(), 0);
+          return {
+            text: "Waiting for the first mailbox update.",
+            toolCalls: [
+              {
+                id: "wait-first",
+                name: "wait_for_agents",
+                arguments: {
+                  agentIds: [fastAgentId, stuckAgentId],
+                  timeoutMs: 1_000,
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 4) {
+          const partial = JSON.parse(request.toolResults![0]!.output) as {
+            wakeReason: string;
+            timedOut: boolean;
+            activeAgentIds: string[];
+            terminalAgentIds: string[];
+            agents: Array<{ id: string; status: string; output?: string }>;
+          };
+          expect(partial.wakeReason).toBe("agent_updated");
+          expect(partial.timedOut).toBe(false);
+          expect(partial.activeAgentIds).toEqual([stuckAgentId]);
+          expect(partial.terminalAgentIds).toEqual([fastAgentId]);
+          expect(partial.agents).toEqual([
+            expect.objectContaining({
+              id: fastAgentId,
+              status: "completed",
+              output: "Fast result",
+            }),
+            expect.objectContaining({ id: stuckAgentId, status: "running" }),
+          ]);
+          return {
+            text: "Taking a bounded snapshot of the stuck check.",
+            toolCalls: [
+              {
+                id: "wait-timeout",
+                name: "wait_for_agents",
+                arguments: { agentIds: [stuckAgentId], timeoutMs: 10 },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 5) {
+          const timedOut = JSON.parse(request.toolResults![0]!.output) as {
+            wakeReason: string;
+            timedOut: boolean;
+            activeAgentIds: string[];
+            agents: Array<{ id: string; status: string }>;
+          };
+          expect(timedOut).toMatchObject({
+            wakeReason: "timeout",
+            timedOut: true,
+            activeAgentIds: [stuckAgentId],
+          });
+          expect(timedOut.agents).toEqual([
+            expect.objectContaining({ id: stuckAgentId, status: "running" }),
+          ]);
+          return {
+            text: "Checking the same threads after timeout.",
+            toolCalls: [
+              {
+                id: "check-after-timeout",
+                name: "check_agents",
+                arguments: { agentIds: [fastAgentId, stuckAgentId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 6) {
+          expect(request.toolResults?.[0]?.output).toContain('"running"');
+          expect(request.toolResults?.[0]?.output).toContain('"completed"');
+          return {
+            text: "Interrupting the stuck check.",
+            toolCalls: [
+              {
+                id: "interrupt-stuck",
+                name: "interrupt_agent",
+                arguments: { agentId: stuckAgentId },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 7) {
+          return {
+            text: "Collecting the interrupted terminal state.",
+            toolCalls: [
+              {
+                id: "wait-interrupted",
+                name: "wait_for_agents",
+                arguments: { agentIds: [stuckAgentId], timeoutMs: 100 },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 8) {
+          const interrupted = JSON.parse(request.toolResults![0]!.output) as {
+            wakeReason: string;
+            timedOut: boolean;
+            agents: Array<{ status: string }>;
+          };
+          expect(interrupted).toMatchObject({
+            wakeReason: "all_terminal",
+            timedOut: false,
+          });
+          expect(interrupted.agents).toEqual([
+            expect.objectContaining({ status: "interrupted" }),
+          ]);
+          return {
+            text: "Following up after the unresponsive execution detached.",
+            toolCalls: [
+              {
+                id: "follow-up-after-interrupt",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: stuckAgentId,
+                  input: "Recover after interrupt",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 9) {
+          return {
+            text: "Collecting the recovered follow-up.",
+            toolCalls: [
+              {
+                id: "wait-recovered",
+                name: "wait_for_agents",
+                arguments: { agentIds: [stuckAgentId], timeoutMs: 1_000 },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 10) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Recovered follow-up",
+          );
+          return { text: "Bounded collaboration complete.", toolCalls: [] };
+        }
+        throw new Error(`Unexpected root turn ${rootTurns}`);
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "explorer",
+          description: "Inspect",
+          instructions: "PROFILE_EXPLORER",
+          toolAccess: "read-only",
+        },
+      ],
+      maxConcurrent: 2,
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT", maxSteps: 14 }),
+      "Exercise bounded waiting",
+    );
+
+    expect(result.output).toBe("Bounded collaboration complete.");
   });
 
   it("keeps tools activated during a turn visible to the parent model", async () => {

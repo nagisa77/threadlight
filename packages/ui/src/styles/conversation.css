@@ -782,7 +782,9 @@
   background: color-mix(in srgb, var(--danger) 9%, transparent);
 }
 
-.agent-status.cancelled {
+.agent-status.cancelled,
+.agent-status.interrupted,
+.agent-status.closed {
   color: #9a6a4d;
 }
 

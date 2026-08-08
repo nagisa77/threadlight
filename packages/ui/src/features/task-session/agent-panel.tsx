@@ -8,6 +8,7 @@ import type {
 import {
   Bot,
   Check,
+  CirclePause,
   CircleStop,
   Clock3,
   GitBranch,
@@ -174,7 +175,11 @@ function AgentConversation({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string>();
   const active = agent.status === "queued" || agent.status === "running";
-  const retryable = agent.status === "failed" || agent.status === "cancelled";
+  const retryable =
+    !agent.closedAt &&
+    (agent.status === "failed" ||
+      agent.status === "cancelled" ||
+      agent.status === "interrupted");
   const canControl = live && !isRoot && controls?.threadId;
   const transcript = agent.transcript ?? [];
 
@@ -406,6 +411,7 @@ function AgentTranscriptEntry({
 }
 
 function AgentStateIcon({ agent }: { agent: AgentTaskData }) {
+  if (agent.closedAt) return <CircleStop size={14} />;
   if (agent.status === "running") {
     return agent.phase === "thinking" ? (
       <LoaderCircle className="spin" size={14} />
@@ -416,13 +422,16 @@ function AgentStateIcon({ agent }: { agent: AgentTaskData }) {
   if (agent.status === "queued") return <Clock3 size={14} />;
   if (agent.status === "failed") return <X size={14} />;
   if (agent.status === "cancelled") return <CircleStop size={14} />;
+  if (agent.status === "interrupted") return <CirclePause size={14} />;
   return <Check size={14} />;
 }
 
 function agentStatus(agent: AgentTaskData, t: Translate): string {
+  if (agent.closedAt) return t("agentClosed");
   if (agent.status === "queued") return t("agentQueued");
   if (agent.status === "failed") return t("agentFailed");
   if (agent.status === "cancelled") return t("agentCancelled");
+  if (agent.status === "interrupted") return t("agentInterrupted");
   if (agent.status === "completed") return t("agentCompleted");
   if (agent.phase === "working") return t("agentWorking");
   if (agent.phase === "waiting") return t("agentWaiting");

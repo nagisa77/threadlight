@@ -76,6 +76,39 @@ describe("AgentTreePanel", () => {
     expect(html).toContain("1 个已完成");
   });
 
+  it("keeps a recovered interruption visible as a distinct terminal state", () => {
+    const interrupted = {
+      ...tree,
+      agents: tree.agents.map((agent) => ({
+        ...agent,
+        status: "interrupted" as const,
+        phase: "done" as const,
+      })),
+    };
+    const html = renderToStaticMarkup(<AgentTreePanel tree={interrupted} />);
+
+    expect(html).toContain('<details class="agent-tree" open="">');
+    expect(html).toContain('class="agent-status interrupted"');
+    expect(html).toContain("已中断");
+  });
+
+  it("renders a closed thread as final without offering retry", () => {
+    const closed = {
+      ...tree,
+      agents: tree.agents.map((agent) => ({
+        ...agent,
+        status: "interrupted" as const,
+        phase: "done" as const,
+        closedAt: "2026-08-08T08:05:00.000Z",
+      })),
+    };
+    const html = renderToStaticMarkup(<AgentTreePanel tree={closed} live />);
+
+    expect(html).toContain('class="agent-status closed"');
+    expect(html).toContain("已关闭");
+    expect(html).not.toContain(">重试<");
+  });
+
   it("renders a conversation-like side panel with model, tool, and output details", () => {
     const detailed = {
       ...tree,

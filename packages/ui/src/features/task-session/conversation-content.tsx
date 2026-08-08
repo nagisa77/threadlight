@@ -9,6 +9,7 @@ import {
   Bot,
   Check,
   ChevronRight,
+  CirclePause,
   CircleStop,
   Clock3,
   FileText,
@@ -105,7 +106,11 @@ function AgentTreeContent({
     ({ status }) => status === "queued" || status === "running",
   ).length;
   const attentionCount = agents.filter(
-    ({ status }) => status === "failed" || status === "cancelled",
+    ({ status, closedAt }) =>
+      !closedAt &&
+      (status === "failed" ||
+        status === "cancelled" ||
+        status === "interrupted"),
   ).length;
   const [expanded, setExpanded] = useState(live || attentionCount > 0);
   const [selectedId, setSelectedId] = useState<string>();
@@ -252,7 +257,11 @@ function AgentInspector({
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string>();
   const active = agent.status === "queued" || agent.status === "running";
-  const retryable = agent.status === "failed" || agent.status === "cancelled";
+  const retryable =
+    !agent.closedAt &&
+    (agent.status === "failed" ||
+      agent.status === "cancelled" ||
+      agent.status === "interrupted");
 
   const act = async (action: () => Promise<unknown>): Promise<boolean> => {
     if (busy) return false;
@@ -373,6 +382,13 @@ function AgentInspector({
 }
 
 function AgentStatusIcon({ agent }: { agent: AgentTaskData }) {
+  if (agent.closedAt) {
+    return (
+      <span className="agent-status closed">
+        <CircleStop size={14} />
+      </span>
+    );
+  }
   if (agent.status === "running") {
     return (
       <span className="agent-status running">
@@ -405,6 +421,13 @@ function AgentStatusIcon({ agent }: { agent: AgentTaskData }) {
       </span>
     );
   }
+  if (agent.status === "interrupted") {
+    return (
+      <span className="agent-status interrupted">
+        <CirclePause size={14} />
+      </span>
+    );
+  }
   return (
     <span className="agent-status completed">
       <Check size={14} />
@@ -413,9 +436,11 @@ function AgentStatusIcon({ agent }: { agent: AgentTaskData }) {
 }
 
 function agentStatusLabel(agent: AgentTaskData, t: Translate): string {
+  if (agent.closedAt) return t("agentClosed");
   if (agent.status === "queued") return t("agentQueued");
   if (agent.status === "failed") return t("agentFailed");
   if (agent.status === "cancelled") return t("agentCancelled");
+  if (agent.status === "interrupted") return t("agentInterrupted");
   if (agent.status === "completed") return t("agentCompleted");
   if (agent.phase === "working") return t("agentWorking");
   if (agent.phase === "waiting") return t("agentWaiting");

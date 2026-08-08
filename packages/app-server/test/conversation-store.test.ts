@@ -46,6 +46,49 @@ describe("FileConversationStore", () => {
         },
       ],
       modelState: { providerWireState: [{ callId: "opaque-call" }] },
+      agentRuns: [
+        {
+          version: 1 as const,
+          turnId: "turn-1",
+          rootId: "root-agent",
+          maxConcurrent: 3,
+          status: "interrupted" as const,
+          createdAt: "2026-07-21T08:00:30.000Z",
+          updatedAt: "2026-07-21T08:00:45.000Z",
+          agents: [
+            {
+              profileName: "explorer",
+              pendingInput: ["Check the protocol"],
+              collected: false,
+              modelState: { providerCallId: "child-call" },
+              checkpointStep: 1,
+              checkpointPhase: "model_completed" as const,
+              interruption: {
+                previousStatus: "running" as const,
+                interruptedAt: "2026-07-21T08:00:45.000Z",
+                reason: "app_server_restart",
+              },
+              agent: {
+                id: "child-agent",
+                parentId: "root-agent",
+                agentThreadId: "agent-thread-1",
+                followUpOf: "previous-agent-turn",
+                closedAt: "2026-07-21T08:00:45.000Z",
+                name: "explorer",
+                role: "explorer",
+                task: "Inspect persistence",
+                status: "interrupted" as const,
+                phase: "done" as const,
+                createdAt: "2026-07-21T08:00:30.000Z",
+                startedAt: "2026-07-21T08:00:31.000Z",
+                completedAt: "2026-07-21T08:00:45.000Z",
+                elapsedMs: 14_000,
+                activities: [],
+              },
+            },
+          ],
+        },
+      ],
     };
 
     store.create(conversation);

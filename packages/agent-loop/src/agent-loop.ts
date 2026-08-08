@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type {
   Agent,
   AgentEvent,
+  AgentRunCheckpoint,
   ModelProvider,
   RunOptions,
   RunResult,
@@ -197,6 +198,12 @@ export class AgentLoop {
             step,
             options,
             emit,
+            {
+              step,
+              phase: "tool_started",
+              modelState: state,
+              usage: { ...usage },
+            },
           ),
         );
         await options.onCheckpoint?.({
@@ -233,6 +240,7 @@ export class AgentLoop {
     step: number,
     options: RunOptions,
     emit: (event: AgentEvent) => void,
+    startedCheckpoint: AgentRunCheckpoint,
   ): Promise<ToolResult> {
     const tool = tools.find((candidate) => candidate.name === call.name);
     const controllerContext = { runId, step, tools };
@@ -262,6 +270,7 @@ export class AgentLoop {
     }
 
     emit({ type: "tool.started", runId, call });
+    await options.onCheckpoint?.(startedCheckpoint);
     const toolStartedAt = currentTime(options);
 
     let result: ToolResult;

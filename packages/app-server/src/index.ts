@@ -102,7 +102,9 @@ export type { FinalizedSourceCitations } from "./source-citations.js";
 export type { ModelStatePersistenceOptions } from "./model-state-persistence.js";
 export type {
   ConversationStore,
+  StoredAgentRun,
   StoredAgentSnapshot,
+  StoredAgentThread,
   StoredConversation,
 } from "./conversation-store.js";
 export type {

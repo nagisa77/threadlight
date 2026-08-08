@@ -11,6 +11,7 @@ import type {
   AgentTreeEvent,
   AgentTreeSnapshot,
   AgentTreeUpdateReason,
+  ModelConversationMessage,
   RunController,
   RunControllerContext,
   RunControllerModelDirective,
@@ -25,9 +26,37 @@ import type {
 } from "./types.js";
 
 const SPAWN_AGENT_TOOL = "spawn_agent";
+const FOLLOW_UP_AGENT_TOOL = "follow_up_agent";
+const RETRY_AGENT_TOOL = "retry_agent";
+const CHECK_AGENTS_TOOL = "check_agents";
 const WAIT_FOR_AGENTS_TOOL = "wait_for_agents";
+const STEER_AGENT_TOOL = "steer_agent";
+const INTERRUPT_AGENT_TOOL = "interrupt_agent";
+const CLOSE_AGENT_TOOL = "close_agent";
+const COLLABORATION_TOOLS = new Set([
+  SPAWN_AGENT_TOOL,
+  FOLLOW_UP_AGENT_TOOL,
+  RETRY_AGENT_TOOL,
+  CHECK_AGENTS_TOOL,
+  WAIT_FOR_AGENTS_TOOL,
+  STEER_AGENT_TOOL,
+  INTERRUPT_AGENT_TOOL,
+  CLOSE_AGENT_TOOL,
+]);
 const MAX_PERSISTED_OUTPUT = 20_000;
 const MAX_TRANSCRIPT_FIELD = 20_000;
+const DEFAULT_AGENT_WAIT_TIMEOUT_MS = 30_000;
+const MAX_AGENT_WAIT_TIMEOUT_MS = 300_000;
+const MAILBOX_UPDATE_REASONS = new Set<AgentTreeUpdateReason>([
+  "created",
+  "completed",
+  "failed",
+  "cancelled",
+  "interrupted",
+  "followed_up",
+  "closed",
+  "steered",
+]);
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -44,6 +73,27 @@ interface AgentTaskRecord {
   modelState?: unknown;
   checkpointStep?: number;
   checkpointPhase?: AgentRunCheckpoint["phase"];
+  execution?: Promise<void>;
+  history?: readonly ModelConversationMessage[];
+}
+
+interface SpawnOptions {
+  retryOf?: string;
+  followUpOf?: string;
+  agentThreadId?: string;
+  modelState?: unknown;
+  history?: readonly ModelConversationMessage[];
+}
+
+interface AgentMailboxEvent {
+  agentId: string;
+  agentThreadId: string;
+  reason: AgentTreeUpdateReason;
+}
+
+interface AgentMailboxWaiter {
+  threadIds: ReadonlySet<string>;
+  resolve(event: AgentMailboxEvent): void;
 }
 
 /**
@@ -59,6 +109,7 @@ export class AgentOrchestrator {
   private readonly queue: string[] = [];
   private readonly running = new Set<string>();
   private readonly childPromises = new Set<Promise<void>>();
+  private readonly mailboxWaiters = new Set<AgentMailboxWaiter>();
   private readonly rootId = randomUUID();
   private readonly maxConcurrent: number;
   private readonly maxAgents: number;
@@ -133,7 +184,13 @@ export class AgentOrchestrator {
     const tools = [
       ...(rootAgent.tools ?? []),
       this.spawnTool(),
+      this.followUpTool(),
+      this.retryTool(),
+      this.checkTool(),
       this.waitTool(),
+      this.steerTool(),
+      this.interruptTool(),
+      this.closeTool(),
     ];
     assertUniqueToolNames(tools);
     const orchestratedAgent: Agent = {
@@ -190,18 +247,19 @@ export class AgentOrchestrator {
   }
 
   cancel(agentId: string): boolean {
-    const record = this.records.get(agentId);
+    const record = this.currentChildRecord(agentId);
     if (
       !record ||
-      agentId === this.rootId ||
+      record.snapshot.closedAt !== undefined ||
       isTerminal(record.snapshot.status)
     ) {
       return false;
     }
     record.controller.abort(new Error("Agent stopped by user"));
     if (record.snapshot.status === "queued") {
-      this.removeFromQueue(agentId);
+      this.removeFromQueue(record.snapshot.id);
     }
+    this.detachChildExecution(record);
     this.cancelRecord(record, "Stopped by user");
     this.scheduleRuntimeCheckpoint();
     this.pump();
@@ -210,11 +268,11 @@ export class AgentOrchestrator {
 
   steer(agentId: string, input: string): boolean {
     const instruction = input.trim();
-    const record = this.records.get(agentId);
+    const record = this.currentChildRecord(agentId);
     if (
       !instruction ||
       !record ||
-      agentId === this.rootId ||
+      record.snapshot.closedAt !== undefined ||
       isTerminal(record.snapshot.status)
     ) {
       return false;
@@ -228,15 +286,93 @@ export class AgentOrchestrator {
   }
 
   retry(agentId: string): AgentTaskSnapshot | undefined {
-    const previous = this.records.get(agentId);
+    const direct = this.records.get(agentId);
+    const previous =
+      direct?.snapshot.parentId === this.rootId
+        ? direct
+        : this.currentChildRecord(agentId);
     if (
       this.closed ||
       !previous?.profile ||
+      previous.snapshot.closedAt !== undefined ||
+      this.threadHasActiveRun(previous) ||
       !isTerminal(previous.snapshot.status)
     ) {
       return;
     }
-    return this.spawn(previous.profile.name, previous.snapshot.task, agentId);
+    return this.spawn(previous.profile.name, previous.snapshot.task, {
+      retryOf: previous.snapshot.id,
+      agentThreadId: agentThreadId(previous),
+    });
+  }
+
+  followUp(agentId: string, input: string): AgentTaskSnapshot | undefined {
+    const instruction = input.trim();
+    const previous = this.currentChildRecord(agentId);
+    if (
+      this.closed ||
+      !instruction ||
+      !previous?.profile ||
+      previous.snapshot.closedAt !== undefined ||
+      this.threadHasActiveRun(previous) ||
+      !isTerminal(previous.snapshot.status)
+    ) {
+      return;
+    }
+    return this.spawn(previous.profile.name, instruction, {
+      followUpOf: previous.snapshot.id,
+      agentThreadId: agentThreadId(previous),
+      modelState: previous.modelState,
+      history: this.childThreadHistory(previous),
+    });
+  }
+
+  interrupt(agentId: string): boolean {
+    const record = this.currentChildRecord(agentId);
+    if (
+      !record ||
+      record.snapshot.closedAt !== undefined ||
+      isTerminal(record.snapshot.status)
+    ) {
+      return false;
+    }
+    record.controller.abort(new Error("Agent interrupted by parent"));
+    if (record.snapshot.status === "queued") {
+      this.removeFromQueue(record.snapshot.id);
+    }
+    this.detachChildExecution(record);
+    this.interruptRecord(record, "Interrupted by parent agent");
+    this.pump();
+    return true;
+  }
+
+  close(agentId: string): boolean {
+    const records = this.childThreadRecords(agentId);
+    if (
+      records.length === 0 ||
+      records.every(({ snapshot }) => snapshot.closedAt)
+    ) {
+      return false;
+    }
+    const closedAt = this.wallNow().toISOString();
+    for (const record of records) {
+      record.collected = true;
+      if (!isTerminal(record.snapshot.status)) {
+        record.controller.abort(new Error("Agent thread closed by parent"));
+        if (record.snapshot.status === "queued") {
+          this.removeFromQueue(record.snapshot.id);
+        }
+        this.detachChildExecution(record);
+        this.cancelRecord(record, "Closed by parent agent");
+      }
+      this.patchRecord(record, "closed", {
+        closedAt,
+        latestActivity: "Closed",
+      });
+    }
+    this.scheduleRuntimeCheckpoint();
+    this.pump();
+    return true;
   }
 
   hasActiveWriter(): boolean {
@@ -256,7 +392,9 @@ export class AgentOrchestrator {
         .map(({ snapshot }) => snapshot.name)
         .join(", ")}). Call ${WAIT_FOR_AGENTS_TOOL} before finishing.`;
     }
-    const uncollected = children.filter(({ collected }) => !collected);
+    const uncollected = children.filter(
+      ({ collected, snapshot }) => !collected && !snapshot.closedAt,
+    );
     if (uncollected.length > 0) {
       return `Subagent results have not been collected (${uncollected
         .map(({ snapshot }) => snapshot.name)
@@ -271,8 +409,7 @@ export class AgentOrchestrator {
     tool: Tool | undefined,
   ): RunControllerToolDecision | undefined {
     if (
-      call.name === SPAWN_AGENT_TOOL ||
-      call.name === WAIT_FOR_AGENTS_TOOL ||
+      COLLABORATION_TOOLS.has(call.name) ||
       !this.hasActiveWriter() ||
       tool?.mutability === "read"
     ) {
@@ -300,6 +437,7 @@ export class AgentOrchestrator {
     const now = this.wallNow().toISOString();
     const record = this.createRecord({
       id: this.rootId,
+      agentThreadId: this.rootId,
       name: agent.name,
       role: "root",
       task,
@@ -320,10 +458,13 @@ export class AgentOrchestrator {
   private spawn(
     profileName: string,
     task: string,
-    retryOf?: string,
+    options: SpawnOptions = {},
   ): AgentTaskSnapshot {
     if (this.closed) throw new Error("The multi-agent run has ended");
-    if (this.childRecords().length >= this.maxAgents) {
+    if (
+      !options.agentThreadId &&
+      this.openAgentThreadCount() >= this.maxAgents
+    ) {
       throw new Error(`Subagent limit reached (${this.maxAgents})`);
     }
     const profile = this.profiles.get(profileName);
@@ -331,11 +472,14 @@ export class AgentOrchestrator {
     const normalizedTask = task.trim();
     if (!normalizedTask) throw new Error("Subagent task is required");
     const id = randomUUID();
+    const threadId = options.agentThreadId ?? id;
     const record = this.createRecord(
       {
         id,
         parentId: this.rootId,
-        ...(retryOf ? { retryOf } : {}),
+        agentThreadId: threadId,
+        ...(options.retryOf ? { retryOf: options.retryOf } : {}),
+        ...(options.followUpOf ? { followUpOf: options.followUpOf } : {}),
         name: profile.name,
         role: profile.name,
         task: normalizedTask,
@@ -349,8 +493,10 @@ export class AgentOrchestrator {
       },
       profile,
     );
+    record.modelState = options.modelState;
+    record.history = options.history;
     this.queue.push(id);
-    this.emit(record, "created");
+    this.emit(record, options.followUpOf ? "followed_up" : "created");
     this.scheduleRuntimeCheckpoint();
     this.pump();
     return cloneSnapshot(record.snapshot);
@@ -370,8 +516,16 @@ export class AgentOrchestrator {
   private nextRunnableIndex(): number {
     const writerActive = this.hasActiveWriter();
     return this.queue.findIndex((id) => {
-      const profile = this.records.get(id)?.profile;
-      return profile && (profile.toolAccess !== "all" || !writerActive);
+      const record = this.records.get(id);
+      const profile = record?.profile;
+      if (!record || !profile) return false;
+      const sameThreadIsRunning = [...this.running].some((runningId) => {
+        const running = this.records.get(runningId);
+        return running && agentThreadId(running) === agentThreadId(record);
+      });
+      return (
+        !sameThreadIsRunning && (profile.toolAccess !== "all" || !writerActive)
+      );
     });
   }
 
@@ -412,7 +566,25 @@ export class AgentOrchestrator {
       .run(childAgent, record.snapshot.task, {
         ...childOptions,
         signal,
-        takeAdditionalInput: () => record.pendingInput.shift(),
+        ...((record.history?.length ?? 0) > 0
+          ? {
+              history: [
+                ...(childOptions?.history ?? []),
+                ...(record.history ?? []),
+              ],
+            }
+          : {}),
+        ...(record.modelState === undefined
+          ? {}
+          : { modelState: record.modelState }),
+        takeAdditionalInput: async () => {
+          const input = record.pendingInput.shift();
+          if (input !== undefined) {
+            this.scheduleRuntimeCheckpoint();
+            await this.flushRuntimeCheckpoints();
+          }
+          return input;
+        },
         onCheckpoint: async (checkpoint) => {
           this.recordCheckpoint(record, checkpoint);
           await delegatedCheckpoint?.(checkpoint);
@@ -435,8 +607,10 @@ export class AgentOrchestrator {
       .finally(() => {
         this.running.delete(record.snapshot.id);
         this.childPromises.delete(promise);
+        if (record.execution === promise) record.execution = undefined;
         this.pump();
       });
+    record.execution = promise;
     this.childPromises.add(promise);
   }
 
@@ -661,6 +835,35 @@ export class AgentOrchestrator {
     record.completion.resolve(cloneSnapshot(record.snapshot));
   }
 
+  private interruptRecord(record: AgentTaskRecord, reason: string): void {
+    if (isTerminal(record.snapshot.status)) return;
+    const completedAt = this.wallNow().toISOString();
+    this.patchRecord(record, "interrupted", {
+      status: "interrupted",
+      phase: "done",
+      completedAt,
+      latestActivity: "Interrupted",
+      error: reason,
+      summary: reason,
+      activities: record.snapshot.activities.map((activity) =>
+        activity.status === "running"
+          ? { ...activity, status: "failed" as const }
+          : activity,
+      ),
+      transcript: record.snapshot.transcript.map((entry) =>
+        entry.status === "running"
+          ? {
+              ...entry,
+              status: "failed" as const,
+              completedAt,
+            }
+          : entry,
+      ),
+    });
+    this.scheduleRuntimeCheckpoint();
+    record.completion.resolve(cloneSnapshot(record.snapshot));
+  }
+
   private patchRecord(
     record: AgentTaskRecord,
     reason: AgentTreeUpdateReason,
@@ -700,6 +903,23 @@ export class AgentOrchestrator {
       tree: this.snapshot,
     };
     this.options.onAgentTreeEvent?.(event);
+    if (MAILBOX_UPDATE_REASONS.has(reason)) {
+      this.wakeMailbox(record, reason);
+    }
+  }
+
+  private wakeMailbox(
+    record: AgentTaskRecord,
+    reason: AgentTreeUpdateReason,
+  ): void {
+    const event = {
+      agentId: record.snapshot.id,
+      agentThreadId: agentThreadId(record),
+      reason,
+    };
+    for (const waiter of [...this.mailboxWaiters]) {
+      if (waiter.threadIds.has(event.agentThreadId)) waiter.resolve(event);
+    }
   }
 
   private recordCheckpoint(
@@ -760,11 +980,93 @@ export class AgentOrchestrator {
     };
   }
 
+  private followUpTool(): Tool {
+    return {
+      name: FOLLOW_UP_AGENT_TOOL,
+      description:
+        "Continue an idle subagent thread with a new task while preserving its provider model state. Returns a new linked turn ID in the same agent thread.",
+      parameters: {
+        type: "object",
+        properties: {
+          agentId: {
+            type: "string",
+            description: "Agent or agent-thread ID returned by spawn/follow-up",
+          },
+          input: {
+            type: "string",
+            minLength: 1,
+            description: "The next task or question for the same agent",
+          },
+        },
+        required: ["agentId", "input"],
+        additionalProperties: false,
+      },
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const agentId = stringArgument(values.agentId, "agentId");
+        const snapshot = this.followUp(
+          agentId,
+          stringArgument(values.input, "input"),
+        );
+        if (!snapshot) {
+          throw new Error(
+            `Agent ${agentId} is active, closed, or unavailable for follow-up`,
+          );
+        }
+        await this.flushRuntimeCheckpoints();
+        return snapshot;
+      },
+    };
+  }
+
+  private retryTool(): Tool {
+    return {
+      name: RETRY_AGENT_TOOL,
+      description:
+        "Retry a finished or interrupted agent turn from fresh provider state while keeping it linked to the same agent thread.",
+      parameters: collaborationTargetParameters(),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const agentId = stringArgument(values.agentId, "agentId");
+        const snapshot = this.retry(agentId);
+        if (!snapshot) {
+          throw new Error(
+            `Agent ${agentId} is active, closed, or unavailable for retry`,
+          );
+        }
+        await this.flushRuntimeCheckpoints();
+        return snapshot;
+      },
+    };
+  }
+
+  private checkTool(): Tool {
+    return {
+      name: CHECK_AGENTS_TOOL,
+      description:
+        "Inspect the latest state of selected subagents without waiting. Returns current status snapshots for deciding whether to wait, follow up, or interrupt.",
+      parameters: collaborationTargetsParameters(
+        "Subagent IDs to inspect; omit to inspect every current subagent thread",
+      ),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const requested = optionalAgentIds(values.agentIds);
+        const records = requested
+          ? this.resolveCurrentChildRecords(requested)
+          : this.currentChildRecords();
+        return collaborationStatus(records);
+      },
+    };
+  }
+
   private waitTool(): Tool {
     return {
       name: WAIT_FOR_AGENTS_TOOL,
       description:
-        "Wait for selected subagents (or all subagents) and collect their results before synthesizing the final answer.",
+        "Wait until a selected subagent has a meaningful update or the bounded timeout expires. Returns partial status snapshots, so one stuck provider or tool cannot block the parent indefinitely.",
       parameters: {
         type: "object",
         properties: {
@@ -773,45 +1075,117 @@ export class AgentOrchestrator {
             items: { type: "string" },
             description: "Subagent IDs to wait for; omit to wait for all",
           },
+          timeoutMs: {
+            type: "integer",
+            minimum: 1,
+            maximum: MAX_AGENT_WAIT_TIMEOUT_MS,
+            description: `Maximum wait in milliseconds; defaults to ${DEFAULT_AGENT_WAIT_TIMEOUT_MS}`,
+          },
         },
         additionalProperties: false,
       },
       mutability: "read",
       execute: async (arguments_, context) => {
         const values = objectArguments(arguments_);
-        const requested = Array.isArray(values.agentIds)
-          ? values.agentIds.map((id) => stringArgument(id, "agentIds"))
-          : this.childRecords().map(({ snapshot }) => snapshot.id);
-        const records = requested.map((id) => {
-          const record = this.records.get(id);
-          if (!record || record.snapshot.parentId !== this.rootId) {
-            throw new Error(`Unknown subagent: ${id}`);
-          }
-          return record;
-        });
-        for (const record of records) {
-          if (!isTerminal(record.snapshot.status)) {
-            this.patchRecord(record, "progress", {
-              phase: record.snapshot.phase,
-            });
-          }
+        const requested = optionalAgentIds(values.agentIds);
+        const timeoutMs = waitTimeoutArgument(values.timeoutMs);
+        let records = this.waitRecords(requested);
+        let wakeReason:
+          "all_terminal" | "results_available" | "agent_updated" | "timeout";
+        let mailboxEvent: AgentMailboxEvent | undefined;
+
+        if (records.every(({ snapshot }) => isTerminal(snapshot.status))) {
+          wakeReason = "all_terminal";
+        } else if (
+          records.some(({ snapshot }) => isTerminal(snapshot.status))
+        ) {
+          wakeReason = "results_available";
+        } else if (records.length === 0) {
+          wakeReason = "all_terminal";
+        } else {
+          const wake = await this.waitForMailbox(
+            new Set(records.map(agentThreadId)),
+            timeoutMs,
+            context.signal,
+          );
+          wakeReason = wake.reason;
+          if (wake.reason === "agent_updated") mailboxEvent = wake.event;
+          await Promise.resolve();
+          records = this.waitRecords(requested);
         }
-        const results = await abortable(
-          Promise.all(records.map(({ completion }) => completion.promise)),
-          context.signal,
-        );
-        for (const record of records) record.collected = true;
+
+        for (const record of records) {
+          if (isTerminal(record.snapshot.status)) record.collected = true;
+        }
         this.scheduleRuntimeCheckpoint();
         await this.flushRuntimeCheckpoints();
+        const status = collaborationStatus(records);
         return {
-          agents: results.map((result) => ({
-            id: result.id,
-            role: result.role,
-            status: result.status,
-            ...(result.output ? { output: result.output } : {}),
-            ...(result.error ? { error: result.error } : {}),
-          })),
+          wakeReason,
+          timedOut: wakeReason === "timeout",
+          timeoutMs,
+          ...(mailboxEvent ? { mailboxEvent } : {}),
+          ...status,
         };
+      },
+    };
+  }
+
+  private steerTool(): Tool {
+    return {
+      name: STEER_AGENT_TOOL,
+      description:
+        "Add direction or a constraint to a queued or running subagent. The message is delivered at the next safe model/tool boundary.",
+      parameters: collaborationInputParameters(
+        "Direction or constraint for the active agent",
+      ),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const agentId = stringArgument(values.agentId, "agentId");
+        if (!this.steer(agentId, stringArgument(values.input, "input"))) {
+          throw new Error(`Agent ${agentId} is not available for steering`);
+        }
+        await this.flushRuntimeCheckpoints();
+        return { agentId, accepted: true };
+      },
+    };
+  }
+
+  private interruptTool(): Tool {
+    return {
+      name: INTERRUPT_AGENT_TOOL,
+      description:
+        "Interrupt the current turn of an agent without closing its thread. A later follow-up may continue from the latest persisted model state.",
+      parameters: collaborationTargetParameters(),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const agentId = stringArgument(values.agentId, "agentId");
+        if (!this.interrupt(agentId)) {
+          throw new Error(`Agent ${agentId} is not running or queued`);
+        }
+        await this.flushRuntimeCheckpoints();
+        return { agentId, interrupted: true };
+      },
+    };
+  }
+
+  private closeTool(): Tool {
+    return {
+      name: CLOSE_AGENT_TOOL,
+      description:
+        "Permanently close an agent thread, interrupting active work and discarding any uncollected requirement. Closed threads cannot receive follow-ups.",
+      parameters: collaborationTargetParameters(),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const agentId = stringArgument(values.agentId, "agentId");
+        if (!this.close(agentId)) {
+          throw new Error(`Agent ${agentId} is already closed or unknown`);
+        }
+        await this.flushRuntimeCheckpoints();
+        return { agentId, closed: true };
       },
     };
   }
@@ -822,15 +1196,135 @@ export class AgentOrchestrator {
     );
   }
 
+  private childThreadRecords(agentId: string): AgentTaskRecord[] {
+    const direct = this.records.get(agentId);
+    const threadId =
+      direct?.snapshot.parentId === this.rootId
+        ? agentThreadId(direct)
+        : agentId;
+    return this.childRecords().filter(
+      (record) => agentThreadId(record) === threadId,
+    );
+  }
+
+  private currentChildRecord(agentId: string): AgentTaskRecord | undefined {
+    return this.childThreadRecords(agentId).at(-1);
+  }
+
+  private currentChildRecords(): AgentTaskRecord[] {
+    const records = new Map<string, AgentTaskRecord>();
+    for (const record of this.childRecords()) {
+      records.set(agentThreadId(record), record);
+    }
+    return [...records.values()];
+  }
+
+  private resolveCurrentChildRecords(
+    agentIds: readonly string[],
+  ): AgentTaskRecord[] {
+    const records = agentIds.map((id) => {
+      const record = this.currentChildRecord(id);
+      if (!record) throw new Error(`Unknown subagent: ${id}`);
+      return record;
+    });
+    return uniqueAgentRecords(records);
+  }
+
+  private waitRecords(
+    agentIds: readonly string[] | undefined,
+  ): AgentTaskRecord[] {
+    return agentIds
+      ? this.resolveCurrentChildRecords(agentIds)
+      : this.childRecords().filter(
+          ({ collected, snapshot }) => !collected && !snapshot.closedAt,
+        );
+  }
+
+  private waitForMailbox(
+    threadIds: ReadonlySet<string>,
+    timeoutMs: number,
+    signal: AbortSignal,
+  ): Promise<
+    | { reason: "agent_updated"; event: AgentMailboxEvent }
+    | { reason: "timeout" }
+  > {
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (
+        wake:
+          | { reason: "agent_updated"; event: AgentMailboxEvent }
+          | { reason: "timeout" },
+      ) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener("abort", abort);
+        this.mailboxWaiters.delete(waiter);
+        resolve(wake);
+      };
+      const waiter: AgentMailboxWaiter = {
+        threadIds,
+        resolve: (event) => finish({ reason: "agent_updated", event }),
+      };
+      const abort = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.mailboxWaiters.delete(waiter);
+        reject(signal.reason);
+      };
+      const timer = setTimeout(() => finish({ reason: "timeout" }), timeoutMs);
+      this.mailboxWaiters.add(waiter);
+      signal.addEventListener("abort", abort, { once: true });
+    });
+  }
+
+  private threadHasActiveRun(record: AgentTaskRecord): boolean {
+    return this.childThreadRecords(agentThreadId(record)).some(
+      ({ snapshot }) => !isTerminal(snapshot.status),
+    );
+  }
+
+  private openAgentThreadCount(): number {
+    return new Set(
+      this.childRecords()
+        .filter(({ snapshot }) => snapshot.closedAt === undefined)
+        .map(agentThreadId),
+    ).size;
+  }
+
+  private childThreadHistory(
+    record: AgentTaskRecord,
+  ): readonly ModelConversationMessage[] {
+    return this.childThreadRecords(agentThreadId(record)).flatMap(
+      ({ snapshot }) =>
+        snapshot.output
+          ? [
+              { role: "user" as const, text: snapshot.task },
+              { role: "assistant" as const, text: snapshot.output },
+            ]
+          : [],
+    );
+  }
+
   private cancelRemaining(reason: string): void {
     for (const record of this.childRecords()) {
       if (isTerminal(record.snapshot.status)) continue;
       record.controller.abort(new Error(reason));
       if (record.snapshot.status === "queued") {
         this.removeFromQueue(record.snapshot.id);
-        this.cancelRecord(record, reason);
       }
+      this.detachChildExecution(record);
+      this.cancelRecord(record, reason);
     }
+    this.pump();
+  }
+
+  private detachChildExecution(record: AgentTaskRecord): void {
+    this.running.delete(record.snapshot.id);
+    if (record.execution) this.childPromises.delete(record.execution);
+    record.execution = undefined;
   }
 
   private removeFromQueue(agentId: string): void {
@@ -915,8 +1409,7 @@ function childTools(
   profile: SubagentProfile,
 ): readonly Tool[] {
   const excluded = new Set([
-    SPAWN_AGENT_TOOL,
-    WAIT_FOR_AGENTS_TOOL,
+    ...COLLABORATION_TOOLS,
     ...(profile.excludedTools ?? []),
   ]);
   return tools.filter(
@@ -933,7 +1426,10 @@ function delegationInstructions(
   return [
     "MULTI-AGENT DELEGATION",
     "Delegate only concrete, independent work that benefits from parallel execution or focused context. Keep small sequential work in the parent agent.",
-    `At most ${maxConcurrent} subagents run concurrently. Start independent tasks with spawn_agent, continue useful parent work, then call wait_for_agents before using their findings or finishing.`,
+    `At most ${maxConcurrent} subagents run concurrently. Start independent tasks with ${SPAWN_AGENT_TOOL}, continue useful parent work, then use ${CHECK_AGENTS_TOOL} for a non-blocking status snapshot or ${WAIT_FOR_AGENTS_TOOL} for a bounded mailbox wait before using their findings or finishing.`,
+    `Use ${STEER_AGENT_TOOL} to add direction to active work. Use ${FOLLOW_UP_AGENT_TOOL} to continue a finished or interrupted agent with its preserved model state.`,
+    `Use ${RETRY_AGENT_TOOL} to rerun a finished or interrupted turn from fresh provider state while retaining its thread linkage.`,
+    `Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,
     "Do not duplicate the same task across agents. Give each task enough context to be completed without asking the user.",
     "A write-capable subagent has exclusive workspace write ownership while active. The parent may continue read-only work and must wait before writing.",
     "Available roles:",
@@ -955,6 +1451,131 @@ function cloneSnapshot(snapshot: AgentTaskSnapshot): AgentTaskSnapshot {
         ? { usage: { ...entry.usage } }
         : {}),
     })),
+  };
+}
+
+function agentThreadId(record: AgentTaskRecord): string {
+  return record.snapshot.agentThreadId ?? record.snapshot.id;
+}
+
+function collaborationTargetParameters(): Tool["parameters"] {
+  return {
+    type: "object",
+    properties: {
+      agentId: {
+        type: "string",
+        description: "Agent or stable agent-thread ID",
+      },
+    },
+    required: ["agentId"],
+    additionalProperties: false,
+  };
+}
+
+function collaborationTargetsParameters(
+  description: string,
+): Tool["parameters"] {
+  return {
+    type: "object",
+    properties: {
+      agentIds: {
+        type: "array",
+        items: { type: "string" },
+        description,
+      },
+    },
+    additionalProperties: false,
+  };
+}
+
+function optionalAgentIds(value: unknown): string[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) throw new Error("agentIds must be an array");
+  return value.map((id) => stringArgument(id, "agentIds"));
+}
+
+function waitTimeoutArgument(value: unknown): number {
+  if (value === undefined) return DEFAULT_AGENT_WAIT_TIMEOUT_MS;
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 1 ||
+    value > MAX_AGENT_WAIT_TIMEOUT_MS
+  ) {
+    throw new Error(
+      `timeoutMs must be an integer between 1 and ${MAX_AGENT_WAIT_TIMEOUT_MS}`,
+    );
+  }
+  return value;
+}
+
+function uniqueAgentRecords(
+  records: readonly AgentTaskRecord[],
+): AgentTaskRecord[] {
+  return [
+    ...new Map(records.map((record) => [record.snapshot.id, record])).values(),
+  ];
+}
+
+function collaborationStatus(records: readonly AgentTaskRecord[]): {
+  agents: Array<{
+    id: string;
+    agentThreadId: string;
+    role: string;
+    task: string;
+    status: AgentTaskSnapshot["status"];
+    phase: AgentTaskSnapshot["phase"];
+    latestActivity?: string;
+    output?: string;
+    error?: string;
+    closed: boolean;
+  }>;
+  activeAgentIds: string[];
+  terminalAgentIds: string[];
+} {
+  const agents = records.map(({ snapshot }) => ({
+    id: snapshot.id,
+    agentThreadId: snapshot.agentThreadId ?? snapshot.id,
+    role: snapshot.role,
+    task: snapshot.task,
+    status: snapshot.status,
+    phase: snapshot.phase,
+    ...(snapshot.latestActivity
+      ? { latestActivity: snapshot.latestActivity }
+      : {}),
+    ...(snapshot.output ? { output: snapshot.output } : {}),
+    ...(snapshot.error ? { error: snapshot.error } : {}),
+    closed: snapshot.closedAt !== undefined,
+  }));
+  return {
+    agents,
+    activeAgentIds: agents
+      .filter(({ status }) => !isTerminal(status))
+      .map(({ id }) => id),
+    terminalAgentIds: agents
+      .filter(({ status }) => isTerminal(status))
+      .map(({ id }) => id),
+  };
+}
+
+function collaborationInputParameters(
+  inputDescription: string,
+): Tool["parameters"] {
+  return {
+    type: "object",
+    properties: {
+      agentId: {
+        type: "string",
+        description: "Agent or stable agent-thread ID",
+      },
+      input: {
+        type: "string",
+        minLength: 1,
+        description: inputDescription,
+      },
+    },
+    required: ["agentId", "input"],
+    additionalProperties: false,
   };
 }
 
@@ -1036,17 +1657,6 @@ function combineSignals(
   second: AbortSignal,
 ): AbortSignal {
   return first ? AbortSignal.any([first, second]) : second;
-}
-
-function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-    promise
-      .then(resolve, reject)
-      .finally(() => signal.removeEventListener("abort", abort));
-  });
 }
 
 function elapsedSince(startedAt: string | undefined, now: Date): number {

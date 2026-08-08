@@ -892,6 +892,8 @@ export const en: Messages = {
   agentCompleted: "Completed",
   agentFailed: "Failed",
   agentCancelled: "Stopped",
+  agentInterrupted: "Interrupted",
+  agentClosed: "Closed",
   agentNow: "now",
   stopAgent: "Stop",
   retryAgent: "Retry",

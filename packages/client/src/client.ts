@@ -215,6 +215,17 @@ export class ThreadlightClient {
     return this.request("agent/retry", { threadId, agentId });
   }
 
+  listAgents(
+    threadId: string,
+    options: { turnId?: string; includeRoot?: boolean } = {},
+  ) {
+    return this.request("agent/list", { threadId, ...options });
+  }
+
+  readAgent(threadId: string, agentId: string) {
+    return this.request("agent/read", { threadId, agentId });
+  }
+
   addFollowUp(
     threadId: string,
     input: string,

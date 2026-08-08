@@ -8,6 +8,7 @@ import {
 import { basename, dirname, join } from "node:path";
 
 import type {
+  AgentTaskData,
   ConversationAccessMode,
   ConversationMessageData,
   QueuedTurnData,
@@ -22,6 +23,32 @@ export interface StoredAgentSnapshot {
   version: 1;
   prompt: PromptSnapshot;
   runtime?: unknown;
+}
+
+export interface StoredAgentThread {
+  agent: AgentTaskData;
+  profileName?: string;
+  pendingInput: readonly string[];
+  collected: boolean;
+  modelState?: unknown;
+  checkpointStep?: number;
+  checkpointPhase?: "model_completed" | "tool_started" | "tool_completed";
+  interruption?: {
+    previousStatus: "queued" | "running";
+    interruptedAt: string;
+    reason: string;
+  };
+}
+
+export interface StoredAgentRun {
+  version: 1;
+  turnId: string;
+  rootId: string;
+  maxConcurrent: number;
+  status: "active" | "completed" | "failed" | "interrupted";
+  createdAt: string;
+  updatedAt: string;
+  agents: readonly StoredAgentThread[];
 }
 
 export interface StoredConversation {
@@ -41,6 +68,7 @@ export interface StoredConversation {
   queuedTurns?: readonly QueuedTurnData[];
   modelState?: unknown;
   agentSnapshot?: StoredAgentSnapshot;
+  agentRuns?: readonly StoredAgentRun[];
 }
 
 export interface ConversationStore {
@@ -175,7 +203,63 @@ function isStoredConversation(value: unknown): value is StoredConversation {
       (Array.isArray(conversation.queuedTurns) &&
         conversation.queuedTurns.every(isQueuedTurn))) &&
     (conversation.agentSnapshot === undefined ||
-      isStoredAgentSnapshot(conversation.agentSnapshot))
+      isStoredAgentSnapshot(conversation.agentSnapshot)) &&
+    (conversation.agentRuns === undefined ||
+      (Array.isArray(conversation.agentRuns) &&
+        conversation.agentRuns.every(isStoredAgentRun)))
+  );
+}
+
+function isStoredAgentRun(value: unknown): value is StoredAgentRun {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const run = value as Record<string, unknown>;
+  return (
+    run.version === 1 &&
+    typeof run.turnId === "string" &&
+    typeof run.rootId === "string" &&
+    Number.isInteger(run.maxConcurrent) &&
+    Number(run.maxConcurrent) > 0 &&
+    (run.status === "active" ||
+      run.status === "completed" ||
+      run.status === "failed" ||
+      run.status === "interrupted") &&
+    typeof run.createdAt === "string" &&
+    typeof run.updatedAt === "string" &&
+    Array.isArray(run.agents) &&
+    run.agents.every(isStoredAgentThread)
+  );
+}
+
+function isStoredAgentThread(value: unknown): value is StoredAgentThread {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const thread = value as Record<string, unknown>;
+  return (
+    isAgentTask(thread.agent) &&
+    (thread.profileName === undefined ||
+      typeof thread.profileName === "string") &&
+    Array.isArray(thread.pendingInput) &&
+    thread.pendingInput.every((input) => typeof input === "string") &&
+    typeof thread.collected === "boolean" &&
+    (thread.checkpointStep === undefined ||
+      (Number.isInteger(thread.checkpointStep) &&
+        Number(thread.checkpointStep) >= 0)) &&
+    (thread.checkpointPhase === undefined ||
+      thread.checkpointPhase === "model_completed" ||
+      thread.checkpointPhase === "tool_started" ||
+      thread.checkpointPhase === "tool_completed") &&
+    (thread.interruption === undefined ||
+      isStoredAgentInterruption(thread.interruption))
+  );
+}
+
+function isStoredAgentInterruption(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const interruption = value as Record<string, unknown>;
+  return (
+    (interruption.previousStatus === "queued" ||
+      interruption.previousStatus === "running") &&
+    typeof interruption.interruptedAt === "string" &&
+    typeof interruption.reason === "string"
   );
 }
 
@@ -271,7 +355,11 @@ function isAgentTask(value: unknown): boolean {
   return (
     typeof task.id === "string" &&
     (task.parentId === undefined || typeof task.parentId === "string") &&
+    (task.agentThreadId === undefined ||
+      typeof task.agentThreadId === "string") &&
     (task.retryOf === undefined || typeof task.retryOf === "string") &&
+    (task.followUpOf === undefined || typeof task.followUpOf === "string") &&
+    (task.closedAt === undefined || typeof task.closedAt === "string") &&
     (task.runId === undefined || typeof task.runId === "string") &&
     typeof task.name === "string" &&
     typeof task.role === "string" &&

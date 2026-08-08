@@ -816,6 +816,8 @@ export const zh = {
   agentCompleted: "已完成",
   agentFailed: "失败",
   agentCancelled: "已停止",
+  agentInterrupted: "已中断",
+  agentClosed: "已关闭",
   agentNow: "刚刚",
   stopAgent: "停止",
   retryAgent: "重试",

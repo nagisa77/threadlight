@@ -205,7 +205,7 @@ export interface RunOptions {
 
 export interface AgentRunCheckpoint {
   step: number;
-  phase: "model_completed" | "tool_completed";
+  phase: "model_completed" | "tool_started" | "tool_completed";
   modelState?: unknown;
   usage: TokenUsage;
 }
@@ -343,7 +343,12 @@ export type AgentTaskTranscriptEntry =
 export interface AgentTaskSnapshot {
   id: string;
   parentId?: string;
+  /** Stable identity shared by every follow-up/retry turn in one child thread. */
+  agentThreadId?: string;
   retryOf?: string;
+  followUpOf?: string;
+  /** Once set, this child thread rejects every future collaboration action. */
+  closedAt?: string;
   runId?: string;
   name: string;
   role: string;
@@ -377,6 +382,9 @@ export type AgentTreeUpdateReason =
   | "completed"
   | "failed"
   | "cancelled"
+  | "interrupted"
+  | "followed_up"
+  | "closed"
   | "steered";
 
 export interface AgentTreeEvent {

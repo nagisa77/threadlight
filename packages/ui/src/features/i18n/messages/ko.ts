@@ -876,6 +876,8 @@ export const ko: Messages = {
   agentCompleted: "완료",
   agentFailed: "실패",
   agentCancelled: "중지됨",
+  agentInterrupted: "중단됨",
+  agentClosed: "닫힘",
   agentNow: "지금",
   stopAgent: "중지",
   retryAgent: "다시 시도",

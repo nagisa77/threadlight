@@ -6,6 +6,7 @@ import type {
   Agent,
   AgentEvent,
   AgentLoop,
+  AgentRuntimeSnapshot,
   AgentTreeEvent,
   AgentTreeSnapshot,
   SubagentProfile,
@@ -26,6 +27,7 @@ import {
 
 import type {
   ActiveTurnData,
+  AgentThreadData,
   AttachmentData,
   AgentPlanData,
   CapabilityDescriptor,
@@ -50,6 +52,8 @@ import type {
 import {
   MemoryConversationStore,
   type ConversationStore,
+  type StoredAgentRun,
+  type StoredAgentThread,
   type StoredConversation,
 } from "./conversation-store.js";
 import {
@@ -343,6 +347,10 @@ export class AppServer {
         return this.steerAgent(params);
       case "agent/retry":
         return this.retryAgent(params);
+      case "agent/list":
+        return this.listAgents(params);
+      case "agent/read":
+        return this.readAgent(params);
       case "turn/follow-up":
         return this.addFollowUp(params);
       case "turn/queue/inject":
@@ -1016,33 +1024,77 @@ export class AppServer {
     return { interrupted: true };
   }
 
-  private cancelAgent(params: unknown): { cancelled: boolean } {
+  private async cancelAgent(params: unknown): Promise<{ cancelled: boolean }> {
     const { threadId, agentId } = objectParams(params);
     requireString(threadId, "threadId");
     requireString(agentId, "agentId");
     const orchestrator = this.threads.get(threadId)?.activeTurn?.orchestrator;
-    return { cancelled: orchestrator?.cancel(agentId) ?? false };
+    const cancelled = orchestrator?.cancel(agentId) ?? false;
+    if (cancelled) await orchestrator?.flushRuntimeCheckpoints();
+    return { cancelled };
   }
 
-  private steerAgent(params: unknown): { accepted: boolean } {
+  private async steerAgent(params: unknown): Promise<{ accepted: boolean }> {
     const { threadId, agentId, input } = objectParams(params);
     requireString(threadId, "threadId");
     requireString(agentId, "agentId");
     requireString(input, "input");
     const orchestrator = this.threads.get(threadId)?.activeTurn?.orchestrator;
-    return { accepted: orchestrator?.steer(agentId, input) ?? false };
+    const accepted = orchestrator?.steer(agentId, input) ?? false;
+    if (accepted) await orchestrator?.flushRuntimeCheckpoints();
+    return { accepted };
   }
 
-  private retryAgent(params: unknown): {
+  private async retryAgent(params: unknown): Promise<{
     agent?: AgentTreeSnapshot["agents"][number];
-  } {
+  }> {
     const { threadId, agentId } = objectParams(params);
     requireString(threadId, "threadId");
     requireString(agentId, "agentId");
-    const agent = this.threads
-      .get(threadId)
-      ?.activeTurn?.orchestrator?.retry(agentId);
+    const orchestrator = this.threads.get(threadId)?.activeTurn?.orchestrator;
+    const agent = orchestrator?.retry(agentId);
+    if (agent) await orchestrator?.flushRuntimeCheckpoints();
     return agent ? { agent } : {};
+  }
+
+  private async listAgents(params: unknown): Promise<{
+    agents: readonly AgentThreadData[];
+  }> {
+    const { threadId, turnId, includeRoot } = objectParams(params);
+    requireString(threadId, "threadId");
+    if (turnId !== undefined) requireString(turnId, "turnId");
+    if (includeRoot !== undefined && typeof includeRoot !== "boolean") {
+      throw new RpcError(-32602, "includeRoot must be a boolean");
+    }
+    const thread = await this.requireThread(threadId);
+    await thread.activeTurn?.orchestrator?.flushRuntimeCheckpoints();
+    const agents = (thread.conversation.agentRuns ?? [])
+      .filter((run) => turnId === undefined || run.turnId === turnId)
+      .flatMap((run) =>
+        run.agents
+          .filter(
+            ({ agent }) => includeRoot === true || agent.id !== run.rootId,
+          )
+          .map((agent) => projectStoredAgentThread(threadId, run, agent)),
+      );
+    return { agents };
+  }
+
+  private async readAgent(
+    params: unknown,
+  ): Promise<{ agent: AgentThreadData }> {
+    const { threadId, agentId } = objectParams(params);
+    requireString(threadId, "threadId");
+    requireString(agentId, "agentId");
+    const thread = await this.requireThread(threadId);
+    await thread.activeTurn?.orchestrator?.flushRuntimeCheckpoints();
+    for (const run of thread.conversation.agentRuns ?? []) {
+      const stored = run.agents.find(({ agent }) => agent.id === agentId);
+      if (stored) {
+        return { agent: projectStoredAgentThread(threadId, run, stored) };
+      }
+    }
+    throw new RpcError(-32004, `Unknown agent: ${agentId}`);
   }
 
   private requireLocalAttachment(attachment: AttachmentData): void {
@@ -1319,6 +1371,8 @@ export class AppServer {
               }),
               onAgentTreeEvent: (event) =>
                 this.forwardAgentTree(threadId, turnId, thread, event),
+              onRuntimeCheckpoint: (checkpoint) =>
+                this.persistAgentRunCheckpoint(thread, turnId, checkpoint),
             })
           : undefined;
       if (orchestrator && thread.activeTurn?.id === turnId) {
@@ -1372,10 +1426,14 @@ export class AppServer {
         diagnostics: turnDiagnostics,
       };
       await this.mutateConversation(thread, (conversation) =>
-        this.updateConversation(
-          conversation,
-          [...conversation.messages, assistantMessage],
-          { modelState: persistedModelState },
+        this.finalizeAgentRun(
+          this.updateConversation(
+            conversation,
+            [...conversation.messages, assistantMessage],
+            { modelState: persistedModelState },
+          ),
+          turnId,
+          "completed",
         ),
       );
       await cleanup();
@@ -1424,10 +1482,14 @@ export class AppServer {
       };
       try {
         await this.mutateConversation(thread, (conversation) =>
-          this.updateConversation(conversation, [
-            ...conversation.messages,
-            assistantMessage,
-          ]),
+          this.finalizeAgentRun(
+            this.updateConversation(conversation, [
+              ...conversation.messages,
+              assistantMessage,
+            ]),
+            turnId,
+            "failed",
+          ),
         );
       } catch (persistenceError) {
         process.stderr.write(
@@ -1655,6 +1717,81 @@ export class AppServer {
     return mutation;
   }
 
+  private async persistAgentRunCheckpoint(
+    thread: ThreadState,
+    turnId: string,
+    checkpoint: AgentRuntimeSnapshot,
+  ): Promise<void> {
+    const safeTasks = clientSafeAgentTree({
+      rootId: checkpoint.rootId,
+      maxConcurrent: checkpoint.maxConcurrent,
+      agents: checkpoint.agents.map(({ task }) => task),
+    }).agents;
+    const agents: StoredAgentThread[] = checkpoint.agents.map(
+      (runtimeAgent, index) => ({
+        agent: safeTasks[index]!,
+        ...(runtimeAgent.profileName
+          ? { profileName: runtimeAgent.profileName }
+          : {}),
+        pendingInput: runtimeAgent.pendingInput,
+        collected: runtimeAgent.collected,
+        ...(runtimeAgent.modelState === undefined
+          ? {}
+          : {
+              modelState: this.modelStatePersistence.prepare(
+                runtimeAgent.modelState,
+              ),
+            }),
+        ...(runtimeAgent.checkpointStep === undefined
+          ? {}
+          : { checkpointStep: runtimeAgent.checkpointStep }),
+        ...(runtimeAgent.checkpointPhase === undefined
+          ? {}
+          : { checkpointPhase: runtimeAgent.checkpointPhase }),
+      }),
+    );
+    await this.mutateConversation(thread, (conversation) => {
+      const existing = conversation.agentRuns?.find(
+        (run) => run.turnId === turnId,
+      );
+      if (existing && existing.status !== "active") return conversation;
+      const root = agents.find(({ agent }) => agent.id === checkpoint.rootId);
+      const run: StoredAgentRun = {
+        version: 1,
+        turnId,
+        rootId: checkpoint.rootId,
+        maxConcurrent: checkpoint.maxConcurrent,
+        status: "active",
+        createdAt:
+          existing?.createdAt ?? root?.agent.createdAt ?? checkpoint.updatedAt,
+        updatedAt: checkpoint.updatedAt,
+        agents,
+      };
+      return {
+        ...conversation,
+        updatedAt: checkpoint.updatedAt,
+        agentRuns: upsertAgentRun(conversation.agentRuns ?? [], run),
+      };
+    });
+  }
+
+  private finalizeAgentRun(
+    conversation: StoredConversation,
+    turnId: string,
+    status: "completed" | "failed",
+  ): StoredConversation {
+    const runs = conversation.agentRuns ?? [];
+    if (!runs.some((run) => run.turnId === turnId)) return conversation;
+    const updatedAt = this.now().toISOString();
+    return {
+      ...conversation,
+      updatedAt,
+      agentRuns: runs.map((run) =>
+        run.turnId === turnId ? { ...run, status, updatedAt } : run,
+      ),
+    };
+  }
+
   private notifyQueueUpdated(threadId: string, thread: ThreadState): void {
     this.notify("turn/queue/updated", {
       threadId,
@@ -1873,8 +2010,15 @@ export class AppServer {
   }
 
   private async createThreadState(
-    conversation: StoredConversation,
+    storedConversation: StoredConversation,
   ): Promise<ThreadState> {
+    const conversation = interruptActiveAgentRuns(
+      storedConversation,
+      this.now().toISOString(),
+    );
+    if (conversation !== storedConversation) {
+      await this.conversationStore.save(conversation);
+    }
     const baseAgent = await this.agentFactory();
     const runtime = await this.threadRuntimeFactory?.(
       conversation.agentSnapshot?.runtime,
@@ -2506,6 +2650,120 @@ function clientSafeAgentTree(tree: AgentTreeSnapshot): AgentTreeSnapshot {
           : entry,
       ),
     })),
+  };
+}
+
+function upsertAgentRun(
+  runs: readonly StoredAgentRun[],
+  next: StoredAgentRun,
+): readonly StoredAgentRun[] {
+  const index = runs.findIndex(({ turnId }) => turnId === next.turnId);
+  if (index < 0) return [...runs, next];
+  return runs.map((run, runIndex) => (runIndex === index ? next : run));
+}
+
+function projectStoredAgentThread(
+  hostThreadId: string,
+  run: StoredAgentRun,
+  stored: StoredAgentThread,
+): AgentThreadData {
+  const checkpoint =
+    stored.checkpointStep !== undefined && stored.checkpointPhase !== undefined
+      ? {
+          step: stored.checkpointStep,
+          phase: stored.checkpointPhase,
+          hasModelState: stored.modelState !== undefined,
+        }
+      : undefined;
+  return {
+    id: stored.agent.id,
+    agentThreadId: stored.agent.agentThreadId ?? stored.agent.id,
+    hostThreadId,
+    turnId: run.turnId,
+    rootId: run.rootId,
+    maxConcurrent: run.maxConcurrent,
+    runStatus: run.status,
+    updatedAt: run.updatedAt,
+    ...(stored.profileName ? { profileName: stored.profileName } : {}),
+    agent: stored.agent,
+    pendingInput: stored.pendingInput,
+    collected: stored.collected,
+    ...(stored.agent.closedAt ? { closedAt: stored.agent.closedAt } : {}),
+    ...(stored.interruption ? { interruption: stored.interruption } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
+  };
+}
+
+function interruptActiveAgentRuns(
+  conversation: StoredConversation,
+  interruptedAt: string,
+): StoredConversation {
+  const activeRuns = (conversation.agentRuns ?? []).filter(
+    ({ status }) => status === "active",
+  );
+  if (activeRuns.length === 0) return conversation;
+
+  const interruptedRuns = (conversation.agentRuns ?? []).map((run) => {
+    if (run.status !== "active") return run;
+    return {
+      ...run,
+      status: "interrupted" as const,
+      updatedAt: interruptedAt,
+      agents: run.agents.map((stored) => {
+        if (
+          stored.agent.status !== "queued" &&
+          stored.agent.status !== "running"
+        ) {
+          return stored;
+        }
+        return {
+          ...stored,
+          interruption: {
+            previousStatus: stored.agent.status,
+            interruptedAt,
+            reason: "app_server_restart",
+          },
+          agent: {
+            ...stored.agent,
+            status: "interrupted" as const,
+            phase: "done" as const,
+            completedAt: interruptedAt,
+            latestActivity: "Interrupted by app server restart",
+            error: "The app server stopped before this agent thread completed.",
+          },
+        };
+      }),
+    };
+  });
+
+  const messages = [...conversation.messages];
+  for (const run of activeRuns) {
+    const id = `agent-interrupted:${run.turnId}`;
+    if (messages.some((message) => message.id === id)) continue;
+    const interrupted = interruptedRuns.find(
+      ({ turnId }) => turnId === run.turnId,
+    )!;
+    const tree = {
+      rootId: interrupted.rootId,
+      maxConcurrent: interrupted.maxConcurrent,
+      agents: interrupted.agents.map(({ agent }) => agent),
+    };
+    messages.push({
+      id,
+      role: "assistant",
+      text: "The previous turn was interrupted when the app server stopped. Its agent activity was preserved for review; retry explicitly to avoid repeating side effects.",
+      error: true,
+      ...(tree.agents.some(({ parentId }) => parentId === tree.rootId)
+        ? { agentTree: tree }
+        : {}),
+    });
+  }
+
+  return {
+    ...conversation,
+    updatedAt: interruptedAt,
+    messages,
+    agentRuns: interruptedRuns,
   };
 }
 

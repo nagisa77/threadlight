@@ -864,12 +864,23 @@ function collectAgentEvents(
           ? { errorCode: "AGENT_FAILED" }
           : status === "cancelled"
             ? { errorCode: "AGENT_CANCELLED" }
-            : {}),
+            : status === "interrupted"
+              ? { errorCode: "AGENT_INTERRUPTED" }
+              : {}),
       },
     });
 
-    if (status === "failed" || status === "cancelled") {
-      const code = status === "failed" ? "AGENT_FAILED" : "AGENT_CANCELLED";
+    if (
+      status === "failed" ||
+      status === "cancelled" ||
+      status === "interrupted"
+    ) {
+      const code =
+        status === "failed"
+          ? "AGENT_FAILED"
+          : status === "cancelled"
+            ? "AGENT_CANCELLED"
+            : "AGENT_INTERRUPTED";
       errors.push({
         threadId,
         messageId,

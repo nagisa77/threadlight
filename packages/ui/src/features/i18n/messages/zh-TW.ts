@@ -821,6 +821,8 @@ export const zhTW: Messages = {
   agentCompleted: "已完成",
   agentFailed: "失敗",
   agentCancelled: "已停止",
+  agentInterrupted: "已中斷",
+  agentClosed: "已關閉",
   agentNow: "剛剛",
   stopAgent: "停止",
   retryAgent: "重試",

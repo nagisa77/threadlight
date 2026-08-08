@@ -879,6 +879,8 @@ export const ja: Messages = {
   agentCompleted: "完了",
   agentFailed: "失敗",
   agentCancelled: "停止済み",
+  agentInterrupted: "中断",
+  agentClosed: "クローズ済み",
   agentNow: "今",
   stopAgent: "停止",
   retryAgent: "再試行",
