@@ -54,6 +54,17 @@ describe("UI feature boundaries", () => {
     }
   });
 
+  it("keeps project expansion separate from conversation navigation", () => {
+    const sidebar = source("../src/features/navigation/project-sidebar.tsx");
+    const toggleExpanded = sidebar.match(
+      /function toggleExpanded\(\) \{([\s\S]*?)\n  \}/,
+    )?.[1];
+
+    expect(toggleExpanded).toContain("setExpanded(!visibleExpanded)");
+    expect(toggleExpanded).not.toContain("onSelect");
+    expect(sidebar).toContain("onSelect={() => onSelect(conversation.id)}");
+  });
+
   it("loads feature styles through one stable public entrypoint", () => {
     const entry = source("../src/styles.css");
     expect(entry.match(/@import/g)).toHaveLength(7);

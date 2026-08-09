@@ -569,9 +569,7 @@ export function ProjectGroup({
   ].filter(Boolean).length;
 
   function toggleExpanded() {
-    const nextExpanded = !visibleExpanded;
-    setExpanded(nextExpanded);
-    if (nextExpanded && !active) onSelect(project.conversations[0]?.id);
+    setExpanded(!visibleExpanded);
   }
 
   const closeProjectMenu = useCallback(() => setMenuOpen(false), []);
