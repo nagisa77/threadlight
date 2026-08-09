@@ -419,8 +419,20 @@ export interface AgentRuntimeSnapshot {
   agents: readonly AgentRuntimeTaskSnapshot[];
 }
 
+/** Durable state needed to continue one subagent thread in a later parent run. */
+export interface ResumableAgentThread {
+  agentThreadId: string;
+  /** Historical task IDs that may also be used to address this thread. */
+  taskIds: readonly string[];
+  profileName: string;
+  latestTask: AgentTaskSnapshot;
+  history: readonly ModelConversationMessage[];
+  modelState?: unknown;
+}
+
 export interface AgentOrchestratorOptions extends RunOptions {
   profiles: readonly SubagentProfile[];
+  resumableThreads?: readonly ResumableAgentThread[];
   maxConcurrent?: number;
   maxAgents?: number;
   wallNow?: () => Date;

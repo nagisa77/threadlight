@@ -8,6 +8,8 @@ import type {
 import {
   Bot,
   Check,
+  ChevronDown,
+  ChevronUp,
   CirclePause,
   CircleStop,
   Clock3,
@@ -121,6 +123,7 @@ export function AgentPanel({
           >
             {selected && (
               <AgentConversation
+                key={selected.id}
                 agent={selected}
                 isRoot={selected.id === tree.rootId}
                 live={live}
@@ -172,6 +175,7 @@ function AgentConversation({
 }) {
   const { t } = useI18n();
   const [direction, setDirection] = useState("");
+  const [taskExpanded, setTaskExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string>();
   const active = agent.status === "queued" || agent.status === "running";
@@ -182,6 +186,8 @@ function AgentConversation({
       agent.status === "interrupted");
   const canControl = live && !isRoot && controls?.threadId;
   const transcript = agent.transcript ?? [];
+  const taskExpandable = agent.task.length > 72 || agent.task.includes("\n");
+  const taskId = `agent-task-${agent.id}`;
 
   const act = async (action: () => Promise<unknown>): Promise<boolean> => {
     if (busy) return false;
@@ -201,55 +207,82 @@ function AgentConversation({
   return (
     <article className="agent-conversation">
       <header className="agent-conversation-header">
-        <div>
-          <span>
+        <div className="agent-conversation-title-row">
+          <span className="agent-conversation-identity">
             <AgentStateIcon agent={agent} />
             <strong>{isRoot ? t("mainAgent") : agent.name}</strong>
             <small>{agentStatus(agent, t)}</small>
           </span>
-          <p>{agent.task}</p>
+          <div className="agent-conversation-actions">
+            {canControl && active && (
+              <button
+                type="button"
+                className="agent-action danger pressable"
+                disabled={busy}
+                aria-label={t("stopAgent")}
+                title={t("stopAgent")}
+                onClick={() =>
+                  void act(async () => {
+                    const result = await controls.client.cancelAgent(
+                      controls.threadId!,
+                      agent.id,
+                    );
+                    if (!result.cancelled) {
+                      throw new Error(t("agentActionUnavailable"));
+                    }
+                  })
+                }
+              >
+                <Square size={11} fill="currentColor" />
+                <span>{t("stopAgent")}</span>
+              </button>
+            )}
+            {canControl && retryable && (
+              <button
+                type="button"
+                className="agent-action pressable"
+                disabled={busy}
+                aria-label={t("retryAgent")}
+                title={t("retryAgent")}
+                onClick={() =>
+                  void act(async () => {
+                    const result = await controls.client.retryAgent(
+                      controls.threadId!,
+                      agent.id,
+                    );
+                    if (!result.agent) {
+                      throw new Error(t("agentActionUnavailable"));
+                    }
+                  })
+                }
+              >
+                <RotateCcw size={12} />
+                <span>{t("retryAgent")}</span>
+              </button>
+            )}
+          </div>
         </div>
-        <div className="agent-conversation-actions">
-          {canControl && active && (
+        <div
+          className={`agent-conversation-task${taskExpanded ? " expanded" : ""}`}
+        >
+          <p id={taskId}>{agent.task}</p>
+          {taskExpandable && (
             <button
               type="button"
-              className="agent-action danger pressable"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  const result = await controls.client.cancelAgent(
-                    controls.threadId!,
-                    agent.id,
-                  );
-                  if (!result.cancelled) {
-                    throw new Error(t("agentActionUnavailable"));
-                  }
-                })
+              className="agent-conversation-task-toggle pressable"
+              aria-controls={taskId}
+              aria-expanded={taskExpanded}
+              aria-label={
+                taskExpanded ? t("hideAgentTask") : t("showAgentTask")
               }
+              title={taskExpanded ? t("hideAgentTask") : t("showAgentTask")}
+              onClick={() => setTaskExpanded((expanded) => !expanded)}
             >
-              <Square size={11} fill="currentColor" />
-              {t("stopAgent")}
-            </button>
-          )}
-          {canControl && retryable && (
-            <button
-              type="button"
-              className="agent-action pressable"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  const result = await controls.client.retryAgent(
-                    controls.threadId!,
-                    agent.id,
-                  );
-                  if (!result.agent) {
-                    throw new Error(t("agentActionUnavailable"));
-                  }
-                })
-              }
-            >
-              <RotateCcw size={12} />
-              {t("retryAgent")}
+              {taskExpanded ? (
+                <ChevronUp size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )}
             </button>
           )}
         </div>

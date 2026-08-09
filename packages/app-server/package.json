@@ -26,6 +26,7 @@
     "@threadlight/builtin-tools": "0.1.0",
     "@threadlight/project-memory": "0.1.0",
     "@threadlight/protocol": "0.1.0",
+    "smol-toml": "^1.7.1",
     "ws": "^8.18.0"
   }
 }

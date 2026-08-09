@@ -854,6 +854,8 @@ export const ko: Messages = {
   agentList: "Agent 목록",
   hideAgentList: "Agent 목록 접기",
   showAgentList: "Agent 목록 펼치기",
+  hideAgentTask: "작업 세부 정보 접기",
+  showAgentTask: "작업 세부 정보 펼치기",
   agentConcurrency: "동시 실행 한도 {count}",
   openAgentsPanel: "오른쪽 패널에서 보기",
   noAgentRuns: "멀티 Agent 기록 없음",

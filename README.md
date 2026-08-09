@@ -395,6 +395,29 @@ Gmail 使用 Google 官方 Remote MCP endpoint。首次从 `@` 选择 Gmail 时�
 
 Client Secret、PKCE verifier 与 token 只会经 Electron `safeStorage` 加密写入 `connection-store.json`，不会进入 Settings、会话快照或日志。Google 的完整配置要求见 [Configure the Gmail MCP server](https://developers.google.com/workspace/gmail/api/guides/configure-mcp-server)。
 
+### 子 Agent Profiles
+
+Threadlight 内置 `default`、`worker`、`explorer` 三个协作角色，并从以下目录加载自定义 TOML：
+
+- 个人级：`~/.threadlight/agents/*.toml`；使用自定义 `THREADLIGHT_HOME` 或 Host `--home` 时，读取对应目录下的 `agents/*.toml`
+- 项目级：`<project>/.threadlight/agents/*.toml`
+
+同名角色按“项目 > 个人 > 内置”覆盖。文件名（不含 `.toml`）默认作为角色名；也可以显式设置 `name`。覆盖已有角色时只需写需要修改的字段，新增角色必须提供 `description` 和 `instructions`。例如 `.threadlight/agents/security-audit.toml`：
+
+```toml
+description = "审计仓库安全边界并报告可验证的风险"
+instructions = """
+追踪不可信输入、权限边界和敏感数据流。按严重程度报告证据；不要修改仓库。
+"""
+tool_access = "read-only"
+excluded_tools = ["project_memory"]
+model = "gpt-5.6"
+provider = "openai"
+max_steps = 12
+```
+
+支持字段为 `name`、`description`、`instructions`、`tool_access`（`read-only` 或 `all`）、`excluded_tools`、`model`、`provider`、`max_steps`。配置在 app-server 启动时读取；未知字段、重复角色或无效类型会报告包含文件路径的错误，避免拼写错误被静默忽略。无项目任务只加载个人级角色。
+
 ### Computer Use
 
 Electron 桌面端的 `computer_share` 可以：

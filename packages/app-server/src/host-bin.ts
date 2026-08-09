@@ -120,6 +120,7 @@ async function startHost(args: HostArgs): Promise<void> {
         cwd: projectRoot,
         environment: {
           ...runtimeEnvironment(settings.runtimeSettings()),
+          THREADLIGHT_HOME: homePath,
           THREADLIGHT_PROJECT_ROOT: projectBasePath,
           ...(projects.project(projectId)?.scope === "standalone"
             ? { THREADLIGHT_TASK_SCOPE: "standalone" }

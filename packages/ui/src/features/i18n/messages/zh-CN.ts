@@ -794,6 +794,8 @@ export const zh = {
   agentList: "Agent 列表",
   hideAgentList: "收起 Agent 列表",
   showAgentList: "展开 Agent 列表",
+  hideAgentTask: "收起任务详情",
+  showAgentTask: "展开任务详情",
   agentConcurrency: "并发上限 {count}",
   openAgentsPanel: "在右侧面板查看",
   noAgentRuns: "暂无多 Agent 记录",

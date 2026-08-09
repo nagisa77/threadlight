@@ -69,7 +69,7 @@ describe("dialog action hierarchy", () => {
 
   it("gives development mode the same hover feedback as adjacent selectors", () => {
     expect(styles).toMatch(
-      /\.composer-action\.model:hover:not\(:disabled\):not\(\.active\),\s*\.development-mode-trigger:hover:not\(:disabled\):not\(\[aria-expanded="true"\]\),\s*\.conversation-access-trigger:hover:not\(:disabled\):not\(\[aria-expanded="true"\]\)\s*\{[^}]*color:\s*var\(--ink\);[^}]*background:/s,
+      /\.composer-action\.model:hover:not\(:disabled\):not\(\.active\),\s*\.development-mode-trigger:hover:not\(:disabled\):not\(\[aria-expanded="true"\]\),\s*\.conversation-access-trigger:hover:not\(:disabled\):not\(\s*\[aria-expanded="true"\]\s*\)\s*\{[^}]*color:\s*var\(--ink\);[^}]*background:/s,
     );
     expect(styles).toMatch(
       /\.development-mode-trigger,\s*\.conversation-access-trigger\s*\{[^}]*transition:[^}]*background-color 140ms ease,[^}]*transform 140ms var\(--ease-out\);/s,

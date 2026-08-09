@@ -18,6 +18,7 @@ import type {
   RunControllerToolDecision,
   RunOptions,
   RunResult,
+  ResumableAgentThread,
   SubagentProfile,
   Tool,
   ToolCall,
@@ -105,9 +106,12 @@ interface AgentMailboxWaiter {
  */
 export class AgentOrchestrator {
   private readonly profiles = new Map<string, SubagentProfile>();
+  private readonly resumableThreads = new Map<string, ResumableAgentThread>();
+  private readonly resumableTaskThreads = new Map<string, string>();
   private readonly records = new Map<string, AgentTaskRecord>();
   private readonly queue: string[] = [];
   private readonly running = new Set<string>();
+  private readonly detachedWriters = new Set<string>();
   private readonly childPromises = new Set<Promise<void>>();
   private readonly mailboxWaiters = new Set<AgentMailboxWaiter>();
   private readonly rootId = randomUUID();
@@ -135,6 +139,43 @@ export class AgentOrchestrator {
         throw new Error(`Duplicate subagent profile: ${profile.name}`);
       }
       this.profiles.set(profile.name, profile);
+    }
+    for (const thread of options.resumableThreads ?? []) {
+      const threadId = thread.agentThreadId.trim();
+      if (!threadId) throw new Error("Resumable agent thread ID is required");
+      if (this.resumableThreads.has(threadId)) {
+        throw new Error(`Duplicate resumable agent thread: ${threadId}`);
+      }
+      const latestThreadId =
+        thread.latestTask.agentThreadId ?? thread.latestTask.id;
+      if (latestThreadId !== threadId) {
+        throw new Error(
+          `Resumable agent task ${thread.latestTask.id} belongs to thread ${latestThreadId}, not ${threadId}`,
+        );
+      }
+      if (!isTerminal(thread.latestTask.status)) {
+        throw new Error(`Resumable agent thread ${threadId} is still active`);
+      }
+      const restored = {
+        ...thread,
+        agentThreadId: threadId,
+        taskIds: [...thread.taskIds],
+        latestTask: cloneSnapshot(thread.latestTask),
+        history: thread.history.map((message) => ({ ...message })),
+      };
+      this.resumableThreads.set(threadId, restored);
+      for (const taskId of new Set([
+        ...thread.taskIds,
+        thread.latestTask.id,
+      ])) {
+        const existing = this.resumableTaskThreads.get(taskId);
+        if (existing && existing !== threadId) {
+          throw new Error(
+            `Resumable agent task ${taskId} belongs to multiple threads`,
+          );
+        }
+        this.resumableTaskThreads.set(taskId, threadId);
+      }
     }
     this.maxConcurrent = positiveInteger(options.maxConcurrent, 3);
     this.maxAgents = positiveInteger(options.maxAgents, 8);
@@ -291,9 +332,28 @@ export class AgentOrchestrator {
       direct?.snapshot.parentId === this.rootId
         ? direct
         : this.currentChildRecord(agentId);
+    if (!previous) {
+      const resumable = this.resumableThread(agentId);
+      const profile = resumable
+        ? this.profiles.get(resumable.profileName)
+        : undefined;
+      if (
+        this.closed ||
+        !resumable ||
+        !profile ||
+        resumable.latestTask.closedAt !== undefined ||
+        this.threadHasActiveRunById(resumable.agentThreadId)
+      ) {
+        return;
+      }
+      return this.spawn(profile.name, resumable.latestTask.task, {
+        retryOf: resumable.latestTask.id,
+        agentThreadId: resumable.agentThreadId,
+      });
+    }
     if (
       this.closed ||
-      !previous?.profile ||
+      !previous.profile ||
       previous.snapshot.closedAt !== undefined ||
       this.threadHasActiveRun(previous) ||
       !isTerminal(previous.snapshot.status)
@@ -309,10 +369,32 @@ export class AgentOrchestrator {
   followUp(agentId: string, input: string): AgentTaskSnapshot | undefined {
     const instruction = input.trim();
     const previous = this.currentChildRecord(agentId);
+    if (!previous) {
+      const resumable = this.resumableThread(agentId);
+      const profile = resumable
+        ? this.profiles.get(resumable.profileName)
+        : undefined;
+      if (
+        this.closed ||
+        !instruction ||
+        !resumable ||
+        !profile ||
+        resumable.latestTask.closedAt !== undefined ||
+        this.threadHasActiveRunById(resumable.agentThreadId)
+      ) {
+        return;
+      }
+      return this.spawn(profile.name, instruction, {
+        followUpOf: resumable.latestTask.id,
+        agentThreadId: resumable.agentThreadId,
+        modelState: resumable.modelState,
+        history: resumable.history,
+      });
+    }
     if (
       this.closed ||
       !instruction ||
-      !previous?.profile ||
+      !previous.profile ||
       previous.snapshot.closedAt !== undefined ||
       this.threadHasActiveRun(previous) ||
       !isTerminal(previous.snapshot.status)
@@ -376,7 +458,7 @@ export class AgentOrchestrator {
   }
 
   hasActiveWriter(): boolean {
-    return [...this.running].some((id) => {
+    return [...this.running, ...this.detachedWriters].some((id) => {
       const profile = this.records.get(id)?.profile;
       return profile?.toolAccess === "all";
     });
@@ -523,8 +605,16 @@ export class AgentOrchestrator {
         const running = this.records.get(runningId);
         return running && agentThreadId(running) === agentThreadId(record);
       });
+      const sameThreadHasDetachedWriter = [...this.detachedWriters].some(
+        (detachedId) => {
+          const detached = this.records.get(detachedId);
+          return detached && agentThreadId(detached) === agentThreadId(record);
+        },
+      );
       return (
-        !sameThreadIsRunning && (profile.toolAccess !== "all" || !writerActive)
+        !sameThreadIsRunning &&
+        !sameThreadHasDetachedWriter &&
+        (profile.toolAccess !== "all" || !writerActive)
       );
     });
   }
@@ -606,6 +696,7 @@ export class AgentOrchestrator {
       })
       .finally(() => {
         this.running.delete(record.snapshot.id);
+        this.detachedWriters.delete(record.snapshot.id);
         this.childPromises.delete(promise);
         if (record.execution === promise) record.execution = undefined;
         this.pump();
@@ -1094,14 +1185,15 @@ export class AgentOrchestrator {
           "all_terminal" | "results_available" | "agent_updated" | "timeout";
         let mailboxEvent: AgentMailboxEvent | undefined;
 
-        if (records.every(({ snapshot }) => isTerminal(snapshot.status))) {
+        if (
+          records.length === 0 ||
+          records.every(({ snapshot }) => isTerminal(snapshot.status))
+        ) {
           wakeReason = "all_terminal";
         } else if (
           records.some(({ snapshot }) => isTerminal(snapshot.status))
         ) {
           wakeReason = "results_available";
-        } else if (records.length === 0) {
-          wakeReason = "all_terminal";
         } else {
           const wake = await this.waitForMailbox(
             new Set(records.map(agentThreadId)),
@@ -1201,7 +1293,7 @@ export class AgentOrchestrator {
     const threadId =
       direct?.snapshot.parentId === this.rootId
         ? agentThreadId(direct)
-        : agentId;
+        : (this.resumableTaskThreads.get(agentId) ?? agentId);
     return this.childRecords().filter(
       (record) => agentThreadId(record) === threadId,
     );
@@ -1281,9 +1373,18 @@ export class AgentOrchestrator {
   }
 
   private threadHasActiveRun(record: AgentTaskRecord): boolean {
-    return this.childThreadRecords(agentThreadId(record)).some(
+    return this.threadHasActiveRunById(agentThreadId(record));
+  }
+
+  private threadHasActiveRunById(threadId: string): boolean {
+    return this.childThreadRecords(threadId).some(
       ({ snapshot }) => !isTerminal(snapshot.status),
     );
+  }
+
+  private resumableThread(agentId: string): ResumableAgentThread | undefined {
+    const threadId = this.resumableTaskThreads.get(agentId) ?? agentId;
+    return this.resumableThreads.get(threadId);
   }
 
   private openAgentThreadCount(): number {
@@ -1297,15 +1398,18 @@ export class AgentOrchestrator {
   private childThreadHistory(
     record: AgentTaskRecord,
   ): readonly ModelConversationMessage[] {
-    return this.childThreadRecords(agentThreadId(record)).flatMap(
-      ({ snapshot }) =>
+    const records = this.childThreadRecords(agentThreadId(record));
+    return [
+      ...(records[0]?.history ?? []),
+      ...records.flatMap(({ snapshot }) =>
         snapshot.output
           ? [
               { role: "user" as const, text: snapshot.task },
               { role: "assistant" as const, text: snapshot.output },
             ]
           : [],
-    );
+      ),
+    ];
   }
 
   private cancelRemaining(reason: string): void {
@@ -1322,6 +1426,12 @@ export class AgentOrchestrator {
   }
 
   private detachChildExecution(record: AgentTaskRecord): void {
+    if (
+      this.running.has(record.snapshot.id) &&
+      record.profile?.toolAccess === "all"
+    ) {
+      this.detachedWriters.add(record.snapshot.id);
+    }
     this.running.delete(record.snapshot.id);
     if (record.execution) this.childPromises.delete(record.execution);
     record.execution = undefined;
@@ -1393,6 +1503,7 @@ function rootRunOptions(options: AgentOrchestratorOptions): RunOptions {
     profiles: _profiles,
     maxConcurrent: _maxConcurrent,
     maxAgents: _maxAgents,
+    resumableThreads: _resumableThreads,
     wallNow: _wallNow,
     onAgentTreeEvent: _onAgentTreeEvent,
     onRuntimeCheckpoint: _onRuntimeCheckpoint,

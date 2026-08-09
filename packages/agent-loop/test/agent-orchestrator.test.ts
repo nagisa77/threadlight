@@ -316,6 +316,104 @@ describe("AgentOrchestrator", () => {
     expect(writeExecutions).toBe(0);
   });
 
+  it("keeps the write lock quarantined when an interrupted writer ignores abort", async () => {
+    let rootTurns = 0;
+    let writerId = "";
+    let writeExecutions = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          return new Promise<ModelTurn>(() => undefined);
+        }
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Starting an unresponsive writer.",
+            toolCalls: [
+              {
+                id: "spawn-writer",
+                name: "spawn_agent",
+                arguments: { role: "worker", task: "Hold the write lock" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          writerId = (
+            JSON.parse(request.toolResults![0]!.output) as {
+              agentThreadId: string;
+            }
+          ).agentThreadId;
+          return {
+            text: "Interrupting without waiting for provider shutdown.",
+            toolCalls: [
+              {
+                id: "interrupt-writer",
+                name: "interrupt_agent",
+                arguments: { agentId: writerId },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          expect(request.toolResults?.[0]?.isError).toBeUndefined();
+          return {
+            text: "Checking that the detached writer remains quarantined.",
+            toolCalls: [
+              { id: "unsafe-root-write", name: "write_file", arguments: {} },
+            ],
+          };
+        }
+        if (rootTurns === 4) {
+          expect(request.toolResults?.[0]).toMatchObject({ isError: true });
+          expect(request.toolResults?.[0]?.output).toContain(
+            "owns the workspace",
+          );
+          return {
+            text: "Collecting the local interrupted state.",
+            toolCalls: [
+              {
+                id: "wait-writer",
+                name: "wait_for_agents",
+                arguments: { agentIds: [writerId], timeoutMs: 100 },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]?.output).toContain('"interrupted"');
+        return { text: "Writer stayed quarantined.", toolCalls: [] };
+      },
+    };
+    const writeTool = defineTool({
+      name: "write_file",
+      description: "Write a file",
+      parameters: { type: "object" },
+      mutability: "write",
+      async execute() {
+        writeExecutions += 1;
+        return "written";
+      },
+    });
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "worker",
+          description: "Implement",
+          instructions: "PROFILE_WORKER",
+          toolAccess: "all",
+        },
+      ],
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT", tools: [writeTool] }),
+      "Protect the workspace",
+    );
+
+    expect(result.output).toBe("Writer stayed quarantined.");
+    expect(writeExecutions).toBe(0);
+  });
+
   it("cancels and retries a scripted child without ending the parent run", async () => {
     const childStarted = Promise.withResolvers<void>();
     let childAttempts = 0;
@@ -831,6 +929,177 @@ describe("AgentOrchestrator", () => {
       expect.objectContaining({
         status: "completed",
         modelState: { replacement: 2 },
+      }),
+    ]);
+  });
+
+  it("continues a durable subagent thread in a later parent run", async () => {
+    let rootTurns = 0;
+    let childRequests = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          childRequests += 1;
+          if (childRequests === 1) {
+            expect(request.input).toBe("Continue the persisted work");
+            expect(request.state).toEqual({ round: 1 });
+            expect(request.history).toEqual([
+              { role: "user", text: "Initial persisted task" },
+              { role: "assistant", text: "Initial persisted result" },
+            ]);
+            return {
+              text: "First resumed result",
+              toolCalls: [],
+              state: { round: 2 },
+            };
+          }
+          expect(request.input).toBe("Continue once more");
+          expect(request.state).toEqual({ round: 2 });
+          expect(request.history).toEqual([
+            { role: "user", text: "Initial persisted task" },
+            { role: "assistant", text: "Initial persisted result" },
+            { role: "user", text: "Continue the persisted work" },
+            { role: "assistant", text: "First resumed result" },
+          ]);
+          return {
+            text: "Second resumed result",
+            toolCalls: [],
+            state: { round: 3 },
+          };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Continuing the prior child turn.",
+            toolCalls: [
+              {
+                id: "resume-prior-task",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: "first-task",
+                  input: "Continue the persisted work",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          const resumed = JSON.parse(request.toolResults![0]!.output) as {
+            id: string;
+            agentThreadId: string;
+            followUpOf: string;
+          };
+          expect(resumed.id).not.toBe("prior-task");
+          expect(resumed.agentThreadId).toBe("durable-thread");
+          expect(resumed.followUpOf).toBe("prior-task");
+          return {
+            text: "Waiting for the resumed child.",
+            toolCalls: [
+              {
+                id: "wait-resumed-task",
+                name: "wait_for_agents",
+                arguments: { agentIds: ["durable-thread"] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "First resumed result",
+          );
+          return {
+            text: "Continuing the restored thread again.",
+            toolCalls: [
+              {
+                id: "resume-thread-again",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: "durable-thread",
+                  input: "Continue once more",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 4) {
+          return {
+            text: "Waiting for the second continuation.",
+            toolCalls: [
+              {
+                id: "wait-second-resume",
+                name: "wait_for_agents",
+                arguments: { agentIds: ["durable-thread"] },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]?.output).toContain(
+          "Second resumed result",
+        );
+        return { text: "Durable continuation complete.", toolCalls: [] };
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "worker",
+          description: "Implement",
+          instructions: "PROFILE_WORKER",
+          toolAccess: "all",
+        },
+      ],
+      resumableThreads: [
+        {
+          agentThreadId: "durable-thread",
+          taskIds: ["first-task", "prior-task"],
+          profileName: "worker",
+          latestTask: {
+            id: "prior-task",
+            parentId: "prior-root",
+            agentThreadId: "durable-thread",
+            name: "worker",
+            role: "worker",
+            task: "Initial persisted task",
+            status: "completed",
+            phase: "done",
+            createdAt: "2026-08-08T10:00:00.000Z",
+            completedAt: "2026-08-08T10:00:01.000Z",
+            elapsedMs: 1_000,
+            output: "Initial persisted result",
+            activities: [],
+            transcript: [],
+          },
+          history: [
+            { role: "user", text: "Initial persisted task" },
+            { role: "assistant", text: "Initial persisted result" },
+          ],
+          modelState: { round: 1 },
+        },
+      ],
+      maxAgents: 1,
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT" }),
+      "Continue earlier work",
+    );
+
+    expect(result.output).toBe("Durable continuation complete.");
+    const childTurns = orchestrator.snapshot.agents.filter(
+      ({ parentId }) => parentId === orchestrator.snapshot.rootId,
+    );
+    expect(childTurns).toHaveLength(2);
+    expect(childTurns).toEqual([
+      expect.objectContaining({
+        agentThreadId: "durable-thread",
+        followUpOf: "prior-task",
+        status: "completed",
+      }),
+      expect.objectContaining({
+        agentThreadId: "durable-thread",
+        followUpOf: childTurns[0]!.id,
+        status: "completed",
       }),
     ]);
   });

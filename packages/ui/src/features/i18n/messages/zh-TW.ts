@@ -799,6 +799,8 @@ export const zhTW: Messages = {
   agentList: "Agent 清單",
   hideAgentList: "收合 Agent 清單",
   showAgentList: "展開 Agent 清單",
+  hideAgentTask: "收合任務詳情",
+  showAgentTask: "展開任務詳情",
   agentConcurrency: "並行上限 {count}",
   openAgentsPanel: "在右側面板查看",
   noAgentRuns: "暫無多 Agent 記錄",

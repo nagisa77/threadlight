@@ -117,6 +117,7 @@ describe("AgentTreePanel", () => {
           ? agent
           : {
               ...agent,
+              task: "Trace the protocol, persistence model, runtime recovery, provider boundaries, and every failure path before reporting the result.",
               transcript: [
                 {
                   id: "model:1",
@@ -139,7 +140,20 @@ describe("AgentTreePanel", () => {
             },
       ),
     };
-    const html = renderToStaticMarkup(<AgentPanel tree={detailed} live />);
+    const html = renderToStaticMarkup(
+      <AgentPanel
+        tree={detailed}
+        live
+        controls={{
+          threadId: "thread",
+          client: {
+            cancelAgent: vi.fn(),
+            retryAgent: vi.fn(),
+            steerAgent: vi.fn(),
+          },
+        }}
+      />,
+    );
 
     expect(html).toContain('role="tabpanel"');
     expect(html).toContain("主 Agent");
@@ -150,6 +164,12 @@ describe("AgentTreePanel", () => {
     expect(html).toContain("不包含 Provider 的隐藏推理");
     expect(html).toContain('aria-label="收起 Agent 列表"');
     expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain('class="agent-conversation-task"');
+    expect(html).toContain('aria-label="展开任务详情"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('class="agent-action danger pressable"');
+    expect(html).toContain('aria-label="停止"');
+    expect(html).toContain("<span>停止</span>");
     expect(html.indexOf('class="agent-conversation"')).toBeLessThan(
       html.indexOf('class="agent-panel-list"'),
     );

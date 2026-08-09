@@ -50,6 +50,51 @@ describe("agent panel layout", () => {
       /\.agent-panel-layout\.collapsed\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);/s,
     );
   });
+
+  it("turns the agent list into a compact horizontal picker on narrow panels", () => {
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)\s*\{[\s\S]*?\.agent-panel-layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\);[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/s,
+    );
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)[\s\S]*?\.agent-panel-list\s*\{[^}]*display:\s*flex;[^}]*overflow-x:\s*auto;[^}]*border-left:\s*0;/s,
+    );
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)[\s\S]*?\.agent-panel-agent\s*\{[^}]*flex:\s*0 0 172px;[^}]*scroll-snap-align:\s*start;/s,
+    );
+  });
+
+  it("bounds long tasks and uses compact icon actions on narrow panels", () => {
+    expect(styles).toMatch(
+      /\.agent-conversation-task p\s*\{[^}]*-webkit-line-clamp:\s*3;/s,
+    );
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)[\s\S]*?\.agent-conversation-task:not\(\.expanded\) p\s*\{[^}]*-webkit-line-clamp:\s*2;/s,
+    );
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)[\s\S]*?\.agent-conversation-task\.expanded p\s*\{[^}]*max-height:\s*min\(180px, 28dvh\);/s,
+    );
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)[\s\S]*?\.agent-conversation-actions \.agent-action\s*\{[^}]*width:\s*38px;[^}]*justify-content:\s*center;[^}]*padding:\s*0;/s,
+    );
+    expect(styles).toMatch(
+      /@container agent-panel \(max-width: 560px\)[\s\S]*?\.agent-conversation-actions \.agent-action span\s*\{[^}]*display:\s*none;/s,
+    );
+  });
+
+  it("compacts inactive workspace tabs without shrinking touch targets", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)\s*\{[\s\S]*?\.workspace-panel\s*\{[^}]*grid-template-rows:\s*54px minmax\(0, 1fr\);/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab:not\(\.active\)\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*justify-content:\s*center;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab:not\(\.active\) > span:nth-child\(2\),\s*\.workspace-tab:not\(\.active\) \.workspace-tab-close\s*\{[^}]*display:\s*none;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.panel-add-trigger,\s*\.workspace-panel-actions \.header-terminal-button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+  });
 });
 
 describe("expanded composer layout", () => {

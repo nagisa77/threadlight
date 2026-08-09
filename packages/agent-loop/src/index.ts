@@ -32,6 +32,7 @@ export type {
   RunControllerToolDecision,
   RunOptions,
   RunResult,
+  ResumableAgentThread,
   SubagentProfile,
   SubagentToolAccess,
   TokenUsage,

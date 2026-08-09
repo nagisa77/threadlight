@@ -307,7 +307,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 .agent-panel-summary > span,
-.agent-conversation-header span,
+.agent-conversation-identity,
 .agent-conversation-meta span,
 .agent-visible-process-note {
   display: flex;
@@ -438,37 +438,77 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 .agent-conversation-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  display: grid;
+  gap: 6px;
   padding: 13px 14px 9px;
   background: var(--panel);
 }
 
-.agent-conversation-header > div:first-child {
+.agent-conversation-title-row {
+  display: flex;
   min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-.agent-conversation-header span {
+.agent-conversation-identity {
+  min-width: 0;
   gap: 6px;
 }
 
-.agent-conversation-header strong {
+.agent-conversation-identity strong {
+  overflow: hidden;
   color: var(--ink);
   font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.agent-conversation-header small {
+.agent-conversation-identity small {
+  flex: 0 0 auto;
   color: var(--subtle);
   font-size: 9px;
 }
 
-.agent-conversation-header p {
-  margin: 5px 0 0;
+.agent-conversation-task {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 6px;
+}
+
+.agent-conversation-task p {
+  display: -webkit-box;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
   color: var(--muted);
   font-size: 10px;
   line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.agent-conversation-task.expanded p {
+  display: block;
+  max-height: min(240px, 32dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.agent-conversation-task-toggle {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--subtle);
+  background: transparent;
+  cursor: pointer;
 }
 
 .agent-conversation-actions {
@@ -675,15 +715,140 @@ body.is-resizing-workspace .workspace-split-handle::after {
     color: var(--ink);
     background: color-mix(in srgb, var(--ink) 4%, transparent);
   }
+
+  .agent-conversation-task-toggle:hover {
+    border-color: var(--line);
+    color: var(--ink);
+    background: color-mix(in srgb, var(--ink) 4%, transparent);
+  }
 }
 
 @container agent-panel (max-width: 560px) {
   .agent-panel-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(156px, 42%);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .agent-panel-layout.collapsed {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .agent-panel-summary {
+    gap: 8px;
+    padding: 0 10px 0 12px;
+  }
+
+  .agent-panel-summary-actions {
+    gap: 4px;
+  }
+
+  .agent-panel-summary small {
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .agent-panel-list {
+    display: flex;
+    min-height: 66px;
+    grid-column: 1;
+    grid-row: 1;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+    border-left: 0;
+    scroll-padding-inline: 10px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .agent-panel-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .agent-panel-agent {
+    width: 172px;
+    min-height: 50px;
+    flex: 0 0 172px;
+    align-content: center;
+    padding: 7px 9px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--panel);
+    scroll-snap-align: start;
+  }
+
+  .agent-panel-agent.selected {
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  }
+
+  .agent-conversation {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .agent-panel-layout.collapsed .agent-conversation {
+    grid-row: 1;
+  }
+
+  .agent-conversation-header {
+    gap: 5px;
+    padding: 9px 12px 7px;
+  }
+
+  .agent-conversation-task:not(.expanded) p {
+    -webkit-line-clamp: 2;
+  }
+
+  .agent-conversation-task.expanded p {
+    max-height: min(180px, 28dvh);
+  }
+
+  .agent-conversation-actions .agent-action {
+    width: 38px;
+    height: 38px;
+    min-height: 38px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 9px;
+  }
+
+  .agent-conversation-actions .agent-action span {
+    display: none;
+  }
+
+  .agent-conversation-meta {
+    gap: 8px;
+    padding: 0 12px 7px;
+  }
+
+  .agent-visible-process-note {
+    overflow: hidden;
+    padding: 6px 12px;
+    font-size: 8px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .agent-transcript {
+    padding: 10px 10px 14px;
+  }
+
+  .agent-panel-steer {
+    padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .agent-panel-list-toggle,
+  .agent-conversation-task-toggle,
+  .agent-conversation-actions .agent-action {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 }
 
@@ -3189,6 +3354,60 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .app-shell,
   .app-shell.sidebar-hidden {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-panel {
+    grid-template-rows: 54px minmax(0, 1fr);
+  }
+
+  .workspace-panel-tabs {
+    gap: 4px;
+    padding: 5px 6px;
+  }
+
+  .workspace-panel-tab-flow {
+    gap: 2px;
+  }
+
+  .workspace-tab-strip {
+    gap: 3px;
+  }
+
+  .workspace-tab {
+    min-width: 44px;
+    max-width: min(168px, 45vw);
+    height: 44px;
+    gap: 6px;
+    padding: 0 6px 0 9px;
+  }
+
+  .workspace-tab:not(.active) {
+    width: 44px;
+    max-width: 44px;
+    flex: 0 0 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .workspace-tab:not(.active) > span:nth-child(2),
+  .workspace-tab:not(.active) .workspace-tab-close {
+    display: none;
+  }
+
+  .workspace-tab-close {
+    width: 28px;
+    height: 28px;
+  }
+
+  .panel-add-trigger,
+  .workspace-panel-actions .header-terminal-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .workspace-panel-actions {
+    gap: 0;
+    padding-left: 3px;
   }
 
   .settings-section-heading {

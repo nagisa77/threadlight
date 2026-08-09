@@ -1,5 +1,10 @@
 export { AppServer } from "./app-server.js";
 export {
+  BUILTIN_SUBAGENT_PROFILES,
+  loadSubagentProfiles,
+  type SubagentProfileLoadOptions,
+} from "./agent-profile-loader.js";
+export {
   DEFAULT_MAX_PERSISTED_MODEL_STATE_BYTES,
   ModelStatePersistence,
 } from "./model-state-persistence.js";

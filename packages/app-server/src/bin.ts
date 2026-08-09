@@ -35,8 +35,10 @@ import {
   ProcessManager,
 } from "@threadlight/builtin-tools";
 import { ProjectMemoryStore } from "@threadlight/project-memory";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
+import { loadSubagentProfiles } from "./agent-profile-loader.js";
 import { AppServer } from "./app-server.js";
 import { FileConversationStore } from "./conversation-store.js";
 import { FileSuggestionStore } from "./suggestion-store.js";
@@ -127,6 +129,17 @@ const projectStateRoot = resolve(
   process.env.THREADLIGHT_PROJECT_ROOT ?? workspaceRoot,
 );
 const standaloneTask = process.env.THREADLIGHT_TASK_SCOPE === "standalone";
+const threadlightHome = resolve(
+  process.env.THREADLIGHT_HOME ?? join(homedir(), ".threadlight"),
+);
+const subagentProfiles = await loadSubagentProfiles({
+  personalDirectory: join(threadlightHome, "agents"),
+  ...(standaloneTask
+    ? {}
+    : {
+        projectDirectory: join(projectStateRoot, ".threadlight", "agents"),
+      }),
+});
 const projectMemory = new ProjectMemoryStore(projectStateRoot);
 const processManager = new ProcessManager();
 const planRuntime = new PlanToolRuntime();
@@ -198,44 +211,28 @@ const agentFactory = createWorkspaceAgentFactory({
   tools,
 });
 
-const send = jsonLineSender(process.stdout);
+let outputFailureStarted = false;
+let disposeAfterOutputFailure: (() => Promise<void>) | undefined;
+const send = jsonLineSender(process.stdout, {
+  onError(error) {
+    if (outputFailureStarted) return;
+    outputFailureStarted = true;
+    process.stderr.write(
+      `App-server output transport failed: ${error.message}\n`,
+    );
+    const forceExit = setTimeout(() => process.exit(1), 1_000);
+    forceExit.unref();
+    void Promise.resolve()
+      .then(() => disposeAfterOutputFailure?.())
+      .finally(() => process.exit(1));
+  },
+});
 const server = new AppServer({
   loop,
   multiAgent: {
     maxConcurrent: 3,
     maxAgents: 8,
-    profiles: [
-      {
-        name: "explorer",
-        description:
-          "Quickly inspect the workspace, trace code paths, and return evidence without changing state.",
-        instructions:
-          "Search broadly enough to answer the delegated question, cite concrete files and symbols, and do not modify workspace or external state.",
-        toolAccess: "read-only",
-      },
-      {
-        name: "worker",
-        description:
-          "Implement one well-scoped change with exclusive workspace write ownership.",
-        instructions:
-          "Implement only the delegated change, preserve unrelated user work, verify the result proportionally, and report changed files plus test evidence.",
-        toolAccess: "all",
-        excludedTools: [
-          "update_plan",
-          "advance_plan",
-          "request_plan_input",
-          "project_memory",
-        ],
-      },
-      {
-        name: "reviewer",
-        description:
-          "Review an implementation for correctness, regressions, and missing tests without changing state.",
-        instructions:
-          "Inspect the relevant implementation and tests. Report actionable findings ordered by severity, or state clearly when no issue is found.",
-        toolAccess: "read-only",
-      },
-    ],
+    profiles: subagentProfiles,
   },
   generateConversationTitles: true,
   modelName,
@@ -296,6 +293,7 @@ const server = new AppServer({
     if (runId) await desktopComputer?.clearForRun(runId);
   },
 });
+disposeAfterOutputFailure = () => server.dispose();
 
 serveJsonLines(server, process.stdin, (error) => {
   process.stderr.write(`Invalid JSON-RPC input: ${String(error)}\n`);
