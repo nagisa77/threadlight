@@ -1,7 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentTreePanel } from "../src/features/task-session/conversation-content.js";
+import {
+  AgentTreePanel,
+  groupAdjacentAgentActivities,
+} from "../src/features/task-session/conversation-content.js";
 import { AgentPanel } from "../src/features/task-session/agent-panel.js";
 
 describe("AgentTreePanel", () => {
@@ -107,6 +110,26 @@ describe("AgentTreePanel", () => {
     expect(html).toContain('class="agent-status closed"');
     expect(html).toContain("已关闭");
     expect(html).not.toContain(">重试<");
+  });
+
+  it("groups only adjacent repeated agent activities", () => {
+    expect(
+      groupAdjacentAgentActivities([
+        { id: "search-1", name: "web_search", status: "completed" },
+        { id: "search-2", name: "web_search", status: "completed" },
+        { id: "read-1", name: "read_file", status: "completed" },
+        { id: "search-3", name: "web_search", status: "running" },
+      ]),
+    ).toEqual([
+      {
+        id: "search-1",
+        name: "web_search",
+        status: "completed",
+        count: 2,
+      },
+      { id: "read-1", name: "read_file", status: "completed", count: 1 },
+      { id: "search-3", name: "web_search", status: "running", count: 1 },
+    ]);
   });
 
   it("renders a conversation-like side panel with model, tool, and output details", () => {

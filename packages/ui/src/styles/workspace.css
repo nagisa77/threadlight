@@ -3371,27 +3371,24 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
   .workspace-tab-strip {
     gap: 3px;
+    overscroll-behavior-inline: contain;
+    scroll-padding-inline: 3px;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
   }
 
   .workspace-tab {
-    min-width: 44px;
-    max-width: min(168px, 45vw);
+    min-width: max-content;
+    max-width: none;
     height: 44px;
+    flex: 0 0 auto;
     gap: 6px;
     padding: 0 6px 0 9px;
   }
 
-  .workspace-tab:not(.active) {
-    width: 44px;
-    max-width: 44px;
-    flex: 0 0 44px;
-    justify-content: center;
-    padding: 0;
-  }
-
-  .workspace-tab:not(.active) > span:nth-child(2),
-  .workspace-tab:not(.active) .workspace-tab-close {
-    display: none;
+  .workspace-tab > span:nth-child(2) {
+    overflow: visible;
+    text-overflow: clip;
   }
 
   .workspace-tab-close {

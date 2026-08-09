@@ -1100,7 +1100,10 @@ export function ProjectConversationItem({
         </button>
       )}
       {manageable && !editing && !running && !computerActive && (
-        <div ref={menuRoot} className="thread-actions">
+        <div
+          ref={menuRoot}
+          className={`thread-actions${menuOpen ? " open" : ""}`}
+        >
           <button
             type="button"
             className="thread-action-button pressable"

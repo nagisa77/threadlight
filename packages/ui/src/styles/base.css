@@ -2,7 +2,11 @@
   color: #242420;
   background: #f7f6f2;
   font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
     sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -455,6 +459,10 @@ button:disabled {
   top: 1px;
   right: 4px;
   z-index: 4;
+}
+
+.thread-actions.open {
+  z-index: 5;
 }
 
 .thread-action-button,
@@ -1822,7 +1830,6 @@ button:disabled {
   color: color-mix(in srgb, var(--accent) 72%, var(--ink));
   background: color-mix(in srgb, var(--accent) 7%, var(--panel));
 }
-
 
 .restore-dialog-icon {
   color: #9b641e;

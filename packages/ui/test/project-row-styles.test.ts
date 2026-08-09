@@ -25,6 +25,11 @@ describe("project row activity layout", () => {
     );
   });
 
+  it("raises only the open task action group above the other ellipsis buttons", () => {
+    expect(styles).toMatch(/\.thread-actions\s*\{[^}]*z-index:\s*4;/s);
+    expect(styles).toMatch(/\.thread-actions\.open\s*\{[^}]*z-index:\s*5;/s);
+  });
+
   it("keeps portaled project menus above the mobile sidebar", () => {
     expect(styles).toMatch(/\.action-popover\s*\{[^}]*z-index:\s*90;/s);
     expect(styles).toMatch(

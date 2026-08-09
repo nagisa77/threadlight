@@ -501,6 +501,10 @@
   min-height: 0;
 }
 
+.web-runtime .sidebar-footer > .runtime-status-control {
+  display: none;
+}
+
 .web-runtime.is-restoring {
   visibility: hidden;
   pointer-events: none;

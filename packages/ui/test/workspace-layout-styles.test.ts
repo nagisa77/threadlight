@@ -81,15 +81,18 @@ describe("agent panel layout", () => {
     );
   });
 
-  it("compacts inactive workspace tabs without shrinking touch targets", () => {
+  it("keeps complete workspace tab titles in a horizontal mobile scroller", () => {
     expect(styles).toMatch(
       /@media \(max-width: 720px\)\s*\{[\s\S]*?\.workspace-panel\s*\{[^}]*grid-template-rows:\s*54px minmax\(0, 1fr\);/s,
     );
     expect(styles).toMatch(
-      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab:not\(\.active\)\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*justify-content:\s*center;/s,
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab-strip\s*\{[^}]*overscroll-behavior-inline:\s*contain;[^}]*touch-action:\s*pan-x;/s,
     );
     expect(styles).toMatch(
-      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab:not\(\.active\) > span:nth-child\(2\),\s*\.workspace-tab:not\(\.active\) \.workspace-tab-close\s*\{[^}]*display:\s*none;/s,
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab\s*\{[^}]*min-width:\s*max-content;[^}]*max-width:\s*none;[^}]*flex:\s*0 0 auto;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tab > span:nth-child\(2\)\s*\{[^}]*overflow:\s*visible;[^}]*text-overflow:\s*clip;/s,
     );
     expect(styles).toMatch(
       /@media \(max-width: 720px\)[\s\S]*?\.panel-add-trigger,\s*\.workspace-panel-actions \.header-terminal-button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,

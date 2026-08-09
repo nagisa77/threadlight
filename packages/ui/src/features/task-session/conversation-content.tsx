@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
+  AgentTaskActivityData,
   AgentTaskData,
   AgentTreeData,
   AttachmentData,
@@ -262,6 +263,7 @@ function AgentInspector({
     (agent.status === "failed" ||
       agent.status === "cancelled" ||
       agent.status === "interrupted");
+  const activityGroups = groupAdjacentAgentActivities(agent.activities);
 
   const act = async (action: () => Promise<unknown>): Promise<boolean> => {
     if (busy) return false;
@@ -324,7 +326,7 @@ function AgentInspector({
       )}
       {agent.activities.length > 0 && (
         <div className="agent-activities" aria-label={t("agentActivity")}>
-          {agent.activities.map((activity) => (
+          {activityGroups.map((activity) => (
             <span key={activity.id} data-status={activity.status}>
               {activity.status === "running" ? (
                 <LoaderCircle className="spin" size={12} />
@@ -334,6 +336,9 @@ function AgentInspector({
                 <Check size={12} />
               )}
               <code>{activity.name}</code>
+              {activity.count > 1 && (
+                <span className="agent-activity-count">× {activity.count}</span>
+              )}
             </span>
           ))}
         </div>
@@ -379,6 +384,29 @@ function AgentInspector({
       )}
     </section>
   );
+}
+
+export function groupAdjacentAgentActivities(
+  activities: readonly AgentTaskActivityData[],
+): Array<AgentTaskActivityData & { count: number }> {
+  const groups: Array<AgentTaskActivityData & { count: number }> = [];
+
+  for (const activity of activities) {
+    const previous = groups.at(-1);
+    if (!previous || previous.name !== activity.name) {
+      groups.push({ ...activity, count: 1 });
+      continue;
+    }
+
+    previous.count += 1;
+    if (activity.status === "failed") {
+      previous.status = "failed";
+    } else if (activity.status === "running" && previous.status !== "failed") {
+      previous.status = "running";
+    }
+  }
+
+  return groups;
 }
 
 function AgentStatusIcon({ agent }: { agent: AgentTaskData }) {
