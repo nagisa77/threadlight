@@ -62,7 +62,56 @@ describe("jsonLineSender", () => {
     output.destroy();
   });
 
-  it("fails safely when a stalled transport exceeds its bounded queue", () => {
+  it("coalesces obsolete snapshots while a large output transport is stalled", async () => {
+    const chunks: string[] = [];
+    const callbacks: ((error?: Error | null) => void)[] = [];
+    const onError = vi.fn();
+    const output = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(chunk.toString("utf8"));
+        callbacks.push(callback);
+      },
+    });
+    const sample = snapshotNotification(0);
+    const lineBytes = Buffer.byteLength(`${JSON.stringify(sample)}\n`);
+    const send = jsonLineSender(output, {
+      maxBufferedBytes: lineBytes * 3,
+      coalesceKey(message) {
+        return "method" in message && message.method === "fixture/snapshot"
+          ? "agent-tree:thread-1:turn-1"
+          : undefined;
+      },
+      onError,
+    });
+
+    send(sample);
+    for (let sequence = 1; sequence <= 100; sequence += 1) {
+      send(snapshotNotification(sequence));
+    }
+    send(notification(101));
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(chunks).toHaveLength(1);
+
+    callbacks.shift()?.();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(JSON.parse(chunks[1]!)).toMatchObject({
+      method: "fixture/snapshot",
+      params: { sequence: 100 },
+    });
+
+    callbacks.shift()?.();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    expect(JSON.parse(chunks[2]!)).toMatchObject({
+      method: "fixture/event",
+      params: { sequence: 101 },
+    });
+
+    callbacks.shift()?.();
+    output.destroy();
+  });
+
+  it("finishes the in-flight JSON frame before reporting queue overflow", async () => {
     const callbacks: ((error?: Error | null) => void)[] = [];
     const onError = vi.fn();
     const output = new Writable({
@@ -81,12 +130,13 @@ describe("jsonLineSender", () => {
     send(notification(2));
     send(notification(3));
 
+    expect(onError).not.toHaveBeenCalled();
+    callbacks.shift()?.();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
     expect(onError).toHaveBeenCalledOnce();
     expect(onError.mock.calls[0]?.[0]).toMatchObject({
       message: expect.stringContaining("buffered bytes"),
     });
-
-    callbacks.shift()?.();
     output.destroy();
   });
 });
@@ -96,5 +146,18 @@ function notification(sequence: number): JsonRpcOutgoing {
     jsonrpc: "2.0",
     method: "fixture/event",
     params: { sequence },
+  };
+}
+
+function snapshotNotification(sequence: number): JsonRpcOutgoing {
+  return {
+    jsonrpc: "2.0",
+    method: "fixture/snapshot",
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      sequence,
+      transcript: "x".repeat(128 * 1024),
+    },
   };
 }

@@ -155,12 +155,23 @@ describe("AppServer multi-agent runtime", () => {
       pendingInput: [],
       modelState: { child: 2 },
     });
+    const liveAgentNotifications = messages.filter(
+      (message) =>
+        "method" in message &&
+        (message.method === "agent/tree-updated" ||
+          message.method === "agent/event"),
+    );
     expect(
-      messages.some(
+      liveAgentNotifications.some(
         (message) =>
           "method" in message && message.method === "agent/tree-updated",
       ),
     ).toBe(true);
+    for (const notification of liveAgentNotifications) {
+      expect(
+        (notification.params as { activeTurn?: unknown }).activeTurn,
+      ).not.toHaveProperty("agentTree");
+    }
 
     await server.receive({
       jsonrpc: "2.0",
@@ -232,7 +243,10 @@ describe("AppServer multi-agent runtime", () => {
     ];
     const initialServer = new AppServer({
       loop: new AgentLoop(initialProvider),
-      agent: defineAgent({ name: "threadlight", instructions: "Complete work" }),
+      agent: defineAgent({
+        name: "threadlight",
+        instructions: "Complete work",
+      }),
       conversationStore: store,
       multiAgent: { profiles },
       send(message) {
@@ -341,7 +355,10 @@ describe("AppServer multi-agent runtime", () => {
     };
     const resumedServer = new AppServer({
       loop: new AgentLoop(resumedProvider),
-      agent: defineAgent({ name: "threadlight", instructions: "Complete work" }),
+      agent: defineAgent({
+        name: "threadlight",
+        instructions: "Complete work",
+      }),
       conversationStore: store,
       multiAgent: { profiles },
       send(message) {
@@ -387,6 +404,163 @@ describe("AppServer multi-agent runtime", () => {
       },
     });
     await resumedServer.dispose();
+  });
+
+  it("persists an explicit close across parent turns and rejects later follow-up with agent_closed", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const store = new MemoryConversationStore();
+    let completed = Promise.withResolvers<void>();
+    let rootTurns = 0;
+    let agentThreadId = "";
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          return {
+            text: "Persistent worker result",
+            toolCalls: [],
+            state: { workerRound: 1 },
+          };
+        }
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Starting a persistent worker.",
+            toolCalls: [
+              {
+                id: "spawn-persistent-worker",
+                name: "spawn_agent",
+                arguments: { role: "worker", task: "Create the first result" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          const spawned = JSON.parse(request.toolResults![0]!.output) as {
+            agentThreadId: string;
+          };
+          agentThreadId = spawned.agentThreadId;
+          return {
+            text: "Waiting for the worker.",
+            toolCalls: [
+              {
+                id: "wait-persistent-worker",
+                name: "wait_for_agents",
+                arguments: { agentIds: [agentThreadId] },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Persistent worker result",
+          );
+          return { text: "The initial task is complete.", toolCalls: [] };
+        }
+        if (rootTurns === 4) {
+          return {
+            text: "Closing the persisted worker thread.",
+            toolCalls: [
+              {
+                id: "close-persistent-worker",
+                name: "close_agent",
+                arguments: { agentId: agentThreadId },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 5) {
+          expect(request.toolResults?.[0]?.isError).toBeUndefined();
+          return { text: "The worker thread is closed.", toolCalls: [] };
+        }
+        if (rootTurns === 6) {
+          return {
+            text: "Checking that close survives the next turn.",
+            toolCalls: [
+              {
+                id: "follow-up-closed-worker",
+                name: "follow_up_agent",
+                arguments: {
+                  agentId: agentThreadId,
+                  input: "Create another result",
+                },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]).toMatchObject({
+          isError: true,
+          error: { code: "agent_closed", retryable: false },
+        });
+        return { text: "The explicit close is durable.", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "threadlight",
+        instructions: "Complete work",
+      }),
+      conversationStore: store,
+      multiAgent: {
+        profiles: [
+          {
+            name: "worker",
+            description: "Implement programs",
+            instructions: "Implement and verify the requested program",
+            toolAccess: "all",
+          },
+        ],
+      },
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 20, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 21, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 21).threadId;
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 22,
+      method: "turn/start",
+      params: { threadId, input: "Create a result" },
+    });
+    await completed.promise;
+
+    completed = Promise.withResolvers<void>();
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 23,
+      method: "turn/start",
+      params: { threadId, input: "Close that worker" },
+    });
+    await completed.promise;
+    const closedConversation = await store.load(threadId);
+    expect(
+      closedConversation?.agentRuns
+        ?.flatMap(({ agents }) => agents)
+        .filter(({ agent }) => agent.agentThreadId === agentThreadId),
+    ).toEqual([
+      expect.objectContaining({
+        agent: expect.objectContaining({ closedAt: expect.any(String) }),
+      }),
+    ]);
+
+    completed = Promise.withResolvers<void>();
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 24,
+      method: "turn/start",
+      params: { threadId, input: "Continue that worker" },
+    });
+    await completed.promise;
+
+    expect(rootTurns).toBe(7);
+    await server.dispose();
   });
 
   it("persists child checkpoints and recovers unfinished agent threads as queryable interruptions", async () => {

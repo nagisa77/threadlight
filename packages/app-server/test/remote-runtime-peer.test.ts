@@ -77,8 +77,7 @@ describe("JsonLineRuntimePeer", () => {
             requestId: 7,
           },
         },
-        callbackPrefix:
-          "https://host.example/v1/host/oauth/callback",
+        callbackPrefix: "https://host.example/v1/host/oauth/callback",
       },
     });
     expect(handleConnectionRequest).toHaveBeenCalledWith(
@@ -91,5 +90,34 @@ describe("JsonLineRuntimePeer", () => {
       }),
     );
     await peer.stop();
+  });
+
+  it("delivers complete frames and discards a truncated final JSON frame", async () => {
+    const onLog = vi.fn();
+    const peer = new JsonLineRuntimePeer({
+      entry: fileURLToPath(
+        new URL("./fixtures/truncated-output-peer.mjs", import.meta.url),
+      ),
+      cwd: process.cwd(),
+      onLog,
+    });
+    const message = Promise.withResolvers<JsonRpcOutgoing>();
+    const exited = Promise.withResolvers<Error>();
+    peer.onMessage(message.resolve);
+    peer.onExit(exited.resolve);
+
+    await peer.start();
+
+    await expect(message.promise).resolves.toMatchObject({
+      method: "fixture/complete-output",
+      params: { accepted: true },
+    });
+    await expect(exited.promise).resolves.toBeInstanceOf(Error);
+    expect(onLog).toHaveBeenCalledWith(
+      expect.stringContaining("Discarded incomplete app-server output frame"),
+    );
+    expect(onLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("Invalid app-server output"),
+    );
   });
 });

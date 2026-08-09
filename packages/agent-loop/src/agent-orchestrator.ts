@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { AgentLoop } from "./agent-loop.js";
+import { ToolExecutionError } from "./tool-error.js";
 import type {
   Agent,
   AgentEvent,
+  AgentLifecycleErrorCode,
   AgentOrchestratorOptions,
   AgentRunCheckpoint,
   AgentRuntimeSnapshot,
@@ -97,6 +99,12 @@ interface AgentMailboxWaiter {
   resolve(event: AgentMailboxEvent): void;
 }
 
+interface AgentLifecycleTarget {
+  threadId: string;
+  records: AgentTaskRecord[];
+  resumable?: ResumableAgentThread;
+}
+
 /**
  * A single provider-neutral multi-agent run.
  *
@@ -108,6 +116,7 @@ export class AgentOrchestrator {
   private readonly profiles = new Map<string, SubagentProfile>();
   private readonly resumableThreads = new Map<string, ResumableAgentThread>();
   private readonly resumableTaskThreads = new Map<string, string>();
+  private readonly threadClosures = new Map<string, string>();
   private readonly records = new Map<string, AgentTaskRecord>();
   private readonly queue: string[] = [];
   private readonly running = new Set<string>();
@@ -153,9 +162,6 @@ export class AgentOrchestrator {
           `Resumable agent task ${thread.latestTask.id} belongs to thread ${latestThreadId}, not ${threadId}`,
         );
       }
-      if (!isTerminal(thread.latestTask.status)) {
-        throw new Error(`Resumable agent thread ${threadId} is still active`);
-      }
       const restored = {
         ...thread,
         agentThreadId: threadId,
@@ -164,10 +170,10 @@ export class AgentOrchestrator {
         history: thread.history.map((message) => ({ ...message })),
       };
       this.resumableThreads.set(threadId, restored);
-      for (const taskId of new Set([
-        ...thread.taskIds,
-        thread.latestTask.id,
-      ])) {
+      if (thread.latestTask.closedAt) {
+        this.threadClosures.set(threadId, thread.latestTask.closedAt);
+      }
+      for (const taskId of new Set([...thread.taskIds, thread.latestTask.id])) {
         const existing = this.resumableTaskThreads.get(taskId);
         if (existing && existing !== threadId) {
           throw new Error(
@@ -213,6 +219,13 @@ export class AgentOrchestrator {
           ? {}
           : { checkpointPhase: record.checkpointPhase }),
       })),
+      ...(this.threadClosures.size === 0
+        ? {}
+        : {
+            closedAgentThreads: [...this.threadClosures].map(
+              ([agentThreadId, closedAt]) => ({ agentThreadId, closedAt }),
+            ),
+          }),
     };
   }
 
@@ -308,115 +321,123 @@ export class AgentOrchestrator {
   }
 
   steer(agentId: string, input: string): boolean {
+    try {
+      this.steerOrThrow(agentId, input);
+      return true;
+    } catch (error) {
+      if (error instanceof ToolExecutionError) return false;
+      throw error;
+    }
+  }
+
+  private steerOrThrow(agentId: string, input: string): void {
     const instruction = input.trim();
-    const record = this.currentChildRecord(agentId);
-    if (
-      !instruction ||
-      !record ||
-      record.snapshot.closedAt !== undefined ||
-      isTerminal(record.snapshot.status)
-    ) {
-      return false;
+    if (!instruction) throw new Error("Agent direction is required");
+    const target = this.lifecycleTarget(agentId, "steering");
+    this.assertThreadOpen(target, agentId, "steering");
+    const record = target.records.at(-1);
+    if (!record || isTerminal(record.snapshot.status)) {
+      throw lifecycleError("agent_not_attached", agentId, "steering");
     }
     record.pendingInput.push(instruction);
     this.patchRecord(record, "steered", {
       latestActivity: "Direction updated",
     });
     this.scheduleRuntimeCheckpoint();
-    return true;
   }
 
   retry(agentId: string): AgentTaskSnapshot | undefined {
-    const direct = this.records.get(agentId);
-    const previous =
-      direct?.snapshot.parentId === this.rootId
-        ? direct
-        : this.currentChildRecord(agentId);
-    if (!previous) {
-      const resumable = this.resumableThread(agentId);
-      const profile = resumable
-        ? this.profiles.get(resumable.profileName)
-        : undefined;
-      if (
-        this.closed ||
-        !resumable ||
-        !profile ||
-        resumable.latestTask.closedAt !== undefined ||
-        this.threadHasActiveRunById(resumable.agentThreadId)
-      ) {
-        return;
-      }
-      return this.spawn(profile.name, resumable.latestTask.task, {
-        retryOf: resumable.latestTask.id,
-        agentThreadId: resumable.agentThreadId,
-      });
+    try {
+      return this.retryOrThrow(agentId);
+    } catch (error) {
+      if (error instanceof ToolExecutionError) return;
+      throw error;
     }
-    if (
-      this.closed ||
-      !previous.profile ||
-      previous.snapshot.closedAt !== undefined ||
-      this.threadHasActiveRun(previous) ||
-      !isTerminal(previous.snapshot.status)
-    ) {
-      return;
+  }
+
+  private retryOrThrow(agentId: string): AgentTaskSnapshot {
+    const target = this.lifecycleTarget(agentId, "retry");
+    this.assertThreadContinuable(target, agentId, "retry");
+    const previous = target.records.at(-1);
+    const latestTask = previous?.snapshot ?? target.resumable?.latestTask;
+    const profileName =
+      previous?.profile?.name ?? target.resumable?.profileName;
+    if (!latestTask || !profileName || !this.profiles.has(profileName)) {
+      throw lifecycleError(
+        "agent_state_unavailable",
+        agentId,
+        "retry",
+        "its persisted profile is unavailable",
+      );
     }
-    return this.spawn(previous.profile.name, previous.snapshot.task, {
-      retryOf: previous.snapshot.id,
-      agentThreadId: agentThreadId(previous),
+    return this.spawn(profileName, latestTask.task, {
+      retryOf: latestTask.id,
+      agentThreadId: target.threadId,
     });
   }
 
   followUp(agentId: string, input: string): AgentTaskSnapshot | undefined {
+    try {
+      return this.followUpOrThrow(agentId, input);
+    } catch (error) {
+      if (error instanceof ToolExecutionError) return;
+      throw error;
+    }
+  }
+
+  private followUpOrThrow(agentId: string, input: string): AgentTaskSnapshot {
     const instruction = input.trim();
-    const previous = this.currentChildRecord(agentId);
-    if (!previous) {
-      const resumable = this.resumableThread(agentId);
-      const profile = resumable
-        ? this.profiles.get(resumable.profileName)
-        : undefined;
-      if (
-        this.closed ||
-        !instruction ||
-        !resumable ||
-        !profile ||
-        resumable.latestTask.closedAt !== undefined ||
-        this.threadHasActiveRunById(resumable.agentThreadId)
-      ) {
-        return;
-      }
-      return this.spawn(profile.name, instruction, {
-        followUpOf: resumable.latestTask.id,
-        agentThreadId: resumable.agentThreadId,
-        modelState: resumable.modelState,
-        history: resumable.history,
-      });
+    if (!instruction) throw new Error("Agent follow-up input is required");
+    const target = this.lifecycleTarget(agentId, "follow-up");
+    this.assertThreadContinuable(target, agentId, "follow-up");
+    const previous = target.records.at(-1);
+    const latestTask = previous?.snapshot ?? target.resumable?.latestTask;
+    const profileName =
+      previous?.profile?.name ?? target.resumable?.profileName;
+    const modelState = previous?.modelState ?? target.resumable?.modelState;
+    const history = previous
+      ? this.childThreadHistory(previous)
+      : (target.resumable?.history ?? []);
+    if (!latestTask || !profileName || !this.profiles.has(profileName)) {
+      throw lifecycleError(
+        "agent_state_unavailable",
+        agentId,
+        "follow-up",
+        "its persisted profile is unavailable",
+      );
     }
-    if (
-      this.closed ||
-      !instruction ||
-      !previous.profile ||
-      previous.snapshot.closedAt !== undefined ||
-      this.threadHasActiveRun(previous) ||
-      !isTerminal(previous.snapshot.status)
-    ) {
-      return;
+    if (!previous && modelState === undefined && history.length === 0) {
+      throw lifecycleError(
+        "agent_state_unavailable",
+        agentId,
+        "follow-up",
+        "neither opaque model state nor conversation history is available",
+      );
     }
-    return this.spawn(previous.profile.name, instruction, {
-      followUpOf: previous.snapshot.id,
-      agentThreadId: agentThreadId(previous),
-      modelState: previous.modelState,
-      history: this.childThreadHistory(previous),
+    return this.spawn(profileName, instruction, {
+      followUpOf: latestTask.id,
+      agentThreadId: target.threadId,
+      modelState,
+      history,
     });
   }
 
   interrupt(agentId: string): boolean {
-    const record = this.currentChildRecord(agentId);
-    if (
-      !record ||
-      record.snapshot.closedAt !== undefined ||
-      isTerminal(record.snapshot.status)
-    ) {
-      return false;
+    try {
+      this.interruptOrThrow(agentId);
+      return true;
+    } catch (error) {
+      if (error instanceof ToolExecutionError) return false;
+      throw error;
+    }
+  }
+
+  private interruptOrThrow(agentId: string): void {
+    const target = this.lifecycleTarget(agentId, "interruption");
+    this.assertThreadOpen(target, agentId, "interruption");
+    const record = target.records.at(-1);
+    if (!record || isTerminal(record.snapshot.status)) {
+      throw lifecycleError("agent_not_attached", agentId, "interruption");
     }
     record.controller.abort(new Error("Agent interrupted by parent"));
     if (record.snapshot.status === "queued") {
@@ -425,19 +446,31 @@ export class AgentOrchestrator {
     this.detachChildExecution(record);
     this.interruptRecord(record, "Interrupted by parent agent");
     this.pump();
-    return true;
   }
 
   close(agentId: string): boolean {
-    const records = this.childThreadRecords(agentId);
+    try {
+      this.closeOrThrow(agentId);
+      return true;
+    } catch (error) {
+      if (error instanceof ToolExecutionError) return false;
+      throw error;
+    }
+  }
+
+  private closeOrThrow(agentId: string): void {
+    const target = this.lifecycleTarget(agentId, "close");
+    this.assertThreadOpen(target, agentId, "close");
     if (
-      records.length === 0 ||
-      records.every(({ snapshot }) => snapshot.closedAt)
+      target.records.length === 0 &&
+      target.resumable &&
+      !isTerminal(target.resumable.latestTask.status)
     ) {
-      return false;
+      throw lifecycleError("agent_not_attached", agentId, "close");
     }
     const closedAt = this.wallNow().toISOString();
-    for (const record of records) {
+    this.threadClosures.set(target.threadId, closedAt);
+    for (const record of target.records) {
       record.collected = true;
       if (!isTerminal(record.snapshot.status)) {
         record.controller.abort(new Error("Agent thread closed by parent"));
@@ -454,7 +487,6 @@ export class AgentOrchestrator {
     }
     this.scheduleRuntimeCheckpoint();
     this.pump();
-    return true;
   }
 
   hasActiveWriter(): boolean {
@@ -1096,15 +1128,10 @@ export class AgentOrchestrator {
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        const snapshot = this.followUp(
+        const snapshot = this.followUpOrThrow(
           agentId,
           stringArgument(values.input, "input"),
         );
-        if (!snapshot) {
-          throw new Error(
-            `Agent ${agentId} is active, closed, or unavailable for follow-up`,
-          );
-        }
         await this.flushRuntimeCheckpoints();
         return snapshot;
       },
@@ -1121,12 +1148,7 @@ export class AgentOrchestrator {
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        const snapshot = this.retry(agentId);
-        if (!snapshot) {
-          throw new Error(
-            `Agent ${agentId} is active, closed, or unavailable for retry`,
-          );
-        }
+        const snapshot = this.retryOrThrow(agentId);
         await this.flushRuntimeCheckpoints();
         return snapshot;
       },
@@ -1235,9 +1257,7 @@ export class AgentOrchestrator {
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        if (!this.steer(agentId, stringArgument(values.input, "input"))) {
-          throw new Error(`Agent ${agentId} is not available for steering`);
-        }
+        this.steerOrThrow(agentId, stringArgument(values.input, "input"));
         await this.flushRuntimeCheckpoints();
         return { agentId, accepted: true };
       },
@@ -1254,9 +1274,7 @@ export class AgentOrchestrator {
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        if (!this.interrupt(agentId)) {
-          throw new Error(`Agent ${agentId} is not running or queued`);
-        }
+        this.interruptOrThrow(agentId);
         await this.flushRuntimeCheckpoints();
         return { agentId, interrupted: true };
       },
@@ -1273,9 +1291,7 @@ export class AgentOrchestrator {
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        if (!this.close(agentId)) {
-          throw new Error(`Agent ${agentId} is already closed or unknown`);
-        }
+        this.closeOrThrow(agentId);
         await this.flushRuntimeCheckpoints();
         return { agentId, closed: true };
       },
@@ -1316,7 +1332,11 @@ export class AgentOrchestrator {
   ): AgentTaskRecord[] {
     const records = agentIds.map((id) => {
       const record = this.currentChildRecord(id);
-      if (!record) throw new Error(`Unknown subagent: ${id}`);
+      if (!record) {
+        const target = this.lifecycleTarget(id, "status inspection");
+        this.assertThreadOpen(target, id, "status inspection");
+        throw lifecycleError("agent_not_attached", id, "status inspection");
+      }
       return record;
     });
     return uniqueAgentRecords(records);
@@ -1372,14 +1392,13 @@ export class AgentOrchestrator {
     });
   }
 
-  private threadHasActiveRun(record: AgentTaskRecord): boolean {
-    return this.threadHasActiveRunById(agentThreadId(record));
-  }
-
   private threadHasActiveRunById(threadId: string): boolean {
-    return this.childThreadRecords(threadId).some(
+    const currentActive = this.childThreadRecords(threadId).some(
       ({ snapshot }) => !isTerminal(snapshot.status),
     );
+    if (currentActive) return true;
+    const resumable = this.resumableThreads.get(threadId);
+    return resumable ? !isTerminal(resumable.latestTask.status) : false;
   }
 
   private resumableThread(agentId: string): ResumableAgentThread | undefined {
@@ -1387,12 +1406,71 @@ export class AgentOrchestrator {
     return this.resumableThreads.get(threadId);
   }
 
+  private lifecycleTarget(
+    agentId: string,
+    operation: string,
+  ): AgentLifecycleTarget {
+    const records = this.childThreadRecords(agentId);
+    const resumable = this.resumableThread(agentId);
+    const threadId = records[0]
+      ? agentThreadId(records[0])
+      : resumable?.agentThreadId;
+    if (!threadId) {
+      throw lifecycleError("agent_not_found", agentId, operation);
+    }
+    return {
+      threadId,
+      records,
+      ...(resumable ? { resumable } : {}),
+    };
+  }
+
+  private assertThreadOpen(
+    target: AgentLifecycleTarget,
+    agentId: string,
+    operation: string,
+  ): void {
+    if (this.threadClosedAt(target.threadId)) {
+      throw lifecycleError("agent_closed", agentId, operation);
+    }
+    if (this.closed) {
+      throw lifecycleError("agent_not_attached", agentId, operation);
+    }
+  }
+
+  private assertThreadContinuable(
+    target: AgentLifecycleTarget,
+    agentId: string,
+    operation: string,
+  ): void {
+    this.assertThreadOpen(target, agentId, operation);
+    if (this.threadHasActiveRunById(target.threadId)) {
+      throw lifecycleError("agent_busy", agentId, operation);
+    }
+  }
+
+  private threadClosedAt(threadId: string): string | undefined {
+    return (
+      this.threadClosures.get(threadId) ??
+      this.childThreadRecords(threadId).find(
+        ({ snapshot }) => snapshot.closedAt !== undefined,
+      )?.snapshot.closedAt ??
+      this.resumableThreads.get(threadId)?.latestTask.closedAt
+    );
+  }
+
   private openAgentThreadCount(): number {
-    return new Set(
-      this.childRecords()
-        .filter(({ snapshot }) => snapshot.closedAt === undefined)
-        .map(agentThreadId),
-    ).size;
+    const threadIds = new Set<string>();
+    for (const thread of this.resumableThreads.values()) {
+      if (!this.threadClosedAt(thread.agentThreadId)) {
+        threadIds.add(thread.agentThreadId);
+      }
+    }
+    for (const record of this.childRecords()) {
+      const threadId = agentThreadId(record);
+      if (!this.threadClosedAt(threadId)) threadIds.add(threadId);
+    }
+    return threadIds.size;
   }
 
   private childThreadHistory(
@@ -1538,9 +1616,9 @@ function delegationInstructions(
     "MULTI-AGENT DELEGATION",
     "Delegate only concrete, independent work that benefits from parallel execution or focused context. Keep small sequential work in the parent agent.",
     `At most ${maxConcurrent} subagents run concurrently. Start independent tasks with ${SPAWN_AGENT_TOOL}, continue useful parent work, then use ${CHECK_AGENTS_TOOL} for a non-blocking status snapshot or ${WAIT_FOR_AGENTS_TOOL} for a bounded mailbox wait before using their findings or finishing.`,
-    `Use ${STEER_AGENT_TOOL} to add direction to active work. Use ${FOLLOW_UP_AGENT_TOOL} to continue a finished or interrupted agent with its preserved model state.`,
+    `Use ${STEER_AGENT_TOOL} to add direction to active work. Use ${FOLLOW_UP_AGENT_TOOL} for related work that should continue a finished or interrupted agent with its preserved model state; use ${SPAWN_AGENT_TOOL} for an independent task.`,
     `Use ${RETRY_AGENT_TOOL} to rerun a finished or interrupted turn from fresh provider state while retaining its thread linkage.`,
-    `Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,
+    `Agent threads persist for the whole parent conversation: finishing a child turn does not delete or close its thread. Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,
     "Do not duplicate the same task across agents. Give each task enough context to be completed without asking the user.",
     "A write-capable subagent has exclusive workspace write ownership while active. The parent may continue read-only work and must wait before writing.",
     "Available roles:",
@@ -1740,6 +1818,28 @@ function serializeTranscriptValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function lifecycleError(
+  code: AgentLifecycleErrorCode,
+  agentId: string,
+  operation: string,
+  detail?: string,
+): ToolExecutionError {
+  const message =
+    code === "agent_busy"
+      ? `Agent ${agentId} already has an active run and is unavailable for ${operation}`
+      : code === "agent_closed"
+        ? `Agent ${agentId} is closed and unavailable for ${operation}`
+        : code === "agent_not_found"
+          ? `Agent ${agentId} was not found for ${operation}`
+          : code === "agent_state_unavailable"
+            ? `Agent ${agentId} state is unavailable for ${operation}${detail ? `: ${detail}` : ""}`
+            : `Agent ${agentId} is not attached to the current orchestrator for ${operation}`;
+  return new ToolExecutionError(message, {
+    code,
+    retryable: code === "agent_busy" || code === "agent_not_attached",
+  });
 }
 
 function isTerminal(status: AgentTaskSnapshot["status"]): boolean {

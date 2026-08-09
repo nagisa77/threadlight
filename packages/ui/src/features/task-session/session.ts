@@ -314,7 +314,10 @@ export function sessionReducer(
     case "agent.tree":
       if (action.activeTurn) {
         if (action.activeTurn.revision < state.revision) return state;
-        return hydrateActiveTurn(state, action.activeTurn);
+        return {
+          ...hydrateActiveTurn(state, action.activeTurn),
+          agentTree: action.tree,
+        };
       }
       if (action.revision !== undefined && action.revision < state.revision) {
         return state;
@@ -500,7 +503,7 @@ function hydrateActiveTurn(
     isRunning: true,
     isThinking: activeTurn.isThinking,
     progress: activeTurn.progress,
-    agentTree: activeTurn.agentTree,
+    agentTree: activeTurn.agentTree ?? state.agentTree,
     plan: activeTurn.plan,
     streamingText: activeTurn.streamingText,
   };

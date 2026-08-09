@@ -214,6 +214,17 @@ const agentFactory = createWorkspaceAgentFactory({
 let outputFailureStarted = false;
 let disposeAfterOutputFailure: (() => Promise<void>) | undefined;
 const send = jsonLineSender(process.stdout, {
+  coalesceKey(message) {
+    if (!("method" in message) || message.method !== "agent/tree-updated") {
+      return;
+    }
+    const params = message.params as
+      { threadId?: unknown; turnId?: unknown } | undefined;
+    return typeof params?.threadId === "string" &&
+      typeof params.turnId === "string"
+      ? `${message.method}:${params.threadId}:${params.turnId}`
+      : undefined;
+  },
   onError(error) {
     if (outputFailureStarted) return;
     outputFailureStarted = true;

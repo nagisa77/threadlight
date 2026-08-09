@@ -2,13 +2,25 @@ import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 
 import type { AppServer } from "./app-server.js";
-import type { JsonRpcRequest, SendMessage } from "./protocol.js";
+import type {
+  JsonRpcOutgoing,
+  JsonRpcRequest,
+  SendMessage,
+} from "./protocol.js";
 
 const DEFAULT_MAX_BUFFERED_BYTES = 64 * 1024 * 1024;
 
 export interface JsonLineSenderOptions {
   maxBufferedBytes?: number;
+  /** Replace an older queued snapshot with the latest one for the same key. */
+  coalesceKey?(message: JsonRpcOutgoing): string | undefined;
   onError?(error: Error): void;
+}
+
+interface PendingJsonLine {
+  line: string;
+  bytes: number;
+  coalesceKey?: string;
 }
 
 export function jsonLineSender(
@@ -21,17 +33,29 @@ export function jsonLineSender(
     throw new Error("maxBufferedBytes must be a positive safe integer");
   }
 
-  const pending: { line: string; bytes: number }[] = [];
+  const pending: PendingJsonLine[] = [];
+  const coalescible = new Map<string, PendingJsonLine>();
   let bufferedBytes = 0;
   let writing = false;
   let failed = false;
+  let failure: Error | undefined;
+  let failureNotified = false;
+  let current: PendingJsonLine | undefined;
 
-  const fail = (value: unknown) => {
+  const notifyFailure = () => {
+    if (failureNotified || !failure) return;
+    failureNotified = true;
+    options.onError?.(failure);
+  };
+
+  const fail = (value: unknown, afterCurrentWrite = false) => {
     if (failed) return;
     failed = true;
+    failure = asError(value);
     pending.length = 0;
-    bufferedBytes = 0;
-    options.onError?.(asError(value));
+    coalescible.clear();
+    bufferedBytes = current?.bytes ?? 0;
+    if (!afterCurrentWrite || !writing) notifyFailure();
   };
 
   const flush = () => {
@@ -41,13 +65,19 @@ export function jsonLineSender(
       return;
     }
 
-    const current = pending.shift()!;
+    current = pending.shift()!;
+    if (current.coalesceKey) coalescible.delete(current.coalesceKey);
     writing = true;
     try {
       output.write(current.line, (error) => {
+        const completed = current;
+        current = undefined;
         writing = false;
-        if (failed) return;
-        bufferedBytes -= current.bytes;
+        bufferedBytes -= completed?.bytes ?? 0;
+        if (failed) {
+          notifyFailure();
+          return;
+        }
         if (error) {
           fail(error);
           return;
@@ -55,8 +85,10 @@ export function jsonLineSender(
         queueMicrotask(flush);
       });
     } catch (error) {
+      const completed = current;
+      current = undefined;
       writing = false;
-      bufferedBytes -= current.bytes;
+      bufferedBytes -= completed?.bytes ?? 0;
       fail(error);
     }
   };
@@ -67,15 +99,32 @@ export function jsonLineSender(
     if (failed) return;
     const line = `${JSON.stringify(message)}\n`;
     const bytes = Buffer.byteLength(line);
+    const coalesceKey = options.coalesceKey?.(message);
+    if (coalesceKey) {
+      const previous = coalescible.get(coalesceKey);
+      if (previous) {
+        const index = pending.indexOf(previous);
+        if (index >= 0) pending.splice(index, 1);
+        bufferedBytes -= previous.bytes;
+        coalescible.delete(coalesceKey);
+      }
+    }
     if (bufferedBytes + bytes > maxBufferedBytes) {
       fail(
         new Error(
           `JSON line output exceeded ${maxBufferedBytes} buffered bytes`,
         ),
+        true,
       );
       return;
     }
-    pending.push({ line, bytes });
+    const item: PendingJsonLine = {
+      line,
+      bytes,
+      ...(coalesceKey ? { coalesceKey } : {}),
+    };
+    pending.push(item);
+    if (coalesceKey) coalescible.set(coalesceKey, item);
     bufferedBytes += bytes;
     flush();
   };

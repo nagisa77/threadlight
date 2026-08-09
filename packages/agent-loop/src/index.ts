@@ -10,6 +10,8 @@ export type {
   AgentRunCheckpoint,
   AgentRuntimeSnapshot,
   AgentRuntimeTaskSnapshot,
+  AgentRuntimeThreadLifecycleSnapshot,
+  AgentLifecycleErrorCode,
   AgentTaskActivity,
   AgentTaskPhase,
   AgentTaskSnapshot,

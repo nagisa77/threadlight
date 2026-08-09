@@ -1758,10 +1758,19 @@ export class AppServer {
       }),
     );
     await this.mutateConversation(thread, (conversation) => {
-      const existing = conversation.agentRuns?.find(
-        (run) => run.turnId === turnId,
+      const agentRuns = applyAgentThreadClosures(
+        conversation.agentRuns ?? [],
+        checkpoint.closedAgentThreads ?? [],
       );
-      if (existing && existing.status !== "active") return conversation;
+      const existing = agentRuns.find((run) => run.turnId === turnId);
+      if (existing && existing.status !== "active") {
+        if (agentRuns === conversation.agentRuns) return conversation;
+        return {
+          ...conversation,
+          updatedAt: checkpoint.updatedAt,
+          agentRuns,
+        };
+      }
       const root = agents.find(({ agent }) => agent.id === checkpoint.rootId);
       const run: StoredAgentRun = {
         version: 1,
@@ -1777,7 +1786,7 @@ export class AppServer {
       return {
         ...conversation,
         updatedAt: checkpoint.updatedAt,
-        agentRuns: upsertAgentRun(conversation.agentRuns ?? [], run),
+        agentRuns: upsertAgentRun(agentRuns, run),
       };
     });
   }
@@ -1870,7 +1879,9 @@ export class AppServer {
     thread.progress = projectAgentProgress(thread.progress, event);
     thread.plan = projectAgentPlan(thread.plan, event);
     thread.revision += 1;
-    const snapshot = this.requireActiveTurnSnapshot(thread);
+    const snapshot = this.requireActiveTurnSnapshot(thread, {
+      includeAgentTree: false,
+    });
     this.notify("agent/event", {
       threadId,
       turnId,
@@ -1896,14 +1907,19 @@ export class AppServer {
       threadId,
       turnId,
       revision: thread.revision,
-      activeTurn: this.requireActiveTurnSnapshot(thread),
+      activeTurn: this.requireActiveTurnSnapshot(thread, {
+        includeAgentTree: false,
+      }),
       changedAgentId: event.changedAgentId,
       reason: event.reason,
       tree,
     });
   }
 
-  private activeTurnSnapshot(thread: ThreadState): ActiveTurnData | undefined {
+  private activeTurnSnapshot(
+    thread: ThreadState,
+    options: { includeAgentTree?: boolean } = {},
+  ): ActiveTurnData | undefined {
     const activeTurn = thread.activeTurn;
     if (!activeTurn) return;
     // The assistant message is persisted before the completion notification.
@@ -1918,14 +1934,18 @@ export class AppServer {
       streamingText: activeTurn.streamingText,
       progress: thread.progress,
       ...(thread.plan ? { plan: thread.plan } : {}),
-      ...(visibleAgentTree(activeTurn.agentTree)
+      ...(options.includeAgentTree !== false &&
+      visibleAgentTree(activeTurn.agentTree)
         ? { agentTree: activeTurn.agentTree }
         : {}),
     };
   }
 
-  private requireActiveTurnSnapshot(thread: ThreadState): ActiveTurnData {
-    const snapshot = this.activeTurnSnapshot(thread);
+  private requireActiveTurnSnapshot(
+    thread: ThreadState,
+    options: { includeAgentTree?: boolean } = {},
+  ): ActiveTurnData {
+    const snapshot = this.activeTurnSnapshot(thread, options);
     if (!snapshot) {
       throw new Error(
         `Thread ${thread.conversation.threadId} has no active turn snapshot`,
@@ -2198,9 +2218,7 @@ class TurnDiagnosticsRecorder {
   }
 }
 
-type DiagnosticsScope = NonNullable<
-  TurnDiagnosticsData["metrics"]
->["root"];
+type DiagnosticsScope = NonNullable<TurnDiagnosticsData["metrics"]>["root"];
 
 function childDiagnosticsScope(
   tree: AgentTreeSnapshot | undefined,
@@ -2566,7 +2584,10 @@ function fallbackConversationTitle(
           /^(?:请|请你|请帮我|帮我|麻烦|能否|可以|能不能|我想(?:请你|让你)?|想请你)\s*/u,
           "",
         )
-        .replace(/(?:最近|近期)(?:的)?发展(?:得|的)?(?:怎么样|咋样|如何)/gu, "近期发展")
+        .replace(
+          /(?:最近|近期)(?:的)?发展(?:得|的)?(?:怎么样|咋样|如何)/gu,
+          "近期发展",
+        )
         .trim()
     : (title.split(/[.!?;,\n]/).find(Boolean) ?? title)
         .replace(
@@ -2597,9 +2618,7 @@ function firstConversationRequest(
   if (!firstUser) return "";
   const attachmentNames =
     firstUser.attachments?.map(({ name }) => name).join(", ") ?? "";
-  return (firstUser.text.trim() || attachmentNames)
-    .replace(/\s+/g, " ")
-    .trim();
+  return (firstUser.text.trim() || attachmentNames).replace(/\s+/g, " ").trim();
 }
 
 function looksLikeAssistantResponse(title: string): boolean {
@@ -2749,13 +2768,44 @@ function upsertAgentRun(
   return runs.map((run, runIndex) => (runIndex === index ? next : run));
 }
 
+function applyAgentThreadClosures(
+  runs: readonly StoredAgentRun[],
+  closures: NonNullable<AgentRuntimeSnapshot["closedAgentThreads"]>,
+): readonly StoredAgentRun[] {
+  if (closures.length === 0) return runs;
+  const closedAtByThread = new Map(
+    closures.map(({ agentThreadId, closedAt }) => [agentThreadId, closedAt]),
+  );
+  let changed = false;
+  const updated = runs.map((run) => {
+    let runChanged = false;
+    const agents = run.agents.map((stored) => {
+      const threadId = stored.agent.agentThreadId ?? stored.agent.id;
+      const closedAt = closedAtByThread.get(threadId);
+      if (!closedAt || stored.agent.closedAt === closedAt) return stored;
+      changed = true;
+      runChanged = true;
+      return {
+        ...stored,
+        agent: {
+          ...stored.agent,
+          closedAt,
+          latestActivity: "Closed",
+        },
+      };
+    });
+    return runChanged ? { ...run, agents } : run;
+  });
+  return changed ? updated : runs;
+}
+
 function resumableAgentThreads(
   conversation: StoredConversation,
 ): readonly ResumableAgentThread[] {
   const threads = new Map<
     string,
     {
-      profileName: string;
+      profileName?: string;
       taskIds: readonly string[];
       latestTask: ResumableAgentThread["latestTask"];
       history: ResumableAgentThread["history"];
@@ -2765,7 +2815,7 @@ function resumableAgentThreads(
 
   for (const run of conversation.agentRuns ?? []) {
     for (const stored of run.agents) {
-      if (stored.agent.id === run.rootId || !stored.profileName) continue;
+      if (stored.agent.id === run.rootId) continue;
       const threadId = stored.agent.agentThreadId ?? stored.agent.id;
       const previous = threads.get(threadId);
       const history = [
@@ -2777,8 +2827,9 @@ function resumableAgentThreads(
             ]
           : []),
       ];
+      const profileName = stored.profileName ?? previous?.profileName;
       threads.set(threadId, {
-        profileName: stored.profileName,
+        ...(profileName ? { profileName } : {}),
         taskIds: [...(previous?.taskIds ?? []), stored.agent.id],
         latestTask: {
           ...stored.agent,
@@ -2792,23 +2843,10 @@ function resumableAgentThreads(
     }
   }
 
-  return [...threads].flatMap(
-    ([agentThreadId, thread]): ResumableAgentThread[] =>
-      isTerminalAgentTask(thread.latestTask)
-        ? [{ agentThreadId, ...thread }]
-        : [],
-  );
-}
-
-function isTerminalAgentTask(
-  task: ResumableAgentThread["latestTask"],
-): boolean {
-  return (
-    task.status === "completed" ||
-    task.status === "failed" ||
-    task.status === "cancelled" ||
-    task.status === "interrupted"
-  );
+  return [...threads].map(([agentThreadId, thread]) => ({
+    agentThreadId,
+    ...thread,
+  }));
 }
 
 function projectStoredAgentThread(

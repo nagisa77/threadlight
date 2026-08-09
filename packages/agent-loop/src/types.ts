@@ -198,9 +198,7 @@ export interface RunOptions {
    * The loop never interprets `modelState`. Hosts may encrypt, compact, or
    * otherwise prepare it before writing it to durable storage.
    */
-  onCheckpoint?: (
-    checkpoint: AgentRunCheckpoint,
-  ) => void | Promise<void>;
+  onCheckpoint?: (checkpoint: AgentRunCheckpoint) => void | Promise<void>;
 }
 
 export interface AgentRunCheckpoint {
@@ -295,12 +293,7 @@ export interface SubagentProfile {
 }
 
 export type AgentTaskStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "interrupted";
+  "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export type AgentTaskPhase =
   "queued" | "thinking" | "working" | "waiting" | "done";
@@ -410,6 +403,11 @@ export interface AgentRuntimeTaskSnapshot {
   checkpointPhase?: AgentRunCheckpoint["phase"];
 }
 
+export interface AgentRuntimeThreadLifecycleSnapshot {
+  agentThreadId: string;
+  closedAt: string;
+}
+
 /** Durable, provider-neutral checkpoint for one orchestrated agent run. */
 export interface AgentRuntimeSnapshot {
   version: 1;
@@ -417,6 +415,8 @@ export interface AgentRuntimeSnapshot {
   maxConcurrent: number;
   updatedAt: string;
   agents: readonly AgentRuntimeTaskSnapshot[];
+  /** Explicit thread lifecycle changes that may target an earlier parent turn. */
+  closedAgentThreads?: readonly AgentRuntimeThreadLifecycleSnapshot[];
 }
 
 /** Durable state needed to continue one subagent thread in a later parent run. */
@@ -424,11 +424,18 @@ export interface ResumableAgentThread {
   agentThreadId: string;
   /** Historical task IDs that may also be used to address this thread. */
   taskIds: readonly string[];
-  profileName: string;
+  profileName?: string;
   latestTask: AgentTaskSnapshot;
   history: readonly ModelConversationMessage[];
   modelState?: unknown;
 }
+
+export type AgentLifecycleErrorCode =
+  | "agent_busy"
+  | "agent_closed"
+  | "agent_not_found"
+  | "agent_state_unavailable"
+  | "agent_not_attached";
 
 export interface AgentOrchestratorOptions extends RunOptions {
   profiles: readonly SubagentProfile[];

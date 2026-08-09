@@ -27,9 +27,7 @@ export interface JsonLineRuntimePeerOptions {
   cwd: string;
   environment?: NodeJS.ProcessEnv;
   onLog?: (message: string) => void;
-  handleConnectionRequest?(
-    request: DesktopConnectionRequest,
-  ): Promise<unknown>;
+  handleConnectionRequest?(request: DesktopConnectionRequest): Promise<unknown>;
 }
 
 export class JsonLineRuntimePeer implements RuntimePeer {
@@ -78,17 +76,25 @@ export class JsonLineRuntimePeer implements RuntimePeer {
       });
     }
 
-    const stdout = createInterface({ input: child.stdout });
-    stdout.on("line", (line) => {
-      if (!line.trim()) return;
-      try {
-        const message = JSON.parse(line) as JsonRpcOutgoing;
-        for (const listener of this.listeners) listener(message);
-      } catch (error) {
+    let stdoutBuffer = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdoutBuffer += chunk;
+      let newline = stdoutBuffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = stdoutBuffer.slice(0, newline);
+        stdoutBuffer = stdoutBuffer.slice(newline + 1);
+        this.receiveOutputLine(line);
+        newline = stdoutBuffer.indexOf("\n");
+      }
+    });
+    child.stdout.on("end", () => {
+      if (stdoutBuffer.trim()) {
         this.options.onLog?.(
-          `Invalid app-server output: ${error instanceof Error ? error.message : String(error)}`,
+          `Discarded incomplete app-server output frame (${Buffer.byteLength(stdoutBuffer)} bytes)`,
         );
       }
+      stdoutBuffer = "";
     });
 
     const stderr = createInterface({ input: child.stderr });
@@ -122,10 +128,23 @@ export class JsonLineRuntimePeer implements RuntimePeer {
     child.stdin.once("error", (error) => this.handleExit(child, error));
   }
 
+  private receiveOutputLine(line: string): void {
+    if (!line.trim()) return;
+    try {
+      const message = JSON.parse(line) as JsonRpcOutgoing;
+      for (const listener of this.listeners) listener(message);
+    } catch (error) {
+      this.options.onLog?.(
+        `Invalid app-server output: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   send(message: JsonRpcRequest): void {
     if (!this.child || this.child.killed) {
-      throw this.exitError ??
-        new Error("Remote runtime app-server is not running.");
+      throw (
+        this.exitError ?? new Error("Remote runtime app-server is not running.")
+      );
     }
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }

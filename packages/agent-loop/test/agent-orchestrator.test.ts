@@ -1104,6 +1104,292 @@ describe("AgentOrchestrator", () => {
     ]);
   });
 
+  it("counts open persisted threads against the conversation limit until explicitly closed", async () => {
+    let rootTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          expect(request.input).toBe("Independent replacement");
+          return { text: "Replacement complete", toolCalls: [] };
+        }
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Trying an independent task.",
+            toolCalls: [
+              {
+                id: "spawn-before-close",
+                name: "spawn_agent",
+                arguments: {
+                  role: "worker",
+                  task: "Independent replacement",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          expect(request.toolResults?.[0]).toMatchObject({ isError: true });
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Subagent limit reached (1)",
+          );
+          return {
+            text: "Closing the old thread first.",
+            toolCalls: [
+              {
+                id: "close-old-thread",
+                name: "close_agent",
+                arguments: { agentId: "old-task" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          return {
+            text: "Starting the independent replacement.",
+            toolCalls: [
+              {
+                id: "spawn-after-close",
+                name: "spawn_agent",
+                arguments: {
+                  role: "worker",
+                  task: "Independent replacement",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 4) {
+          expect(request.toolResults?.[0]?.isError).toBeUndefined();
+          return {
+            text: "Collecting the replacement.",
+            toolCalls: [
+              {
+                id: "wait-replacement",
+                name: "wait_for_agents",
+                arguments: {},
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]?.output).toContain(
+          "Replacement complete",
+        );
+        return { text: "The old slot was released.", toolCalls: [] };
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "worker",
+          description: "Implement",
+          instructions: "PROFILE_WORKER",
+          toolAccess: "all",
+        },
+      ],
+      resumableThreads: [
+        {
+          agentThreadId: "old-thread",
+          taskIds: ["old-task"],
+          profileName: "worker",
+          latestTask: {
+            id: "old-task",
+            parentId: "prior-root",
+            agentThreadId: "old-thread",
+            name: "worker",
+            role: "worker",
+            task: "Old task",
+            status: "completed",
+            phase: "done",
+            createdAt: "2026-08-08T10:00:00.000Z",
+            completedAt: "2026-08-08T10:00:01.000Z",
+            elapsedMs: 1_000,
+            output: "Old result",
+            activities: [],
+            transcript: [],
+          },
+          history: [
+            { role: "user", text: "Old task" },
+            { role: "assistant", text: "Old result" },
+          ],
+        },
+      ],
+      maxAgents: 1,
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT" }),
+      "Manage conversation agent slots",
+    );
+
+    expect(result.output).toBe("The old slot was released.");
+  });
+
+  it("reports precise lifecycle errors and explicitly closes a dormant persisted thread", async () => {
+    let rootTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Checking persisted lifecycle states.",
+            toolCalls: [
+              {
+                id: "busy-follow-up",
+                name: "follow_up_agent",
+                arguments: { agentId: "busy-thread", input: "Continue" },
+              },
+              {
+                id: "closed-follow-up",
+                name: "follow_up_agent",
+                arguments: { agentId: "closed-thread", input: "Continue" },
+              },
+              {
+                id: "missing-follow-up",
+                name: "follow_up_agent",
+                arguments: { agentId: "missing-thread", input: "Continue" },
+              },
+              {
+                id: "stateless-follow-up",
+                name: "follow_up_agent",
+                arguments: { agentId: "stateless-thread", input: "Continue" },
+              },
+              {
+                id: "detached-steer",
+                name: "steer_agent",
+                arguments: { agentId: "dormant-thread", input: "Focus" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          expect(request.toolResults?.map(({ error }) => error?.code)).toEqual([
+            "agent_busy",
+            "agent_closed",
+            "agent_not_found",
+            "agent_state_unavailable",
+            "agent_not_attached",
+          ]);
+          return {
+            text: "Closing the dormant thread.",
+            toolCalls: [
+              {
+                id: "close-dormant",
+                name: "close_agent",
+                arguments: { agentId: "old-dormant-task" },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 3) {
+          expect(request.toolResults?.[0]?.isError).toBeUndefined();
+          return {
+            text: "Verifying the explicit close.",
+            toolCalls: [
+              {
+                id: "follow-up-closed-dormant",
+                name: "follow_up_agent",
+                arguments: { agentId: "dormant-thread", input: "Continue" },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]).toMatchObject({
+          isError: true,
+          error: { code: "agent_closed", retryable: false },
+        });
+        return { text: "Lifecycle states are explicit.", toolCalls: [] };
+      },
+    };
+    const task = (
+      id: string,
+      agentThreadId: string,
+      status: "running" | "completed",
+      closedAt?: string,
+    ) => ({
+      id,
+      parentId: "prior-root",
+      agentThreadId,
+      name: "worker",
+      role: "worker",
+      task: `Task for ${id}`,
+      status,
+      phase: status === "running" ? ("thinking" as const) : ("done" as const),
+      createdAt: "2026-08-08T10:00:00.000Z",
+      ...(status === "running"
+        ? { startedAt: "2026-08-08T10:00:01.000Z" }
+        : { completedAt: "2026-08-08T10:00:01.000Z" }),
+      ...(closedAt ? { closedAt } : {}),
+      elapsedMs: 1_000,
+      latestActivity: status === "running" ? "Thinking" : "Completed",
+      activities: [],
+      transcript: [],
+    });
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "worker",
+          description: "Implement",
+          instructions: "PROFILE_WORKER",
+          toolAccess: "all",
+        },
+      ],
+      resumableThreads: [
+        {
+          agentThreadId: "busy-thread",
+          taskIds: ["busy-task"],
+          profileName: "worker",
+          latestTask: task("busy-task", "busy-thread", "running"),
+          history: [],
+        },
+        {
+          agentThreadId: "closed-thread",
+          taskIds: ["closed-task"],
+          profileName: "worker",
+          latestTask: task(
+            "closed-task",
+            "closed-thread",
+            "completed",
+            "2026-08-08T10:00:02.000Z",
+          ),
+          history: [{ role: "assistant", text: "Closed result" }],
+        },
+        {
+          agentThreadId: "stateless-thread",
+          taskIds: ["stateless-task"],
+          profileName: "worker",
+          latestTask: task("stateless-task", "stateless-thread", "completed"),
+          history: [],
+        },
+        {
+          agentThreadId: "dormant-thread",
+          taskIds: ["old-dormant-task"],
+          profileName: "worker",
+          latestTask: {
+            ...task("old-dormant-task", "dormant-thread", "completed"),
+            output: "Dormant result",
+          },
+          history: [
+            { role: "user", text: "Dormant task" },
+            { role: "assistant", text: "Dormant result" },
+          ],
+          modelState: { durable: true },
+        },
+      ],
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT" }),
+      "Inspect lifecycle states",
+    );
+
+    expect(result.output).toBe("Lifecycle states are explicit.");
+    expect(orchestrator.runtimeSnapshot.closedAgentThreads).toContainEqual({
+      agentThreadId: "dormant-thread",
+      closedAt: expect.any(String),
+    });
+  });
+
   it("checks status and returns partial mailbox or timeout snapshots without waiting for every agent", async () => {
     const releaseFast = Promise.withResolvers<void>();
     let rootTurns = 0;

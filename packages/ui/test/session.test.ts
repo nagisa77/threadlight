@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RpcResponseError } from "@threadlight/client";
-import type { ProcessSnapshotData } from "@threadlight/protocol";
+import type { AgentTreeData, ProcessSnapshotData } from "@threadlight/protocol";
 
 import {
   initialSessionState,
@@ -63,6 +63,74 @@ function sessionWithRunningProcess(
 }
 
 describe("sessionReducer", () => {
+  it("keeps the visible agent tree continuous when live active-turn snapshots omit the duplicate tree", () => {
+    const initialTree: AgentTreeData = {
+      rootId: "root-agent",
+      maxConcurrent: 3,
+      agents: [
+        {
+          id: "child-agent",
+          parentId: "root-agent",
+          agentThreadId: "child-agent",
+          name: "worker",
+          role: "worker",
+          task: "Inspect output transport",
+          status: "running",
+          phase: "thinking",
+          createdAt: "2026-08-09T03:00:00.000Z",
+          elapsedMs: 1_000,
+          activities: [],
+        },
+      ],
+    };
+    let state: SessionState = {
+      ...initialSessionState,
+      revision: 1,
+      isRunning: true,
+      agentTree: initialTree,
+    };
+
+    state = sessionReducer(state, {
+      type: "agent.event",
+      revision: 2,
+      activeTurn: {
+        turnId: "turn-1",
+        revision: 2,
+        mode: "default",
+        isThinking: true,
+        streamingText: "Working",
+        progress: [],
+      },
+      event: { type: "model.started", runId: "run-1", step: 1 },
+    });
+
+    expect(state.agentTree).toBe(initialTree);
+
+    const completedTree: AgentTreeData = {
+      ...initialTree,
+      agents: initialTree.agents.map((agent) => ({
+        ...agent,
+        status: "completed" as const,
+        phase: "done" as const,
+      })),
+    };
+    state = sessionReducer(state, {
+      type: "agent.tree",
+      revision: 3,
+      activeTurn: {
+        turnId: "turn-1",
+        revision: 3,
+        mode: "default",
+        isThinking: false,
+        streamingText: "Working",
+        progress: [],
+      },
+      tree: completedTree,
+    });
+
+    expect(state.agentTree).toBe(completedTree);
+  });
+
   it("keeps a missing stored task explicit instead of silently starting another task", async () => {
     let starts = 0;
     const result = await requestThreadOpen(
