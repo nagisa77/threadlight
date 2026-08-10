@@ -59,6 +59,7 @@ const copy = isEnglish
           command: "One-line install",
           copy: "Copy",
           copied: "Copied",
+          copySuccess: "Command copied",
           requirement: "Node.js 22+ · current user install",
           guide: "Deployment guide",
         },
@@ -236,6 +237,7 @@ const copy = isEnglish
           command: "一行安装",
           copy: "复制",
           copied: "已复制",
+          copySuccess: "命令已复制",
           requirement: "需要 Node.js 22+ · 当前用户安装",
           guide: "部署说明",
         },
@@ -436,8 +438,9 @@ const selfHostDocsLink = isEnglish
             <div class="code-card launch-command">
               <div class="code-toolbar">
                 <span>{copy.hero.selfHost.command}</span>
-                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied}>{copy.hero.selfHost.copy}</button>
+                <button class="copy-button pressable" type="button" data-copy>{copy.hero.selfHost.copy}</button>
               </div>
+              <span class="sr-only" role="status" aria-atomic="true" data-copy-status data-copy-success={copy.hero.selfHost.copySuccess}></span>
               <pre><code>{selfHostCommand}</code></pre>
             </div>
             <a class="launch-guide pressable" href={selfHostDocsLink}>{copy.hero.selfHost.guide}<span aria-hidden="true">↗</span></a>
@@ -467,8 +470,9 @@ const selfHostDocsLink = isEnglish
             <div class="code-card host-only-command">
               <div class="code-toolbar">
                 <span>{copy.hero.hostOnly.command}</span>
-                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied}>{copy.hero.selfHost.copy}</button>
+                <button class="copy-button pressable" type="button" data-copy>{copy.hero.selfHost.copy}</button>
               </div>
+              <span class="sr-only" role="status" aria-atomic="true" data-copy-status data-copy-success={copy.hero.selfHost.copySuccess}></span>
               <pre><code>{hostOnlyCommand}</code></pre>
             </div>
             <div class="host-only-meta">
@@ -721,15 +725,13 @@ const selfHostDocsLink = isEnglish
 <script>
   document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((copyButton) => {
     copyButton.addEventListener("click", async () => {
-      const code = copyButton.closest(".code-card")?.querySelector("code")?.textContent;
+      const codeCard = copyButton.closest(".code-card");
+      const code = codeCard?.querySelector("code")?.textContent;
+      const status = codeCard?.querySelector<HTMLElement>("[data-copy-status]");
       if (!code) return;
       try {
         await copyText(code);
-        const original = copyButton.textContent;
-        copyButton.textContent = copyButton.dataset.copied ?? original;
-        window.setTimeout(() => {
-          copyButton.textContent = original;
-        }, 1400);
+        if (status) status.textContent = status.dataset.copySuccess ?? "";
       } catch {
         return;
       }
