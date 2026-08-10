@@ -425,9 +425,7 @@ export function projectSupportsDevelopmentMode(
 ): boolean {
   return Boolean(project && project.scope !== "standalone");
 }
-
 const MAX_COMPOSER_ATTACHMENTS = 10;
-
 export function ThreadlightApp(props: ThreadlightAppProps) {
   const [language, setLanguage] = useState<Language>(
     () =>
@@ -3578,6 +3576,8 @@ function ThreadlightAppContent({
                 connectionReady={state.connection === "ready"}
                 initialStep={firstRunRetryDemo ? "demo" : undefined}
                 onSettingsSaved={setRuntimeSettings}
+                onLanguageChange={onLanguageChange}
+                onThemeChange={onThemeChange}
                 onRuntimeRestart={reconnectRuntime}
                 onOpenProject={() => openProjectFolder()}
                 onRunDemo={runFirstDemoTask}

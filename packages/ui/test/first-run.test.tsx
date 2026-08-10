@@ -6,10 +6,7 @@ import {
 } from "@threadlight/agent-loop";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  composerProviderIsReady,
-  firstRunIsComplete,
-} from "../src/app.js";
+import { composerProviderIsReady, firstRunIsComplete } from "../src/app.js";
 import {
   FirstRunGuide,
   firstRunInitialStep,
@@ -64,11 +61,13 @@ describe("first run", () => {
     );
 
     expect(html).toContain("让第一次任务顺利完成");
-    expect(html).toContain("Provider Key");
+    expect(html).toContain("基础设置");
     expect(html).toContain("连接测试");
     expect(html).toContain("打开项目");
     expect(html).toContain("权限");
     expect(html).toContain("首次任务");
+    expect(html).toContain("简体中文");
+    expect(html).toContain("浅色");
     expect(html).toContain('type="password"');
     expect(html).toContain('disabled=""');
   });
@@ -88,6 +87,79 @@ describe("first run", () => {
       model: "deepseek-v4-pro",
       deepSeekApiKey: "ds-secret",
       customBaseUrl: "http://localhost:11434/v1",
+    });
+  });
+
+  it("presents connection testing as a compact three-part preflight", () => {
+    const html = renderToStaticMarkup(
+      <FirstRunGuide
+        adapter={{
+          load: vi.fn(),
+          save: vi.fn(),
+          testProvider: vi.fn(),
+        }}
+        settings={{ ...settings, openAIApiKeyConfigured: true }}
+        connectionReady={false}
+        initialStep="test"
+        onSettingsSaved={vi.fn()}
+        onRuntimeRestart={vi.fn()}
+        onOpenProject={vi.fn()}
+        onRunDemo={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("等待测试");
+    expect(html).toContain("身份验证");
+    expect(html).toContain("API 端点");
+    expect(html).toContain("模型可用性");
+    expect(html).not.toContain("Threadlight Host</span>");
+  });
+
+  it("uses text fields for a custom endpoint and model while saving interface preferences", () => {
+    const customSettings = {
+      ...settings,
+      provider: "custom" as const,
+      model: "local-coder",
+      customModel: "local-coder",
+    };
+    const html = renderToStaticMarkup(
+      <FirstRunGuide
+        adapter={{
+          load: vi.fn(),
+          save: vi.fn(),
+          testProvider: vi.fn(),
+        }}
+        settings={customSettings}
+        connectionReady={false}
+        initialStep="provider"
+        onSettingsSaved={vi.fn()}
+        onRuntimeRestart={vi.fn()}
+        onOpenProject={vi.fn()}
+        onRunDemo={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('id="first-run-base-url"');
+    expect(html).toMatch(
+      /id="first-run-model" type="text"[^>]*value="local-coder"/,
+    );
+    expect(
+      firstRunSettingsUpdate(
+        customSettings,
+        "custom",
+        " new-model ",
+        "",
+        " https://models.example/v1 ",
+        "en",
+        "dark",
+      ),
+    ).toMatchObject({
+      provider: "custom",
+      model: "new-model",
+      customModel: "new-model",
+      customBaseUrl: "https://models.example/v1",
+      language: "en",
+      theme: "dark",
     });
   });
 
@@ -143,9 +215,9 @@ describe("first run", () => {
     expect(
       providerIsConfigured({ ...settings, openAIApiKeyConfigured: true }),
     ).toBe(true);
-    expect(
-      providerIsConfigured({ ...settings, provider: "custom" }),
-    ).toBe(true);
+    expect(providerIsConfigured({ ...settings, provider: "custom" })).toBe(
+      true,
+    );
     expect(firstRunIsComplete("true")).toBe(true);
     expect(firstRunIsComplete(null)).toBe(false);
     expect(composerProviderIsReady(true, settings)).toBe(false);
@@ -158,29 +230,29 @@ describe("first run", () => {
     expect(composerProviderIsReady(false)).toBe(true);
   });
 
-  it("runs the read-only demo prompt through an offline scripted model provider", async () => {
+  it("runs the multi-agent demo through an offline scripted model provider", async () => {
     const requests: string[] = [];
     const provider: ModelProvider = {
       async generate(request) {
         requests.push(request.input);
         return {
-          text: "项目包含 packages 和 apps；可运行 npm test。下一步建议补充 README。",
+          text: "两个子 Agent 已并行完成脑暴；主 Agent 汇总了核心功能、易用性风险和 MVP 方案。",
           toolCalls: [],
         };
       },
     };
     const prompt =
-      "只读检查这个项目，不要修改文件。概括项目结构、如何运行，并建议一个适合作为下一步的小改进。";
+      "请启动 2 个子 Agent 并行完成一个番茄钟产品脑暴：一个提出 3 个能帮助用户专注的核心功能，另一个从新手易用性角度指出 3 个风险；主 Agent 去重并汇总成不超过 8 行的 MVP 方案。";
     const result = await new AgentLoop(provider).run(
       defineAgent({
         name: "first-run-demo",
-        instructions: "Read only. Do not call tools or modify files.",
+        instructions: "Do not call tools.",
         tools: [],
       }),
       prompt,
     );
 
     expect(requests).toEqual([prompt]);
-    expect(result.output).toContain("npm test");
+    expect(result.output).toContain("两个子 Agent");
   });
 });

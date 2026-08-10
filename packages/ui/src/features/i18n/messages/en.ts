@@ -772,16 +772,16 @@ export const en: Messages = {
   firstRunEyebrow: "First-time setup",
   firstRunTitle: "Complete your first task successfully",
   firstRunDescription:
-    "Connect a model, open a project, choose permissions, and run a safe demo task.",
+    "Set up the interface, model, project, and permissions, then run a practical first task.",
   firstRunProgress: "First-time setup progress",
-  firstRunStepProvider: "Provider key",
+  firstRunStepProvider: "Basics",
   firstRunStepTest: "Connection test",
   firstRunStepProject: "Open project",
   firstRunStepPermissions: "Permissions",
   firstRunStepDemo: "First task",
-  firstRunProviderTitle: "Connect a model provider",
+  firstRunProviderTitle: "Set up your interface and model",
   firstRunProviderDescription:
-    "Your key is encrypted on this Host and is never written to project files or logs.",
+    "Choose a language and theme, then connect the model service that will run tasks. Keys stay encrypted on this Host.",
   firstRunProviderChoice: "Choose the model service that will run tasks.",
   firstRunModelChoice: "Choose the model for your first task.",
   saveAndContinue: "Save and continue",
@@ -790,6 +790,10 @@ export const en: Messages = {
   firstRunTestTitle: "Verify the connection",
   firstRunTestDescription:
     "Run a lightweight {provider} connection test before sending a task.",
+  firstRunTestReady: "Ready to test",
+  firstRunTestAuthentication: "Authentication",
+  firstRunTestEndpoint: "API endpoint",
+  firstRunTestModel: "Model access",
   connectionSuccessful: "Connection successful",
   connectionFailed: "Connection failed",
   editProvider: "Edit provider",
@@ -808,14 +812,14 @@ export const en: Messages = {
   firstRunFullAccessDescription:
     "Allow the Agent to run commands and make changes within the project.",
   continue: "Continue",
-  firstRunDemoTitle: "Run your first demo task",
+  firstRunDemoTitle: "Try a multi-agent collaboration",
   firstRunDemoDescription:
-    "This read-only task verifies the model, project context, and complete task lifecycle.",
-  demoTask: "Demo task",
+    "Two subagents think in parallel from different perspectives, then the main agent combines their ideas into one clear plan.",
+  demoTask: "Multi-agent demo",
   firstRunDemoPrompt:
-    "Inspect this project without changing files. Summarize its structure, explain how to run it, and suggest one small next improvement.",
+    "Start two subagents in parallel to brainstorm a Pomodoro app. One should propose three core features that help people focus; the other should identify three first-time usability risks. Have the main agent remove duplicates and combine the results into an MVP plan of no more than eight lines.",
   startingDemoTask: "Starting task…",
-  runDemoTask: "Run demo task",
+  runDemoTask: "Run multi-agent demo",
   waitingForRuntime: "Waiting for runtime…",
   demoTaskStartFailed:
     "The demo task could not start. Check the runtime and try again.",

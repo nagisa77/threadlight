@@ -757,16 +757,16 @@ export const ko: Messages = {
   firstRunEyebrow: "최초 설정",
   firstRunTitle: "첫 작업을 성공적으로 완료하세요",
   firstRunDescription:
-    "모델 연결, 프로젝트, 권한을 설정한 뒤 안전한 데모 작업을 실행합니다.",
+    "화면, 모델, 프로젝트, 권한을 설정한 뒤 실용적인 첫 작업을 실행합니다.",
   firstRunProgress: "최초 설정 진행률",
-  firstRunStepProvider: "Provider Key",
+  firstRunStepProvider: "기본 설정",
   firstRunStepTest: "연결 테스트",
   firstRunStepProject: "프로젝트 열기",
   firstRunStepPermissions: "권한",
   firstRunStepDemo: "첫 작업",
-  firstRunProviderTitle: "모델 공급자 연결",
+  firstRunProviderTitle: "화면과 모델 설정",
   firstRunProviderDescription:
-    "키는 이 Host에 암호화되어 저장되며 프로젝트나 로그에 기록되지 않습니다.",
+    "언어와 테마를 선택한 뒤 작업을 실행할 모델 서비스에 연결하세요. 키는 이 Host에 암호화되어 저장됩니다.",
   firstRunProviderChoice: "작업을 실행할 모델 서비스를 선택하세요.",
   firstRunModelChoice: "첫 작업에 사용할 모델을 선택하세요.",
   saveAndContinue: "저장하고 계속",
@@ -775,6 +775,10 @@ export const ko: Messages = {
   firstRunTestTitle: "연결 확인",
   firstRunTestDescription:
     "작업을 보내기 전에 {provider} 경량 연결 테스트를 실행합니다.",
+  firstRunTestReady: "테스트 대기",
+  firstRunTestAuthentication: "인증",
+  firstRunTestEndpoint: "API 엔드포인트",
+  firstRunTestModel: "모델 사용 가능",
   connectionSuccessful: "연결 성공",
   connectionFailed: "연결 실패",
   editProvider: "공급자 수정",
@@ -793,14 +797,14 @@ export const ko: Messages = {
   firstRunFullAccessDescription:
     "Agent가 프로젝트 내에서 명령 실행과 수정을 직접 수행하도록 허용합니다.",
   continue: "계속",
-  firstRunDemoTitle: "첫 데모 작업 실행",
+  firstRunDemoTitle: "멀티 Agent 협업 체험",
   firstRunDemoDescription:
-    "읽기 전용 작업으로 모델, 프로젝트 컨텍스트, 전체 작업 수명 주기를 확인합니다.",
-  demoTask: "데모 작업",
+    "두 하위 Agent가 서로 다른 관점에서 병렬로 생각하고, 메인 Agent가 하나의 명확한 계획으로 정리합니다.",
+  demoTask: "멀티 Agent 데모",
   firstRunDemoPrompt:
-    "파일을 수정하지 말고 이 프로젝트를 읽기 전용으로 확인하세요. 구조와 실행 방법을 요약하고 다음 단계로 적합한 작은 개선 하나를 제안하세요.",
+    "하위 Agent 2개를 병렬로 시작해 뽀모도로 앱을 구상하세요. 하나는 집중에 도움이 되는 핵심 기능 3개를 제안하고, 다른 하나는 첫 사용자의 사용성 위험 3개를 찾습니다. 메인 Agent는 중복을 제거하고 결과를 8줄 이내의 MVP 계획으로 정리하세요.",
   startingDemoTask: "작업 시작 중…",
-  runDemoTask: "데모 작업 실행",
+  runDemoTask: "멀티 Agent 데모 실행",
   waitingForRuntime: "런타임 대기 중…",
   demoTaskStartFailed:
     "데모 작업을 시작하지 못했습니다. 런타임을 확인하고 다시 시도하세요.",

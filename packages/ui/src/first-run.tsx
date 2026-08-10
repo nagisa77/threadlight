@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ConversationAccessMode } from "@threadlight/protocol";
 import {
+  Activity,
   Check,
   CircleAlert,
   CircleCheck,
@@ -10,13 +11,17 @@ import {
   LoaderCircle,
   Play,
   ShieldCheck,
+  SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
 
-import { useI18n } from "./i18n.js";
+import { LANGUAGE_OPTIONS, useI18n, type Language } from "./i18n.js";
 import type { ProjectSummary } from "./projects.js";
 import {
   PROVIDER_OPTIONS,
   SettingsSelectField,
+  ThemePicker,
+  providerLabel,
   providerIsConfiguredFor,
   providerIsConfigured,
   type ModelProviderId,
@@ -25,13 +30,10 @@ import {
   type SettingsSnapshot,
   type SettingsUpdate,
 } from "./settings.js";
+import type { ThemePreference } from "./theme.js";
 
 export type FirstRunStep =
-  | "provider"
-  | "test"
-  | "project"
-  | "permissions"
-  | "demo";
+  "provider" | "test" | "project" | "permissions" | "demo";
 
 const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
   "provider",
@@ -41,9 +43,7 @@ const FIRST_RUN_STEPS: readonly FirstRunStep[] = [
   "demo",
 ];
 
-export function firstRunInitialStep(
-  settings: SettingsSnapshot,
-): FirstRunStep {
+export function firstRunInitialStep(settings: SettingsSnapshot): FirstRunStep {
   return providerIsConfigured(settings) ? "test" : "provider";
 }
 
@@ -52,11 +52,14 @@ export function firstRunSettingsUpdate(
   provider: ModelProviderId,
   model: string,
   apiKey: string,
+  customBaseUrl = settings.customBaseUrl,
+  language = settings.language,
+  theme = settings.theme,
 ): SettingsUpdate {
   const key = apiKey.trim();
   return {
-    language: settings.language,
-    theme: settings.theme,
+    language,
+    theme,
     preferredProjectOpener: settings.preferredProjectOpener,
     provider,
     qwenBaseUrl: settings.qwenBaseUrl,
@@ -64,7 +67,8 @@ export function firstRunSettingsUpdate(
     doubaoBaseUrl: settings.doubaoBaseUrl,
     geminiBaseUrl: settings.geminiBaseUrl,
     grokBaseUrl: settings.grokBaseUrl,
-    customBaseUrl: settings.customBaseUrl,
+    customBaseUrl:
+      provider === "custom" ? customBaseUrl.trim() : settings.customBaseUrl,
     customModel: provider === "custom" ? model.trim() : settings.customModel,
     model: model.trim(),
     ...(key ? providerSecretUpdate(provider, key) : {}),
@@ -91,6 +95,8 @@ export function FirstRunGuide({
   connectionReady,
   initialStep,
   onSettingsSaved,
+  onLanguageChange,
+  onThemeChange,
   onRuntimeRestart,
   onOpenProject,
   onRunDemo,
@@ -101,21 +107,28 @@ export function FirstRunGuide({
   connectionReady: boolean;
   initialStep?: FirstRunStep;
   onSettingsSaved(settings: SettingsSnapshot): void;
+  onLanguageChange?(language: Language): void;
+  onThemeChange?(theme: ThemePreference): void;
   onRuntimeRestart(): Promise<void>;
   onOpenProject(): Promise<void>;
   onRunDemo(accessMode: ConversationAccessMode): Promise<void>;
 }) {
   const { t } = useI18n();
-  const [step, setStep] = useState<FirstRunStep>(() =>
-    initialStep ?? firstRunInitialStep(settings),
+  const [step, setStep] = useState<FirstRunStep>(
+    () => initialStep ?? firstRunInitialStep(settings),
   );
   const [provider, setProvider] = useState(settings.provider);
   const initialProvider = providerOption(settings.provider);
   const [model, setModel] = useState(
-    initialProvider.models.some(({ value }) => value === settings.model)
-      ? settings.model
-      : initialProvider.defaultModel,
+    settings.provider === "custom"
+      ? settings.customModel
+      : initialProvider.models.some(({ value }) => value === settings.model)
+        ? settings.model
+        : initialProvider.defaultModel,
   );
+  const [customBaseUrl, setCustomBaseUrl] = useState(settings.customBaseUrl);
+  const [language, setLanguage] = useState(settings.language);
+  const [theme, setTheme] = useState(settings.theme);
   const [apiKey, setApiKey] = useState("");
   const [accessMode, setAccessMode] =
     useState<ConversationAccessMode>("approval");
@@ -127,6 +140,12 @@ export function FirstRunGuide({
     settings,
     provider,
   );
+  const providerDraftIsValid = Boolean(
+    model.trim() &&
+    (provider === "custom"
+      ? customBaseUrl.trim()
+      : apiKey.trim() || selectedProviderConfigured),
+  );
   const currentIndex = FIRST_RUN_STEPS.indexOf(step);
 
   useEffect(() => {
@@ -134,12 +153,20 @@ export function FirstRunGuide({
   }, [project, step]);
 
   async function saveProvider() {
-    if (working || (!apiKey.trim() && !selectedProviderConfigured)) return;
+    if (working || !providerDraftIsValid) return;
     setWorking(true);
     setError(undefined);
     try {
       const snapshot = await adapter.save(
-        firstRunSettingsUpdate(settings, provider, model, apiKey),
+        firstRunSettingsUpdate(
+          settings,
+          provider,
+          model,
+          apiKey,
+          customBaseUrl,
+          language,
+          theme,
+        ),
       );
       setApiKey("");
       onSettingsSaved(snapshot);
@@ -163,10 +190,7 @@ export function FirstRunGuide({
         model: settings.model,
         ...(firstRunProviderBaseUrl(settings, settings.provider)
           ? {
-              baseUrl: firstRunProviderBaseUrl(
-                settings,
-                settings.provider,
-              ),
+              baseUrl: firstRunProviderBaseUrl(settings, settings.provider),
             }
           : {}),
       });
@@ -214,7 +238,9 @@ export function FirstRunGuide({
               className={`${index < currentIndex ? "complete" : ""} ${candidate === step ? "current" : ""}`}
               aria-current={candidate === step ? "step" : undefined}
             >
-              <span>{index < currentIndex ? <Check size={12} /> : index + 1}</span>
+              <span>
+                {index < currentIndex ? <Check size={12} /> : index + 1}
+              </span>
               <small>{t(firstRunStepKey(candidate))}</small>
             </li>
           ))}
@@ -224,69 +250,130 @@ export function FirstRunGuide({
           {step === "provider" && (
             <>
               <StepHeading
-                icon={<KeyRound size={18} />}
+                icon={<SlidersHorizontal size={18} />}
                 title={t("firstRunProviderTitle")}
                 description={t("firstRunProviderDescription")}
               />
+              <div className="first-run-preferences">
+                <SettingsSelectField
+                  id="first-run-language"
+                  label={t("language")}
+                  description={t("languageDescription")}
+                  value={language}
+                  options={LANGUAGE_OPTIONS}
+                  onChange={(value) => {
+                    const nextLanguage = value as Language;
+                    setLanguage(nextLanguage);
+                    onLanguageChange?.(nextLanguage);
+                  }}
+                />
+                <ThemePicker
+                  value={theme}
+                  onChange={(value) => {
+                    setTheme(value);
+                    onThemeChange?.(value);
+                  }}
+                />
+              </div>
               <div className="first-run-fields">
                 <SettingsSelectField
                   id="first-run-provider"
                   label={t("provider")}
                   description={t("firstRunProviderChoice")}
                   value={provider}
-                  options={PROVIDER_OPTIONS.map(({ value, label }) => ({
+                  options={PROVIDER_OPTIONS.map(({ value }) => ({
                     value,
-                    label,
+                    label: providerLabel(value, t),
                   }))}
                   onChange={(value) => {
                     const next = value as ModelProviderId;
                     const option = providerOption(next);
                     setProvider(next);
-                    setModel(option.defaultModel);
+                    setModel(
+                      next === "custom"
+                        ? settings.customModel || option.defaultModel
+                        : option.defaultModel,
+                    );
                     setApiKey("");
                     setError(undefined);
                   }}
                 />
-                <SettingsSelectField
-                  id="first-run-model"
-                  label={t("defaultModel")}
-                  description={t("firstRunModelChoice")}
-                  value={model}
-                  options={selectedProvider.models.map(({ value, label }) => ({
-                    value,
-                    label,
-                  }))}
-                  onChange={setModel}
-                />
-                <label className="first-run-secret" htmlFor="first-run-key">
-                  <span>{selectedProvider.keyLabel}</span>
-                  <small>{selectedProvider.keyDescription}</small>
-                  <input
-                    id="first-run-key"
-                    type="password"
-                    value={apiKey}
-                    autoComplete="new-password"
-                    spellCheck={false}
-                    placeholder={
-                      selectedProviderConfigured
-                        ? t("configuredKeyKept")
-                        : provider === "custom"
-                          ? t("optional")
-                          : "sk-…"
-                    }
-                    onChange={(event) => {
-                      setApiKey(event.target.value);
-                      setError(undefined);
-                    }}
+                {provider === "custom" ? (
+                  <>
+                    <FirstRunTextField
+                      id="first-run-base-url"
+                      label="Base URL"
+                      description={t("customBaseUrlDescription")}
+                      value={customBaseUrl}
+                      placeholder="http://127.0.0.1:11434/v1"
+                      type="url"
+                      icon="link"
+                      onChange={(value) => {
+                        setCustomBaseUrl(value);
+                        setError(undefined);
+                      }}
+                    />
+                    <FirstRunTextField
+                      id="first-run-model"
+                      label={t("customModel")}
+                      description={t("customModelDescription")}
+                      value={model}
+                      placeholder="llama3.2"
+                      type="text"
+                      icon="model"
+                      onChange={(value) => {
+                        setModel(value);
+                        setError(undefined);
+                      }}
+                    />
+                  </>
+                ) : (
+                  <SettingsSelectField
+                    id="first-run-model"
+                    label={t("defaultModel")}
+                    description={t("firstRunModelChoice")}
+                    value={model}
+                    options={selectedProvider.models.map(
+                      ({ value, label }) => ({
+                        value,
+                        label,
+                      }),
+                    )}
+                    onChange={setModel}
                   />
+                )}
+                <label className="first-run-secret" htmlFor="first-run-key">
+                  <span className="first-run-field-label">
+                    <span>{selectedProvider.keyLabel}</span>
+                    <small>{selectedProvider.keyDescription}</small>
+                  </span>
+                  <span className="first-run-input-frame">
+                    <KeyRound size={16} aria-hidden="true" />
+                    <input
+                      id="first-run-key"
+                      type="password"
+                      value={apiKey}
+                      autoComplete="new-password"
+                      spellCheck={false}
+                      placeholder={
+                        selectedProviderConfigured
+                          ? t("configuredKeyKept")
+                          : provider === "custom"
+                            ? t("optional")
+                            : "sk-…"
+                      }
+                      onChange={(event) => {
+                        setApiKey(event.target.value);
+                        setError(undefined);
+                      }}
+                    />
+                  </span>
                 </label>
               </div>
               <StepActions
                 error={error}
                 primary={t("saveAndContinue")}
-                disabled={
-                  working || (!apiKey.trim() && !selectedProviderConfigured)
-                }
+                disabled={working || !providerDraftIsValid}
                 working={working}
                 onPrimary={() => void saveProvider()}
               />
@@ -299,31 +386,75 @@ export function FirstRunGuide({
                 icon={<Link2 size={18} />}
                 title={t("firstRunTestTitle")}
                 description={t("firstRunTestDescription", {
-                  provider: providerOption(settings.provider).label,
+                  provider: providerLabel(settings.provider, t),
                 })}
               />
-              {diagnostic && (
-                <div
-                  className={`first-run-diagnostic ${diagnostic.status}`}
-                  role="status"
-                >
-                  {diagnostic.status === "success" ? (
-                    <CircleCheck size={17} />
-                  ) : (
-                    <CircleAlert size={17} />
-                  )}
-                  <span>
-                    <strong>
-                      {diagnostic.status === "success"
+              <div
+                className={`first-run-connection-panel${diagnostic ? ` ${diagnostic.status}` : ""}`}
+              >
+                <div className="first-run-test-summary">
+                  <span className="first-run-test-icon" aria-hidden="true">
+                    <Activity size={19} />
+                  </span>
+                  <span className="first-run-test-model">
+                    <small>{providerLabel(settings.provider, t)}</small>
+                    <strong>{settings.model}</strong>
+                  </span>
+                  <span
+                    className={`first-run-test-state ${
+                      working ? "testing" : (diagnostic?.status ?? "pending")
+                    }`}
+                    role="status"
+                  >
+                    {working ? (
+                      <LoaderCircle className="spin" size={13} />
+                    ) : diagnostic?.status === "success" ? (
+                      <CircleCheck size={13} />
+                    ) : diagnostic ? (
+                      <CircleAlert size={13} />
+                    ) : (
+                      <span aria-hidden="true" />
+                    )}
+                    {working
+                      ? t("testingConnection")
+                      : diagnostic?.status === "success"
                         ? t("connectionSuccessful")
-                        : t("connectionFailed")}
-                    </strong>
-                    <small>
-                      {diagnostic.endpoint} · {diagnostic.latencyMs} ms
-                    </small>
+                        : diagnostic
+                          ? t("connectionFailed")
+                          : t("firstRunTestReady")}
                   </span>
                 </div>
-              )}
+                <ul className="first-run-test-checks">
+                  <li>
+                    <KeyRound size={14} />
+                    {t("firstRunTestAuthentication")}
+                  </li>
+                  <li>
+                    <Link2 size={14} />
+                    {t("firstRunTestEndpoint")}
+                  </li>
+                  <li>
+                    <Sparkles size={14} />
+                    {t("firstRunTestModel")}
+                  </li>
+                </ul>
+                <p className="first-run-connection-note">
+                  <ShieldCheck size={15} />
+                  {t("providerConnectionTestDescription")}
+                </p>
+                {diagnostic && (
+                  <div
+                    className={`first-run-diagnostic ${diagnostic.status}`}
+                    role="status"
+                  >
+                    <span>
+                      <small>
+                        {diagnostic.endpoint} · {diagnostic.latencyMs} ms
+                      </small>
+                    </span>
+                  </div>
+                )}
+              </div>
               <StepActions
                 error={error ?? diagnostic?.detail}
                 primary={working ? t("testingConnection") : t("testConnection")}
@@ -462,6 +593,54 @@ function StepHeading({
         <p>{description}</p>
       </div>
     </div>
+  );
+}
+
+function FirstRunTextField({
+  id,
+  label,
+  description,
+  value,
+  placeholder,
+  type,
+  icon,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  description: string;
+  value: string;
+  placeholder: string;
+  type: "text" | "url";
+  icon: "link" | "model";
+  onChange(value: string): void;
+}) {
+  return (
+    <label
+      className={`first-run-text-field${id === "first-run-model" ? " wide" : ""}`}
+      htmlFor={id}
+    >
+      <span className="first-run-field-label">
+        <span>{label}</span>
+        <small>{description}</small>
+      </span>
+      <span className="first-run-input-frame">
+        {icon === "model" ? (
+          <Sparkles size={16} aria-hidden="true" />
+        ) : (
+          <Link2 size={16} aria-hidden="true" />
+        )}
+        <input
+          id={id}
+          type={type}
+          value={value}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder={placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </span>
+    </label>
   );
 }
 

@@ -758,16 +758,16 @@ export const ja: Messages = {
   firstRunEyebrow: "初回セットアップ",
   firstRunTitle: "最初のタスクを確実に成功させる",
   firstRunDescription:
-    "モデル接続、プロジェクト、権限を設定し、安全なデモタスクを実行します。",
+    "表示、モデル、プロジェクト、権限を設定し、実用的な最初のタスクを実行します。",
   firstRunProgress: "初回セットアップの進捗",
-  firstRunStepProvider: "Provider Key",
+  firstRunStepProvider: "基本設定",
   firstRunStepTest: "接続テスト",
   firstRunStepProject: "プロジェクト",
   firstRunStepPermissions: "権限",
   firstRunStepDemo: "最初のタスク",
-  firstRunProviderTitle: "モデルプロバイダーに接続",
+  firstRunProviderTitle: "表示とモデルを設定",
   firstRunProviderDescription:
-    "キーはこの Host に暗号化保存され、プロジェクトやログには書き込まれません。",
+    "言語とテーマを選び、タスクを実行するモデルサービスに接続します。キーはこの Host に暗号化保存されます。",
   firstRunProviderChoice: "タスクを実行するモデルサービスを選択します。",
   firstRunModelChoice: "最初のタスクで使うモデルを選択します。",
   saveAndContinue: "保存して続行",
@@ -776,6 +776,10 @@ export const ja: Messages = {
   firstRunTestTitle: "接続を確認",
   firstRunTestDescription:
     "タスク送信前に {provider} への軽量な接続テストを実行します。",
+  firstRunTestReady: "テスト待ち",
+  firstRunTestAuthentication: "認証",
+  firstRunTestEndpoint: "API エンドポイント",
+  firstRunTestModel: "モデル利用可否",
   connectionSuccessful: "接続に成功しました",
   connectionFailed: "接続に失敗しました",
   editProvider: "プロバイダーを変更",
@@ -794,14 +798,14 @@ export const ja: Messages = {
   firstRunFullAccessDescription:
     "プロジェクト内でコマンド実行と変更を許可します。",
   continue: "続行",
-  firstRunDemoTitle: "最初のデモタスクを実行",
+  firstRunDemoTitle: "マルチ Agent 協働を試す",
   firstRunDemoDescription:
-    "読み取り専用タスクでモデル、プロジェクト情報、タスク全体の流れを確認します。",
-  demoTask: "デモタスク",
+    "2 つのサブ Agent が異なる視点から並行して考え、メイン Agent が 1 つの明確な案にまとめます。",
+  demoTask: "マルチ Agent デモ",
   firstRunDemoPrompt:
-    "ファイルを変更せず、このプロジェクトを読み取り専用で確認してください。構成、実行方法、次に適した小さな改善案を説明してください。",
+    "2 つのサブ Agent を並行して起動し、ポモドーロアプリを企画してください。1 つは集中を助ける主要機能を 3 つ提案し、もう 1 つは初回利用時の使いやすさに関するリスクを 3 つ挙げます。メイン Agent は重複を除き、結果を 8 行以内の MVP 案にまとめてください。",
   startingDemoTask: "タスクを開始中…",
-  runDemoTask: "デモタスクを実行",
+  runDemoTask: "マルチ Agent デモを実行",
   waitingForRuntime: "ランタイムを待機中…",
   demoTaskStartFailed:
     "デモタスクを開始できませんでした。ランタイムを確認して再試行してください。",
