@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build && node ../../scripts/copy-site-installer.mjs",
     "preview": "astro preview"
   },
   "dependencies": {

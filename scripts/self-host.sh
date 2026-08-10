@@ -17,7 +17,7 @@ SERVICE_NAME=threadlight-host
 LOG_ROOT=${THREADLIGHT_SELF_HOST_LOG_ROOT:-"$HOME/.threadlight/logs"}
 RELEASE_VERSION=${THREADLIGHT_SELF_HOST_VERSION:-1.0.0}
 PACKAGE_URL=${THREADLIGHT_HOST_PACKAGE_URL:-"https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"}
-INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://raw.githubusercontent.com/nagisa77/threadlight/main/scripts/self-host.sh}
+INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://threadlight.xyz/install.sh}
 TEMP_ROOT=
 
 cleanup_temporary_files() {
