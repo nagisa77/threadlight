@@ -177,3 +177,15 @@ export function activeProject(
     (project) => project.id === snapshot.activeProjectId,
   );
 }
+
+export async function prepareFirstRunDemoProject(
+  projects: ProjectsAdapter,
+  project?: ProjectSummary,
+): Promise<
+  { project: ProjectSummary; snapshot?: ProjectsSnapshot } | undefined
+> {
+  if (project) return { project };
+  const snapshot = await projects.createStandalone?.();
+  const standalone = activeProject(snapshot);
+  return standalone ? { project: standalone, snapshot } : undefined;
+}

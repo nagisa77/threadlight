@@ -16,6 +16,10 @@ import {
   providerIsConfigured,
   type SettingsSnapshot,
 } from "../src/settings.js";
+import {
+  prepareFirstRunDemoProject,
+  type ProjectsAdapter,
+} from "../src/projects.js";
 
 const settings: SettingsSnapshot = {
   language: "zh-CN",
@@ -238,6 +242,26 @@ describe("first run", () => {
     expect(demoHtml).toContain("检查连接设置");
   });
 
+  it("enables the demo without an opened project when standalone runtime is ready", () => {
+    const html = renderToStaticMarkup(
+      <FirstRunGuide
+        adapter={{ load: vi.fn(), save: vi.fn(), testProvider: vi.fn() }}
+        settings={{ ...settings, openAIApiKeyConfigured: true }}
+        connectionReady={true}
+        initialStep="demo"
+        onSettingsSaved={vi.fn()}
+        onRuntimeRestart={vi.fn()}
+        onOpenProject={vi.fn()}
+        onRunDemo={vi.fn()}
+      />,
+    );
+
+    expect(html).toMatch(
+      /<button[^>]*class="first-run-primary[^>]*>运行多 Agent 演示<\/button>/,
+    );
+    expect(html).not.toContain("正在等待运行时");
+  });
+
   it("recognizes configured cloud and keyless custom providers", () => {
     expect(
       providerIsConfigured({ ...settings, openAIApiKeyConfigured: true }),
@@ -258,6 +282,28 @@ describe("first run", () => {
   });
 
   it("runs the multi-agent demo through an offline scripted model provider", async () => {
+    const standaloneProject = {
+      id: "standalone",
+      name: "Standalone",
+      basePath: "/threadlight/standalone",
+      scope: "standalone" as const,
+      lastOpenedAt: new Date(0).toISOString(),
+      conversations: [],
+    };
+    const createStandalone = vi.fn().mockResolvedValue({
+      activeProjectId: standaloneProject.id,
+      projects: [standaloneProject],
+    });
+    const prepared = await prepareFirstRunDemoProject({
+      createStandalone,
+    } as ProjectsAdapter);
+
+    expect(createStandalone).toHaveBeenCalledOnce();
+    expect(prepared?.project).toMatchObject({
+      id: "standalone",
+      scope: "standalone",
+    });
+
     const requests: string[] = [];
     const provider: ModelProvider = {
       async generate(request) {

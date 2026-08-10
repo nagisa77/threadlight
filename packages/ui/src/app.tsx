@@ -137,6 +137,7 @@ import {
 } from "./voice-input.js";
 import {
   activeProject,
+  prepareFirstRunDemoProject,
   projectsWithDeliveryStatus,
   type ConversationSummary,
   type HostSummary,
@@ -2593,11 +2594,11 @@ function ThreadlightAppContent({
       setSwitchingProject(false);
     }
   }
-
   async function runFirstDemoTask(accessMode: ConversationAccessMode) {
-    if (!projects || !currentProject || !providerReady) {
-      throw new Error(t("waitingForRuntime"));
-    }
+    if (!projects || !providerReady) throw new Error(t("waitingForRuntime"));
+    const demo = await prepareFirstRunDemoProject(projects, currentProject);
+    if (!demo) throw new Error(t("waitingForRuntime"));
+    if (demo.snapshot) setProjectSnapshot(demo.snapshot);
     const result = await sendNewThread(
       t("firstRunDemoPrompt"),
       [],
@@ -2611,7 +2612,6 @@ function ThreadlightAppContent({
     if (!result) throw new Error(t("demoTaskStartFailed"));
     if ("error" in result) throw new Error(result.error);
     if (!result.sent) throw new Error(t("demoTaskStartFailed"));
-
     setFirstRunRetryDemo(false);
     setFirstRunDemoThreadId(result.threadId);
     setNewTaskDraft(false);
@@ -2619,7 +2619,7 @@ function ThreadlightAppContent({
     setView("thread");
     setProjectSnapshot(
       await projects.upsertConversation({
-        projectId: currentProject.id,
+        projectId: demo.project.id,
         id: result.threadId,
         title: t("demoTask"),
       }),
@@ -3573,7 +3573,7 @@ function ThreadlightAppContent({
                 adapter={settings}
                 settings={runtimeSettings}
                 project={currentProject}
-                connectionReady={state.connection === "ready"}
+                connectionReady={providerReady}
                 initialStep={firstRunRetryDemo ? "demo" : undefined}
                 onSettingsSaved={setRuntimeSettings}
                 onLanguageChange={onLanguageChange}
