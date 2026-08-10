@@ -40,6 +40,9 @@ const common = {
   bundle: true,
   external: ["node-pty", "ws"],
   format: "esm",
+  banner: {
+    js: 'import { createRequire as __threadlightCreateRequire } from "node:module"; const require = __threadlightCreateRequire(import.meta.url);',
+  },
   platform: "node",
   target: "node22",
   sourcemap: false,

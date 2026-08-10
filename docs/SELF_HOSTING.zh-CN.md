@@ -67,8 +67,8 @@ caddy reverse-proxy \
 | ---------- | -------------------------------------- |
 | 安装目录   | `~/.local/share/threadlight-self-host` |
 | Host 配置  | `~/.config/threadlight/self-host.json` |
-| Host 数据  | `~/.threadlight`                       |
-| macOS 日志 | `~/.threadlight/logs/host.log`         |
+| Host 数据  | `~/.local/share/threadlight-self-host/data` |
+| macOS 日志 | `~/.local/share/threadlight-self-host/logs/host.log` |
 
 可以使用 `--host`、`--port`、`--name`、`--home`、`--public-url` 和可重复的 `--origin` 覆盖默认值。项目统一在 UI 中管理。
 

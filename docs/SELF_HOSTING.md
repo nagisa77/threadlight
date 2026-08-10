@@ -67,8 +67,8 @@ The proxy must support WebSocket upgrades and must not buffer `text/event-stream
 | ------------ | -------------------------------------- |
 | Installation | `~/.local/share/threadlight-self-host` |
 | Host config  | `~/.config/threadlight/self-host.json` |
-| Host data    | `~/.threadlight`                       |
-| macOS log    | `~/.threadlight/logs/host.log`         |
+| Host data    | `~/.local/share/threadlight-self-host/data` |
+| macOS log    | `~/.local/share/threadlight-self-host/logs/host.log` |
 
 Use `--host`, `--port`, `--name`, `--home`, `--public-url`, and repeatable `--origin` options to override defaults. Projects are managed in the UI.
 

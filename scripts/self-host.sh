@@ -14,7 +14,7 @@ RUNTIME_ROOT=${XDG_DATA_HOME:-"$HOME/.local/share"}/threadlight-self-host
 HOST_BIN="$RUNTIME_ROOT/bin/threadlight-host"
 MANAGER_BIN="$RUNTIME_ROOT/bin/threadlight-self-host"
 SERVICE_NAME=threadlight-host
-LOG_ROOT=${THREADLIGHT_SELF_HOST_LOG_ROOT:-"$HOME/.threadlight/logs"}
+LOG_ROOT=${THREADLIGHT_SELF_HOST_LOG_ROOT:-"$RUNTIME_ROOT/logs"}
 RELEASE_VERSION=${THREADLIGHT_SELF_HOST_VERSION:-1.0.0}
 PACKAGE_URL=${THREADLIGHT_HOST_PACKAGE_URL:-"https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"}
 INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://threadlight.xyz/install.sh}
@@ -39,7 +39,9 @@ install_self_host() {
   [ -n "$listen_host" ] || listen_host=127.0.0.1
   [ -n "$port" ] || port=7432
   [ -n "$host_name" ] || host_name=$(hostname)
-  [ -n "$host_home" ] || host_home=$HOME/.threadlight
+  [ -n "$host_home" ] || host_home=$RUNTIME_ROOT/data
+  home_explicit=0
+  migrate_legacy_home=0
   foreground=0
 
   while [ "$#" -gt 0 ]; do
@@ -53,7 +55,10 @@ install_self_host() {
           --host) listen_host=$value ;;
           --port) port=$value ;;
           --name) host_name=$value ;;
-          --home) host_home=$value ;;
+          --home)
+            host_home=$value
+            home_explicit=1
+            ;;
           --public-url) public_url=$value ;;
           --origin) origins="${origins}${origins:+
 }${value}" ;;
@@ -80,8 +85,22 @@ install_self_host() {
   esac
   [ "$port" -le 65535 ] || fail "--port must be an integer from 0 to 65535."
 
+  if [ "$home_explicit" -eq 0 ] && [ "$host_home" = "$HOME/.threadlight" ]; then
+    legacy_host_home=$host_home
+    host_home=$RUNTIME_ROOT/data
+    migrate_legacy_home=1
+  fi
+
   mkdir -p "$host_home" "$CONFIG_ROOT" "$RUNTIME_ROOT" "$LOG_ROOT"
   host_home=$(CDPATH= cd -- "$host_home" && pwd)
+  if [ "$migrate_legacy_home" -eq 1 ]; then
+    migration_marker=$RUNTIME_ROOT/.legacy-home-migrated
+    if [ ! -f "$migration_marker" ] && [ -d "$legacy_host_home" ]; then
+      printf 'Migrating the previous shared Host data into the dedicated self-host directory...\n'
+      cp -R "$legacy_host_home/." "$host_home/"
+      touch "$migration_marker"
+    fi
+  fi
   if [ -n "$project" ]; then
     [ -d "$project" ] || fail "Project directory does not exist: $project"
     project=$(CDPATH= cd -- "$project" && pwd)
@@ -233,7 +252,14 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
 writeFileSync(process.argv[2], plist);
 NODE
       launchctl bootout "gui/$(id -u)/io.github.nagisa77.threadlight-host" >/dev/null 2>&1 || true
-      launchctl bootstrap "gui/$(id -u)" "$plist_path"
+      bootstrap_attempt=1
+      while ! launchctl bootstrap "gui/$(id -u)" "$plist_path"; do
+        if [ "$bootstrap_attempt" -ge 5 ]; then
+          fail "Could not register the macOS Host service after 5 attempts."
+        fi
+        bootstrap_attempt=$((bootstrap_attempt + 1))
+        sleep 1
+      done
       launchctl kickstart -k "gui/$(id -u)/io.github.nagisa77.threadlight-host"
       ;;
     *)
@@ -374,7 +400,7 @@ Install options:
   --host <address>      Listen address (default: 127.0.0.1)
   --port <port>         Listen port (default: 7432)
   --name <name>         Host name shown in Threadlight
-  --home <path>         Host data directory (default: ~/.threadlight)
+  --home <path>         Host data directory (default: ~/.local/share/threadlight-self-host/data)
   --public-url <url>    HTTPS public URL used for OAuth callbacks and output
   --origin <url>        Additional allowed Web origin; may be repeated
   --foreground          Run in the current terminal instead of a system service
