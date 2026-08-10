@@ -16,6 +16,17 @@
   <img src="./docs/images/threadlight-overview.png" width="1200" alt="Threadlight 多 Agent 工程工作区">
 </p>
 
+## Showcase
+
+无需预先准备项目，直接在空任务中粘贴 Query，Threadlight 会创建代码、运行测试并产出文件。
+
+| Case | Query | 执行过程 |
+| --- | --- | --- |
+| AI Agent 技术雷达 | `从零创建 ai-agent-radar：联网核实主流 AI Coding Agent 的能力、价格和来源，制作支持筛选、对比和权重排名的网站。并行使用多个 Agent，完成后测试、启动并截图。` | <a href="./docs/images/showcase/ai-agent-radar.png"><img src="./docs/images/showcase/ai-agent-radar.png" width="420" alt="AI Agent 技术雷达执行过程"></a> |
+| 线上事故回放 | `从零创建 incident-replay-lab：制作可播放的电商线上事故沙盘，包含服务拓扑、实时指标、事件流、时间轴和自动复盘。完成后测试、启动并保存事故高峰截图。` | <a href="./docs/images/showcase/incident-replay-lab.png"><img src="./docs/images/showcase/incident-replay-lab.png" width="420" alt="线上事故回放执行过程"></a> |
+| 全球地震观察站 | `从零创建 earthquake-observatory：获取 USGS 最近 30 天地震数据，制作支持时间播放、震级筛选、深度分析和地区排行的交互地图。完成后测试、启动并截图。` | <a href="./docs/images/showcase/earthquake-observatory.png"><img src="./docs/images/showcase/earthquake-observatory.png" width="420" alt="全球地震观察站执行过程"></a> |
+| 城市地铁运行沙盘 | `从零创建 metro-simulator：制作动态地铁网络，实时显示列车、客流和站点状态；用户可制造延误、关闭车站并观察自动改道。完成后测试、启动并截图。` | <a href="./docs/images/showcase/metro-simulator.png"><img src="./docs/images/showcase/metro-simulator.png" width="420" alt="城市地铁运行沙盘执行过程"></a> |
+
 ## 快速开始
 
 ### 推荐：一键自部署 Host + Web
