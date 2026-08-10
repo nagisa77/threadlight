@@ -1,0 +1,668 @@
+---
+import { Image } from "astro:assets";
+import appIconUrl from "../../../desktop/resources/app-icon.svg?url";
+import overviewImage from "../../../../docs/images/threadlight-overview.png";
+import multiAgentImage from "../../../../docs/images/threadlight-multi-agent.png";
+import planImage from "../../../../docs/images/threadlight-plan-mode.png";
+import terminalImage from "../../../../docs/images/threadlight-terminal-workspace.png";
+import memoryImage from "../../../../docs/images/threadlight-project-memory.png";
+import capabilitiesImage from "../../../../docs/images/threadlight-capabilities.png";
+import computerUseImage from "../../../../docs/images/threadlight-computer-use.png";
+import remoteHostImage from "../../../../docs/images/threadlight-remote-host.png";
+import automationsImage from "../../../../docs/images/threadlight-automations.png";
+
+interface Props {
+  locale: "zh" | "en";
+}
+
+const { locale } = Astro.props;
+const isEnglish = locale === "en";
+const homePath = isEnglish ? "/en/" : "/";
+const languagePath = isEnglish ? "/" : "/en/";
+
+const copy = isEnglish
+  ? {
+      skip: "Skip to content",
+      nav: {
+        product: "Product",
+        agents: "Multi-agent",
+        plan: "Plan mode",
+        capabilities: "Capabilities",
+        github: "GitHub",
+      },
+      hero: {
+        kicker: "OPEN SOURCE · MULTI-AGENT RUNTIME",
+        lead: "Turn one agent into",
+        accent: "an engineering team.",
+        description:
+          "Threadlight is an open-source multi-agent runtime, desktop workspace, and remote Host. Plan, delegate, execute, review, and deliver on one observable, recoverable task timeline.",
+        release: "Download latest release",
+        github: "Explore the source",
+        web: "Open the web client",
+        webHint: "Connects to an existing Threadlight Host",
+        proof: ["Alpha", "macOS first", "Apache-2.0"],
+        frameTitle: "Threadlight · engineering workspace",
+        frameStatus: "Agents active",
+      },
+      position: {
+        eyebrow: "NOT ANOTHER CHAT BOX",
+        title: "A runtime for work that spans more than one model call.",
+        description:
+          "Real engineering tasks include planning, parallel research, tools, terminals, file changes, review, and interrupted runs. Threadlight keeps the whole execution trail coherent instead of hiding it behind a final answer.",
+        points: [
+          ["Runtime-level orchestration", "Delegation, continuity, ownership, and result collection are enforced by the runtime."],
+          ["Observable by default", "Plans, agent activity, tool calls, command output, diffs, and token usage stay visible."],
+          ["Built for delivery", "Worktrees, files, terminals, review, commit, push, and pull requests share one context."],
+          ["Provider-neutral core", "Vendor wire formats stay in adapters while the loop and tools remain reusable."],
+        ],
+      },
+      agents: {
+        eyebrow: "REAL MULTI-AGENT ORCHESTRATION",
+        title: "Parallel work, without losing control.",
+        description:
+          "A root agent can delegate independent tasks, follow progress, ask follow-ups, retry from a clean state, interrupt work, and collect every result before the task closes.",
+        traits: [
+          ["Continuous threads", "Each child keeps its own model state and history across follow-ups."],
+          ["Safe write ownership", "One worker owns workspace writes while read-only research continues in parallel."],
+          ["Recoverable state", "Agent trees, activity, output, and parent-child relationships survive checkpoints."],
+        ],
+        frameTitle: "Multi-agent execution",
+        frameStatus: "3 agents",
+      },
+      plan: {
+        eyebrow: "CONTROLLED PLAN MODE",
+        title: "Research first. Advance on evidence.",
+        description:
+          "Plan mode is a runtime state machine, not a prompt convention. It begins read-only, creates acceptance criteria, focuses one step at a time, and refuses to finish before the evidence is complete.",
+        steps: [
+          ["01", "Research", "Inspect the project with read-only tools."],
+          ["02", "Structure", "Define steps, acceptance criteria, and status."],
+          ["03", "Execute", "Work only on the current in-progress step."],
+          ["04", "Verify", "Attach completion evidence before advancing."],
+        ],
+        frameTitle: "Plan · evidence trail",
+        frameStatus: "Step verified",
+      },
+      workspace: {
+        eyebrow: "A DESKTOP BUILT FOR THE WORK",
+        title: "Conversation, terminals, files, and review—together.",
+        description:
+          "The task timeline stays in the center while files, focused diffs, agent activity, and multiple terminal tabs remain one gesture away. Context no longer has to bounce between a chat app, editor, and terminal.",
+        items: ["Isolated Git worktrees", "Focused diff review", "Managed background processes", "Commit · Push · Draft PR"],
+        frameTitle: "Task workspace",
+        frameStatus: "Review ready",
+      },
+      workflow: {
+        eyebrow: "ONE EXECUTION TRAIL",
+        title: "From intent to a reviewable result.",
+        description: "Every handoff stays attached to the task that produced it.",
+        steps: [
+          ["Plan", "Research and acceptance criteria"],
+          ["Delegate", "Parallel agents with clear ownership"],
+          ["Execute", "Tools, terminals, search, MCP, and Computer Use"],
+          ["Review", "Files, changes, source, and focused diffs"],
+          ["Deliver", "Apply, commit, push, or open a draft PR"],
+        ],
+      },
+      capabilities: {
+        eyebrow: "COMPOSABLE CAPABILITIES",
+        title: "More than code generation.",
+        description:
+          "Skills, plugins, MCP, project memory, desktop control, remote hosts, and scheduled work become explicit capabilities with durable boundaries.",
+        cards: [
+          {
+            label: "PROJECT MEMORY",
+            title: "Knowledge that stays with the project.",
+            body: "Readable, revision-safe long-term context in .threadlight/MEMORY.md.",
+          },
+          {
+            label: "SKILLS · PLUGINS · MCP",
+            title: "Compose the right capability for each turn.",
+            body: "Discoverable extensions, explicit selection, and task-stable capability snapshots.",
+          },
+          {
+            label: "COMPUTER USE",
+            title: "Let the agent see and operate the desktop.",
+            body: "Auditable macOS window sharing with a stable visual canvas and picture-in-picture view.",
+          },
+          {
+            label: "REMOTE HOST",
+            title: "Keep code and execution on the target machine.",
+            body: "Use the same workspace from desktop or web through an authenticated remote Host.",
+          },
+          {
+            label: "AUTOMATIONS",
+            title: "Turn repeated checks into reviewable tasks.",
+            body: "Schedule read-only agent runs for tests, security, releases, documentation, and more.",
+          },
+        ],
+      },
+      architecture: {
+        eyebrow: "PROVIDER-NEUTRAL BY DESIGN",
+        title: "Clear boundaries from interface to execution.",
+        description:
+          "Threadlight can be used as a complete desktop agent or decomposed into a runtime, protocol, client, tools, and UI for your own agent product.",
+        layers: [
+          ["SURFACES", "Electron Desktop · Web · IDE · Custom UI"],
+          ["WORKSPACE", "Shared UI · Transport-neutral Client · Protocol"],
+          ["RUNTIME", "App Server · Agent Loop · Built-in Tools · Memory"],
+          ["ADAPTERS", "OpenAI Responses · Compatible Providers · Custom"],
+        ],
+        link: "Explore the architecture",
+      },
+      start: {
+        eyebrow: "START WITH THE DESKTOP APP",
+        title: "Bring a trusted project. Keep every step visible.",
+        description:
+          "Threadlight is alpha software for local development, architecture exploration, and agent application prototyping.",
+        release: "Download latest release",
+        docs: "Read the development guide",
+        source: "Run from source",
+        copy: "Copy",
+        copied: "Copied",
+        warning:
+          "Built-in tools run with your current user permissions and are not an OS-level sandbox. Use trusted workspaces or add container, VM, or system isolation.",
+      },
+      faq: {
+        eyebrow: "BEFORE YOU START",
+        title: "The important details.",
+        items: [
+          ["Is multi-agent just multiple chat windows?", "No. Delegation, continuity, write ownership, result collection, and recovery are runtime behavior inside one task."],
+          ["Does Threadlight lock me into one provider?", "No. Provider-specific wire formats stay in adapters, while the loop, tools, server, protocol, and client remain provider-neutral."],
+          ["Is Threadlight production-ready?", "Not yet. It is alpha software intended for trusted local engineering workflows, prototyping, and architectural exploration."],
+          ["Does it provide a secure sandbox?", "No OS-level sandbox is included. Approval mode controls writes and external access, but strong isolation should come from containers, VMs, or the operating system."],
+        ],
+      },
+      footer: {
+        line: "Keep the work visible. Keep the thread intact.",
+        license: "Open source under Apache-2.0.",
+      },
+    }
+  : {
+      skip: "跳到主要内容",
+      nav: {
+        product: "产品",
+        agents: "多 Agent",
+        plan: "Plan 模式",
+        capabilities: "能力系统",
+        github: "GitHub",
+      },
+      hero: {
+        kicker: "开源 · 多 AGENT RUNTIME",
+        lead: "让一个 Agent，真正变成",
+        accent: "一支工程团队。",
+        description:
+          "Threadlight 是开源的多 Agent Runtime、桌面工作台与远程 Host。在同一条任务时间线上完成规划、并行协作、工具执行、代码审阅与结果交付。",
+        release: "下载最新版",
+        github: "查看开源代码",
+        web: "打开 Web 客户端",
+        webHint: "连接一个已经运行的 Threadlight Host",
+        proof: ["Alpha", "macOS 优先", "Apache-2.0"],
+        frameTitle: "Threadlight · 工程工作台",
+        frameStatus: "Agent 协作中",
+      },
+      position: {
+        eyebrow: "不只是又一个聊天框",
+        title: "为跨越多次模型调用的真实工作而生。",
+        description:
+          "真实工程任务包含规划、并行研究、工具、终端、文件变化、代码审阅与中断恢复。Threadlight 把完整执行链路组织成可观察、可恢复、可以继续工作的本地空间。",
+        points: [
+          ["运行时级编排", "委派、连续性、写入所有权与结果收集，都由 Runtime 真正约束。"],
+          ["默认即可观察", "Plan、Agent 活动、工具调用、命令输出、Diff 与 token usage 全程可见。"],
+          ["真正面向交付", "Worktree、文件、终端、Review、Commit、Push 与 PR 保持在同一上下文。"],
+          ["Provider 中立", "厂商 wire format 留在 Adapter，Loop 与工具保持可复用和可组合。"],
+        ],
+      },
+      agents: {
+        eyebrow: "真正的多 AGENT 编排",
+        title: "并行推进，也始终保持掌控。",
+        description:
+          "根 Agent 可以派发独立任务、持续检查进度、追加问题、从全新状态重试、主动中断，并在任务结束前收集每一个结果。",
+        traits: [
+          ["连续的 Agent 线程", "每个子 Agent 在 follow-up 中保留自己的模型状态与历史。"],
+          ["安全的写入所有权", "一个 Worker 独占工作区写入，其他只读研究仍可并行继续。"],
+          ["可恢复的运行状态", "Agent 树、活动、输出与父子关系都会进入 checkpoint。"],
+        ],
+        frameTitle: "多 Agent 执行",
+        frameStatus: "3 个 Agent",
+      },
+      plan: {
+        eyebrow: "受控 PLAN 模式",
+        title: "先研究，再按证据推进。",
+        description:
+          "Plan 模式是 Runtime 状态机，不是一句 Prompt 约定。它从只读研究开始，建立验收标准，一次聚焦一个步骤，并在完成证据不足时拒绝提前收尾。",
+        steps: [
+          ["01", "研究", "先使用只读工具理解项目。"],
+          ["02", "结构化", "定义步骤、验收标准与状态。"],
+          ["03", "执行", "只处理当前 in-progress 步骤。"],
+          ["04", "验证", "补齐完成证据后才能推进。"],
+        ],
+        frameTitle: "Plan · 证据链路",
+        frameStatus: "步骤已验证",
+      },
+      workspace: {
+        eyebrow: "为真实工作设计的桌面端",
+        title: "对话、终端、文件和 Review，都在一起。",
+        description:
+          "任务时间线保持在中央，文件、聚焦 Diff、Agent 活动与多个终端标签触手可及。不必再让上下文反复穿梭于聊天、编辑器和终端。",
+        items: ["Git 独立 Worktree", "聚焦 Diff Review", "受管后台进程", "Commit · Push · Draft PR"],
+        frameTitle: "任务工作空间",
+        frameStatus: "变更可审阅",
+      },
+      workflow: {
+        eyebrow: "同一条执行时间线",
+        title: "从一个意图，到可审阅的结果。",
+        description: "每一次交接，都留在产生它们的任务里。",
+        steps: [
+          ["规划", "研究与验收标准"],
+          ["委派", "明确所有权的并行 Agent"],
+          ["执行", "工具、终端、搜索、MCP 与 Computer Use"],
+          ["审阅", "文件、变更、源码与聚焦 Diff"],
+          ["交付", "应用、提交、推送或创建 Draft PR"],
+        ],
+      },
+      capabilities: {
+        eyebrow: "可组合的能力系统",
+        title: "远不止生成代码。",
+        description:
+          "Skills、Plugins、MCP、项目记忆、桌面控制、远程 Host 与自动化，都成为边界清晰、可以持久化的显式能力。",
+        cards: [
+          {
+            label: "项目记忆",
+            title: "把稳定知识留在项目里。",
+            body: "用可读、可版本化的 .threadlight/MEMORY.md 保存长期上下文，并通过 revision 安全更新。",
+          },
+          {
+            label: "SKILLS · PLUGINS · MCP",
+            title: "为每一轮组合正确能力。",
+            body: "可发现的扩展、显式选择与随任务持久化的能力快照。",
+          },
+          {
+            label: "COMPUTER USE",
+            title: "让 Agent 看见并操作桌面。",
+            body: "可审计的 macOS 窗口共享、稳定视觉画布与画中画视图。",
+          },
+          {
+            label: "远程 HOST",
+            title: "让代码与执行留在目标机器。",
+            body: "通过鉴权 Host，在桌面端或 Web 端继续使用同一套工作空间。",
+          },
+          {
+            label: "自动化",
+            title: "把重复检查变成可回看的任务。",
+            body: "为测试、安全、发布、文档等工作安排只读 Agent 定时运行。",
+          },
+        ],
+      },
+      architecture: {
+        eyebrow: "从设计上保持 PROVIDER 中立",
+        title: "从交互到执行，每一层边界清晰。",
+        description:
+          "你可以把 Threadlight 当作完整桌面 Agent，也可以拆出 Runtime、Protocol、Client、Tools 与 UI，构建自己的 Agent 产品。",
+        layers: [
+          ["交互表面", "Electron Desktop · Web · IDE · Custom UI"],
+          ["工作空间", "Shared UI · Transport-neutral Client · Protocol"],
+          ["运行核心", "App Server · Agent Loop · Built-in Tools · Memory"],
+          ["协议适配", "OpenAI Responses · Compatible Providers · Custom"],
+        ],
+        link: "查看完整架构",
+      },
+      start: {
+        eyebrow: "从桌面端开始",
+        title: "带上可信项目，让每一步都保持可见。",
+        description: "Threadlight 目前处于 Alpha 阶段，适合本地开发、架构探索和 Agent 应用原型。",
+        release: "下载最新版",
+        docs: "阅读开发指南",
+        source: "从源码运行",
+        copy: "复制",
+        copied: "已复制",
+        warning:
+          "内置工具以当前用户权限运行，不是操作系统级 sandbox。请只使用可信工作区，或配合容器、虚拟机与系统隔离。",
+      },
+      faq: {
+        eyebrow: "开始之前",
+        title: "这些信息很重要。",
+        items: [
+          ["多 Agent 只是多开几个聊天窗口吗？", "不是。委派、连续性、写入所有权、结果收集和恢复都是同一任务内部的 Runtime 行为。"],
+          ["Threadlight 会绑定单一模型厂商吗？", "不会。厂商 wire format 留在 Adapter，Loop、Tools、Server、Protocol 与 Client 始终保持 Provider 中立。"],
+          ["Threadlight 现在适合生产环境吗？", "暂时不适合。它仍处于 Alpha 阶段，适合可信的本地工程工作流、原型与架构探索。"],
+          ["它提供安全 Sandbox 吗？", "不提供操作系统级 sandbox。审批模式会控制写入与外部访问，强隔离仍应由容器、虚拟机或操作系统提供。"],
+        ],
+      },
+      footer: {
+        line: "让工作可见，让脉络完整。",
+        license: "基于 Apache-2.0 开源。",
+      },
+    };
+
+const installCommand = `git clone https://github.com/nagisa77/threadlight.git
+cd threadlight
+npm install
+npm run desktop:dev`;
+
+const architectureLink = isEnglish
+  ? "https://github.com/nagisa77/threadlight#architecture"
+  : "https://github.com/nagisa77/threadlight#架构";
+const docsLink = isEnglish
+  ? "https://github.com/nagisa77/threadlight/blob/main/docs/DEVELOPMENT.md"
+  : "https://github.com/nagisa77/threadlight/blob/main/docs/DEVELOPMENT.zh-CN.md";
+---
+
+<a class="skip-link" href="#main">{copy.skip}</a>
+
+<header class="site-header">
+  <div class="shell header-inner">
+    <a class="brand pressable" href={homePath} aria-label="Threadlight home">
+      <img src={appIconUrl} alt="" width="36" height="36" />
+      <span>Threadlight</span>
+    </a>
+    <nav class="desktop-nav" aria-label="Primary navigation">
+      <a href="#product">{copy.nav.product}</a>
+      <a href="#multi-agent">{copy.nav.agents}</a>
+      <a href="#plan">{copy.nav.plan}</a>
+      <a href="#capabilities">{copy.nav.capabilities}</a>
+    </nav>
+    <div class="header-actions">
+      <a class="language-link pressable" href={languagePath} hreflang={isEnglish ? "zh-CN" : "en"}>
+        {isEnglish ? "中文" : "EN"}
+      </a>
+      <a class="header-github pressable" href="https://github.com/nagisa77/threadlight">
+        {copy.nav.github}<span aria-hidden="true">↗</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-grid" aria-hidden="true"></div>
+    <div class="shell hero-inner">
+      <div class="hero-copy reveal" style="--delay: 40ms">
+        <p class="kicker"><span></span>{copy.hero.kicker}</p>
+        <h1 id="hero-title">{copy.hero.lead}<br /><em>{copy.hero.accent}</em></h1>
+        <p class="hero-description">{copy.hero.description}</p>
+        <div class="hero-actions">
+          <a class="button button-primary pressable" href="https://github.com/nagisa77/threadlight/releases/latest">
+            {copy.hero.release}<span aria-hidden="true">↓</span>
+          </a>
+          <a class="button button-secondary pressable" href="https://github.com/nagisa77/threadlight">
+            {copy.hero.github}<span aria-hidden="true">↗</span>
+          </a>
+        </div>
+        <div class="hero-meta">
+          <a href="https://nagisa77.github.io/threadlight/">{copy.hero.web}<span aria-hidden="true">→</span></a>
+          <span>{copy.hero.webHint}</span>
+        </div>
+        <ul class="project-proof" aria-label="Project status">
+          {copy.hero.proof.map((item) => <li>{item}</li>)}
+        </ul>
+      </div>
+
+      <figure class="app-frame hero-frame reveal" style="--delay: 160ms">
+        <div class="frame-bar" aria-hidden="true">
+          <div class="traffic-lights"><span></span><span></span><span></span></div>
+          <span class="frame-label">{copy.hero.frameTitle}</span>
+          <span class="frame-state"><i></i>{copy.hero.frameStatus}</span>
+        </div>
+        <Image
+          src={overviewImage}
+          alt={isEnglish ? "Threadlight multi-agent desktop engineering workspace" : "Threadlight 多 Agent 桌面工程工作台"}
+          widths={[960, 1440, 1920, 2880]}
+          sizes="(max-width: 760px) 100vw, 1240px"
+          loading="eager"
+          quality={88}
+        />
+      </figure>
+    </div>
+  </section>
+
+  <section class="light-section position-section section-pad" id="product" aria-labelledby="position-title">
+    <div class="shell position-layout">
+      <div class="section-heading position-heading">
+        <p class="eyebrow">{copy.position.eyebrow}</p>
+        <h2 id="position-title">{copy.position.title}</h2>
+        <p>{copy.position.description}</p>
+      </div>
+      <div class="position-list">
+        {copy.position.points.map(([title, body], index) => (
+          <article>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <div><h3>{title}</h3><p>{body}</p></div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="dark-section feature-section section-pad" id="multi-agent" aria-labelledby="agents-title">
+    <div class="shell feature-layout">
+      <div class="feature-copy">
+        <p class="eyebrow dark-eyebrow">{copy.agents.eyebrow}</p>
+        <h2 id="agents-title">{copy.agents.title}</h2>
+        <p class="feature-intro">{copy.agents.description}</p>
+        <div class="trait-list">
+          {copy.agents.traits.map(([title, body]) => (
+            <article><i aria-hidden="true"></i><div><h3>{title}</h3><p>{body}</p></div></article>
+          ))}
+        </div>
+      </div>
+      <figure class="app-frame feature-frame">
+        <div class="frame-bar" aria-hidden="true">
+          <div class="traffic-lights"><span></span><span></span><span></span></div>
+          <span class="frame-label">{copy.agents.frameTitle}</span>
+          <span class="frame-state"><i></i>{copy.agents.frameStatus}</span>
+        </div>
+        <Image
+          src={multiAgentImage}
+          alt={isEnglish ? "Threadlight multi-agent parallel execution" : "Threadlight 多 Agent 并行执行界面"}
+          widths={[960, 1440, 1920]}
+          sizes="(max-width: 980px) 94vw, 680px"
+          loading="lazy"
+          quality={86}
+        />
+      </figure>
+    </div>
+  </section>
+
+  <section class="light-section feature-section section-pad" id="plan" aria-labelledby="plan-title">
+    <div class="shell feature-layout feature-layout-reverse">
+      <figure class="app-frame feature-frame light-frame">
+        <div class="frame-bar" aria-hidden="true">
+          <div class="traffic-lights"><span></span><span></span><span></span></div>
+          <span class="frame-label">{copy.plan.frameTitle}</span>
+          <span class="frame-state"><i></i>{copy.plan.frameStatus}</span>
+        </div>
+        <Image
+          src={planImage}
+          alt={isEnglish ? "Threadlight evidence-driven Plan mode" : "Threadlight 证据驱动的 Plan 模式"}
+          widths={[960, 1440, 1920]}
+          sizes="(max-width: 980px) 94vw, 680px"
+          loading="lazy"
+          quality={86}
+        />
+      </figure>
+      <div class="feature-copy light-copy">
+        <p class="eyebrow">{copy.plan.eyebrow}</p>
+        <h2 id="plan-title">{copy.plan.title}</h2>
+        <p class="feature-intro">{copy.plan.description}</p>
+        <ol class="plan-steps">
+          {copy.plan.steps.map(([number, title, body]) => (
+            <li><span>{number}</span><div><h3>{title}</h3><p>{body}</p></div></li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="dark-section workspace-section section-pad" aria-labelledby="workspace-title">
+    <div class="shell">
+      <div class="section-heading split-heading dark-heading">
+        <div>
+          <p class="eyebrow dark-eyebrow">{copy.workspace.eyebrow}</p>
+          <h2 id="workspace-title">{copy.workspace.title}</h2>
+        </div>
+        <div>
+          <p>{copy.workspace.description}</p>
+          <ul class="inline-features">{copy.workspace.items.map((item) => <li>{item}</li>)}</ul>
+        </div>
+      </div>
+      <figure class="app-frame workspace-frame">
+        <div class="frame-bar" aria-hidden="true">
+          <div class="traffic-lights"><span></span><span></span><span></span></div>
+          <span class="frame-label">{copy.workspace.frameTitle}</span>
+          <span class="frame-state"><i></i>{copy.workspace.frameStatus}</span>
+        </div>
+        <Image
+          src={terminalImage}
+          alt={isEnglish ? "Threadlight task workspace with agents and terminal" : "Threadlight 包含 Agent 与终端的任务工作空间"}
+          widths={[960, 1440, 1920, 2880]}
+          sizes="(max-width: 760px) 100vw, 1180px"
+          loading="lazy"
+          quality={86}
+        />
+      </figure>
+    </div>
+  </section>
+
+  <section class="light-section workflow-section section-pad" aria-labelledby="workflow-title">
+    <div class="shell">
+      <div class="section-heading workflow-heading">
+        <p class="eyebrow">{copy.workflow.eyebrow}</p>
+        <h2 id="workflow-title">{copy.workflow.title}</h2>
+        <p>{copy.workflow.description}</p>
+      </div>
+      <ol class="workflow-list">
+        {copy.workflow.steps.map(([title, body], index) => (
+          <li>
+            <div class="workflow-index">{String(index + 1).padStart(2, "0")}</div>
+            <h3>{title}</h3>
+            <p>{body}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="light-section capabilities-section section-pad" id="capabilities" aria-labelledby="capabilities-title">
+    <div class="shell">
+      <div class="section-heading centered-heading">
+        <p class="eyebrow">{copy.capabilities.eyebrow}</p>
+        <h2 id="capabilities-title">{copy.capabilities.title}</h2>
+        <p>{copy.capabilities.description}</p>
+      </div>
+
+      <div class="capability-grid">
+        <article class="capability-card capability-memory">
+          <div class="capability-copy"><span>{copy.capabilities.cards[0].label}</span><h3>{copy.capabilities.cards[0].title}</h3><p>{copy.capabilities.cards[0].body}</p></div>
+          <div class="capability-media"><Image src={memoryImage} alt={isEnglish ? "Threadlight project memory" : "Threadlight 项目记忆"} widths={[640, 960, 1440]} sizes="(max-width: 760px) 92vw, 720px" loading="lazy" quality={84} /></div>
+        </article>
+        <article class="capability-card capability-tools">
+          <div class="capability-copy"><span>{copy.capabilities.cards[1].label}</span><h3>{copy.capabilities.cards[1].title}</h3><p>{copy.capabilities.cards[1].body}</p></div>
+          <div class="capability-media"><Image src={capabilitiesImage} alt={isEnglish ? "Threadlight capabilities selector" : "Threadlight 能力选择器"} widths={[480, 800, 1200]} sizes="(max-width: 760px) 92vw, 430px" loading="lazy" quality={86} /></div>
+        </article>
+        <article class="capability-card capability-computer">
+          <div class="capability-copy"><span>{copy.capabilities.cards[2].label}</span><h3>{copy.capabilities.cards[2].title}</h3><p>{copy.capabilities.cards[2].body}</p></div>
+          <div class="capability-media"><Image src={computerUseImage} alt={isEnglish ? "Threadlight Computer Use" : "Threadlight Computer Use"} widths={[640, 960, 1440]} sizes="(max-width: 760px) 92vw, 720px" loading="lazy" quality={84} /></div>
+        </article>
+        <article class="capability-card capability-remote">
+          <div class="capability-copy"><span>{copy.capabilities.cards[3].label}</span><h3>{copy.capabilities.cards[3].title}</h3><p>{copy.capabilities.cards[3].body}</p></div>
+          <div class="capability-media remote-media"><Image src={remoteHostImage} alt={isEnglish ? "Threadlight remote Host connection" : "Threadlight 远程 Host 连接"} widths={[420, 700, 1000]} sizes="(max-width: 760px) 92vw, 430px" loading="lazy" quality={86} /></div>
+        </article>
+        <article class="capability-card capability-automation">
+          <div class="capability-copy"><span>{copy.capabilities.cards[4].label}</span><h3>{copy.capabilities.cards[4].title}</h3><p>{copy.capabilities.cards[4].body}</p></div>
+          <div class="capability-media"><Image src={automationsImage} alt={isEnglish ? "Threadlight automation templates" : "Threadlight 自动化模板"} widths={[640, 960, 1440]} sizes="(max-width: 760px) 92vw, 720px" loading="lazy" quality={84} /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="architecture-section section-pad" id="architecture" aria-labelledby="architecture-title">
+    <div class="architecture-grid" aria-hidden="true"></div>
+    <div class="shell architecture-layout">
+      <div class="architecture-copy">
+        <p class="eyebrow dark-eyebrow">{copy.architecture.eyebrow}</p>
+        <h2 id="architecture-title">{copy.architecture.title}</h2>
+        <p>{copy.architecture.description}</p>
+        <a class="text-link pressable" href={architectureLink}>{copy.architecture.link}<span aria-hidden="true">↗</span></a>
+      </div>
+      <div class="architecture-layers">
+        {copy.architecture.layers.map(([label, value], index) => (
+          <div class="architecture-layer">
+            <span>{String(index + 1).padStart(2, "0")} · {label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section class="light-section start-section section-pad" aria-labelledby="start-title">
+    <div class="shell start-panel">
+      <div class="start-copy">
+        <p class="eyebrow">{copy.start.eyebrow}</p>
+        <h2 id="start-title">{copy.start.title}</h2>
+        <p>{copy.start.description}</p>
+        <div class="start-actions">
+          <a class="button button-primary pressable" href="https://github.com/nagisa77/threadlight/releases/latest">{copy.start.release}<span aria-hidden="true">↓</span></a>
+          <a class="text-link pressable" href={docsLink}>{copy.start.docs}<span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <div class="code-card">
+        <div class="code-toolbar"><span>{copy.start.source}</span><button class="copy-button pressable" type="button" data-copy data-copied={copy.start.copied}>{copy.start.copy}</button></div>
+        <pre><code>{installCommand}</code></pre>
+      </div>
+      <p class="alpha-note"><span aria-hidden="true">!</span>{copy.start.warning}</p>
+    </div>
+  </section>
+
+  <section class="light-section faq-section section-pad" aria-labelledby="faq-title">
+    <div class="shell faq-layout">
+      <div class="section-heading faq-heading">
+        <p class="eyebrow">{copy.faq.eyebrow}</p>
+        <h2 id="faq-title">{copy.faq.title}</h2>
+      </div>
+      <div class="faq-list">
+        {copy.faq.items.map(([question, answer]) => (
+          <details>
+            <summary><span>{question}</span><b aria-hidden="true">+</b></summary>
+            <p>{answer}</p>
+          </details>
+        ))}
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="shell footer-inner">
+    <div class="footer-brand">
+      <img src={appIconUrl} alt="" width="42" height="42" />
+      <div><strong>Threadlight</strong><span>{copy.footer.line}</span></div>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/nagisa77/threadlight">GitHub ↗</a>
+      <a href="https://github.com/nagisa77/threadlight/releases/latest">Releases ↗</a>
+      <a href="https://github.com/nagisa77/threadlight/issues">Issues ↗</a>
+      <a href="https://github.com/nagisa77/threadlight/blob/main/CONTRIBUTING.md">Contribute ↗</a>
+    </div>
+    <p>© {new Date().getFullYear()} Threadlight. {copy.footer.license}</p>
+  </div>
+</footer>
+
+<script>
+  const copyButton = document.querySelector<HTMLButtonElement>("[data-copy]");
+  copyButton?.addEventListener("click", async () => {
+    const code = copyButton.closest(".code-card")?.querySelector("code")?.textContent;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      const original = copyButton.textContent;
+      copyButton.textContent = copyButton.dataset.copied ?? original;
+      window.setTimeout(() => {
+        copyButton.textContent = original;
+      }, 1400);
+    } catch {
+      return;
+    }
+  });
+</script>

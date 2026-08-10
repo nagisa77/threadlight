@@ -18,7 +18,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build:packages && npm run build --workspace @threadlight/desktop && npm run build --workspace @threadlight/web",
+    "build": "npm run build:packages && npm run build --workspace @threadlight/desktop && npm run build --workspace @threadlight/web && npm run build --workspace @threadlight/site",
     "build:packages": "tsc -b && node scripts/copy-runtime-assets.mjs",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage",
     "clean": "tsc -b --clean",
@@ -28,6 +28,9 @@
     "web:dev": "npm run build:packages && npm run dev --workspace @threadlight/web --",
     "web:build": "npm run build:packages && npm run build --workspace @threadlight/web",
     "web:preview": "npm run web:build && npm run preview --workspace @threadlight/web",
+    "site:dev": "npm run dev --workspace @threadlight/site --",
+    "site:build": "npm run build --workspace @threadlight/site",
+    "site:preview": "npm run site:build && npm run preview --workspace @threadlight/site",
     "test": "npm run build && vitest run",
     "typecheck": "tsc -b --pretty false && npm run typecheck --workspace @threadlight/desktop && npm run typecheck --workspace @threadlight/web",
     "start": "node packages/app-server/dist/bin.js",
@@ -46,7 +49,10 @@
     "@hono/node-server": "2.1.0",
     "fast-uri": "3.1.5",
     "hono": "4.13.0",
-    "ip-address": "10.4.0"
+    "ip-address": "10.4.0",
+    "js-yaml": "4.3.1",
+    "nanoid": "3.3.18",
+    "sharp": "0.35.0"
   },
   "devDependencies": {
     "@babel/eslint-parser": "^8.0.1",
