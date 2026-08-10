@@ -102,13 +102,9 @@ function AgentTreeContent({
   onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
-  const childAgents = tree.agents.filter(
+  const agents = tree.agents.filter(
     ({ parentId }) => parentId === tree.rootId,
   );
-  const agents =
-    childAgents.length > 0
-      ? childAgents
-      : tree.agents.filter(({ id }) => id === tree.rootId);
   const activeCount = agents.filter(
     ({ status }) => status === "queued" || status === "running",
   ).length;
