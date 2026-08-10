@@ -2,11 +2,12 @@
 
 ## Supported versions
 
-Threadlight is currently Alpha software. Security fixes are applied to the latest release only.
+Security fixes are applied to the latest stable release only.
 
 | Version | Supported |
 | --- | --- |
-| 0.1.x | Yes |
+| 1.0.x | Yes |
+| 0.1.x | No |
 | Earlier versions | No |
 
 ## Reporting a vulnerability

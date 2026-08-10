@@ -1,6 +1,6 @@
 {
   "name": "threadlight",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "An observable, recoverable, provider-neutral agent runtime and desktop client.",
   "private": true,
   "license": "Apache-2.0",

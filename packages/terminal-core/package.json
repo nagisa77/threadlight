@@ -1,6 +1,6 @@
 {
   "name": "@threadlight/terminal-core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -15,7 +15,7 @@
     "dist"
   ],
   "dependencies": {
-    "@threadlight/protocol": "0.1.0",
+    "@threadlight/protocol": "1.0.0",
     "node-pty": "^1.1.0"
   }
 }

@@ -4,7 +4,7 @@
 
 这份文档面向准备阅读、修改或扩展 Threadlight 的开发者。你不需要模型 API Key 就能完成构建和测试；测试套件使用脚本化模型 provider，默认不访问网络。
 
-> Threadlight 仍处于 Alpha 阶段。`0.x` 版本可能调整内部 API、持久化格式和桌面端交互；发生不兼容变化时会记录在 [CHANGELOG](../CHANGELOG.md) 中。
+> Threadlight 1.x 遵循语义化版本。公共 API、持久化格式或桌面端交互发生不兼容变化时，会记录在 [CHANGELOG](../CHANGELOG.md) 中。
 
 ## 1. 五分钟完成本地开发环境
 

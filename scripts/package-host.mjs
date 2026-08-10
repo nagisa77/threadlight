@@ -62,7 +62,7 @@ await writeFile(
   `${JSON.stringify(
     {
       name: "@threadlight/host",
-      version: "0.1.0",
+      version: "1.0.0",
       description:
         "Headless multi-project Threadlight Host for remote deployment.",
       license: "Apache-2.0",
@@ -98,7 +98,7 @@ Headless, multi-project Threadlight Host. Projects and settings live on the
 host in \`~/.threadlight\` by default.
 
 \`\`\`bash
-npm install -g ./threadlight-host-0.1.0.tgz
+npm install -g ./threadlight-host-1.0.0.tgz
 THREADLIGHT_HOST_TOKEN="$(openssl rand -hex 32)" \\
   threadlight-host --host 127.0.0.1 --port 7432
 \`\`\`

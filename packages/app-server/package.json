@@ -1,6 +1,6 @@
 {
   "name": "@threadlight/app-server",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -19,13 +19,13 @@
     "dist"
   ],
   "dependencies": {
-    "@threadlight/terminal-core": "0.1.0",
-    "@threadlight/host-core": "0.1.0",
-    "@threadlight/agent-loop": "0.1.0",
-    "@threadlight/model-providers": "0.1.0",
-    "@threadlight/builtin-tools": "0.1.0",
-    "@threadlight/project-memory": "0.1.0",
-    "@threadlight/protocol": "0.1.0",
+    "@threadlight/terminal-core": "1.0.0",
+    "@threadlight/host-core": "1.0.0",
+    "@threadlight/agent-loop": "1.0.0",
+    "@threadlight/model-providers": "1.0.0",
+    "@threadlight/builtin-tools": "1.0.0",
+    "@threadlight/project-memory": "1.0.0",
+    "@threadlight/protocol": "1.0.0",
     "smol-toml": "^1.7.1",
     "ws": "^8.18.0"
   }

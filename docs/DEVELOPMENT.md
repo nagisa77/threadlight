@@ -4,7 +4,7 @@
 
 This guide is for developers who want to understand, modify, or extend Threadlight. You do not need a model API key to build or test the project: the test suite uses scripted model providers and is offline by default.
 
-> Threadlight is Alpha software. `0.x` releases may change internal APIs, persistence formats, and desktop interactions. Breaking changes are documented in the [changelog](../CHANGELOG.md).
+> Threadlight 1.x follows Semantic Versioning. Breaking changes to public APIs, persistence formats, or desktop interactions are documented in the [changelog](../CHANGELOG.md).
 
 ## 1. Set up a development environment
 
