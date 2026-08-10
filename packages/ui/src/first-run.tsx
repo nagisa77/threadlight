@@ -481,8 +481,13 @@ export function FirstRunGuide({
               <StepActions
                 error={error}
                 primary={working ? t("openingProject") : t("openProject")}
+                secondary={t("continueWithoutProject")}
                 disabled={working}
                 working={working}
+                onSecondary={() => {
+                  setError(undefined);
+                  setStep("permissions");
+                }}
                 onPrimary={() => {
                   setWorking(true);
                   setError(undefined);

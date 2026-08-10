@@ -786,8 +786,9 @@ export const ja: Messages = {
   checkConnectionSettings: "接続設定を確認",
   firstRunProjectTitle: "最初のプロジェクトを開く",
   firstRunProjectDescription:
-    "ローカルフォルダーを選択します。各タスクはローカルまたは分離された worktree で実行できます。",
+    "ローカルフォルダーを選ぶか、プロジェクトなしで続行します。プロジェクトのタスクはローカルまたは分離された worktree で実行できます。",
   openingProject: "開いています…",
+  continueWithoutProject: "プロジェクトなしで続行",
   firstRunPermissionsTitle: "最初のタスクの権限を選択",
   firstRunPermissionsDescription:
     "承認モードは機密操作前に確認し、完全アクセスは明示的に信頼した作業向けです。",

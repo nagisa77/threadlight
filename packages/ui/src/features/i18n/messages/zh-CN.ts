@@ -730,8 +730,9 @@ export const zh = {
   checkConnectionSettings: "检查连接设置",
   firstRunProjectTitle: "打开第一个项目",
   firstRunProjectDescription:
-    "选择一个本地文件夹；每个任务可在本地目录或隔离工作树中运行。",
+    "选择一个本地文件夹，或暂不打开项目；项目任务可在本地目录或隔离工作树中运行。",
   openingProject: "正在打开…",
+  continueWithoutProject: "暂不打开，继续",
   firstRunPermissionsTitle: "选择首次任务的权限",
   firstRunPermissionsDescription:
     "审批模式会在敏感操作前询问；完全访问适合你明确授权的工作。",

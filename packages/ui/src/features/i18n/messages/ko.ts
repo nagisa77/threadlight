@@ -785,8 +785,9 @@ export const ko: Messages = {
   checkConnectionSettings: "연결 설정 확인",
   firstRunProjectTitle: "첫 프로젝트 열기",
   firstRunProjectDescription:
-    "로컬 폴더를 선택하세요. 각 작업은 로컬 또는 격리된 worktree에서 실행할 수 있습니다.",
+    "로컬 폴더를 선택하거나 프로젝트 없이 계속하세요. 프로젝트 작업은 로컬 또는 격리된 worktree에서 실행할 수 있습니다.",
   openingProject: "여는 중…",
+  continueWithoutProject: "프로젝트 없이 계속",
   firstRunPermissionsTitle: "첫 작업 권한 선택",
   firstRunPermissionsDescription:
     "승인 모드는 민감한 작업 전에 묻고, 전체 접근은 명시적으로 신뢰한 작업에 적합합니다.",

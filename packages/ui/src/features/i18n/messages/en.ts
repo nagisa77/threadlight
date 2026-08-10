@@ -800,8 +800,9 @@ export const en: Messages = {
   checkConnectionSettings: "Check connection settings",
   firstRunProjectTitle: "Open your first project",
   firstRunProjectDescription:
-    "Choose a local folder. Each task can run locally or in an isolated worktree.",
+    "Choose a local folder, or continue without one. Project tasks can run locally or in an isolated worktree.",
   openingProject: "Opening…",
+  continueWithoutProject: "Continue without a project",
   firstRunPermissionsTitle: "Choose first-task permissions",
   firstRunPermissionsDescription:
     "Approval mode asks before sensitive actions; full access is for work you explicitly trust.",

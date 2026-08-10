@@ -737,8 +737,9 @@ export const zhTW: Messages = {
   checkConnectionSettings: "檢查連線設定",
   firstRunProjectTitle: "開啟第一個專案",
   firstRunProjectDescription:
-    "選擇本機資料夾；每個任務可在本機目錄或隔離工作樹中執行。",
+    "選擇本機資料夾，或暫不開啟專案；專案任務可在本機目錄或隔離工作樹中執行。",
   openingProject: "正在開啟…",
+  continueWithoutProject: "暫不開啟，繼續",
   firstRunPermissionsTitle: "選擇首次任務權限",
   firstRunPermissionsDescription:
     "審批模式會在敏感操作前詢問；完全存取適合明確授權的工作。",

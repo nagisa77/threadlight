@@ -163,6 +163,33 @@ describe("first run", () => {
     });
   });
 
+  it("offers a secondary path that continues without opening a project", () => {
+    const html = renderToStaticMarkup(
+      <FirstRunGuide
+        adapter={{
+          load: vi.fn(),
+          save: vi.fn(),
+          testProvider: vi.fn(),
+        }}
+        settings={{ ...settings, openAIApiKeyConfigured: true }}
+        connectionReady={true}
+        initialStep="project"
+        onSettingsSaved={vi.fn()}
+        onRuntimeRestart={vi.fn()}
+        onOpenProject={vi.fn()}
+        onRunDemo={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("暂不打开项目");
+    expect(html).toMatch(
+      /<button[^>]*class="first-run-secondary[^>]*>暂不打开，继续<\/button>/,
+    );
+    expect(html).toMatch(
+      /<button[^>]*class="first-run-primary[^>]*>打开一个项目<\/button>/,
+    );
+  });
+
   it("defaults to approval mode and waits for the runtime before the demo", () => {
     const configured = { ...settings, openAIApiKeyConfigured: true };
     const project = {
