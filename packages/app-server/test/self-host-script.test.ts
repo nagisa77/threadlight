@@ -52,9 +52,13 @@ describe("one-line self-host installer", () => {
     expect(help).toContain(
       "default: ~/.local/share/threadlight-self-host/data",
     );
+    expect(help).toContain("--host-only");
     expect(help).not.toContain("--project");
     expect(installer).toContain("host_home=$RUNTIME_ROOT/data");
     expect(installer).toContain(".legacy-home-migrated");
+    expect(installer).toContain(
+      "$RUNTIME_ROOT/lib/node_modules/@threadlight/host/web",
+    );
     expect(installer).not.toContain("host_home=$HOME/.threadlight");
   });
 
@@ -63,7 +67,12 @@ describe("one-line self-host installer", () => {
       "releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz",
     );
     expect(installer).toContain("https://threadlight.xyz/install.sh");
-    expect(installer).toContain("systemctl --user enable --now");
+    expect(installer).toContain(
+      'systemctl --user enable "$SERVICE_NAME.service"',
+    );
+    expect(installer).toContain(
+      'systemctl --user restart "$SERVICE_NAME.service"',
+    );
     expect(installer).toContain("launchctl bootstrap");
     expect(installer).toContain("bootstrap_attempt=$((bootstrap_attempt + 1))");
     expect(redirects).not.toContain("/install.sh");
@@ -140,7 +149,88 @@ chmod 0755 "$prefix/bin/threadlight-host"
     expect(existsSync(join(isolatedHome, "migration-sentinel"))).toBe(true);
     expect(existsSync(join(legacyHome, "migration-sentinel"))).toBe(true);
     expect(
-      existsSync(join(dataRoot, "threadlight-self-host", ".legacy-home-migrated")),
+      existsSync(
+        join(dataRoot, "threadlight-self-host", ".legacy-home-migrated"),
+      ),
     ).toBe(true);
+  });
+
+  it("installs a Host-only service without bundled Web assets", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-host-only-"));
+    temporaryRoots.push(root);
+    const configRoot = join(root, "config");
+    const dataRoot = join(root, "data");
+    const fakeBin = join(root, "bin");
+    const fakePackage = join(root, "threadlight-host.tgz");
+    const fakeNpm = join(fakeBin, "npm");
+    const startedMarker = join(root, "host-started");
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(fakePackage, "offline fixture\n");
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh
+set -eu
+prefix=
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--prefix" ]; then
+    prefix=$2
+    shift 2
+  else
+    shift
+  fi
+done
+package_root="$prefix/lib/node_modules/@threadlight/host"
+mkdir -p "$prefix/bin" "$package_root/web"
+printf '<!doctype html>\n' > "$package_root/web/index.html"
+cat > "$prefix/bin/threadlight-host" <<'HOST'
+#!/bin/sh
+set -eu
+[ ! -e "$THREADLIGHT_FAKE_WEB_INDEX" ]
+touch "$THREADLIGHT_HOST_STARTED_MARKER"
+HOST
+chmod 0755 "$prefix/bin/threadlight-host"
+`,
+    );
+    chmodSync(fakeNpm, 0o755);
+
+    const runtimeRoot = join(dataRoot, "threadlight-self-host");
+    const bundledWebIndex = join(
+      runtimeRoot,
+      "lib/node_modules/@threadlight/host/web/index.html",
+    );
+    execFileSync(
+      "sh",
+      [
+        "-s",
+        "--",
+        "install",
+        "--host-only",
+        "--foreground",
+        "--origin",
+        "https://nagisa77.github.io",
+      ],
+      {
+        encoding: "utf8",
+        input: installer,
+        env: {
+          ...process.env,
+          HOME: root,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          XDG_CONFIG_HOME: configRoot,
+          XDG_DATA_HOME: dataRoot,
+          THREADLIGHT_FAKE_WEB_INDEX: bundledWebIndex,
+          THREADLIGHT_HOST_STARTED_MARKER: startedMarker,
+          THREADLIGHT_HOST_PACKAGE_URL: `file://${fakePackage}`,
+          THREADLIGHT_SELF_HOST_SCRIPT_URL: `file://${installerPath}`,
+        },
+      },
+    );
+
+    expect(existsSync(bundledWebIndex)).toBe(false);
+    expect(existsSync(startedMarker)).toBe(true);
+    const savedConfig = JSON.parse(
+      readFileSync(join(configRoot, "threadlight", "self-host.json"), "utf8"),
+    ) as { origins: string[] };
+    expect(savedConfig.origins).toEqual(["https://nagisa77.github.io"]);
   });
 });

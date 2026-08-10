@@ -43,6 +43,7 @@ install_self_host() {
   home_explicit=0
   migrate_legacy_home=0
   foreground=0
+  host_only=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -66,6 +67,10 @@ install_self_host() {
         ;;
       --foreground)
         foreground=1
+        shift
+        ;;
+      --host-only)
+        host_only=1
         shift
         ;;
       -h|--help)
@@ -112,7 +117,11 @@ install_self_host() {
   fi
 
   if [ -n "$REPOSITORY_ROOT" ]; then
-    printf 'Building the bundled Threadlight Host + Web package...\n'
+    if [ "$host_only" -eq 1 ]; then
+      printf 'Building the Threadlight Host package...\n'
+    else
+      printf 'Building the bundled Threadlight Host + Web package...\n'
+    fi
     if [ ! -x "$REPOSITORY_ROOT/node_modules/.bin/esbuild" ]; then
       (cd "$REPOSITORY_ROOT" && npm ci)
     fi
@@ -121,7 +130,11 @@ install_self_host() {
     package_path="$REPOSITORY_ROOT/artifacts/threadlight-host-$package_version.tgz"
     [ -f "$package_path" ] || fail "The Host package was not created."
   else
-    printf 'Downloading Threadlight Host + Web %s...\n' "$RELEASE_VERSION"
+    if [ "$host_only" -eq 1 ]; then
+      printf 'Downloading Threadlight Host %s...\n' "$RELEASE_VERSION"
+    else
+      printf 'Downloading Threadlight Host + Web %s...\n' "$RELEASE_VERSION"
+    fi
     TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/threadlight-self-host.XXXXXX")
     package_path="$TEMP_ROOT/threadlight-host.tgz"
     download_file "$PACKAGE_URL" "$package_path"
@@ -129,6 +142,12 @@ install_self_host() {
 
   npm install --global --prefix "$RUNTIME_ROOT" "$package_path"
   [ -x "$HOST_BIN" ] || fail "The installed threadlight-host executable was not found."
+  if [ "$host_only" -eq 1 ]; then
+    bundled_web_root="$RUNTIME_ROOT/lib/node_modules/@threadlight/host/web"
+    if [ -d "$bundled_web_root" ]; then
+      find "$bundled_web_root" -depth -delete
+    fi
+  fi
   if [ -n "$REPOSITORY_ROOT" ]; then
     cp "$SCRIPT_DIR/self-host.sh" "$MANAGER_BIN"
   else
@@ -159,25 +178,30 @@ const config = {
 };
 if (process.env.SELF_HOST_PROJECT) config.project = process.env.SELF_HOST_PROJECT;
 if (process.env.SELF_HOST_PUBLIC_URL) config.publicUrl = process.env.SELF_HOST_PUBLIC_URL;
-const origins = (process.env.SELF_HOST_ORIGINS || "").split("\n").filter(Boolean);
+const origins = [...new Set((process.env.SELF_HOST_ORIGINS || "").split("\n").filter(Boolean))];
 if (origins.length) config.origins = origins;
 writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 chmodSync(path, 0o600);
 NODE
 
   if [ "$foreground" -eq 1 ]; then
-    print_connection_details "$listen_host" "$port" "$public_url" "$token"
+    print_connection_details "$listen_host" "$port" "$public_url" "$token" "$host_only"
     exec "$HOST_BIN" --config "$CONFIG_PATH"
   fi
 
-  install_service
-  print_connection_details "$listen_host" "$port" "$public_url" "$token"
+  install_service "$host_only"
+  print_connection_details "$listen_host" "$port" "$public_url" "$token" "$host_only"
   printf 'Config: %s (mode 0600)\n' "$CONFIG_PATH"
   printf 'Add a project from the Web UI after connecting.\n'
   printf 'Manage: %s status | logs | restart | stop | show-token\n' "$MANAGER_BIN"
 }
 
 install_service() {
+  host_only=$1
+  service_description="Threadlight self-hosted Host and Web"
+  if [ "$host_only" -eq 1 ]; then
+    service_description="Threadlight self-hosted Host"
+  fi
   platform=$(uname -s)
   case "$platform" in
     Linux)
@@ -188,12 +212,13 @@ install_service() {
       SELF_HOST_BIN=$HOST_BIN \
       SELF_HOST_CONFIG=$CONFIG_PATH \
       SELF_HOST_PATH=$PATH \
+      SELF_HOST_DESCRIPTION=$service_description \
       SELF_HOST_WORKING_DIRECTORY=$HOME \
       node - "$unit_path" <<'NODE'
 const { writeFileSync } = require("node:fs");
 const quote = (value) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
 const unit = `[Unit]
-Description=Threadlight self-hosted Host and Web
+Description=${process.env.SELF_HOST_DESCRIPTION}
 After=network-online.target
 Wants=network-online.target
 
@@ -211,7 +236,8 @@ WantedBy=default.target
 writeFileSync(process.argv[2], unit);
 NODE
       systemctl --user daemon-reload
-      systemctl --user enable --now "$SERVICE_NAME.service"
+      systemctl --user enable "$SERVICE_NAME.service"
+      systemctl --user restart "$SERVICE_NAME.service"
       ;;
     Darwin)
       plist_root=$HOME/Library/LaunchAgents
@@ -343,6 +369,7 @@ print_connection_details() {
   port=$2
   public_url=$3
   token=$4
+  host_only=$5
   if [ -n "$public_url" ]; then
     url=${public_url%/}
   else
@@ -353,8 +380,14 @@ print_connection_details() {
     esac
     url="http://$browser_host:$port"
   fi
-  printf '\nThreadlight Host + Web is ready.\n'
-  printf 'Open:  %s\n' "$url"
+  if [ "$host_only" -eq 1 ]; then
+    printf '\nThreadlight Host is ready.\n'
+    printf 'Host:  %s\n' "$url"
+    printf 'Web:   https://nagisa77.github.io/threadlight/\n'
+  else
+    printf '\nThreadlight Host + Web is ready.\n'
+    printf 'Open:  %s\n' "$url"
+  fi
   printf 'Token: %s\n' "$token"
   if [ "$listen_host" = 127.0.0.1 ] || [ "$listen_host" = ::1 ]; then
     printf 'Remote server: keep this loopback binding and use an SSH tunnel, VPN, or HTTPS reverse proxy.\n'
@@ -403,6 +436,7 @@ Install options:
   --home <path>         Host data directory (default: ~/.local/share/threadlight-self-host/data)
   --public-url <url>    HTTPS public URL used for OAuth callbacks and output
   --origin <url>        Additional allowed Web origin; may be repeated
+  --host-only          Install the Host without the bundled Web UI
   --foreground          Run in the current terminal instead of a system service
 
 The bundled Web UI is served by the Host on the same port. The generated token

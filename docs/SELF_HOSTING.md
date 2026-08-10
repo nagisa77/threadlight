@@ -22,6 +22,16 @@ The Host starts empty. Open the printed address, enter the token, and add projec
 
 Run the same command again to update Host + Web while preserving the token and existing configuration.
 
+## Host-only install
+
+When using the [hosted Threadlight Web client](https://nagisa77.github.io/threadlight/), install only the Host service with one command:
+
+```bash
+curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io
+```
+
+`--host-only` removes the bundled Web UI and keeps the Host API, event stream, and terminal WebSocket. The command also allows the hosted Web client's origin. Before connecting remotely, expose the Host port through an HTTPS domain, then connect with the Host URL and token printed by the installer.
+
 ## Manage the service
 
 ```bash
@@ -70,7 +80,7 @@ The proxy must support WebSocket upgrades and must not buffer `text/event-stream
 | Host data    | `~/.local/share/threadlight-self-host/data` |
 | macOS log    | `~/.local/share/threadlight-self-host/logs/host.log` |
 
-Use `--host`, `--port`, `--name`, `--home`, `--public-url`, and repeatable `--origin` options to override defaults. Projects are managed in the UI.
+Use `--host`, `--port`, `--name`, `--home`, `--public-url`, `--host-only`, and repeatable `--origin` options to override defaults. Projects are managed in the UI.
 
 When run from a source checkout, the installer builds the local Host + Web package first:
 

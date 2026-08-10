@@ -50,7 +50,13 @@ SHA-256: 838f0a26e9f575cdb33e694b4fa923d865bde060581ab45104ae2f2266d74e0a
 
 [打开 Threadlight Web](https://nagisa77.github.io/threadlight/)
 
-Web 客户端不包含执行环境。你需要先自部署 Host，并让浏览器通过 HTTPS 域名访问 Host 端口，然后使用 Host 地址和 Token 连接。
+Web 客户端不包含执行环境。可以用一条命令只安装 Host，并允许托管 Web 客户端连接：
+
+```bash
+curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io
+```
+
+安装后需要通过 HTTPS 域名访问 Host 端口，再使用脚本输出的 Host 地址和 Token 连接。
 
 ## 能力
 

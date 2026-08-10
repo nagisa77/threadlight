@@ -22,6 +22,16 @@ Host 默认从空状态启动。打开输出的地址并输入 Token，然后在
 
 再次运行同一条安装命令会更新 Host + Web，同时保留 Token 和已有配置。
 
+## 仅安装 Host
+
+如果使用[托管的 Threadlight Web 客户端](https://nagisa77.github.io/threadlight/)，可以只安装 Host 服务：
+
+```bash
+curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io
+```
+
+`--host-only` 会移除包内置的 Web UI，只保留 Host API、事件流和终端 WebSocket。命令同时允许托管 Web 客户端的 Origin。远程连接前仍需为 Host 端口配置 HTTPS 域名；安装完成后，使用脚本输出的 Host 地址和 Token 连接。
+
 ## 管理服务
 
 ```bash
@@ -70,7 +80,7 @@ caddy reverse-proxy \
 | Host 数据  | `~/.local/share/threadlight-self-host/data` |
 | macOS 日志 | `~/.local/share/threadlight-self-host/logs/host.log` |
 
-可以使用 `--host`、`--port`、`--name`、`--home`、`--public-url` 和可重复的 `--origin` 覆盖默认值。项目统一在 UI 中管理。
+可以使用 `--host`、`--port`、`--name`、`--home`、`--public-url`、`--host-only` 和可重复的 `--origin` 覆盖默认值。项目统一在 UI 中管理。
 
 从源码仓库运行时，安装器会先构建本地 Host + Web 包：
 

@@ -49,7 +49,7 @@ const copy = isEnglish
           title: "Open in the browser",
           description:
             "Requires a self-hosted Host reachable at its port through an HTTPS domain.",
-          action: "Open Web client",
+          action: "Deploy Host first",
         },
         selfHost: {
           label: "RECOMMENDED",
@@ -61,6 +61,16 @@ const copy = isEnglish
           copied: "Copied",
           requirement: "Node.js 22+ · current user install",
           guide: "Deployment guide",
+        },
+        hostOnly: {
+          label: "HOST ONLY · FOR WEB CLIENT",
+          title: "Bring your own Host to the Web client.",
+          description:
+            "Installs only the Host service. Give port 7432 an HTTPS domain, then connect from the hosted Web client.",
+          command: "Host-only install",
+          requirement: "Node.js 22+ · macOS or Linux",
+          open: "Open Web client",
+          guide: "Host deployment guide",
         },
         source: "Open the source code",
         proof: ["Stable 1.0", "macOS first", "Apache-2.0"],
@@ -216,7 +226,7 @@ const copy = isEnglish
           title: "直接在浏览器打开",
           description:
             "需要先自部署 Host，并用 HTTPS 域名访问 Host 所在端口。",
-          action: "打开 Web 客户端",
+          action: "先部署 Host",
         },
         selfHost: {
           label: "最推荐",
@@ -228,6 +238,16 @@ const copy = isEnglish
           copied: "已复制",
           requirement: "需要 Node.js 22+ · 当前用户安装",
           guide: "部署说明",
+        },
+        hostOnly: {
+          label: "仅 HOST · 搭配 WEB 客户端",
+          title: "为浏览器客户端部署自己的 Host。",
+          description:
+            "只安装 Host 后台服务。为 7432 端口配置 HTTPS 域名，再从托管的 Web 客户端连接。",
+          command: "仅 Host 一行安装",
+          requirement: "需要 Node.js 22+ · macOS 或 Linux",
+          open: "打开 Web 客户端",
+          guide: "Host 部署说明",
         },
         source: "打开源代码",
         proof: ["正式版 1.0", "macOS 优先", "Apache-2.0"],
@@ -357,6 +377,8 @@ const copy = isEnglish
     };
 
 const selfHostCommand = "curl -fsSL https://threadlight.xyz/install.sh | sh";
+const hostOnlyCommand =
+  "curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io";
 const desktopDownloadLink =
   "https://github.com/nagisa77/threadlight/releases/download/v1.0.0/Threadlight-1.0.0-macOS-arm64-unsigned-test.dmg";
 const webClientLink = "https://nagisa77.github.io/threadlight/";
@@ -428,13 +450,36 @@ const selfHostDocsLink = isEnglish
             <strong>{copy.hero.desktop.action}<span aria-hidden="true">↓</span></strong>
           </a>
 
-          <a class="launch-card launch-card-link pressable" href={webClientLink}>
+          <a class="launch-card launch-card-link pressable" href="#host-only">
             <span class="launch-label">{copy.hero.web.label}</span>
             <h2>{copy.hero.web.title}</h2>
             <p>{copy.hero.web.description}</p>
-            <strong>{copy.hero.web.action}<span aria-hidden="true">↗</span></strong>
+            <strong>{copy.hero.web.action}<span aria-hidden="true">↓</span></strong>
           </a>
         </div>
+        <aside class="host-only-card" id="host-only" aria-labelledby="host-only-title">
+          <div class="host-only-copy">
+            <span>{copy.hero.hostOnly.label}</span>
+            <h2 id="host-only-title">{copy.hero.hostOnly.title}</h2>
+            <p>{copy.hero.hostOnly.description}</p>
+          </div>
+          <div class="host-only-setup">
+            <div class="code-card host-only-command">
+              <div class="code-toolbar">
+                <span>{copy.hero.hostOnly.command}</span>
+                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied}>{copy.hero.selfHost.copy}</button>
+              </div>
+              <pre><code>{hostOnlyCommand}</code></pre>
+            </div>
+            <div class="host-only-meta">
+              <small>{copy.hero.hostOnly.requirement}</small>
+              <div>
+                <a class="launch-guide pressable" href={webClientLink}>{copy.hero.hostOnly.open}<span aria-hidden="true">↗</span></a>
+                <a class="launch-guide pressable" href={selfHostDocsLink}>{copy.hero.hostOnly.guide}<span aria-hidden="true">↗</span></a>
+              </div>
+            </div>
+          </div>
+        </aside>
         <a class="hero-source-link pressable" href="https://github.com/nagisa77/threadlight">{copy.hero.source}<span aria-hidden="true">↗</span></a>
         <ul class="project-proof" aria-label="Project status">
           {copy.hero.proof.map((item) => <li>{item}</li>)}

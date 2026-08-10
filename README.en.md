@@ -50,7 +50,13 @@ SHA-256: 838f0a26e9f575cdb33e694b4fa923d865bde060581ab45104ae2f2266d74e0a
 
 [Open Threadlight Web](https://nagisa77.github.io/threadlight/)
 
-The Web client does not provide an execution environment. Self-host a Host first, expose its port through an HTTPS domain, and connect with the Host URL and token.
+The Web client does not provide an execution environment. Install only the Host and allow the hosted Web client with one command:
+
+```bash
+curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io
+```
+
+Expose the Host port through an HTTPS domain, then connect with the Host URL and token printed by the installer.
 
 ## Capabilities
 
