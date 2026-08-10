@@ -1,0 +1,405 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+SCRIPT_NAME=$(basename "$0")
+REPOSITORY_ROOT=
+if [ "$SCRIPT_NAME" = self-host.sh ] && [ -f "$SCRIPT_DIR/../package.json" ]; then
+  REPOSITORY_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+fi
+CONFIG_ROOT=${XDG_CONFIG_HOME:-"$HOME/.config"}/threadlight
+CONFIG_PATH=${THREADLIGHT_SELF_HOST_CONFIG:-"$CONFIG_ROOT/self-host.json"}
+RUNTIME_ROOT=${XDG_DATA_HOME:-"$HOME/.local/share"}/threadlight-self-host
+HOST_BIN="$RUNTIME_ROOT/bin/threadlight-host"
+MANAGER_BIN="$RUNTIME_ROOT/bin/threadlight-self-host"
+SERVICE_NAME=threadlight-host
+LOG_ROOT=${THREADLIGHT_SELF_HOST_LOG_ROOT:-"$HOME/.threadlight/logs"}
+RELEASE_VERSION=${THREADLIGHT_SELF_HOST_VERSION:-1.0.0}
+PACKAGE_URL=${THREADLIGHT_HOST_PACKAGE_URL:-"https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"}
+INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://raw.githubusercontent.com/nagisa77/threadlight/main/scripts/self-host.sh}
+TEMP_ROOT=
+
+cleanup_temporary_files() {
+  if [ -n "$TEMP_ROOT" ] && [ -d "$TEMP_ROOT" ]; then
+    find "$TEMP_ROOT" -depth -delete
+  fi
+}
+
+trap cleanup_temporary_files EXIT HUP INT TERM
+
+install_self_host() {
+  listen_host=$(existing_config_value host)
+  port=$(existing_config_value port)
+  host_name=$(existing_config_value name)
+  host_home=$(existing_config_value home)
+  project=$(existing_config_value project)
+  public_url=$(existing_config_value publicUrl)
+  origins=$(existing_config_value origins)
+  [ -n "$listen_host" ] || listen_host=127.0.0.1
+  [ -n "$port" ] || port=7432
+  [ -n "$host_name" ] || host_name=$(hostname)
+  [ -n "$host_home" ] || host_home=$HOME/.threadlight
+  foreground=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --host|--port|--name|--home|--public-url|--origin)
+        [ "$#" -ge 2 ] || fail "Missing value for $1"
+        option=$1
+        value=$2
+        shift 2
+        case "$option" in
+          --host) listen_host=$value ;;
+          --port) port=$value ;;
+          --name) host_name=$value ;;
+          --home) host_home=$value ;;
+          --public-url) public_url=$value ;;
+          --origin) origins="${origins}${origins:+
+}${value}" ;;
+        esac
+        ;;
+      --foreground)
+        foreground=1
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *) fail "Unknown install option: $1" ;;
+    esac
+  done
+
+  require_command node
+  require_command npm
+  node_major=$(node -p 'Number(process.versions.node.split(".")[0])')
+  [ "$node_major" -ge 22 ] || fail "Node.js 22 or newer is required."
+  case "$port" in
+    ''|*[!0-9]*) fail "--port must be an integer from 0 to 65535." ;;
+  esac
+  [ "$port" -le 65535 ] || fail "--port must be an integer from 0 to 65535."
+
+  mkdir -p "$host_home" "$CONFIG_ROOT" "$RUNTIME_ROOT" "$LOG_ROOT"
+  host_home=$(CDPATH= cd -- "$host_home" && pwd)
+  if [ -n "$project" ]; then
+    [ -d "$project" ] || fail "Project directory does not exist: $project"
+    project=$(CDPATH= cd -- "$project" && pwd)
+  fi
+
+  token=$(existing_token)
+  if [ -z "$token" ]; then
+    token=$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')
+  fi
+
+  if [ -n "$REPOSITORY_ROOT" ]; then
+    printf 'Building the bundled Threadlight Host + Web package...\n'
+    if [ ! -x "$REPOSITORY_ROOT/node_modules/.bin/esbuild" ]; then
+      (cd "$REPOSITORY_ROOT" && npm ci)
+    fi
+    (cd "$REPOSITORY_ROOT" && npm run host:package)
+    package_version=$(node -p 'require(process.argv[1]).version' "$REPOSITORY_ROOT/package.json")
+    package_path="$REPOSITORY_ROOT/artifacts/threadlight-host-$package_version.tgz"
+    [ -f "$package_path" ] || fail "The Host package was not created."
+  else
+    printf 'Downloading Threadlight Host + Web %s...\n' "$RELEASE_VERSION"
+    TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/threadlight-self-host.XXXXXX")
+    package_path="$TEMP_ROOT/threadlight-host.tgz"
+    download_file "$PACKAGE_URL" "$package_path"
+  fi
+
+  npm install --global --prefix "$RUNTIME_ROOT" "$package_path"
+  [ -x "$HOST_BIN" ] || fail "The installed threadlight-host executable was not found."
+  if [ -n "$REPOSITORY_ROOT" ]; then
+    cp "$SCRIPT_DIR/self-host.sh" "$MANAGER_BIN"
+  else
+    download_file "$INSTALLER_URL" "$MANAGER_BIN"
+  fi
+  chmod 0755 "$MANAGER_BIN"
+  cleanup_temporary_files
+  TEMP_ROOT=
+
+  SELF_HOST_TOKEN=$token \
+  SELF_HOST_LISTEN=$listen_host \
+  SELF_HOST_PORT=$port \
+  SELF_HOST_HOME=$host_home \
+  SELF_HOST_PROJECT=$project \
+  SELF_HOST_NAME=$host_name \
+  SELF_HOST_PUBLIC_URL=$public_url \
+  SELF_HOST_ORIGINS=$origins \
+  node - "$CONFIG_PATH" <<'NODE'
+const { chmodSync, writeFileSync } = require("node:fs");
+const { dirname } = require("node:path");
+const path = process.argv[2];
+const config = {
+  token: process.env.SELF_HOST_TOKEN,
+  host: process.env.SELF_HOST_LISTEN,
+  port: Number(process.env.SELF_HOST_PORT),
+  home: process.env.SELF_HOST_HOME,
+  name: process.env.SELF_HOST_NAME,
+};
+if (process.env.SELF_HOST_PROJECT) config.project = process.env.SELF_HOST_PROJECT;
+if (process.env.SELF_HOST_PUBLIC_URL) config.publicUrl = process.env.SELF_HOST_PUBLIC_URL;
+const origins = (process.env.SELF_HOST_ORIGINS || "").split("\n").filter(Boolean);
+if (origins.length) config.origins = origins;
+writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+chmodSync(path, 0o600);
+NODE
+
+  if [ "$foreground" -eq 1 ]; then
+    print_connection_details "$listen_host" "$port" "$public_url" "$token"
+    exec "$HOST_BIN" --config "$CONFIG_PATH"
+  fi
+
+  install_service
+  print_connection_details "$listen_host" "$port" "$public_url" "$token"
+  printf 'Config: %s (mode 0600)\n' "$CONFIG_PATH"
+  printf 'Add a project from the Web UI after connecting.\n'
+  printf 'Manage: %s status | logs | restart | stop | show-token\n' "$MANAGER_BIN"
+}
+
+install_service() {
+  platform=$(uname -s)
+  case "$platform" in
+    Linux)
+      require_command systemctl
+      unit_root=${XDG_CONFIG_HOME:-"$HOME/.config"}/systemd/user
+      unit_path=$unit_root/$SERVICE_NAME.service
+      mkdir -p "$unit_root"
+      SELF_HOST_BIN=$HOST_BIN \
+      SELF_HOST_CONFIG=$CONFIG_PATH \
+      SELF_HOST_PATH=$PATH \
+      SELF_HOST_WORKING_DIRECTORY=$HOME \
+      node - "$unit_path" <<'NODE'
+const { writeFileSync } = require("node:fs");
+const quote = (value) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+const unit = `[Unit]
+Description=Threadlight self-hosted Host and Web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${quote(process.env.SELF_HOST_BIN)} --config ${quote(process.env.SELF_HOST_CONFIG)}
+WorkingDirectory=${quote(process.env.SELF_HOST_WORKING_DIRECTORY)}
+Environment=${quote(`PATH=${process.env.SELF_HOST_PATH}`)}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`;
+writeFileSync(process.argv[2], unit);
+NODE
+      systemctl --user daemon-reload
+      systemctl --user enable --now "$SERVICE_NAME.service"
+      ;;
+    Darwin)
+      plist_root=$HOME/Library/LaunchAgents
+      plist_path=$plist_root/io.github.nagisa77.threadlight-host.plist
+      mkdir -p "$plist_root"
+      SELF_HOST_BIN=$HOST_BIN \
+      SELF_HOST_CONFIG=$CONFIG_PATH \
+      SELF_HOST_PATH=$PATH \
+      SELF_HOST_LOG_ROOT=$LOG_ROOT \
+      node - "$plist_path" <<'NODE'
+const { writeFileSync } = require("node:fs");
+const escape = (value) => value
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&apos;");
+const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>io.github.nagisa77.threadlight-host</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${escape(process.env.SELF_HOST_BIN)}</string>
+    <string>--config</string>
+    <string>${escape(process.env.SELF_HOST_CONFIG)}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>${escape(process.env.SELF_HOST_PATH)}</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>StandardOutPath</key><string>${escape(`${process.env.SELF_HOST_LOG_ROOT}/host.log`)}</string>
+  <key>StandardErrorPath</key><string>${escape(`${process.env.SELF_HOST_LOG_ROOT}/host.log`)}</string>
+</dict>
+</plist>
+`;
+writeFileSync(process.argv[2], plist);
+NODE
+      launchctl bootout "gui/$(id -u)/io.github.nagisa77.threadlight-host" >/dev/null 2>&1 || true
+      launchctl bootstrap "gui/$(id -u)" "$plist_path"
+      launchctl kickstart -k "gui/$(id -u)/io.github.nagisa77.threadlight-host"
+      ;;
+    *)
+      fail "Automatic service installation supports Linux systemd and macOS launchd. Re-run with --foreground on this platform."
+      ;;
+  esac
+}
+
+service_action() {
+  action=$1
+  platform=$(uname -s)
+  case "$platform" in
+    Linux)
+      case "$action" in
+        start|restart) systemctl --user "$action" "$SERVICE_NAME.service" ;;
+        stop) systemctl --user stop "$SERVICE_NAME.service" ;;
+        status) systemctl --user status --no-pager "$SERVICE_NAME.service" ;;
+      esac
+      ;;
+    Darwin)
+      label=io.github.nagisa77.threadlight-host
+      domain="gui/$(id -u)"
+      plist_path=$HOME/Library/LaunchAgents/$label.plist
+      case "$action" in
+        start)
+          launchctl print "$domain/$label" >/dev/null 2>&1 ||
+            launchctl bootstrap "$domain" "$plist_path"
+          launchctl kickstart "$domain/$label"
+          ;;
+        restart)
+          launchctl print "$domain/$label" >/dev/null 2>&1 ||
+            launchctl bootstrap "$domain" "$plist_path"
+          launchctl kickstart -k "$domain/$label"
+          ;;
+        stop) launchctl bootout "$domain/$label" ;;
+        status) launchctl print "$domain/$label" ;;
+      esac
+      ;;
+    *) fail "Service management supports Linux systemd and macOS launchd." ;;
+  esac
+}
+
+service_logs() {
+  case "$(uname -s)" in
+    Linux) exec journalctl --user-unit "$SERVICE_NAME.service" -f ;;
+    Darwin)
+      mkdir -p "$LOG_ROOT"
+      touch "$LOG_ROOT/host.log"
+      exec tail -f "$LOG_ROOT/host.log"
+      ;;
+    *) fail "Log streaming supports Linux systemd and macOS launchd." ;;
+  esac
+}
+
+existing_token() {
+  existing_config_value token
+}
+
+existing_config_value() {
+  key=$1
+  if [ ! -f "$CONFIG_PATH" ]; then
+    return
+  fi
+  node - "$CONFIG_PATH" "$key" <<'NODE' 2>/dev/null || true
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.argv[2], "utf8"))[process.argv[3]];
+if (Array.isArray(value)) process.stdout.write(value.join("\n"));
+else if (typeof value === "string" || typeof value === "number") process.stdout.write(String(value));
+NODE
+}
+
+show_token() {
+  [ -f "$CONFIG_PATH" ] || fail "No self-host config found at $CONFIG_PATH"
+  token=$(existing_token)
+  [ -n "$token" ] || fail "The self-host config does not contain a token."
+  printf '%s\n' "$token"
+}
+
+print_connection_details() {
+  listen_host=$1
+  port=$2
+  public_url=$3
+  token=$4
+  if [ -n "$public_url" ]; then
+    url=${public_url%/}
+  else
+    case "$listen_host" in
+      0.0.0.0|::) browser_host=127.0.0.1 ;;
+      *:*) browser_host="[$listen_host]" ;;
+      *) browser_host=$listen_host ;;
+    esac
+    url="http://$browser_host:$port"
+  fi
+  printf '\nThreadlight Host + Web is ready.\n'
+  printf 'Open:  %s\n' "$url"
+  printf 'Token: %s\n' "$token"
+  if [ "$listen_host" = 127.0.0.1 ] || [ "$listen_host" = ::1 ]; then
+    printf 'Remote server: keep this loopback binding and use an SSH tunnel, VPN, or HTTPS reverse proxy.\n'
+  fi
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || fail "Required command not found: $1"
+}
+
+download_file() {
+  source_url=$1
+  destination=$2
+  if command -v curl >/dev/null 2>&1; then
+    curl --fail --location --silent --show-error --retry 3 \
+      --output "$destination" "$source_url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget --quiet --tries=3 --output-document="$destination" "$source_url"
+  else
+    fail "curl or wget is required to download Threadlight."
+  fi
+}
+
+fail() {
+  printf 'Error: %s\n' "$1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+Usage: threadlight-self-host <command> [options]
+
+Commands:
+  install       Download, install, configure, and start Host + Web (default)
+  start         Start the installed service
+  stop          Stop the installed service
+  restart       Restart the installed service
+  status        Show service status
+  logs          Follow service logs
+  show-token    Print the saved Web access token
+
+Install options:
+  --host <address>      Listen address (default: 127.0.0.1)
+  --port <port>         Listen port (default: 7432)
+  --name <name>         Host name shown in Threadlight
+  --home <path>         Host data directory (default: ~/.threadlight)
+  --public-url <url>    HTTPS public URL used for OAuth callbacks and output
+  --origin <url>        Additional allowed Web origin; may be repeated
+  --foreground          Run in the current terminal instead of a system service
+
+The bundled Web UI is served by the Host on the same port. The generated token
+is saved only in a mode-0600 JSON config and is never written to source or logs.
+The Host starts empty; add projects from the Web UI after connecting.
+EOF
+}
+
+command=${1:-install}
+if [ "$#" -gt 0 ]; then shift; fi
+
+case "$command" in
+  install) install_self_host "$@" ;;
+  start) service_action start ;;
+  stop) service_action stop ;;
+  restart) service_action restart ;;
+  status) service_action status ;;
+  logs) service_logs ;;
+  show-token) show_token ;;
+  help|-h|--help) usage ;;
+  *)
+    printf 'Unknown command: %s\n\n' "$command" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

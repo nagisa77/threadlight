@@ -28,6 +28,7 @@ const copy = isEnglish
         agents: "Multi-agent",
         plan: "Plan mode",
         capabilities: "Capabilities",
+        selfHost: "Self-host",
         github: "GitHub",
       },
       hero: {
@@ -36,10 +37,32 @@ const copy = isEnglish
         accent: "an engineering team.",
         description:
           "Threadlight is an open-source multi-agent runtime, desktop workspace, and remote Host. Plan, delegate, execute, review, and deliver on one observable, recoverable task timeline.",
-        release: "Download latest release",
-        github: "Explore the source",
-        web: "Open the web client",
-        webHint: "Connects to an existing Threadlight Host",
+        startLabel: "Choose how to start",
+        desktop: {
+          label: "MAC APP",
+          title: "Download the desktop app",
+          description: "Apple Silicon · unsigned test build",
+          action: "Download DMG",
+        },
+        web: {
+          label: "WEB CLIENT",
+          title: "Open in the browser",
+          description:
+            "Requires a self-hosted Host reachable at its port through an HTTPS domain.",
+          action: "Open Web client",
+        },
+        selfHost: {
+          label: "RECOMMENDED",
+          title: "Deploy Host + Web",
+          description:
+            "One command installs an empty Host on macOS or Linux and keeps it running. Add projects from the UI after connecting.",
+          command: "One-line install",
+          copy: "Copy",
+          copied: "Copied",
+          requirement: "Node.js 22+ · current user install",
+          guide: "Deployment guide",
+        },
+        source: "Open the source code",
         proof: ["Stable 1.0", "macOS first", "Apache-2.0"],
         frameTitle: "Threadlight · engineering workspace",
         frameStatus: "Agents active",
@@ -150,19 +173,6 @@ const copy = isEnglish
         ],
         link: "Explore the architecture",
       },
-      start: {
-        eyebrow: "START WITH THE DESKTOP APP",
-        title: "Bring a trusted project. Keep every step visible.",
-        description:
-          "Threadlight 1.0 is the first stable release for trusted local engineering workflows.",
-        release: "Download latest release",
-        docs: "Read the development guide",
-        source: "Run from source",
-        copy: "Copy",
-        copied: "Copied",
-        warning:
-          "Built-in tools run with your current user permissions and are not an OS-level sandbox. Use trusted workspaces or add container, VM, or system isolation.",
-      },
       faq: {
         eyebrow: "BEFORE YOU START",
         title: "The important details.",
@@ -185,6 +195,7 @@ const copy = isEnglish
         agents: "多 Agent",
         plan: "Plan 模式",
         capabilities: "能力系统",
+        selfHost: "自部署",
         github: "GitHub",
       },
       hero: {
@@ -193,10 +204,32 @@ const copy = isEnglish
         accent: "一支工程团队。",
         description:
           "Threadlight 是开源的多 Agent Runtime、桌面工作台与远程 Host。在同一条任务时间线上完成规划、并行协作、工具执行、代码审阅与结果交付。",
-        release: "下载最新版",
-        github: "查看开源代码",
-        web: "打开 Web 客户端",
-        webHint: "连接一个已经运行的 Threadlight Host",
+        startLabel: "选择使用方式",
+        desktop: {
+          label: "MAC 客户端",
+          title: "下载桌面端",
+          description: "Apple Silicon · 未签名测试版",
+          action: "下载 DMG",
+        },
+        web: {
+          label: "WEB 客户端",
+          title: "直接在浏览器打开",
+          description:
+            "需要先自部署 Host，并用 HTTPS 域名访问 Host 所在端口。",
+          action: "打开 Web 客户端",
+        },
+        selfHost: {
+          label: "最推荐",
+          title: "一键部署 Host + Web",
+          description:
+            "一条命令安装到 macOS 或 Linux 并保持运行。默认打开空 Host，连接后在 UI 内添加项目。",
+          command: "一行安装",
+          copy: "复制",
+          copied: "已复制",
+          requirement: "需要 Node.js 22+ · 当前用户安装",
+          guide: "部署说明",
+        },
+        source: "打开源代码",
         proof: ["正式版 1.0", "macOS 优先", "Apache-2.0"],
         frameTitle: "Threadlight · 工程工作台",
         frameStatus: "Agent 协作中",
@@ -307,18 +340,6 @@ const copy = isEnglish
         ],
         link: "查看完整架构",
       },
-      start: {
-        eyebrow: "从桌面端开始",
-        title: "带上可信项目，让每一步都保持可见。",
-        description: "Threadlight 1.0 是首个正式版本，面向可信的本地工程工作流。",
-        release: "下载最新版",
-        docs: "阅读开发指南",
-        source: "从源码运行",
-        copy: "复制",
-        copied: "已复制",
-        warning:
-          "内置工具以当前用户权限运行，不是操作系统级 sandbox。请只使用可信工作区，或配合容器、虚拟机与系统隔离。",
-      },
       faq: {
         eyebrow: "开始之前",
         title: "这些信息很重要。",
@@ -335,17 +356,17 @@ const copy = isEnglish
       },
     };
 
-const installCommand = `git clone https://github.com/nagisa77/threadlight.git
-cd threadlight
-npm install
-npm run desktop:dev`;
+const selfHostCommand = "curl -fsSL https://threadlight.xyz/install.sh | sh";
+const desktopDownloadLink =
+  "https://github.com/nagisa77/threadlight/releases/download/v1.0.0/Threadlight-1.0.0-macOS-arm64-unsigned-test.dmg";
+const webClientLink = "https://nagisa77.github.io/threadlight/";
 
 const architectureLink = isEnglish
   ? "https://github.com/nagisa77/threadlight#architecture"
   : "https://github.com/nagisa77/threadlight#架构";
-const docsLink = isEnglish
-  ? "https://github.com/nagisa77/threadlight/blob/main/docs/DEVELOPMENT.md"
-  : "https://github.com/nagisa77/threadlight/blob/main/docs/DEVELOPMENT.zh-CN.md";
+const selfHostDocsLink = isEnglish
+  ? "https://github.com/nagisa77/threadlight/blob/main/docs/SELF_HOSTING.md"
+  : "https://github.com/nagisa77/threadlight/blob/main/docs/SELF_HOSTING.zh-CN.md";
 ---
 
 <a class="skip-link" href="#main">{copy.skip}</a>
@@ -361,6 +382,7 @@ const docsLink = isEnglish
       <a href="#multi-agent">{copy.nav.agents}</a>
       <a href="#plan">{copy.nav.plan}</a>
       <a href="#capabilities">{copy.nav.capabilities}</a>
+      <a href="#self-host">{copy.nav.selfHost}</a>
     </nav>
     <div class="header-actions">
       <a class="language-link pressable" href={languagePath} hreflang={isEnglish ? "zh-CN" : "en"}>
@@ -381,18 +403,39 @@ const docsLink = isEnglish
         <p class="kicker"><span></span>{copy.hero.kicker}</p>
         <h1 id="hero-title">{copy.hero.lead}<br /><em>{copy.hero.accent}</em></h1>
         <p class="hero-description">{copy.hero.description}</p>
-        <div class="hero-actions">
-          <a class="button button-primary pressable" href="https://github.com/nagisa77/threadlight/releases/latest">
-            {copy.hero.release}<span aria-hidden="true">↓</span>
+        <div class="launch-grid" id="self-host" aria-label={copy.hero.startLabel}>
+          <article class="launch-card launch-card-recommended">
+            <div class="launch-card-heading">
+              <span>{copy.hero.selfHost.label}</span>
+              <small>{copy.hero.selfHost.requirement}</small>
+            </div>
+            <h2>{copy.hero.selfHost.title}</h2>
+            <p>{copy.hero.selfHost.description}</p>
+            <div class="code-card launch-command">
+              <div class="code-toolbar">
+                <span>{copy.hero.selfHost.command}</span>
+                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied}>{copy.hero.selfHost.copy}</button>
+              </div>
+              <pre><code>{selfHostCommand}</code></pre>
+            </div>
+            <a class="launch-guide pressable" href={selfHostDocsLink}>{copy.hero.selfHost.guide}<span aria-hidden="true">↗</span></a>
+          </article>
+
+          <a class="launch-card launch-card-link pressable" href={desktopDownloadLink}>
+            <span class="launch-label">{copy.hero.desktop.label}</span>
+            <h2>{copy.hero.desktop.title}</h2>
+            <p>{copy.hero.desktop.description}</p>
+            <strong>{copy.hero.desktop.action}<span aria-hidden="true">↓</span></strong>
           </a>
-          <a class="button button-secondary pressable" href="https://github.com/nagisa77/threadlight">
-            {copy.hero.github}<span aria-hidden="true">↗</span>
+
+          <a class="launch-card launch-card-link pressable" href={webClientLink}>
+            <span class="launch-label">{copy.hero.web.label}</span>
+            <h2>{copy.hero.web.title}</h2>
+            <p>{copy.hero.web.description}</p>
+            <strong>{copy.hero.web.action}<span aria-hidden="true">↗</span></strong>
           </a>
         </div>
-        <div class="hero-meta">
-          <a href="https://nagisa77.github.io/threadlight/">{copy.hero.web}<span aria-hidden="true">→</span></a>
-          <span>{copy.hero.webHint}</span>
-        </div>
+        <a class="hero-source-link pressable" href="https://github.com/nagisa77/threadlight">{copy.hero.source}<span aria-hidden="true">↗</span></a>
         <ul class="project-proof" aria-label="Project status">
           {copy.hero.proof.map((item) => <li>{item}</li>)}
         </ul>
@@ -596,25 +639,6 @@ const docsLink = isEnglish
     </div>
   </section>
 
-  <section class="light-section start-section section-pad" aria-labelledby="start-title">
-    <div class="shell start-panel">
-      <div class="start-copy">
-        <p class="eyebrow">{copy.start.eyebrow}</p>
-        <h2 id="start-title">{copy.start.title}</h2>
-        <p>{copy.start.description}</p>
-        <div class="start-actions">
-          <a class="button button-primary pressable" href="https://github.com/nagisa77/threadlight/releases/latest">{copy.start.release}<span aria-hidden="true">↓</span></a>
-          <a class="text-link pressable" href={docsLink}>{copy.start.docs}<span aria-hidden="true">↗</span></a>
-        </div>
-      </div>
-      <div class="code-card">
-        <div class="code-toolbar"><span>{copy.start.source}</span><button class="copy-button pressable" type="button" data-copy data-copied={copy.start.copied}>{copy.start.copy}</button></div>
-        <pre><code>{installCommand}</code></pre>
-      </div>
-      <p class="safety-note"><span aria-hidden="true">!</span>{copy.start.warning}</p>
-    </div>
-  </section>
-
   <section class="light-section faq-section section-pad" aria-labelledby="faq-title">
     <div class="shell faq-layout">
       <div class="section-heading faq-heading">
@@ -650,19 +674,40 @@ const docsLink = isEnglish
 </footer>
 
 <script>
-  const copyButton = document.querySelector<HTMLButtonElement>("[data-copy]");
-  copyButton?.addEventListener("click", async () => {
-    const code = copyButton.closest(".code-card")?.querySelector("code")?.textContent;
-    if (!code) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      const original = copyButton.textContent;
-      copyButton.textContent = copyButton.dataset.copied ?? original;
-      window.setTimeout(() => {
-        copyButton.textContent = original;
-      }, 1400);
-    } catch {
-      return;
-    }
+  document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((copyButton) => {
+    copyButton.addEventListener("click", async () => {
+      const code = copyButton.closest(".code-card")?.querySelector("code")?.textContent;
+      if (!code) return;
+      try {
+        await copyText(code);
+        const original = copyButton.textContent;
+        copyButton.textContent = copyButton.dataset.copied ?? original;
+        window.setTimeout(() => {
+          copyButton.textContent = original;
+        }, 1400);
+      } catch {
+        return;
+      }
+    });
   });
+
+  async function copyText(value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      const input = document.createElement("textarea");
+      const activeElement = document.activeElement;
+      input.value = value;
+      input.setAttribute("readonly", "");
+      input.style.position = "fixed";
+      input.style.opacity = "0";
+      document.body.append(input);
+      input.select();
+      const copied = document.execCommand("copy");
+      input.remove();
+      if (activeElement instanceof HTMLElement) activeElement.focus();
+      if (!copied) throw new Error("Copy is unavailable");
+    }
+  }
 </script>

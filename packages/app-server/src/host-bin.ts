@@ -13,6 +13,7 @@ import {
   type HostArgs,
   type HostCliCommand,
 } from "./host-cli-options.js";
+import { readHostConfig } from "./host-config.js";
 
 const command = readCliCommand(process.argv.slice(2));
 if (command.action === "help") {
@@ -37,8 +38,9 @@ try {
 }
 
 async function startHost(args: HostArgs): Promise<void> {
-  const publicUrl =
-    args.publicUrl ?? process.env.THREADLIGHT_HOST_PUBLIC_URL;
+  args = resolveHostArgs(args);
+  const servedWebRoot = webRoot(args);
+  const publicUrl = args.publicUrl ?? process.env.THREADLIGHT_HOST_PUBLIC_URL;
   const oauthCallbackUrlPrefix = publicUrl
     ? `${normalizePublicUrl(publicUrl)}/v1/host/oauth/callback`
     : undefined;
@@ -75,9 +77,7 @@ async function startHost(args: HostArgs): Promise<void> {
   const projects = new ProjectStore(join(homePath, "project-map.json"), {
     standaloneRoot: join(homePath, "standalone"),
   });
-  const secretCodec = createHostSecretCodec(
-    join(homePath, "host-secret.key"),
-  );
+  const secretCodec = createHostSecretCodec(join(homePath, "host-secret.key"));
   const settings = new SettingsStore(
     join(homePath, "settings.json"),
     secretCodec,
@@ -100,9 +100,8 @@ async function startHost(args: HostArgs): Promise<void> {
     host: args.host,
     port: args.port,
     allowedOrigins: args.origins,
-    ...(oauthCallbackUrlPrefix
-      ? { oauthCallbackUrlPrefix }
-      : {}),
+    ...(servedWebRoot ? { webRoot: servedWebRoot } : {}),
+    ...(oauthCallbackUrlPrefix ? { oauthCallbackUrlPrefix } : {}),
     acceptOAuthCallback: (input) =>
       connections.acceptAuthorizationCallback(input),
     createPeer: ({
@@ -111,9 +110,8 @@ async function startHost(args: HostArgs): Promise<void> {
       projectBasePath,
       oauthCallbackUrlPrefix,
     }) => {
-      const connectionService = new HostConnectionService(
-        connections,
-        (url) => server.publishConnectorAuthorization(projectId, url),
+      const connectionService = new HostConnectionService(connections, (url) =>
+        server.publishConnectorAuthorization(projectId, url),
       );
       return new JsonLineRuntimePeer({
         entry,
@@ -128,8 +126,7 @@ async function startHost(args: HostArgs): Promise<void> {
           THREADLIGHT_CONNECTION_RPC_FD: "3",
           ...(oauthCallbackUrlPrefix
             ? {
-                THREADLIGHT_OAUTH_CALLBACK_URL_PREFIX:
-                  oauthCallbackUrlPrefix,
+                THREADLIGHT_OAUTH_CALLBACK_URL_PREFIX: oauthCallbackUrlPrefix,
               }
             : {}),
           THREADLIGHT_ATTACHMENT_ROOT: join(
@@ -138,10 +135,8 @@ async function startHost(args: HostArgs): Promise<void> {
             "uploads",
           ),
         },
-        onLog: (message) =>
-          process.stderr.write(`[app-server] ${message}\n`),
-        handleConnectionRequest: (request) =>
-          connectionService.handle(request),
+        onLog: (message) => process.stderr.write(`[app-server] ${message}\n`),
+        handleConnectionRequest: (request) => connectionService.handle(request),
       });
     },
     createTerminalSessions: (send) =>
@@ -156,6 +151,12 @@ async function startHost(args: HostArgs): Promise<void> {
     `Threadlight Host listening on http://${address.host}:${address.port}\n`,
   );
   process.stderr.write(`Data: ${homePath}\n`);
+  if (servedWebRoot) {
+    const webUrl = publicUrl
+      ? normalizePublicUrl(publicUrl)
+      : `http://${displayHost(address.host)}:${address.port}`;
+    process.stderr.write(`Web UI: ${webUrl}\n`);
+  }
   if (address.host !== "127.0.0.1" && address.host !== "::1") {
     process.stderr.write(
       "Warning: HTTP is not encrypted. Use an SSH tunnel, VPN, or TLS reverse proxy on untrusted networks.\n",
@@ -216,6 +217,37 @@ function normalizePublicUrl(value: string): string {
   url.search = "";
   url.hash = "";
   return url.toString().replace(/\/+$/, "");
+}
+
+function resolveHostArgs(args: HostArgs): HostArgs {
+  const configPath = args.config ?? process.env.THREADLIGHT_HOST_CONFIG;
+  const config = configPath ? readHostConfig(configPath) : {};
+  return {
+    config: configPath,
+    host: args.host ?? config.host,
+    port: args.port ?? config.port,
+    home: args.home ?? process.env.THREADLIGHT_HOME ?? config.home,
+    project: args.project ?? config.project,
+    token: args.token ?? process.env.THREADLIGHT_HOST_TOKEN ?? config.token,
+    origins: args.origins.length > 0 ? args.origins : (config.origins ?? []),
+    name: args.name ?? config.name,
+    publicUrl:
+      args.publicUrl ??
+      process.env.THREADLIGHT_HOST_PUBLIC_URL ??
+      config.publicUrl,
+    webRoot: args.webRoot ?? process.env.THREADLIGHT_WEB_ROOT ?? config.webRoot,
+  };
+}
+
+function webRoot(args: HostArgs): string | undefined {
+  if (args.webRoot) return resolve(args.webRoot);
+  const bundled = fileURLToPath(new URL("./web", import.meta.url));
+  return existsSync(join(bundled, "index.html")) ? bundled : undefined;
+}
+
+function displayHost(host: string): string {
+  if (host === "0.0.0.0" || host === "::") return "127.0.0.1";
+  return host.includes(":") ? `[${host}]` : host;
 }
 
 function readOrCreateHostId(path: string): string {

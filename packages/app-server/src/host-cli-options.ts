@@ -1,4 +1,5 @@
 export interface HostArgs {
+  config?: string;
   host?: string;
   port?: number;
   home?: string;
@@ -7,6 +8,7 @@ export interface HostArgs {
   origins: string[];
   name?: string;
   publicUrl?: string;
+  webRoot?: string;
 }
 
 export type HostCliCommand =
@@ -22,6 +24,7 @@ export class HostCliUsageError extends Error {
 }
 
 const VALUE_OPTIONS = new Set([
+  "--config",
   "--host",
   "--port",
   "--home",
@@ -30,6 +33,7 @@ const VALUE_OPTIONS = new Set([
   "--origin",
   "--name",
   "--public-url",
+  "--web-root",
 ]);
 
 export function parseHostCli(values: string[]): HostCliCommand {
@@ -59,12 +63,14 @@ export function parseHostArgs(values: string[]): HostArgs {
     }
     index += 1;
     if (flag === "--host") result.host = value;
+    if (flag === "--config") result.config = value;
     if (flag === "--home") result.home = value;
     if (flag === "--project") result.project = value;
     if (flag === "--token") result.token = value;
     if (flag === "--origin") result.origins.push(value);
     if (flag === "--name") result.name = value;
     if (flag === "--public-url") result.publicUrl = value;
+    if (flag === "--web-root") result.webRoot = value;
     if (flag === "--port") {
       const port = Number(value);
       if (!/^\d+$/.test(value) || port > 65_535) {
@@ -84,6 +90,7 @@ export function hostCliUsage(): string {
 Run the headless Threadlight Host for local or remote projects.
 
 Options:
+  --config <path>      JSON config file; CLI and environment override it
   --host <address>     Listen address (default: 127.0.0.1)
   --port <port>        Listen port, 0-65535 (default: 7432)
   --home <path>        Host data directory (default: ~/.threadlight)
@@ -92,6 +99,7 @@ Options:
   --origin <url>       Allowed Web origin; may be repeated
   --name <name>        Host name shown to clients
   --public-url <url>   Public HTTP(S) URL used for OAuth callbacks
+  --web-root <path>    Serve a built Threadlight Web directory
   -h, --help           Show this help
   -v, --version        Show the installed version
 
@@ -99,6 +107,8 @@ Environment:
   THREADLIGHT_HOST_TOKEN       Client access token
   THREADLIGHT_HOME             Host data directory
   THREADLIGHT_HOST_PUBLIC_URL  Public HTTP(S) URL for OAuth callbacks
+  THREADLIGHT_HOST_CONFIG      JSON config file
+  THREADLIGHT_WEB_ROOT         Built Threadlight Web directory
 
 Security:
   Use an SSH tunnel, VPN, or TLS reverse proxy on untrusted networks.

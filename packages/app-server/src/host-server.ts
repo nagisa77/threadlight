@@ -63,6 +63,7 @@ import type {
 import { WebSocketServer } from "ws";
 
 import { HostTerminalGateway } from "./host-terminal-gateway.js";
+import { HostWebAssets } from "./host-web-assets.js";
 import {
   listHostFiles,
   readHostFile,
@@ -117,6 +118,7 @@ export interface ThreadlightHostServerOptions {
   allowedOrigins?: readonly string[];
   oauthCallbackUrlPrefix?: string;
   eventHeartbeatIntervalMs?: number;
+  webRoot?: string;
 }
 
 export interface ThreadlightHostAddress {
@@ -161,6 +163,7 @@ export class ThreadlightHostServer {
   private readonly codeHostDelivery: CodeHostDeliveryManager;
   private readonly eventClients = new Map<string, Set<ServerResponse>>();
   private readonly eventHeartbeatIntervalMs: number;
+  private readonly webAssets?: HostWebAssets;
   private readonly initializationParams = new Map<
     string,
     Record<string, unknown> | undefined
@@ -179,6 +182,9 @@ export class ThreadlightHostServer {
     this.port = options.port ?? 7432;
     this.eventHeartbeatIntervalMs =
       options.eventHeartbeatIntervalMs ?? EVENT_HEARTBEAT_INTERVAL_MS;
+    this.webAssets = options.webRoot
+      ? new HostWebAssets(options.webRoot)
+      : undefined;
     if (
       !Number.isFinite(this.eventHeartbeatIntervalMs) ||
       this.eventHeartbeatIntervalMs <= 0
@@ -224,6 +230,7 @@ export class ThreadlightHostServer {
 
   async start(): Promise<ThreadlightHostAddress> {
     if (this.server) throw new Error("Threadlight Host is already listening.");
+    await this.webAssets?.ensure();
     await this.reconcileLegacyNoChangesAttention();
     const server = createServer((request, response) => {
       void this.handleRequest(request, response);
@@ -334,6 +341,7 @@ export class ThreadlightHostServer {
       }
       return;
     }
+    if (await this.webAssets?.handle(request, response, url)) return;
     if (!this.authorized(request)) {
       this.writeJson(response, 401, { error: "Unauthorized" });
       return;
@@ -1784,7 +1792,7 @@ export class ThreadlightHostServer {
       return;
     }
     const origin = request.headers.origin;
-    if (origin && !this.isAllowedOrigin(origin)) {
+    if (origin && !this.isAllowedOrigin(origin, request)) {
       rejectUpgrade(socket, 403, "Forbidden");
       return;
     }
@@ -1795,7 +1803,7 @@ export class ThreadlightHostServer {
 
   private applyCors(request: IncomingMessage, response: ServerResponse): void {
     const origin = request.headers.origin;
-    if (origin && this.isAllowedOrigin(origin)) {
+    if (origin && this.isAllowedOrigin(origin, request)) {
       response.setHeader("Access-Control-Allow-Origin", origin);
       response.setHeader("Vary", "Origin");
       response.setHeader(
@@ -1809,8 +1817,25 @@ export class ThreadlightHostServer {
     }
   }
 
-  private isAllowedOrigin(origin: string): boolean {
-    return this.options.allowedOrigins?.includes(origin) ?? false;
+  private isAllowedOrigin(origin: string, request: IncomingMessage): boolean {
+    if (this.options.allowedOrigins?.includes(origin)) return true;
+
+    const requestHost = request.headers.host;
+    if (!requestHost) return false;
+    try {
+      const parsedOrigin = new URL(origin);
+      if (
+        parsedOrigin.protocol !== "http:" &&
+        parsedOrigin.protocol !== "https:"
+      ) {
+        return false;
+      }
+      const requestOrigin = new URL(`${parsedOrigin.protocol}//${requestHost}`)
+        .origin;
+      return parsedOrigin.origin === requestOrigin;
+    } catch {
+      return false;
+    }
   }
 
   private writeJson(

@@ -1,5 +1,10 @@
 # Threadlight Web 部署
 
+> [!TIP]
+> 新部署优先使用 [Host + Web 一站式自部署](./SELF_HOSTING.zh-CN.md)：Web 已内置到
+> Host 包并从同一端口提供，不需要单独部署 Nginx 或配置同源 CORS。本文面向需要把
+> Web 静态站点与 Host 分开部署的高级场景。
+
 Threadlight Web 与桌面端复用同一个 `@threadlight/ui`，浏览器侧只实现远端 Host
 连接、项目切换、HTTP/SSE Runtime、远端文件和 WebSocket 终端适配。Web
 进程不会启动 Host，也不会访问部署服务器的本地项目。
@@ -15,8 +20,7 @@ npm run host:dev -- \
   --host 0.0.0.0 \
   --port 7432 \
   --origin http://localhost:5173 \
-  --origin http://192.168.50.186:5173 \
-  --project /absolute/path/to/project
+  --origin http://192.168.50.186:5173
 ```
 
 另开一个终端启动 Web：
@@ -27,7 +31,7 @@ VITE_THREADLIGHT_HOST_URL=http://192.168.50.186:7432 npm run web:dev -- --host 0
 
 电脑打开 `http://localhost:5173`，同一局域网设备打开
 `http://192.168.50.186:5173`，输入上面的 `THREADLIGHT_HOST_TOKEN`。请把示例中的
-局域网 IP 替换为 Host 机器的实际地址。连接成功后，Host 地址与访问
+局域网 IP 替换为 Host 机器的实际地址。连接后从 UI 添加项目。Host 地址与访问
 Token 会一起保存在浏览器的 `localStorage` 主机记录中（默认保留最近 12 台），
 退出登录不会清除记录，方便下次快速重连；也可以在登录页选择、编辑或删除已保存的
 主机。记录不会写进源码或 production bundle。
@@ -80,7 +84,6 @@ npm run host:dev -- \
   --port 7432 \
   --origin https://nagisa77.github.io \
   --public-url https://your-mac.example-tailnet.ts.net \
-  --project /absolute/path/to/project \
   --name "Tailscale Host"
 ```
 
@@ -110,7 +113,6 @@ npm run host:dev -- \
   --host 127.0.0.1 \
   --port 7432 \
   --origin https://threadlight.example.com \
-  --project /absolute/path/to/project \
   --name "Production Host"
 ```
 

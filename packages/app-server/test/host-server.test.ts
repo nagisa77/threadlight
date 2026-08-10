@@ -46,6 +46,62 @@ afterEach(async () => {
 });
 
 describe("ThreadlightHostServer", () => {
+  it("serves the bundled Web SPA from the Host origin without exposing APIs", async () => {
+    const root = temporaryDirectory("threadlight-host-web-");
+    const webRoot = join(root, "web");
+    mkdirSync(join(webRoot, "assets"), { recursive: true });
+    writeFileSync(
+      join(webRoot, "index.html"),
+      '<!doctype html><div id="root">Threadlight Web</div>',
+    );
+    writeFileSync(join(webRoot, "assets", "app-ABC123.js"), "export {};\n");
+    const projects = new ProjectStore(join(root, "home", "project-map.json"));
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Bundled Web host",
+      homePath: join(root, "home"),
+      projects,
+      settings: new SettingsStore(join(root, "home", "settings.json"), {
+        encrypt: (value) => value,
+        decrypt: (value) => value,
+      }),
+      webRoot,
+      port: 0,
+      createPeer: () => new ScriptedRuntimePeer(),
+    });
+    servers.push(server);
+    const address = await server.start();
+    const endpoint = `http://127.0.0.1:${address.port}`;
+
+    const page = await fetch(`${endpoint}/`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(page.headers.get("cache-control")).toBe("no-cache");
+    expect(page.headers.get("x-frame-options")).toBe("DENY");
+    expect(await page.text()).toContain("Threadlight Web");
+
+    const taskRoute = await fetch(`${endpoint}/tasks/thread-1`);
+    expect(taskRoute.status).toBe(200);
+    expect(await taskRoute.text()).toContain("Threadlight Web");
+
+    const asset = await fetch(`${endpoint}/assets/app-ABC123.js`);
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("content-type")).toBe(
+      "text/javascript; charset=utf-8",
+    );
+    expect(asset.headers.get("cache-control")).toBe(
+      "public, max-age=31536000, immutable",
+    );
+    expect(await asset.text()).toBe("export {};\n");
+
+    expect((await fetch(`${endpoint}/missing.js`)).status).toBe(404);
+    expect((await fetch(`${endpoint}/v1/health`)).status).toBe(401);
+    await expect(
+      authenticatedJson(`${endpoint}/v1/health`),
+    ).resolves.toMatchObject({ ok: true, name: "Bundled Web host" });
+  });
+
   it("repairs legacy no-change attention without hiding real delivery failures", async () => {
     const root = temporaryDirectory("threadlight-host-delivery-repair-");
     const workspace = createWorkspace(root, "project", "delivery repair");
@@ -1869,6 +1925,15 @@ describe("ThreadlightHostServer", () => {
     await webSocketOpened(browserSocket);
     browserSocket.close();
     await webSocketClosed(browserSocket);
+
+    const sameOriginBrowserSocket = new WebSocket(
+      `ws://127.0.0.1:${address.port}/v1/host/terminal`,
+      [...browserTerminalProtocols("test-token")],
+      { origin: endpoint },
+    );
+    await webSocketOpened(sameOriginBrowserSocket);
+    sameOriginBrowserSocket.close();
+    await webSocketClosed(sameOriginBrowserSocket);
 
     const lanBrowserSocket = new WebSocket(
       `ws://127.0.0.1:${address.port}/v1/host/terminal`,

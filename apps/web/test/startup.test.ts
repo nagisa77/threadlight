@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { initialWebStartupPhase } from "../src/startup.js";
+import {
+  configuredHostEndpoint,
+  initialWebStartupPhase,
+} from "../src/startup.js";
 
 describe("Web startup transaction", () => {
   it("restores an active saved session without rendering the connection page", () => {
@@ -43,6 +46,23 @@ describe("Web startup transaction", () => {
     expect(source).not.toContain("Loading Threadlight");
     expect(styles).toMatch(
       /\.web-runtime\.is-restoring\s*\{[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/s,
+    );
+  });
+});
+
+describe("configuredHostEndpoint", () => {
+  it("resolves the bundled Web client to its same-origin Host", () => {
+    expect(configuredHostEndpoint("self", "https://host.example.com/")).toBe(
+      "https://host.example.com",
+    );
+    expect(
+      configuredHostEndpoint(
+        " https://api.example.com ",
+        "https://ignored.example.com",
+      ),
+    ).toBe("https://api.example.com");
+    expect(configuredHostEndpoint(undefined, "https://page.example.com")).toBe(
+      "",
     );
   });
 });

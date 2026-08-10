@@ -29,7 +29,11 @@ import {
   type HostRecord,
   type HostRecordInput,
 } from "./host-store.js";
-import { initialWebStartupPhase, type WebStartupPhase } from "./startup.js";
+import {
+  configuredHostEndpoint,
+  initialWebStartupPhase,
+  type WebStartupPhase,
+} from "./startup.js";
 
 const SESSION_ACTIVE_KEY = "threadlight:web:session-active";
 const loadThreadlightApp = () => import("@threadlight/ui/app");
@@ -251,8 +255,10 @@ function initialCredentials(records: HostRecord[]): {
   token: string;
 } {
   const recent = mostRecentHost(records);
-  const configuredEndpoint =
-    import.meta.env.VITE_THREADLIGHT_HOST_URL?.trim() ?? "";
+  const configuredEndpoint = configuredHostEndpoint(
+    import.meta.env.VITE_THREADLIGHT_HOST_URL,
+    window.location.origin,
+  );
   return {
     // The configured env address is only a fallback when nothing is saved.
     endpoint: recent?.endpoint || configuredEndpoint || "",

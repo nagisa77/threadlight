@@ -1,5 +1,10 @@
 # Threadlight Host
 
+> [!TIP]
+> 如果目标是让用户直接在浏览器使用完整 Host + Web，优先使用
+> [一站式自部署指南](./SELF_HOSTING.zh-CN.md)。本文保留桌面端远程连接、源码启动和
+> Host 协议细节。
+
 Threadlight Host 是无 UI 的远端服务层。它不是“某个项目的 Runtime”，而是一台完整的
 Threadlight 工作主机：
 

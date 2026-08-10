@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -10,6 +12,7 @@ import {
   parseHostArgs,
   parseHostCli,
 } from "../src/host-cli-options.js";
+import { readHostConfig } from "../src/host-config.js";
 
 const hostEntry = fileURLToPath(
   new URL("../dist/host-bin.js", import.meta.url),
@@ -28,10 +31,21 @@ describe("parseHostArgs", () => {
       ]),
     ).toMatchObject({
       host: "0.0.0.0",
-      origins: [
-        "http://localhost:5173",
-        "http://192.168.50.186:5173",
-      ],
+      origins: ["http://localhost:5173", "http://192.168.50.186:5173"],
+    });
+  });
+
+  it("parses self-host config and Web root options", () => {
+    expect(
+      parseHostArgs([
+        "--config",
+        "/tmp/threadlight.json",
+        "--web-root",
+        "/srv/threadlight/web",
+      ]),
+    ).toMatchObject({
+      config: "/tmp/threadlight.json",
+      webRoot: "/srv/threadlight/web",
     });
   });
 
@@ -53,6 +67,8 @@ describe("parseHostArgs", () => {
 
     expect(usage).toContain("Usage: threadlight-host [options]");
     expect(usage).toContain("--public-url <url>");
+    expect(usage).toContain("--config <path>");
+    expect(usage).toContain("--web-root <path>");
     expect(usage).toContain("--help");
     expect(usage).toContain("--version");
     const configuredToken = process.env.THREADLIGHT_HOST_TOKEN;
@@ -79,10 +95,7 @@ describe("parseHostArgs", () => {
 
     const packageVersion = (
       JSON.parse(
-        readFileSync(
-          new URL("../package.json", import.meta.url),
-          "utf8",
-        ),
+        readFileSync(new URL("../package.json", import.meta.url), "utf8"),
       ) as { version: string }
     ).version;
     const version = runHost("--version");
@@ -108,6 +121,41 @@ describe("parseHostArgs", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("An access token is required");
     expect(result.stderr).not.toMatch(/\n\s+at /);
+  });
+});
+
+describe("readHostConfig", () => {
+  it("loads a strict JSON config without logging its token", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-host-config-"));
+    const path = join(root, "host.json");
+    try {
+      writeFileSync(
+        path,
+        JSON.stringify({
+          token: "secret-token",
+          host: "127.0.0.1",
+          port: 7432,
+          origins: ["https://web.example.com"],
+          webRoot: "/srv/threadlight/web",
+        }),
+      );
+      expect(readHostConfig(path)).toEqual({
+        token: "secret-token",
+        host: "127.0.0.1",
+        port: 7432,
+        origins: ["https://web.example.com"],
+        webRoot: "/srv/threadlight/web",
+      });
+      writeFileSync(
+        path,
+        JSON.stringify({ token: "secret-token", typo: true }),
+      );
+      expect(() => readHostConfig(path)).toThrow(
+        "Unknown Host config key: typo",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

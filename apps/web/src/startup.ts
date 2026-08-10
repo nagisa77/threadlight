@@ -13,3 +13,11 @@ export function initialWebStartupPhase(
     ? "restoring"
     : "connection";
 }
+
+export function configuredHostEndpoint(
+  configured: string | undefined,
+  pageOrigin: string,
+): string {
+  const value = configured?.trim() ?? "";
+  return value === "self" ? pageOrigin.replace(/\/+$/, "") : value;
+}
