@@ -69,11 +69,11 @@ npm run host:dev -- \
 npm run host:package
 ```
 
-产物位于 `artifacts/threadlight-host-0.1.0.tgz`，包含两个已经打包的 Node.js
+产物位于 `artifacts/threadlight-host-1.0.0.tgz`，包含两个已经打包的 Node.js
 入口和内置 skills/plugins。复制到远端后：
 
 ```bash
-npm install -g ./threadlight-host-0.1.0.tgz
+npm install -g ./threadlight-host-1.0.0.tgz
 
 export THREADLIGHT_HOST_TOKEN="$(openssl rand -hex 32)"
 threadlight-host --host 127.0.0.1 --port 7432

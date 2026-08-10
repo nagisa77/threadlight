@@ -19,8 +19,8 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/status-alpha-D56A3A?style=flat-square" alt="Alpha status" />
-    <a href="https://github.com/nagisa77/threadlight/releases/latest"><img src="https://img.shields.io/github/v/release/nagisa77/threadlight?include_prereleases&style=flat-square" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/status-stable-2F855A?style=flat-square" alt="Stable status" />
+    <a href="https://github.com/nagisa77/threadlight/releases/latest"><img src="https://img.shields.io/github/v/release/nagisa77/threadlight?style=flat-square" alt="Latest release" /></a>
     <a href="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nagisa77/threadlight/ci.yml?branch=main&style=flat-square&label=tests" alt="CI status" /></a>
     <img src="https://img.shields.io/github/license/nagisa77/threadlight?style=flat-square" alt="Apache-2.0 license" />
     <img src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" />
@@ -46,7 +46,7 @@ Threadlight is more than a chat interface, and an agent is more than a single mo
 Real tasks span multiple model calls, streaming output, tool execution, background processes, file changes, and interrupted runs. Threadlight makes that entire process visible while preserving opaque model state across tool turns, so reasoning continuity and call linkage survive every action.
 
 > [!IMPORTANT]
-> Threadlight is currently **Alpha** software for local development, architecture exploration, and agent application prototyping. Built-in tools run with the current user's permissions and do not provide an OS-level sandbox. Use trusted workspaces only.
+> Threadlight 1.0 is the first stable release for trusted local engineering workflows. Built-in tools run with the current user's permissions and do not provide an OS-level sandbox. Use trusted workspaces only.
 
 ## Why Threadlight
 

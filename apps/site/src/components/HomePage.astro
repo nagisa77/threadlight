@@ -40,7 +40,7 @@ const copy = isEnglish
         github: "Explore the source",
         web: "Open the web client",
         webHint: "Connects to an existing Threadlight Host",
-        proof: ["Alpha", "macOS first", "Apache-2.0"],
+        proof: ["Stable 1.0", "macOS first", "Apache-2.0"],
         frameTitle: "Threadlight · engineering workspace",
         frameStatus: "Agents active",
       },
@@ -154,7 +154,7 @@ const copy = isEnglish
         eyebrow: "START WITH THE DESKTOP APP",
         title: "Bring a trusted project. Keep every step visible.",
         description:
-          "Threadlight is alpha software for local development, architecture exploration, and agent application prototyping.",
+          "Threadlight 1.0 is the first stable release for trusted local engineering workflows.",
         release: "Download latest release",
         docs: "Read the development guide",
         source: "Run from source",
@@ -169,7 +169,7 @@ const copy = isEnglish
         items: [
           ["Is multi-agent just multiple chat windows?", "No. Delegation, continuity, write ownership, result collection, and recovery are runtime behavior inside one task."],
           ["Does Threadlight lock me into one provider?", "No. Provider-specific wire formats stay in adapters, while the loop, tools, server, protocol, and client remain provider-neutral."],
-          ["Is Threadlight production-ready?", "Not yet. It is alpha software intended for trusted local engineering workflows, prototyping, and architectural exploration."],
+          ["Is Threadlight production-ready?", "Threadlight 1.0 is stable for trusted local engineering workflows. Production use still requires an explicit review of permissions, network exposure, and isolation."],
           ["Does it provide a secure sandbox?", "No OS-level sandbox is included. Approval mode controls writes and external access, but strong isolation should come from containers, VMs, or the operating system."],
         ],
       },
@@ -197,7 +197,7 @@ const copy = isEnglish
         github: "查看开源代码",
         web: "打开 Web 客户端",
         webHint: "连接一个已经运行的 Threadlight Host",
-        proof: ["Alpha", "macOS 优先", "Apache-2.0"],
+        proof: ["正式版 1.0", "macOS 优先", "Apache-2.0"],
         frameTitle: "Threadlight · 工程工作台",
         frameStatus: "Agent 协作中",
       },
@@ -310,7 +310,7 @@ const copy = isEnglish
       start: {
         eyebrow: "从桌面端开始",
         title: "带上可信项目，让每一步都保持可见。",
-        description: "Threadlight 目前处于 Alpha 阶段，适合本地开发、架构探索和 Agent 应用原型。",
+        description: "Threadlight 1.0 是首个正式版本，面向可信的本地工程工作流。",
         release: "下载最新版",
         docs: "阅读开发指南",
         source: "从源码运行",
@@ -325,7 +325,7 @@ const copy = isEnglish
         items: [
           ["多 Agent 只是多开几个聊天窗口吗？", "不是。委派、连续性、写入所有权、结果收集和恢复都是同一任务内部的 Runtime 行为。"],
           ["Threadlight 会绑定单一模型厂商吗？", "不会。厂商 wire format 留在 Adapter，Loop、Tools、Server、Protocol 与 Client 始终保持 Provider 中立。"],
-          ["Threadlight 现在适合生产环境吗？", "暂时不适合。它仍处于 Alpha 阶段，适合可信的本地工程工作流、原型与架构探索。"],
+          ["Threadlight 现在适合生产环境吗？", "Threadlight 1.0 已是正式版本；用于生产环境前，仍需明确评估权限、网络暴露与隔离方案。"],
           ["它提供安全 Sandbox 吗？", "不提供操作系统级 sandbox。审批模式会控制写入与外部访问，强隔离仍应由容器、虚拟机或操作系统提供。"],
         ],
       },
@@ -611,7 +611,7 @@ const docsLink = isEnglish
         <div class="code-toolbar"><span>{copy.start.source}</span><button class="copy-button pressable" type="button" data-copy data-copied={copy.start.copied}>{copy.start.copy}</button></div>
         <pre><code>{installCommand}</code></pre>
       </div>
-      <p class="alpha-note"><span aria-hidden="true">!</span>{copy.start.warning}</p>
+      <p class="safety-note"><span aria-hidden="true">!</span>{copy.start.warning}</p>
     </div>
   </section>
 

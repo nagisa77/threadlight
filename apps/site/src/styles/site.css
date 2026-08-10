@@ -1017,7 +1017,7 @@ h3 {
   line-height: 1.85;
 }
 
-.alpha-note {
+.safety-note {
   display: flex;
   grid-column: 1 / -1;
   align-items: flex-start;
@@ -1028,7 +1028,7 @@ h3 {
   line-height: 1.6;
 }
 
-.alpha-note span {
+.safety-note span {
   display: grid;
   width: 18px;
   height: 18px;
@@ -1495,7 +1495,7 @@ h3 {
     font-size: 9px;
   }
 
-  .alpha-note {
+  .safety-note {
     margin-top: -18px;
   }
 

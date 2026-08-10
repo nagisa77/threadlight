@@ -22,8 +22,8 @@
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/status-alpha-D56A3A?style=flat-square" alt="Alpha status" />
-    <a href="https://github.com/nagisa77/threadlight/releases/latest"><img src="https://img.shields.io/github/v/release/nagisa77/threadlight?include_prereleases&style=flat-square" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/status-stable-2F855A?style=flat-square" alt="Stable status" />
+    <a href="https://github.com/nagisa77/threadlight/releases/latest"><img src="https://img.shields.io/github/v/release/nagisa77/threadlight?style=flat-square" alt="Latest release" /></a>
     <a href="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/nagisa77/threadlight/ci.yml?branch=main&style=flat-square&label=tests" alt="CI status" /></a>
     <img src="https://img.shields.io/github/license/nagisa77/threadlight?style=flat-square" alt="Apache-2.0 license" />
     <img src="https://img.shields.io/badge/Node.js-%E2%89%A522-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22 or newer" />
@@ -41,7 +41,7 @@ Threadlight 不是“又一个 AI 聊天框”。它把一个真实工程任务�
 你既可以把 Threadlight 当作开箱即用的桌面 Agent，也可以把其中的 provider-neutral Agent Loop、协议、客户端和内置工具拆出来，构建自己的 Agent 产品。
 
 > [!IMPORTANT]
-> Threadlight 当前处于 **Alpha** 阶段，适合本地开发、架构探索和 Agent 应用原型。内置工具以当前用户权限运行，并不提供操作系统级 sandbox；请只在可信工作区使用，强隔离场景请配合容器、虚拟机或系统 sandbox。
+> Threadlight 1.0 是首个正式版本，面向可信的本地工程工作流。内置工具以当前用户权限运行，并不提供操作系统级 sandbox；请只在可信工作区使用，强隔离场景请配合容器、虚拟机或系统 sandbox。
 
 ## 一眼看懂 Threadlight
 
@@ -567,7 +567,7 @@ npm run clean       # 清理 TypeScript build artifacts
 
 ## 当前边界
 
-- 项目仍处于快速演进的 Alpha 阶段，优先面向本地单用户工程工作流。
+- 1.x 将继续演进，当前仍优先面向可信的本地单用户工程工作流。
 - `exec_command` 会限制工作目录、前台等待时间和输出大小，但不是系统 sandbox。
 - `web_search` 当前通过 Brave Search API 提供。
 - 桌面端当前优先支持 macOS；其他系统的完成度可能不同。

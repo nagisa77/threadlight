@@ -1,6 +1,6 @@
 {
   "name": "@threadlight/host-core",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -15,8 +15,8 @@
     "dist"
   ],
   "dependencies": {
-    "@threadlight/project-memory": "0.1.0",
-    "@threadlight/protocol": "0.1.0",
+    "@threadlight/project-memory": "1.0.0",
+    "@threadlight/protocol": "1.0.0",
     "diff": "^9.0.0",
     "ignore": "^7.0.6"
   }

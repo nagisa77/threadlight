@@ -403,7 +403,7 @@ async function connectWithOfficialSdk(
   oauthProviderFactory?: McpOAuthProviderFactory,
 ): Promise<McpConnection> {
   const client = new Client(
-    { name: "threadlight", version: "0.1.0" },
+    { name: "threadlight", version: "1.0.0" },
     { capabilities: {} },
   );
   const authProvider =

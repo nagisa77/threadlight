@@ -1,6 +1,6 @@
 {
   "name": "@threadlight/web",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Threadlight browser client for remote Hosts",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@threadlight/ui": "0.1.0",
-    "@threadlight/web-runtime": "0.1.0",
+    "@threadlight/ui": "1.0.0",
+    "@threadlight/web-runtime": "1.0.0",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
