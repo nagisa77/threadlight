@@ -1,8 +1,11 @@
 import type { JsonRpcOutgoing } from "@threadlight/protocol";
 
-interface RunningThreadOwner {
+export interface RunningThreadOwner {
+  threadId: string;
   projectId: string;
   runtimeId: string;
+  turnId?: string;
+  revision?: number;
 }
 
 /**
@@ -18,13 +21,34 @@ export class RunningThreadRegistry {
       ?.threadId;
     if (typeof threadId !== "string") return;
 
+    const params = message.params as
+      { turnId?: unknown; revision?: unknown } | undefined;
     if (message.method === "turn/started") {
-      this.owners.set(threadId, { projectId, runtimeId });
+      this.owners.set(threadId, {
+        threadId,
+        projectId,
+        runtimeId,
+        ...(typeof params?.turnId === "string"
+          ? { turnId: params.turnId }
+          : {}),
+        ...(typeof params?.revision === "number"
+          ? { revision: params.revision }
+          : {}),
+      });
     } else if (
       message.method === "turn/completed" ||
       message.method === "turn/failed"
     ) {
       this.owners.delete(threadId);
+    } else {
+      const owner = this.owners.get(threadId);
+      if (
+        owner?.runtimeId === runtimeId &&
+        typeof params?.revision === "number" &&
+        params.revision > (owner.revision ?? -1)
+      ) {
+        this.owners.set(threadId, { ...owner, revision: params.revision });
+      }
     }
   }
 
@@ -50,14 +74,20 @@ export class RunningThreadRegistry {
     );
     for (const threadId of threadIds) {
       const projectId = projectByThread.get(threadId);
-      if (projectId) this.owners.set(threadId, { projectId, runtimeId });
+      if (projectId) {
+        this.owners.set(threadId, { threadId, projectId, runtimeId });
+      }
     }
   }
 
-  clearRuntime(runtimeId: string): void {
+  clearRuntime(runtimeId: string): readonly RunningThreadOwner[] {
+    const cleared: RunningThreadOwner[] = [];
     for (const [threadId, owner] of this.owners) {
-      if (owner.runtimeId === runtimeId) this.owners.delete(threadId);
+      if (owner.runtimeId !== runtimeId) continue;
+      cleared.push(owner);
+      this.owners.delete(threadId);
     }
+    return cleared;
   }
 
   clearProject(projectId: string): void {

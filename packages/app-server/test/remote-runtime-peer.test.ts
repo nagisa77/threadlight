@@ -120,4 +120,27 @@ describe("JsonLineRuntimePeer", () => {
       expect.stringContaining("Invalid app-server output"),
     );
   });
+
+  it("includes the final transport stderr line in an abnormal exit", async () => {
+    const onLog = vi.fn();
+    const peer = new JsonLineRuntimePeer({
+      entry: fileURLToPath(
+        new URL("./fixtures/runtime-error-peer.mjs", import.meta.url),
+      ),
+      cwd: process.cwd(),
+      onLog,
+    });
+    const exited = Promise.withResolvers<Error>();
+    peer.onExit(exited.resolve);
+
+    await peer.start();
+
+    const error = await exited.promise;
+    expect(error.message).toContain(
+      "App-server output transport failed: JSON line output exceeded 67108864 buffered bytes",
+    );
+    expect(onLog).toHaveBeenCalledWith(
+      "App-server output transport failed: JSON line output exceeded 67108864 buffered bytes",
+    );
+  });
 });

@@ -37,12 +37,14 @@ export class JsonLineRuntimePeer implements RuntimePeer {
   private readonly listeners = new Set<(message: JsonRpcOutgoing) => void>();
   private readonly exitListeners = new Set<(error: Error) => void>();
   private exitError?: Error;
+  private lastStderrLine?: string;
 
   constructor(private readonly options: JsonLineRuntimePeerOptions) {}
 
   async start(): Promise<void> {
     if (this.child) return;
     this.exitError = undefined;
+    this.lastStderrLine = undefined;
 
     const environment = workspaceRuntimeEnvironment(this.options.cwd, {
       ...process.env,
@@ -98,7 +100,17 @@ export class JsonLineRuntimePeer implements RuntimePeer {
     });
 
     const stderr = createInterface({ input: child.stderr });
-    stderr.on("line", (line) => this.options.onLog?.(line));
+    stderr.on("line", (line) => {
+      const detail = line.trim();
+      if (
+        detail &&
+        (detail.includes("App-server output transport failed:") ||
+          !this.lastStderrLine?.includes("App-server output transport failed:"))
+      ) {
+        this.lastStderrLine = detail.slice(-1_000);
+      }
+      this.options.onLog?.(line);
+    });
 
     await new Promise<void>((resolve, reject) => {
       const onSpawn = () => {
@@ -114,13 +126,14 @@ export class JsonLineRuntimePeer implements RuntimePeer {
       child.once("error", onError);
     });
 
-    child.once("exit", (code, signal) => {
+    child.once("close", (code, signal) => {
+      const detail = this.lastStderrLine ? `: ${this.lastStderrLine}` : ".";
       this.handleExit(
         child,
         new Error(
           signal
-            ? `Remote runtime app-server exited from ${signal}.`
-            : `Remote runtime app-server exited with code ${code ?? "unknown"}.`,
+            ? `Remote runtime app-server exited from ${signal}${detail}`
+            : `Remote runtime app-server exited with code ${code ?? "unknown"}${detail}`,
         ),
       );
     });

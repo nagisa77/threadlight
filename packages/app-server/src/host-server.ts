@@ -144,6 +144,7 @@ interface PendingResponse {
   timeout: NodeJS.Timeout;
   workspace?: TaskWorkspace;
   pendingSnapshotId?: string;
+  runtimeFailureKey?: string;
 }
 
 export class ThreadlightHostServer {
@@ -151,6 +152,7 @@ export class ThreadlightHostServer {
   private readonly port: number;
   private readonly runtimes = new Map<string, RuntimeContext>();
   private readonly runningThreads = new RunningThreadRegistry();
+  private readonly runtimeFailures = new Map<string, string>();
   private readonly pending = new Map<string, PendingResponse>();
   private readonly terminalGateway?: HostTerminalGateway;
   private readonly terminalWebSockets?: WebSocketServer;
@@ -1212,6 +1214,22 @@ export class ThreadlightHostServer {
       this.initializationParams.set(projectId, params);
     }
     const contextKey = runtimeKey(projectId, workspace.path);
+    let runtimeFailureKey: string | undefined;
+    let forwardedMessage = message;
+    if (
+      typeof params?.threadId === "string" &&
+      (message.method === "thread/resume" || message.method === "turn/start")
+    ) {
+      const key = conversationRuntimeFailureKey(projectId, params.threadId);
+      const failure = this.runtimeFailures.get(key);
+      if (failure) {
+        runtimeFailureKey = key;
+        forwardedMessage = {
+          ...message,
+          params: { ...params, runtimeError: failure },
+        };
+      }
+    }
     if (
       message.method === "turn/start" &&
       typeof params?.threadId === "string"
@@ -1246,9 +1264,10 @@ export class ThreadlightHostServer {
       timeout,
       ...(message.method === "thread/start" ? { workspace } : {}),
       ...(pendingSnapshotId ? { pendingSnapshotId } : {}),
+      ...(runtimeFailureKey ? { runtimeFailureKey } : {}),
     });
     try {
-      await context.peer.send({ ...message, id: internalId });
+      await context.peer.send({ ...forwardedMessage, id: internalId });
     } catch (error) {
       clearTimeout(timeout);
       this.pending.delete(internalId);
@@ -1273,6 +1292,9 @@ export class ThreadlightHostServer {
       if (pending) {
         clearTimeout(pending.timeout);
         this.pending.delete(message.id);
+        if (pending.runtimeFailureKey && "result" in message) {
+          this.runtimeFailures.delete(pending.runtimeFailureKey);
+        }
         if (pending.method === "thread/start" && "result" in message) {
           const threadId = (
             message.result as { threadId?: unknown } | undefined
@@ -1341,6 +1363,9 @@ export class ThreadlightHostServer {
         message.method === "turn/completed" ||
         message.method === "turn/failed"
       ) {
+        this.runtimeFailures.delete(
+          conversationRuntimeFailureKey(projectId, threadId),
+        );
         this.options.projects.markConversationCompleted({
           projectId,
           id: threadId,
@@ -1717,12 +1742,48 @@ export class ThreadlightHostServer {
     error: Error,
   ): void {
     const key = runtimeKey(projectId, context.workspacePath);
-    this.runningThreads.clearRuntime(key);
+    const interrupted = this.runningThreads.clearRuntime(key);
+    const runtimeError = boundedRuntimeError(error);
     if (this.runtimes.get(key) === context) {
       this.runtimes.delete(key);
     }
     context.unsubscribe();
     context.unsubscribeExit();
+    for (const owner of interrupted) {
+      const failureKey = conversationRuntimeFailureKey(
+        projectId,
+        owner.threadId,
+      );
+      this.runtimeFailures.set(failureKey, runtimeError);
+      try {
+        const target = { projectId, id: owner.threadId };
+        this.options.projects.markConversationAttention(target);
+        this.options.projects.markConversationUnread(target);
+      } catch {
+        // The task may have been deleted while its runtime was exiting.
+      }
+      const turnId = owner.turnId ?? `runtime-exit:${owner.threadId}`;
+      const notification: JsonRpcOutgoing = {
+        jsonrpc: "2.0",
+        method: "turn/failed",
+        params: {
+          threadId: owner.threadId,
+          turnId,
+          revision: (owner.revision ?? 0) + 1,
+          message: {
+            id: `runtime-exited:${turnId}`,
+            role: "assistant",
+            text: runtimeError,
+            error: true,
+          },
+          error: runtimeError,
+        },
+      };
+      const event = serverSentEvent(notification);
+      for (const client of this.projectEventClients(projectId)) {
+        client.write(event);
+      }
+    }
     for (const [id, pending] of this.pending) {
       if (pending.runtimeKey !== key) continue;
       clearTimeout(pending.timeout);
@@ -1733,7 +1794,7 @@ export class ThreadlightHostServer {
         id: pending.originalId,
         error: {
           code: -32002,
-          message: error.message,
+          message: runtimeError,
         },
       } satisfies JsonRpcResponse);
     }
@@ -1743,6 +1804,7 @@ export class ThreadlightHostServer {
     const contexts = [...this.runtimes.values()];
     this.runtimes.clear();
     this.runningThreads.clear();
+    this.runtimeFailures.clear();
     for (const context of contexts) {
       context.unsubscribe();
       context.unsubscribeExit();
@@ -1919,6 +1981,21 @@ function hostConversationWorkspaceRoute(
 
 function runtimeKey(projectId: string, workspacePath: string): string {
   return `${projectId}\u0000${workspacePath}`;
+}
+
+function conversationRuntimeFailureKey(
+  projectId: string,
+  threadId: string,
+): string {
+  return `${projectId}\u0000${threadId}`;
+}
+
+function boundedRuntimeError(error: Error): string {
+  const message = error.message.trim();
+  return (message || "Remote runtime app-server exited unexpectedly.").slice(
+    0,
+    2_000,
+  );
 }
 
 async function initializeRuntimePeer(

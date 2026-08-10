@@ -785,6 +785,122 @@ describe("AppServer multi-agent runtime", () => {
     await originalSettled.promise;
     await restarted.dispose();
   });
+
+  it("restores root-only agent activity with the transport failure that stopped it", async () => {
+    const store = new MemoryConversationStore();
+    store.create({
+      version: 1,
+      threadId: "thread-root-only",
+      createdAt: "2026-08-10T08:00:00.000Z",
+      updatedAt: "2026-08-10T08:00:01.000Z",
+      messages: [
+        { id: "user-1", role: "user", text: "Diagnose the transport" },
+      ],
+      agentRuns: [
+        {
+          version: 1,
+          turnId: "turn-root-only",
+          rootId: "root-agent",
+          maxConcurrent: 3,
+          status: "active",
+          createdAt: "2026-08-10T08:00:00.000Z",
+          updatedAt: "2026-08-10T08:00:01.000Z",
+          agents: [
+            {
+              pendingInput: [],
+              collected: false,
+              agent: {
+                id: "root-agent",
+                name: "threadlight",
+                role: "root",
+                task: "Diagnose the transport",
+                status: "running",
+                phase: "working",
+                createdAt: "2026-08-10T08:00:00.000Z",
+                startedAt: "2026-08-10T08:00:00.000Z",
+                elapsedMs: 1_000,
+                activities: [
+                  { id: "tool-1", name: "exec_command", status: "running" },
+                ],
+                transcript: [
+                  {
+                    id: "model:1",
+                    kind: "model",
+                    step: 1,
+                    status: "completed",
+                    text: "Inspecting output backpressure.",
+                    startedAt: "2026-08-10T08:00:00.000Z",
+                    completedAt: "2026-08-10T08:00:00.500Z",
+                    durationMs: 500,
+                    usage: {
+                      inputTokens: 4,
+                      outputTokens: 2,
+                      totalTokens: 6,
+                    },
+                  },
+                  {
+                    id: "tool-1",
+                    kind: "tool",
+                    name: "exec_command",
+                    status: "running",
+                    arguments: '{"cmd":"npm test"}',
+                    startedAt: "2026-08-10T08:00:00.500Z",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate() {
+          return { text: "unused", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({ name: "threadlight", instructions: "Work" }),
+      conversationStore: store,
+      send: (message) => messages.push(message),
+    });
+    const transportError =
+      "App-server output transport failed: JSON line output exceeded 67108864 buffered bytes";
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "thread/resume",
+      params: {
+        threadId: "thread-root-only",
+        runtimeError: transportError,
+      },
+    });
+
+    const resumed = result<{
+      messages: readonly ConversationMessageData[];
+    }>(messages, 2);
+    expect(resumed.messages.at(-1)).toMatchObject({
+      id: "agent-interrupted:turn-root-only",
+      error: true,
+      text: expect.stringContaining(transportError),
+      agentTree: {
+        rootId: "root-agent",
+        agents: [
+          expect.objectContaining({
+            id: "root-agent",
+            status: "interrupted",
+            transcript: expect.arrayContaining([
+              expect.objectContaining({ id: "model:1" }),
+              expect.objectContaining({ id: "tool-1" }),
+            ]),
+          }),
+        ],
+      },
+    });
+    await server.dispose();
+  });
 });
 
 function result<T>(messages: readonly JsonRpcOutgoing[], id: number): T {

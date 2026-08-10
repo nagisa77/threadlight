@@ -401,10 +401,11 @@ export class AppServer {
     provider?: string;
     model?: string;
   }> {
-    const { threadId } = objectParams(params);
+    const { threadId, runtimeError: runtimeErrorValue } = objectParams(params);
     requireString(threadId, "threadId");
+    const runtimeError = parseRuntimeError(runtimeErrorValue);
 
-    const thread = await this.requireThread(threadId);
+    const thread = await this.requireThread(threadId, runtimeError);
     if (
       !thread.activeTurn &&
       (thread.conversation.queuedTurns?.length ?? 0) > 0
@@ -449,12 +450,15 @@ export class AppServer {
    * store after a runtime restart. Keeps every thread-scoped RPC working even
    * when the client skips (or loses) the explicit resume round trip.
    */
-  private async requireThread(threadId: string): Promise<ThreadState> {
+  private async requireThread(
+    threadId: string,
+    runtimeError?: string,
+  ): Promise<ThreadState> {
     const existing = this.threads.get(threadId);
     if (existing) return existing;
     const conversation = await this.conversationStore.load(threadId);
     if (conversation) {
-      const thread = await this.createThreadState(conversation);
+      const thread = await this.createThreadState(conversation, runtimeError);
       this.threads.set(threadId, thread);
       return thread;
     }
@@ -599,13 +603,23 @@ export class AppServer {
     params: unknown,
   ): Promise<{ capabilities: readonly CapabilityDescriptor[] }> {
     const { threadId } = objectParams(params);
-    requireString(threadId, "threadId");
-    const thread = await this.requireThread(threadId);
-    return {
-      capabilities: (thread.runtime?.capabilities ?? []).map((capability) => ({
-        ...capability,
-      })),
-    };
+    if (threadId !== undefined) {
+      requireString(threadId, "threadId");
+      const thread = await this.requireThread(threadId);
+      return {
+        capabilities: cloneCapabilities(thread.runtime?.capabilities),
+      };
+    }
+
+    // A new-task draft intentionally has no thread or workspace until its
+    // first turn. Discover against the current project runtime without
+    // persisting that preview as a hidden conversation.
+    const runtime = await this.threadRuntimeFactory?.();
+    try {
+      return { capabilities: cloneCapabilities(runtime?.capabilities) };
+    } finally {
+      await runtime?.dispose?.();
+    }
   }
 
   private async connectorStatus(params: unknown): Promise<ConnectorStatusData> {
@@ -733,6 +747,7 @@ export class AppServer {
       capabilityRefs: capabilityRefsValue,
       provider: providerValue,
       model: modelValue,
+      runtimeError: runtimeErrorValue,
     } = objectParams(params);
     requireString(threadId, "threadId");
     if (typeof input !== "string") {
@@ -744,6 +759,7 @@ export class AppServer {
     const accessMode = parseConversationAccessMode(accessModeValue);
     const provider = parseModelProvider(providerValue);
     const model = parseModelName(modelValue);
+    const runtimeError = parseRuntimeError(runtimeErrorValue);
     for (const attachment of attachments) {
       this.requireLocalAttachment(attachment);
     }
@@ -751,7 +767,7 @@ export class AppServer {
       throw new RpcError(-32602, "A turn requires text or an attachment");
     }
 
-    const thread = await this.requireThread(threadId);
+    const thread = await this.requireThread(threadId, runtimeError);
     const availableCapabilities = thread.runtime?.capabilities ?? [];
     const availableCapabilityIds = new Set(
       availableCapabilities.map(({ id }) => id),
@@ -2038,10 +2054,12 @@ export class AppServer {
 
   private async createThreadState(
     storedConversation: StoredConversation,
+    runtimeError?: string,
   ): Promise<ThreadState> {
     const conversation = interruptActiveAgentRuns(
       storedConversation,
       this.now().toISOString(),
+      runtimeError,
     );
     if (conversation !== storedConversation) {
       await this.conversationStore.save(conversation);
@@ -2668,6 +2686,14 @@ function parseModelName(value: unknown): string | undefined {
   return value;
 }
 
+function parseRuntimeError(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length === 0 || value.length > 2_000) {
+    throw new RpcError(-32602, "runtimeError must be a non-empty string");
+  }
+  return value;
+}
+
 function parseCapabilityRefs(value: unknown): readonly string[] {
   if (value === undefined) return [];
   if (
@@ -2705,6 +2731,12 @@ function snapshotCapabilities(
       ...(capability.icon ? { icon: capability.icon } : {}),
     };
   });
+}
+
+function cloneCapabilities(
+  capabilities: readonly CapabilityDescriptor[] | undefined,
+): readonly CapabilityDescriptor[] {
+  return (capabilities ?? []).map((capability) => ({ ...capability }));
 }
 
 function isAttachment(value: unknown): value is AttachmentData {
@@ -2884,6 +2916,7 @@ function projectStoredAgentThread(
 function interruptActiveAgentRuns(
   conversation: StoredConversation,
   interruptedAt: string,
+  runtimeError?: string,
 ): StoredConversation {
   const activeRuns = (conversation.agentRuns ?? []).filter(
     ({ status }) => status === "active",
@@ -2916,7 +2949,9 @@ function interruptActiveAgentRuns(
             phase: "done" as const,
             completedAt: interruptedAt,
             latestActivity: "Interrupted by app server restart",
-            error: "The app server stopped before this agent thread completed.",
+            error: runtimeError
+              ? `The app server stopped before this agent thread completed: ${runtimeError}`
+              : "The app server stopped before this agent thread completed.",
           },
         };
       }),
@@ -2938,11 +2973,11 @@ function interruptActiveAgentRuns(
     messages.push({
       id,
       role: "assistant",
-      text: "The previous turn was interrupted when the app server stopped. Its agent activity was preserved for review; retry explicitly to avoid repeating side effects.",
+      text: runtimeError
+        ? `The previous turn was interrupted when the app server stopped: ${runtimeError}\n\nIts agent activity was preserved for review; retry explicitly to avoid repeating side effects.`
+        : "The previous turn was interrupted when the app server stopped. Its agent activity was preserved for review; retry explicitly to avoid repeating side effects.",
       error: true,
-      ...(tree.agents.some(({ parentId }) => parentId === tree.rootId)
-        ? { agentTree: tree }
-        : {}),
+      ...(tree.agents.length > 0 ? { agentTree: tree } : {}),
     });
   }
 

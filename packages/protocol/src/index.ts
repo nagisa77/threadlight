@@ -1272,7 +1272,8 @@ export interface ThreadlightMethodMap {
     result: PullRequestDescriptionData;
   };
   "capability/list": {
-    params: { threadId: string };
+    /** Omit threadId to list capabilities for a new-task draft. */
+    params: { threadId?: string };
     result: { capabilities: readonly CapabilityDescriptor[] };
   };
   "connector/status": {

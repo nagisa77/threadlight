@@ -42,8 +42,17 @@ describe("RunningThreadRegistry", () => {
       },
     });
 
-    registry.clearRuntime("runtime-1");
+    const cleared = registry.clearRuntime("runtime-1");
 
+    expect(cleared).toEqual([
+      {
+        threadId: "thread-1",
+        projectId: "project-1",
+        runtimeId: "runtime-1",
+        turnId: "turn-1",
+        revision: 1,
+      },
+    ]);
     expect(registry.threadIds()).toEqual(["thread-2"]);
   });
 

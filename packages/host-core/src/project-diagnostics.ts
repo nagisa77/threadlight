@@ -28,9 +28,7 @@ export function projectDiagnostics(
         conversation.title,
       ),
     )
-    .sort((left, right) =>
-      right.completedAt.localeCompare(left.completedAt),
-    );
+    .sort((left, right) => right.completedAt.localeCompare(left.completedAt));
   return {
     projectId: project.id,
     projectName: project.name,
@@ -62,20 +60,17 @@ function readConversationDiagnostics(
   try {
     value = JSON.parse(
       readFileSync(
-        join(
-          basePath,
-          ".threadlight",
-          "conversations",
-          `${threadId}.json`,
-        ),
+        join(basePath, ".threadlight", "conversations", `${threadId}.json`),
         "utf8",
       ),
     );
   } catch {
     return [];
   }
-  if (!isRecord(value) || !Array.isArray(value.messages)) return [];
-  return value.messages.flatMap((message) => {
+  if (!isRecord(value)) return [];
+  const messageTurns = (
+    Array.isArray(value.messages) ? value.messages : []
+  ).flatMap((message) => {
     if (
       !isRecord(message) ||
       message.role !== "assistant" ||
@@ -129,6 +124,115 @@ function readConversationDiagnostics(
       },
     ];
   });
+  const interruptedTurns = (
+    Array.isArray(value.agentRuns) ? value.agentRuns : []
+  ).flatMap((run) => {
+    const diagnostic = interruptedAgentRunDiagnostic(
+      run,
+      threadId,
+      title,
+      typeof value.model === "string" ? value.model : undefined,
+    );
+    return diagnostic ? [diagnostic] : [];
+  });
+  return [...messageTurns, ...interruptedTurns];
+}
+
+function interruptedAgentRunDiagnostic(
+  value: unknown,
+  threadId: string,
+  title: string,
+  model?: string,
+): HostTurnDiagnostic | undefined {
+  if (
+    !isRecord(value) ||
+    value.status !== "interrupted" ||
+    typeof value.rootId !== "string" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string" ||
+    !Array.isArray(value.agents)
+  ) {
+    return;
+  }
+  const root: DiagnosticScope = emptyScope();
+  const children: DiagnosticScope = emptyScope();
+  for (const stored of value.agents) {
+    if (!isRecord(stored) || !isRecord(stored.agent)) continue;
+    const agent = stored.agent;
+    if (
+      typeof agent.id !== "string" ||
+      typeof agent.role !== "string" ||
+      !Array.isArray(agent.transcript)
+    ) {
+      continue;
+    }
+    const scope = agent.id === value.rootId ? root : children;
+    for (const entry of agent.transcript) {
+      if (!isRecord(entry) || typeof entry.id !== "string") continue;
+      if (entry.kind === "model" && Number.isInteger(entry.step)) {
+        const usage = isUsage(entry.usage)
+          ? entry.usage
+          : { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        scope.modelSteps.push({
+          step: Number(entry.step),
+          durationMs: isNonNegativeNumber(entry.durationMs)
+            ? entry.durationMs
+            : 0,
+          usage,
+          agentId: agent.id,
+          agentRole: agent.role,
+        });
+        scope.usage = addUsage(scope.usage, usage);
+      } else if (entry.kind === "tool" && typeof entry.name === "string") {
+        scope.toolCalls.push({
+          callId: entry.id,
+          name: entry.name,
+          durationMs: isNonNegativeNumber(entry.durationMs)
+            ? entry.durationMs
+            : 0,
+          isError: entry.isError === true || entry.status === "failed",
+          ...(typeof entry.errorCode === "string"
+            ? { errorCode: entry.errorCode }
+            : {}),
+          agentId: agent.id,
+          agentRole: agent.role,
+        });
+      }
+    }
+  }
+  const total: DiagnosticScope = {
+    usage: addUsage(root.usage, children.usage),
+    modelSteps: [...root.modelSteps, ...children.modelSteps],
+    toolCalls: [...root.toolCalls, ...children.toolCalls],
+  };
+  const elapsed = Date.parse(value.updatedAt) - Date.parse(value.createdAt);
+  return {
+    threadId,
+    title,
+    status: "failed",
+    startedAt: value.createdAt,
+    completedAt: value.updatedAt,
+    durationMs: Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0,
+    ...(model ? { model } : {}),
+    inputTokens: total.usage.inputTokens,
+    outputTokens: total.usage.outputTokens,
+    totalTokens: total.usage.totalTokens,
+    modelSteps: total.modelSteps.map((step) => ({
+      step: step.step,
+      durationMs: step.durationMs,
+      inputTokens: step.usage.inputTokens,
+      outputTokens: step.usage.outputTokens,
+      totalTokens: step.usage.totalTokens,
+      ...(step.agentId ? { agentId: step.agentId } : {}),
+      ...(step.agentRole ? { agentRole: step.agentRole } : {}),
+    })),
+    toolCalls: total.toolCalls.map((tool) => ({ ...tool })),
+    metrics: {
+      root: hostScope(root),
+      children: hostScope(children),
+      total: hostScope(total),
+    },
+  };
 }
 
 interface StoredDiagnostics {
@@ -253,6 +357,22 @@ function hostScope(scope: DiagnosticScope) {
   };
 }
 
+function emptyScope(): DiagnosticScope {
+  return {
+    usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    modelSteps: [],
+    toolCalls: [],
+  };
+}
+
+function addUsage(left: Usage, right: Usage): Usage {
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    totalTokens: left.totalTokens + right.totalTokens,
+  };
+}
+
 function isUsage(value: unknown): value is Usage {
   return (
     isRecord(value) &&
@@ -270,9 +390,6 @@ function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
-function sum<T>(
-  values: readonly T[],
-  select: (value: T) => number,
-): number {
+function sum<T>(values: readonly T[], select: (value: T) => number): number {
   return values.reduce((total, value) => total + select(value), 0);
 }

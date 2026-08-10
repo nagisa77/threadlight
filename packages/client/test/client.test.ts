@@ -205,6 +205,36 @@ describe("ThreadlightClient", () => {
     client.dispose();
   });
 
+  it("lists capabilities before a new-task draft has a thread", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const listed = client.listCapabilities();
+    expect(transport.sent[0]).toMatchObject({
+      method: "capability/list",
+      params: {},
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        capabilities: [
+          {
+            id: "tool:plan",
+            kind: "tool",
+            name: "Plan",
+            description: "Create a controlled plan",
+          },
+        ],
+      },
+    });
+
+    await expect(listed).resolves.toMatchObject({
+      capabilities: [{ id: "tool:plan" }],
+    });
+    client.dispose();
+  });
+
   it("sends an explicit user-selected Plan mode with the turn", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

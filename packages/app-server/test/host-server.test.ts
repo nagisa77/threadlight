@@ -1770,6 +1770,135 @@ describe("ThreadlightHostServer", () => {
     });
   });
 
+  it("marks running tasks for attention and forwards the transport failure into recovery", async () => {
+    const root = temporaryDirectory("threadlight-host-runtime-failure-");
+    const workspace = createWorkspace(root, "project", "runtime failure");
+    const projects = new ProjectStore(join(root, "home", "project-map.json"), {
+      createId: () => "project-1",
+    });
+    projects.register(workspace);
+    projects.upsertConversation({
+      projectId: "project-1",
+      id: "thread-1",
+      title: "Backpressured task",
+    });
+    projects.markConversationPending({
+      projectId: "project-1",
+      id: "thread-1",
+    });
+    const firstPeer = new ScriptedRuntimePeer((request, emit) => {
+      emit({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { name: "threadlight", protocolVersion: "0.1" },
+      });
+    });
+    const secondPeer = new ScriptedRuntimePeer((request, emit) => {
+      emit({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result:
+          request.method === "thread/resume"
+            ? {
+                threadId: "thread-1",
+                messages: [],
+                queuedTurns: [],
+                revision: 2,
+              }
+            : { name: "threadlight", protocolVersion: "0.1" },
+      });
+    });
+    const peers = [firstPeer, secondPeer];
+    const server = new ThreadlightHostServer({
+      token: "test-token",
+      hostId: "host-1",
+      name: "Runtime failure host",
+      homePath: join(root, "home"),
+      projects,
+      settings: new SettingsStore(join(root, "home", "settings.json"), {
+        encrypt: (value) => value,
+        decrypt: (value) => value,
+      }),
+      port: 0,
+      createPeer: () => peers.shift()!,
+    });
+    servers.push(server);
+    const address = await server.start();
+    const endpoint = `http://127.0.0.1:${address.port}`;
+
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: { jsonrpc: "2.0", id: 1, method: "initialize" },
+    });
+    firstPeer.emit({
+      jsonrpc: "2.0",
+      method: "turn/started",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        revision: 7,
+        mode: "default",
+        activeTurn: {
+          turnId: "turn-1",
+          revision: 7,
+          mode: "default",
+          isThinking: true,
+          streamingText: "working",
+          progress: [],
+        },
+      },
+    });
+    const response = await fetch(
+      `${endpoint}/v1/projects/project-1/runtime/events`,
+      { headers: { Authorization: "Bearer test-token" } },
+    );
+    const events = new TestSseReader(response.body!);
+    const transportError =
+      "Remote runtime app-server exited with code 1: App-server output transport failed: JSON line output exceeded 67108864 buffered bytes";
+
+    firstPeer.exit(new Error(transportError));
+
+    await expect(events.nextData()).resolves.toBe(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        method: "turn/failed",
+        params: {
+          threadId: "thread-1",
+          turnId: "turn-1",
+          revision: 8,
+          message: {
+            id: "runtime-exited:turn-1",
+            role: "assistant",
+            text: transportError,
+            error: true,
+          },
+          error: transportError,
+        },
+      }),
+    );
+    expect(
+      projects
+        .snapshot()
+        .projects[0]?.conversations.find(({ id }) => id === "thread-1"),
+    ).toMatchObject({ status: "attention", unread: true });
+
+    await authenticatedJson(`${endpoint}/v1/projects/project-1/runtime/rpc`, {
+      method: "POST",
+      body: {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "thread/resume",
+        params: { threadId: "thread-1" },
+      },
+    });
+    expect(
+      secondPeer.requests.find(({ method }) => method === "thread/resume"),
+    ).toMatchObject({
+      params: { threadId: "thread-1", runtimeError: transportError },
+    });
+    await events.cancel();
+  });
+
   it("owns interactive terminal sessions on the Host over an authenticated WebSocket", async () => {
     const root = temporaryDirectory("threadlight-host-terminal-");
     const workspace = createWorkspace(root, "project", "value");

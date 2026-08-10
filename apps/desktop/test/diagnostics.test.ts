@@ -195,15 +195,157 @@ describe("project diagnostics", () => {
         { agentRole: "explorer" },
         { agentRole: "explorer" },
       ],
-      toolCalls: [
-        { agentRole: "root" },
-        { agentRole: "explorer" },
-      ],
+      toolCalls: [{ agentRole: "root" }, { agentRole: "explorer" }],
       metrics: {
         root: { totalTokens: 6, modelSteps: 1, toolCalls: 1 },
         children: { totalTokens: 10, modelSteps: 2, toolCalls: 1 },
         total: { totalTokens: 16, modelSteps: 3, toolCalls: 2 },
       },
+    });
+  });
+
+  it("reads interrupted root-only activity directly from persisted agent runs", async () => {
+    const root = mkdtempSync(
+      join(tmpdir(), "threadlight-diagnostics-root-run-"),
+    );
+    const snapshots = mkdtempSync(
+      join(tmpdir(), "threadlight-snapshots-root-run-"),
+    );
+    directories.push(root, snapshots);
+    const conversationDirectory = join(root, ".threadlight", "conversations");
+    mkdirSync(conversationDirectory, { recursive: true });
+    writeFileSync(
+      join(conversationDirectory, "thread-1.json"),
+      JSON.stringify({
+        version: 1,
+        threadId: "thread-1",
+        createdAt: "2026-08-10T08:00:00.000Z",
+        updatedAt: "2026-08-10T08:00:01.000Z",
+        model: "scripted-model",
+        messages: [
+          {
+            id: "agent-interrupted:turn-root",
+            role: "assistant",
+            text: "Transport stopped.",
+            error: true,
+          },
+        ],
+        agentRuns: [
+          {
+            version: 1,
+            turnId: "turn-root",
+            rootId: "root-agent",
+            maxConcurrent: 3,
+            status: "interrupted",
+            createdAt: "2026-08-10T08:00:00.000Z",
+            updatedAt: "2026-08-10T08:00:01.000Z",
+            agents: [
+              {
+                pendingInput: [],
+                collected: false,
+                agent: {
+                  id: "root-agent",
+                  name: "threadlight",
+                  role: "root",
+                  task: "Diagnose transport backpressure",
+                  status: "interrupted",
+                  phase: "done",
+                  createdAt: "2026-08-10T08:00:00.000Z",
+                  startedAt: "2026-08-10T08:00:00.000Z",
+                  completedAt: "2026-08-10T08:00:01.000Z",
+                  elapsedMs: 1_000,
+                  error: "JSON line output exceeded the buffer",
+                  activities: [],
+                  transcript: [
+                    {
+                      id: "model:1",
+                      kind: "model",
+                      step: 1,
+                      status: "completed",
+                      text: "Inspecting the transport.",
+                      startedAt: "2026-08-10T08:00:00.000Z",
+                      completedAt: "2026-08-10T08:00:00.600Z",
+                      durationMs: 600,
+                      usage: {
+                        inputTokens: 8,
+                        outputTokens: 3,
+                        totalTokens: 11,
+                      },
+                    },
+                    {
+                      id: "tool-1",
+                      kind: "tool",
+                      name: "exec_command",
+                      status: "completed",
+                      arguments: '{"cmd":"npm test"}',
+                      output: "ok",
+                      startedAt: "2026-08-10T08:00:00.600Z",
+                      completedAt: "2026-08-10T08:00:00.800Z",
+                      durationMs: 200,
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    const project = {
+      id: "project-1",
+      name: "Root recovery",
+      basePath: root,
+      conversations: [{ id: "thread-1", title: "Interrupted root" }],
+    };
+
+    const snapshot = projectDiagnostics(project);
+    expect(snapshot.totals).toMatchObject({
+      turns: 1,
+      failedTurns: 1,
+      inputTokens: 8,
+      outputTokens: 3,
+      totalTokens: 11,
+      modelSteps: 1,
+      toolCalls: 1,
+      toolDurationMs: 200,
+    });
+    expect(snapshot.turns[0]).toMatchObject({
+      status: "failed",
+      model: "scripted-model",
+      modelSteps: [{ agentId: "root-agent", agentRole: "root" }],
+      toolCalls: [{ agentId: "root-agent", agentRole: "root" }],
+    });
+
+    const bundle = await projectDiagnosticBundle(project, {
+      changes: new ConversationChangeTracker(snapshots),
+      environment: {
+        runtime: "desktop",
+        platform: "darwin",
+        architecture: "arm64",
+        nodeVersion: "v22.0.0",
+      },
+    });
+    expect(bundle.agents).toEqual([
+      expect.objectContaining({
+        agentId: "root-agent",
+        rootId: "root-agent",
+        messageId: "agent-run:turn-root",
+        status: "interrupted",
+      }),
+    ]);
+    expect(bundle.timeline.map(({ kind }) => kind)).toEqual([
+      "agent",
+      "model",
+      "tool",
+    ]);
+    expect(bundle.errors.map(({ code }) => code)).toEqual(
+      expect.arrayContaining(["TURN_FAILED", "AGENT_INTERRUPTED"]),
+    );
+    expect(bundle.summary.totals).toMatchObject({
+      failedTurns: 1,
+      totalTokens: 11,
+      modelSteps: 1,
+      toolCalls: 1,
     });
   });
 

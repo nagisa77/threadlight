@@ -30,6 +30,59 @@ afterEach(() => {
 });
 
 describe("capability registry", () => {
+  it("previews capabilities for a new-task draft without creating a thread", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const dispose = vi.fn();
+    const provider: ModelProvider = {
+      async generate() {
+        throw new Error("Capability preview must not call the model");
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "draft", instructions: "Base." }),
+      threadRuntimeFactory: () => ({
+        capabilities: [
+          {
+            id: "tool:plan",
+            kind: "tool",
+            name: "Plan",
+            description: "Create a controlled plan.",
+            visibility: "featured",
+          },
+          {
+            id: "skill:documents",
+            kind: "skill",
+            name: "documents",
+            description: "Create document artifacts.",
+            visibility: "featured",
+          },
+        ],
+        dispose,
+      }),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "capability/list",
+      params: {},
+    });
+
+    expect(
+      result<{ capabilities: Array<{ id: string }> }>(messages, 2),
+    ).toEqual({
+      capabilities: [
+        expect.objectContaining({ id: "tool:plan" }),
+        expect.objectContaining({ id: "skill:documents" }),
+      ],
+    });
+    expect(dispose).toHaveBeenCalledOnce();
+    await server.dispose();
+  });
+
   it("features repository and built-in skills while keeping user skills searchable", async () => {
     const root = temporaryDirectory("threadlight-capability-visibility-");
     const builtinSkills = join(root, "builtin-skills");

@@ -102,7 +102,13 @@ function AgentTreeContent({
   onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
-  const agents = tree.agents.filter(({ parentId }) => parentId === tree.rootId);
+  const childAgents = tree.agents.filter(
+    ({ parentId }) => parentId === tree.rootId,
+  );
+  const agents =
+    childAgents.length > 0
+      ? childAgents
+      : tree.agents.filter(({ id }) => id === tree.rootId);
   const activeCount = agents.filter(
     ({ status }) => status === "queued" || status === "running",
   ).length;
@@ -201,7 +207,9 @@ function AgentTreeContent({
               <AgentStatusIcon agent={agent} />
               <span className="agent-row-copy">
                 <span className="agent-row-title">
-                  <strong>{agent.name}</strong>
+                  <strong>
+                    {agent.id === tree.rootId ? t("mainAgent") : agent.name}
+                  </strong>
                   <small>{agent.task}</small>
                 </span>
                 <span className="agent-row-meta">

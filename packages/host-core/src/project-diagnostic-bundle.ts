@@ -143,6 +143,7 @@ export async function projectDiagnosticBundle(
   const files: HostDiagnosticFile[] = [];
   const errors: HostDiagnosticError[] = [];
   const agents: HostDiagnosticAgent[] = [];
+  const seenAgents = new Set<string>();
   const timeline: OrderedTimelineEvent[] = [];
   let timelineOrder = 0;
   let missingSnapshots = 0;
@@ -256,9 +257,20 @@ export async function projectDiagnosticBundle(
           timeline,
           errors,
           () => timelineOrder++,
+          seenAgents,
         );
       }
     }
+    collectAgentRunEvents(
+      stored,
+      conversation.id,
+      sanitizer,
+      agents,
+      timeline,
+      errors,
+      () => timelineOrder++,
+      seenAgents,
+    );
     conversations.push({
       threadId: conversation.id,
       title: sanitizer.text(conversation.title).value,
@@ -799,6 +811,7 @@ function collectAgentEvents(
   timeline: OrderedTimelineEvent[],
   errors: HostDiagnosticError[],
   nextOrder: () => number,
+  seenAgents: Set<string>,
 ): void {
   if (!isRecord(value) || !isRecord(value.agentTree)) return;
   const tree = value.agentTree;
@@ -824,6 +837,9 @@ function collectAgentEvents(
       Record<string, unknown>
     >;
     const agentId = candidate.id;
+    const agentKey = `${threadId}:${tree.rootId}:${agentId}`;
+    if (seenAgents.has(agentKey)) continue;
+    seenAgents.add(agentKey);
     const parentId = stringValue(candidate.parentId);
     const name = stringValue(record.name) ?? "agent";
     const role = stringValue(record.role) ?? "agent";
@@ -892,7 +908,7 @@ function collectAgentEvents(
       });
     }
 
-    if (!parentId || !Array.isArray(candidate.transcript)) continue;
+    if (!Array.isArray(candidate.transcript)) continue;
     for (const rawEntry of candidate.transcript) {
       if (!isRecord(rawEntry) || typeof rawEntry.id !== "string") continue;
       const entry = sanitizedJsonValue(rawEntry, sanitizer) as Readonly<
@@ -958,6 +974,50 @@ function collectAgentEvents(
         });
       }
     }
+  }
+}
+
+function collectAgentRunEvents(
+  value: unknown,
+  threadId: string,
+  sanitizer: DiagnosticTextSanitizer,
+  agents: HostDiagnosticAgent[],
+  timeline: OrderedTimelineEvent[],
+  errors: HostDiagnosticError[],
+  nextOrder: () => number,
+  seenAgents: Set<string>,
+): void {
+  if (!isRecord(value) || !Array.isArray(value.agentRuns)) return;
+  for (const run of value.agentRuns) {
+    if (
+      !isRecord(run) ||
+      typeof run.turnId !== "string" ||
+      typeof run.rootId !== "string" ||
+      !Number.isInteger(run.maxConcurrent) ||
+      !Array.isArray(run.agents)
+    ) {
+      continue;
+    }
+    const projectedAgents = run.agents.flatMap((stored) =>
+      isRecord(stored) && isRecord(stored.agent) ? [stored.agent] : [],
+    );
+    collectAgentEvents(
+      {
+        agentTree: {
+          rootId: run.rootId,
+          maxConcurrent: run.maxConcurrent,
+          agents: projectedAgents,
+        },
+      },
+      threadId,
+      `agent-run:${run.turnId}`,
+      sanitizer,
+      agents,
+      timeline,
+      errors,
+      nextOrder,
+      seenAgents,
+    );
   }
 }
 

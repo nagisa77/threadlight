@@ -1307,7 +1307,7 @@ function ThreadlightAppContent({
     setConnectorSetup(undefined);
     setConnectorBusy(false);
     setConnectorError(undefined);
-    if (state.connection !== "ready" || !state.threadId) {
+    if (state.connection !== "ready") {
       setCapabilities([]);
       setCapabilitiesLoading(false);
       return;

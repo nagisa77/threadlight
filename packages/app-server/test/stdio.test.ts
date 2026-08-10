@@ -1,9 +1,16 @@
 import { Writable } from "node:stream";
 
+import {
+  AgentLoop,
+  defineAgent,
+  defineTool,
+  type ModelProvider,
+} from "@threadlight/agent-loop";
 import type { JsonRpcOutgoing } from "@threadlight/protocol";
 import { describe, expect, it, vi } from "vitest";
 
-import { jsonLineSender } from "../src/stdio.js";
+import { AppServer } from "../src/app-server.js";
+import { appServerOutputCoalesceKey, jsonLineSender } from "../src/stdio.js";
 
 describe("jsonLineSender", () => {
   it("keeps only one transport write in flight while output is backpressured", async () => {
@@ -138,6 +145,121 @@ describe("jsonLineSender", () => {
       message: expect.stringContaining("buffered bytes"),
     });
     output.destroy();
+  });
+
+  it("delivers lifecycle completion after many scripted deltas stall stdout", async () => {
+    const chunks: string[] = [];
+    const callbacks: ((error?: Error | null) => void)[] = [];
+    const rawMessages: JsonRpcOutgoing[] = [];
+    const onError = vi.fn();
+    const completed = Promise.withResolvers<void>();
+    const output = new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        chunks.push(chunk.toString("utf8"));
+        callbacks.push(callback);
+      },
+    });
+    const sendLine = jsonLineSender(output, {
+      maxBufferedBytes: 512 * 1024,
+      coalesceKey: appServerOutputCoalesceKey,
+      onError,
+    });
+    let modelStep = 0;
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        modelStep += 1;
+        for (let index = 0; index < 6_000; index += 1) {
+          options?.onEvent?.({ type: "output_text.delta", delta: "x" });
+        }
+        return modelStep === 1
+          ? {
+              text: "x".repeat(6_000),
+              toolCalls: [{ id: "noop-1", name: "noop", arguments: {} }],
+            }
+          : { text: "done", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "scripted",
+        instructions: "Exercise transport backpressure",
+        tools: [
+          defineTool({
+            name: "noop",
+            description: "Return a fixed value",
+            mutability: "read",
+            parameters: { type: "object" },
+            async execute() {
+              return "ok";
+            },
+          }),
+        ],
+      }),
+      send(message) {
+        rawMessages.push(message);
+        sendLine(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      rawMessages.find((message) => "id" in message && message.id === 2) as {
+        result: { threadId: string };
+      }
+    ).result.threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "stream" },
+    });
+    await completed.promise;
+
+    for (let index = 0; index < 100; index += 1) {
+      if (
+        chunks.some(
+          (chunk) =>
+            (JSON.parse(chunk) as { method?: string }).method ===
+            "turn/completed",
+        )
+      ) {
+        break;
+      }
+      callbacks.shift()?.();
+      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    }
+
+    expect(onError).not.toHaveBeenCalled();
+    const delivered = chunks.map(
+      (chunk) => JSON.parse(chunk) as JsonRpcOutgoing,
+    );
+    const lifecycle = delivered.flatMap((message) => {
+      if (!("method" in message)) return [];
+      if (message.method === "turn/completed") return [message.method];
+      if (message.method !== "agent/event") return [];
+      const event = (message.params as { event?: { type?: string } }).event;
+      return event?.type && event.type !== "model.output_text.delta"
+        ? [event.type]
+        : [];
+    });
+    expect(lifecycle).toEqual(
+      expect.arrayContaining([
+        "model.completed",
+        "tool.started",
+        "tool.completed",
+        "turn/completed",
+      ]),
+    );
+    expect(lifecycle.at(-1)).toBe("turn/completed");
+
+    callbacks.shift()?.();
+    output.destroy();
+    await server.dispose();
   });
 });
 

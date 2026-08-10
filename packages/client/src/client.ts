@@ -124,8 +124,10 @@ export class ThreadlightClient {
     return this.request("thread/delete", { threadId });
   }
 
-  listCapabilities(threadId: string) {
-    return this.request("capability/list", { threadId });
+  listCapabilities(threadId?: string) {
+    return this.request("capability/list", {
+      ...(threadId ? { threadId } : {}),
+    });
   }
 
   connectorStatus(threadId: string, capabilityId: string) {

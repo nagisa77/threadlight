@@ -95,6 +95,27 @@ describe("AgentTreePanel", () => {
     expect(html).toContain("已中断");
   });
 
+  it("shows root-only activity preserved by runtime recovery", () => {
+    const rootOnly = {
+      ...tree,
+      agents: [
+        {
+          ...tree.agents[0]!,
+          status: "interrupted" as const,
+          phase: "done" as const,
+          latestActivity: "exec_command",
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(<AgentTreePanel tree={rootOnly} />);
+
+    expect(html).toContain('<details class="agent-tree" open="">');
+    expect(html).toContain("主 Agent");
+    expect(html).toContain("Implement multi-agent support");
+    expect(html).toContain("exec_command");
+    expect(html).toContain("已中断");
+  });
+
   it("renders a closed thread as final without offering retry", () => {
     const closed = {
       ...tree,

@@ -45,7 +45,11 @@ import { FileSuggestionStore } from "./suggestion-store.js";
 import { createDesktopComputerClientFromEnvironment } from "./desktop-computer-client.js";
 import { createDesktopConnectionClientFromEnvironment } from "./desktop-connection-client.js";
 import { ModelStatePersistence } from "./model-state-persistence.js";
-import { jsonLineSender, serveJsonLines } from "./stdio.js";
+import {
+  appServerOutputCoalesceKey,
+  jsonLineSender,
+  serveJsonLines,
+} from "./stdio.js";
 import {
   createSkillPluginThreadRuntime,
   type MentionableToolCapability,
@@ -214,17 +218,7 @@ const agentFactory = createWorkspaceAgentFactory({
 let outputFailureStarted = false;
 let disposeAfterOutputFailure: (() => Promise<void>) | undefined;
 const send = jsonLineSender(process.stdout, {
-  coalesceKey(message) {
-    if (!("method" in message) || message.method !== "agent/tree-updated") {
-      return;
-    }
-    const params = message.params as
-      { threadId?: unknown; turnId?: unknown } | undefined;
-    return typeof params?.threadId === "string" &&
-      typeof params.turnId === "string"
-      ? `${message.method}:${params.threadId}:${params.turnId}`
-      : undefined;
-  },
+  coalesceKey: appServerOutputCoalesceKey,
   onError(error) {
     if (outputFailureStarted) return;
     outputFailureStarted = true;

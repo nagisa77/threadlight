@@ -23,6 +23,39 @@ interface PendingJsonLine {
   coalesceKey?: string;
 }
 
+/**
+ * Keeps display snapshots bounded while preserving every lifecycle event.
+ * Model deltas carry a complete active-turn snapshot, so only the newest
+ * queued delta for a turn is useful after stdout becomes backpressured.
+ */
+export function appServerOutputCoalesceKey(
+  message: JsonRpcOutgoing,
+): string | undefined {
+  if (!("method" in message)) return;
+  const params = message.params as
+    | {
+        threadId?: unknown;
+        turnId?: unknown;
+        event?: { type?: unknown };
+      }
+    | undefined;
+  if (
+    typeof params?.threadId !== "string" ||
+    typeof params.turnId !== "string"
+  ) {
+    return;
+  }
+  if (message.method === "agent/tree-updated") {
+    return `${message.method}:${params.threadId}:${params.turnId}`;
+  }
+  if (
+    message.method === "agent/event" &&
+    params.event?.type === "model.output_text.delta"
+  ) {
+    return `${message.method}:model.output_text.delta:${params.threadId}:${params.turnId}`;
+  }
+}
+
 export function jsonLineSender(
   output: Writable,
   options: JsonLineSenderOptions = {},
