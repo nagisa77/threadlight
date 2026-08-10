@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -232,5 +233,68 @@ chmod 0755 "$prefix/bin/threadlight-host"
       readFileSync(join(configRoot, "threadlight", "self-host.json"), "utf8"),
     ) as { origins: string[] };
     expect(savedConfig.origins).toEqual(["https://nagisa77.github.io"]);
+  });
+
+  it("restores executable permissions for the node-pty spawn helper", () => {
+    const root = mkdtempSync(join(tmpdir(), "threadlight-node-pty-mode-"));
+    temporaryRoots.push(root);
+    const configRoot = join(root, "config");
+    const dataRoot = join(root, "data");
+    const fakeBin = join(root, "bin");
+    const fakePackage = join(root, "threadlight-host.tgz");
+    const fakeNpm = join(fakeBin, "npm");
+    const startedMarker = join(root, "host-started");
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(fakePackage, "offline fixture\n");
+    writeFileSync(
+      fakeNpm,
+      `#!/bin/sh
+set -eu
+prefix=
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--prefix" ]; then
+    prefix=$2
+    shift 2
+  else
+    shift
+  fi
+done
+helper="$prefix/lib/node_modules/@threadlight/host/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper"
+mkdir -p "$prefix/bin" "$(dirname "$helper")"
+printf '#!/bin/sh\\nexit 0\\n' > "$helper"
+chmod 0644 "$helper"
+cat > "$prefix/bin/threadlight-host" <<'HOST'
+#!/bin/sh
+set -eu
+[ -x "$THREADLIGHT_FAKE_SPAWN_HELPER" ]
+touch "$THREADLIGHT_HOST_STARTED_MARKER"
+HOST
+chmod 0755 "$prefix/bin/threadlight-host"
+`,
+    );
+    chmodSync(fakeNpm, 0o755);
+
+    const spawnHelper = join(
+      dataRoot,
+      "threadlight-self-host/lib/node_modules/@threadlight/host/node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper",
+    );
+    execFileSync("sh", ["-s", "--", "install", "--foreground"], {
+      encoding: "utf8",
+      input: installer,
+      env: {
+        ...process.env,
+        HOME: root,
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        XDG_CONFIG_HOME: configRoot,
+        XDG_DATA_HOME: dataRoot,
+        THREADLIGHT_FAKE_SPAWN_HELPER: spawnHelper,
+        THREADLIGHT_HOST_STARTED_MARKER: startedMarker,
+        THREADLIGHT_HOST_PACKAGE_URL: `file://${fakePackage}`,
+        THREADLIGHT_SELF_HOST_SCRIPT_URL: `file://${installerPath}`,
+      },
+    });
+
+    expect(statSync(spawnHelper).mode & 0o111).not.toBe(0);
+    expect(existsSync(startedMarker)).toBe(true);
   });
 });

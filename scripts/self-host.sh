@@ -142,6 +142,13 @@ install_self_host() {
 
   npm install --global --prefix "$RUNTIME_ROOT" "$package_path"
   [ -x "$HOST_BIN" ] || fail "The installed threadlight-host executable was not found."
+  node_pty_root="$RUNTIME_ROOT/lib/node_modules/@threadlight/host/node_modules/node-pty"
+  if [ -d "$node_pty_root/prebuilds" ]; then
+    find "$node_pty_root/prebuilds" -type f -name spawn-helper -exec chmod 0755 {} \;
+  fi
+  if [ -f "$node_pty_root/build/Release/spawn-helper" ]; then
+    chmod 0755 "$node_pty_root/build/Release/spawn-helper"
+  fi
   if [ "$host_only" -eq 1 ]; then
     bundled_web_root="$RUNTIME_ROOT/lib/node_modules/@threadlight/host/web"
     if [ -d "$bundled_web_root" ]; then
