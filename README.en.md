@@ -1,8 +1,20 @@
-# Threadlight
+<p align="center">
+  <img src="./apps/desktop/resources/app-icon.png" width="96" height="96" alt="Threadlight icon">
+</p>
 
-An open-source multi-agent engineering runtime that keeps planning, delegation, tools, terminals, files, diffs, and delivery on one observable, recoverable task timeline.
+<h1 align="center">Threadlight</h1>
 
-[中文](./README.md) · [Website](https://threadlight.xyz) · [Self-hosting guide](./docs/SELF_HOSTING.md)
+<p align="center">An open-source multi-agent engineering runtime that keeps planning, delegation, tools, terminals, files, diffs, and delivery on one observable, recoverable task timeline.</p>
+
+<p align="center">
+  <a href="./README.md">中文</a> ·
+  <a href="https://threadlight.xyz">Website</a> ·
+  <a href="./docs/SELF_HOSTING.md">Self-hosting guide</a>
+</p>
+
+<p align="center">
+  <img src="./docs/images/threadlight-overview.png" width="1200" alt="Threadlight multi-agent engineering workspace">
+</p>
 
 ## Quick start
 

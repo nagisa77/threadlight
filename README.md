@@ -1,8 +1,20 @@
-# Threadlight
+<p align="center">
+  <img src="./apps/desktop/resources/app-icon.png" width="96" height="96" alt="Threadlight 图标">
+</p>
 
-开源的多 Agent 工程 Runtime：把规划、并行协作、工具执行、终端、文件、Diff 与交付放在同一条可观察、可恢复的任务时间线上。
+<h1 align="center">Threadlight</h1>
 
-[English](./README.en.md) · [官方网站](https://threadlight.xyz) · [完整自部署说明](./docs/SELF_HOSTING.zh-CN.md)
+<p align="center">开源的多 Agent 工程 Runtime：把规划、并行协作、工具执行、终端、文件、Diff 与交付放在同一条可观察、可恢复的任务时间线上。</p>
+
+<p align="center">
+  <a href="./README.en.md">English</a> ·
+  <a href="https://threadlight.xyz">官方网站</a> ·
+  <a href="./docs/SELF_HOSTING.zh-CN.md">完整自部署说明</a>
+</p>
+
+<p align="center">
+  <img src="./docs/images/threadlight-overview.png" width="1200" alt="Threadlight 多 Agent 工程工作区">
+</p>
 
 ## 快速开始
 
