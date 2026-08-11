@@ -220,7 +220,6 @@ install_service() {
       SELF_HOST_CONFIG=$CONFIG_PATH \
       SELF_HOST_PATH=$PATH \
       SELF_HOST_DESCRIPTION=$service_description \
-      SELF_HOST_WORKING_DIRECTORY=$HOME \
       node - "$unit_path" <<'NODE'
 const { writeFileSync } = require("node:fs");
 const quote = (value) => `"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
@@ -232,7 +231,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=${quote(process.env.SELF_HOST_BIN)} --config ${quote(process.env.SELF_HOST_CONFIG)}
-WorkingDirectory=${quote(process.env.SELF_HOST_WORKING_DIRECTORY)}
+WorkingDirectory=~
 Environment=${quote(`PATH=${process.env.SELF_HOST_PATH}`)}
 Restart=on-failure
 RestartSec=2
