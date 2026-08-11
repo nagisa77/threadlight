@@ -4,7 +4,7 @@ Threadlight 的推荐部署形态是一个原生进程同时提供 Web 界面、
 
 ## 一行安装
 
-要求：Node.js 22+、npm，以及 macOS 或 Linux。
+要求：Node.js 22+、npm、`tar`，以及 macOS 或 Linux。首次构建还需要足够的磁盘空间来安装仓库依赖。
 
 ```bash
 curl -fsSL https://threadlight.xyz/install.sh | sh
@@ -12,15 +12,22 @@ curl -fsSL https://threadlight.xyz/install.sh | sh
 
 安装器会：
 
-1. 下载当前稳定版 Host + Web Release 包。
-2. 安装到当前用户目录，不要求 root。
-3. 生成或复用 64 字符随机 Token，并写入 mode `0600` 配置。
-4. 在 Linux 注册 systemd user service，在 macOS 注册 launchd LaunchAgent。
-5. 启动服务并输出 Web 地址和 Token。
+1. 下载最新 `main` 的全新源码归档。
+2. 安装依赖，并从同一份源码快照构建 Host + Web。
+3. 安装到当前用户目录，不要求 root。
+4. 生成或复用 64 字符随机 Token，并写入 mode `0600` 配置。
+5. 在 Linux 注册 systemd user service，在 macOS 注册 launchd LaunchAgent。
+6. 启动服务并输出 Web 地址和 Token。
 
 Host 默认从空状态启动。打开输出的地址并输入 Token，然后在 Web UI 中添加目标机器上的项目路径。
 
-再次运行同一条安装命令会更新 Host + Web，同时保留 Token 和已有配置。
+再次运行同一条安装命令，会从最新 `main` 快照重新构建并同时更新 Host 与 Web，同时保留 Token 和已有配置。由于构建发生在目标机器上，更新时间会比直接下载预构建 Release 包更长。
+
+如果希望保留内置 Web UI，同时也允许独立托管的 Web 客户端访问，可以使用：
+
+```bash
+curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --origin https://nagisa77.github.io
+```
 
 ## 仅安装 Host
 
@@ -90,9 +97,12 @@ cd threadlight
 npm run self-host -- install
 ```
 
+默认 `main` 通道是可变的。如果部署策略要求固定版本，可以将 `THREADLIGHT_SELF_HOST_VERSION` 设为已有 Release 版本，或通过 `THREADLIGHT_HOST_PACKAGE_URL` 指定可信包地址。`THREADLIGHT_SELF_HOST_SOURCE_URL` 可将源码构建通道切换到具有相同仓库结构的其他可信归档。
+
 ## 安全与备份
 
 - 配置和 Token 不应提交到 Git，也不会写入服务日志。
+- 默认安装器会执行最新 `main` 中的依赖与构建脚本；如果部署要求经过审核且不可变的输入，请使用固定包通道。
 - Web 会把 Host 地址和 Token 保存到当前浏览器的 `localStorage`，不要在共享设备保存。
 - 持有 Host Token 的客户端可以使用当前用户权限下的文件和终端能力，请按管理员凭据保护。
 - 内置工具不是操作系统级 sandbox；请使用可信项目，强隔离请配合容器或虚拟机。

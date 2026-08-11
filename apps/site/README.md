@@ -42,6 +42,8 @@ Recommended build watch paths:
 apps/site/*
 apps/desktop/resources/app-icon.svg
 docs/images/*
+scripts/self-host.sh
+scripts/copy-site-installer.mjs
 package.json
 package-lock.json
 ```

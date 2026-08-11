@@ -20,6 +20,10 @@ describe("homepage launch choices", () => {
     expect(pageSource).toContain("Deploy Host + Web");
     expect(pageSource).toContain("一键部署 Host + Web");
     expect(pageSource).toContain(
+      "builds Host + Web from the latest main snapshot",
+    );
+    expect(pageSource).toContain("从最新 main 快照构建 Host + Web");
+    expect(pageSource).toContain(
       "curl -fsSL https://threadlight.xyz/install.sh | sh",
     );
     expect(pageSource).toContain(

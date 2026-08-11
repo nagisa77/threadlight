@@ -15,8 +15,12 @@ HOST_BIN="$RUNTIME_ROOT/bin/threadlight-host"
 MANAGER_BIN="$RUNTIME_ROOT/bin/threadlight-self-host"
 SERVICE_NAME=threadlight-host
 LOG_ROOT=${THREADLIGHT_SELF_HOST_LOG_ROOT:-"$RUNTIME_ROOT/logs"}
-RELEASE_VERSION=${THREADLIGHT_SELF_HOST_VERSION:-1.0.0}
-PACKAGE_URL=${THREADLIGHT_HOST_PACKAGE_URL:-"https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"}
+SOURCE_URL=${THREADLIGHT_SELF_HOST_SOURCE_URL:-https://github.com/nagisa77/threadlight/archive/refs/heads/main.tar.gz}
+RELEASE_VERSION=${THREADLIGHT_SELF_HOST_VERSION:-}
+PACKAGE_URL=${THREADLIGHT_HOST_PACKAGE_URL:-}
+if [ -z "$PACKAGE_URL" ] && [ -n "$RELEASE_VERSION" ]; then
+  PACKAGE_URL="https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"
+fi
 INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://threadlight.xyz/install.sh}
 TEMP_ROOT=
 
@@ -116,6 +120,7 @@ install_self_host() {
     token=$(node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')
   fi
 
+  manager_source=
   if [ -n "$REPOSITORY_ROOT" ]; then
     if [ "$host_only" -eq 1 ]; then
       printf 'Building the Threadlight Host package...\n'
@@ -129,15 +134,46 @@ install_self_host() {
     package_version=$(node -p 'require(process.argv[1]).version' "$REPOSITORY_ROOT/package.json")
     package_path="$REPOSITORY_ROOT/artifacts/threadlight-host-$package_version.tgz"
     [ -f "$package_path" ] || fail "The Host package was not created."
-  else
+    manager_source="$SCRIPT_DIR/self-host.sh"
+  elif [ -n "$PACKAGE_URL" ]; then
     if [ "$host_only" -eq 1 ]; then
-      printf 'Downloading Threadlight Host %s...\n' "$RELEASE_VERSION"
+      printf 'Downloading the configured Threadlight Host package...\n'
     else
-      printf 'Downloading Threadlight Host + Web %s...\n' "$RELEASE_VERSION"
+      printf 'Downloading the configured Threadlight Host + Web package...\n'
     fi
     TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/threadlight-self-host.XXXXXX")
     package_path="$TEMP_ROOT/threadlight-host.tgz"
     download_file "$PACKAGE_URL" "$package_path"
+  else
+    require_command tar
+    TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/threadlight-self-host.XXXXXX")
+    source_archive="$TEMP_ROOT/threadlight-main.tar.gz"
+    source_parent="$TEMP_ROOT/source"
+    mkdir -p "$source_parent"
+    printf 'Downloading the latest Threadlight main source snapshot...\n'
+    download_file "$SOURCE_URL" "$source_archive"
+    if ! archive_listing=$(tar -tzf "$source_archive"); then
+      fail "The downloaded main source snapshot is not a valid tar archive."
+    fi
+    if printf '%s\n' "$archive_listing" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+      fail "The downloaded main source snapshot contains an unsafe path."
+    fi
+    tar -xzf "$source_archive" -C "$source_parent"
+    set -- "$source_parent"/*
+    if [ "$#" -ne 1 ] || [ ! -d "$1" ] || [ ! -f "$1/package.json" ]; then
+      fail "The downloaded main source snapshot has an unexpected layout."
+    fi
+    downloaded_repository_root=$1
+    if [ "$host_only" -eq 1 ]; then
+      printf 'Building the latest Threadlight main Host package...\n'
+    else
+      printf 'Building the latest Threadlight main Host + Web package...\n'
+    fi
+    (cd "$downloaded_repository_root" && npm ci && npm run host:package)
+    package_version=$(node -p 'require(process.argv[1]).version' "$downloaded_repository_root/package.json")
+    package_path="$downloaded_repository_root/artifacts/threadlight-host-$package_version.tgz"
+    [ -f "$package_path" ] || fail "The Host package was not created from the main source snapshot."
+    manager_source="$downloaded_repository_root/scripts/self-host.sh"
   fi
 
   npm install --global --prefix "$RUNTIME_ROOT" "$package_path"
@@ -155,8 +191,8 @@ install_self_host() {
       find "$bundled_web_root" -depth -delete
     fi
   fi
-  if [ -n "$REPOSITORY_ROOT" ]; then
-    cp "$SCRIPT_DIR/self-host.sh" "$MANAGER_BIN"
+  if [ -n "$manager_source" ] && [ -f "$manager_source" ]; then
+    cp "$manager_source" "$MANAGER_BIN"
   else
     download_file "$INSTALLER_URL" "$MANAGER_BIN"
   fi
@@ -409,9 +445,11 @@ download_file() {
   destination=$2
   if command -v curl >/dev/null 2>&1; then
     curl --fail --location --silent --show-error --retry 3 \
+      --header 'Cache-Control: no-cache' \
       --output "$destination" "$source_url"
   elif command -v wget >/dev/null 2>&1; then
-    wget --quiet --tries=3 --output-document="$destination" "$source_url"
+    wget --quiet --tries=3 --header='Cache-Control: no-cache' \
+      --output-document="$destination" "$source_url"
   else
     fail "curl or wget is required to download Threadlight."
   fi

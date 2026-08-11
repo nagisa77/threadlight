@@ -4,7 +4,7 @@ The recommended deployment runs one native process that serves the Web UI, authe
 
 ## One-line install
 
-Requirements: Node.js 22+, npm, and macOS or Linux.
+Requirements: Node.js 22+, npm, `tar`, and macOS or Linux. The first build also needs enough free disk space for the repository dependencies.
 
 ```bash
 curl -fsSL https://threadlight.xyz/install.sh | sh
@@ -12,15 +12,22 @@ curl -fsSL https://threadlight.xyz/install.sh | sh
 
 The installer:
 
-1. Downloads the current stable Host + Web Release package.
-2. Installs it for the current user without root.
-3. Creates or reuses a 64-character random token in a mode-`0600` config.
-4. Registers a systemd user service on Linux or launchd LaunchAgent on macOS.
-5. Starts the service and prints the Web address and token.
+1. Downloads a fresh archive of the latest `main` source.
+2. Installs dependencies and builds Host + Web from that single source snapshot.
+3. Installs the package for the current user without root.
+4. Creates or reuses a 64-character random token in a mode-`0600` config.
+5. Registers a systemd user service on Linux or launchd LaunchAgent on macOS.
+6. Starts the service and prints the Web address and token.
 
 The Host starts empty. Open the printed address, enter the token, and add projects from the Web UI using paths on the Host machine.
 
-Run the same command again to update Host + Web while preserving the token and existing configuration.
+Run the same command again to rebuild and update both Host and Web from the latest `main` snapshot while preserving the token and existing configuration. Because the installer builds on the target machine, an update takes longer than downloading a prebuilt Release package.
+
+To keep the bundled Web UI while also allowing the separately hosted Web client, use:
+
+```bash
+curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --origin https://nagisa77.github.io
+```
 
 ## Host-only install
 
@@ -90,9 +97,12 @@ cd threadlight
 npm run self-host -- install
 ```
 
+The default `main` channel is intentionally mutable. For a pinned deployment, set `THREADLIGHT_SELF_HOST_VERSION` to an existing Release version, or set `THREADLIGHT_HOST_PACKAGE_URL` to a trusted package URL. `THREADLIGHT_SELF_HOST_SOURCE_URL` can point the source-build channel at another trusted archive with the same repository layout.
+
 ## Security and backups
 
 - Never commit the config or token. The service does not write the token to its logs.
+- The default installer executes dependency and build scripts from the latest `main`; use a pinned package channel when deployment policy requires reviewed, immutable inputs.
 - The Web client stores its Host URL and token in browser `localStorage`; do not save them on shared devices.
 - A client holding the Host token can use file and terminal capabilities with the current user's permissions. Protect it as an administrator credential.
 - Built-in tools are not an operating-system sandbox. Use trusted projects or add container/VM isolation.
