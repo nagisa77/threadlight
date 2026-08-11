@@ -48,4 +48,21 @@ describe("homepage launch choices", () => {
       /@media \(max-width: 760px\)[\s\S]*\.host-only-card\s*\{[\s\S]*grid-template-columns:\s*1fr/,
     );
   });
+
+  it("announces copied commands accessibly without changing the copy controls", () => {
+    expect(pageSource).toContain('copySuccess: "Command copied"');
+    expect(pageSource).toContain('copySuccess: "命令已复制"');
+    expect(pageSource.match(/role="status" aria-atomic="true" data-copy-status/g)).toHaveLength(2);
+    expect(pageSource.match(/data-copy-success=\{copy\.hero\.selfHost\.copySuccess\}/g)).toHaveLength(2);
+    expect(pageSource).toContain(
+      'querySelector<HTMLElement>("[data-copy-status]")',
+    );
+    expect(pageSource).toContain(
+      'status.textContent = status.dataset.copySuccess ?? ""',
+    );
+    expect(pageSource).not.toContain("copyButton.textContent =");
+    expect(pageSource).toContain("navigator.clipboard.writeText(value)");
+    expect(pageSource).toContain('document.execCommand("copy")');
+    expect(styles).toMatch(/\.sr-only\s*\{[\s\S]*position:\s*absolute[\s\S]*clip:\s*rect\(0, 0, 0, 0\)/);
+  });
 });
