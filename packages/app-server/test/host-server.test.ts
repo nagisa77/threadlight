@@ -636,7 +636,7 @@ describe("ThreadlightHostServer", () => {
     );
     expect(await authenticatedJson(`${endpoint}/v1/health`)).toEqual({
       ok: true,
-      protocolVersion: 2,
+      protocolVersion: 3,
       hostId: "host-1",
       name: "Build host",
       homePath: join(root, "home"),
@@ -1258,7 +1258,7 @@ describe("ThreadlightHostServer", () => {
             emit({
               jsonrpc: "2.0",
               id: request.id ?? null,
-              result: { protocolVersion: 2 },
+              result: { protocolVersion: 3 },
             });
             return;
           }

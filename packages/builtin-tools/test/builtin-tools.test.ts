@@ -1,9 +1,4 @@
-import {
-  mkdtemp,
-  readFile,
-  realpath,
-  rm,
-} from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +13,9 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import { createComputerUseTool } from "../src/computer-use.js";
+import { createBraveSearchProvider } from "../src/brave-search-provider.js";
 import { createExecCommandTool } from "../src/exec-command.js";
+import { createLinkupSearchProvider } from "../src/linkup-search-provider.js";
 import { createRequestPlanInputTool } from "../src/request-plan-input.js";
 import { ProcessManager } from "../src/process-manager.js";
 import {
@@ -208,9 +205,7 @@ describe("builtin tools", () => {
         join(workspaceRoot, ".threadlight", "plans", "run-1.md"),
         "utf8",
       );
-      expect(firstDocument).toContain(
-        "### 2. Open the plan document",
-      );
+      expect(firstDocument).toContain("### 2. Open the plan document");
       expect(firstDocument).toContain(
         "Carry out Open the plan document with the relevant project constraints and edge cases.",
       );
@@ -301,12 +296,7 @@ describe("builtin tools", () => {
       });
       await expect(
         readFile(
-          join(
-            workspaceRoot,
-            ".threadlight",
-            "plans",
-            "run-advance.md",
-          ),
+          join(workspaceRoot, ".threadlight", "plans", "run-advance.md"),
           "utf8",
         ),
       ).resolves.toContain(
@@ -341,13 +331,14 @@ describe("builtin tools", () => {
           };
         }
         if (requests.length === 2) {
-          expect(JSON.parse(request.toolResults?.[0]?.output ?? "{}"))
-            .toMatchObject({
-              plan: [
-                richStep("Inspect the code", "in_progress"),
-                richStep("Implement the change", "pending"),
-              ],
-            });
+          expect(
+            JSON.parse(request.toolResults?.[0]?.output ?? "{}"),
+          ).toMatchObject({
+            plan: [
+              richStep("Inspect the code", "in_progress"),
+              richStep("Implement the change", "pending"),
+            ],
+          });
           return {
             text: "Inspection is complete.",
             toolCalls: [
@@ -386,10 +377,7 @@ describe("builtin tools", () => {
     );
     expect(updates).toHaveLength(2);
     expect(updates.at(-1)).toMatchObject({
-      plan: [
-        { status: "completed" },
-        { status: "in_progress" },
-      ],
+      plan: [{ status: "completed" }, { status: "in_progress" }],
     });
   });
 
@@ -409,10 +397,7 @@ describe("builtin tools", () => {
     ).toThrow("at most one");
     expect(() =>
       parsePlanSnapshot({
-        plan: [
-          richStep("Build", "pending"),
-          richStep(" Build ", "completed"),
-        ],
+        plan: [richStep("Build", "pending"), richStep(" Build ", "completed")],
       }),
     ).toThrow("unique");
   });
@@ -636,8 +621,10 @@ describe("builtin tools", () => {
       },
     });
     const tool = createWebSearchTool({
-      apiKey: "test-search-key",
-      fetch: fetchMock,
+      provider: createBraveSearchProvider({
+        apiKey: "test-search-key",
+        fetch: fetchMock,
+      }),
     });
 
     expect(tool.parameters).toMatchObject({
@@ -647,7 +634,6 @@ describe("builtin tools", () => {
         country: { type: ["string", "null"] },
         search_lang: {
           type: ["string", "null"],
-          enum: expect.arrayContaining(["en", "zh-hans", "zh-hant", null]),
         },
         freshness: {
           type: ["string", "null"],
@@ -675,9 +661,7 @@ describe("builtin tools", () => {
     expect(requestUrl?.searchParams.get("count")).toBe("3");
     expect(requestUrl?.searchParams.get("country")).toBe("US");
     expect(requestUrl?.searchParams.get("search_lang")).toBe("zh-hans");
-    expect(requestHeaders?.get("X-Subscription-Token")).toBe(
-      "test-search-key",
-    );
+    expect(requestHeaders?.get("X-Subscription-Token")).toBe("test-search-key");
     expect(JSON.parse(result.output)).toEqual({
       query: "threadlight runtime",
       results: [
@@ -705,8 +689,10 @@ describe("builtin tools", () => {
       });
     });
     const tool = createWebSearchTool({
-      apiKey: "test-search-key",
-      fetch: fetchMock,
+      provider: createBraveSearchProvider({
+        apiKey: "test-search-key",
+        fetch: fetchMock,
+      }),
     });
 
     await tool.execute(
@@ -727,8 +713,10 @@ describe("builtin tools", () => {
   it("rejects unsupported search languages before calling Brave", async () => {
     const fetchMock = vi.fn<typeof fetch>();
     const tool = createWebSearchTool({
-      apiKey: "test-search-key",
-      fetch: fetchMock,
+      provider: createBraveSearchProvider({
+        apiKey: "test-search-key",
+        fetch: fetchMock,
+      }),
     });
 
     await expect(
@@ -737,12 +725,86 @@ describe("builtin tools", () => {
           query: "unsupported language",
           count: null,
           country: null,
-          search_lang: "not-a-language",
+          search_lang: "eo",
           freshness: null,
         },
         { runId: "run_search", signal: new AbortController().signal },
       ),
-    ).rejects.toThrow("search_lang must be a language supported by Brave Search");
+    ).rejects.toThrow(
+      "search_lang must be a language supported by Brave Search",
+    );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("searches Linkup through the provider-neutral tool contract", async () => {
+    let requestUrl = "";
+    let requestInit: RequestInit | undefined;
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      requestUrl = input.toString();
+      requestInit = init;
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              type: "text",
+              name: "Threadlight architecture",
+              url: "https://example.com/architecture",
+              content: "A provider-neutral agent runtime.",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    const modelProvider = new ScriptedToolProvider({
+      id: "call_linkup_search",
+      name: "web_search",
+      arguments: {
+        query: "Threadlight architecture",
+        count: 4,
+        country: "cn",
+        search_lang: "zh-CN",
+        freshness: "pw",
+      },
+    });
+    const tool = createWebSearchTool({
+      provider: createLinkupSearchProvider({
+        apiKey: "test-linkup-key",
+        fetch: fetchMock,
+        now: () => new Date("2026-08-11T12:00:00.000Z"),
+      }),
+    });
+
+    const result = await new AgentLoop(modelProvider).run(
+      defineAgent({
+        name: "linkup-test",
+        instructions: "Use the requested tool",
+        tools: [tool],
+      }),
+      "Search with Linkup",
+    );
+
+    expect(requestUrl).toBe("https://api.linkup.so/v1/search");
+    expect(requestInit?.method).toBe("POST");
+    expect(new Headers(requestInit?.headers).get("Authorization")).toBe(
+      "Bearer test-linkup-key",
+    );
+    expect(JSON.parse(String(requestInit?.body))).toEqual({
+      q: "Threadlight architecture\n\nSearch preferences: Prioritize sources relevant to country code CN. Prefer sources written in zh-CN when possible.",
+      depth: "standard",
+      outputType: "searchResults",
+      maxResults: 4,
+      fromDate: "2026-08-04",
+    });
+    expect(JSON.parse(result.output)).toEqual({
+      query: "Threadlight architecture",
+      results: [
+        {
+          title: "Threadlight architecture",
+          url: "https://example.com/architecture",
+          description: "A provider-neutral agent runtime.",
+        },
+      ],
+    });
   });
 });

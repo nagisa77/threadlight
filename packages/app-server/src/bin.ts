@@ -17,6 +17,7 @@ import {
 } from "@threadlight/model-providers";
 import {
   createAdvancePlanTool,
+  createBraveSearchProvider,
   createComputerShareTool,
   createComputerUseTool,
   createExecCommandTool,
@@ -28,6 +29,7 @@ import {
   createProcessWaitTool,
   createProjectMemoryTool,
   createUpdatePlanTool,
+  createLinkupSearchProvider,
   createWebSearchTool,
   createWorkspaceInspectTool,
   ConversationMcpRuntime,
@@ -184,15 +186,30 @@ if (computerUseEnabled) {
   }
 }
 
-if (process.env.BRAVE_SEARCH_API_KEY) {
-  tools.push(
-    createWebSearchTool({
-      apiKey: process.env.BRAVE_SEARCH_API_KEY,
-    }),
-  );
+const configuredSearchProvider =
+  process.env.THREADLIGHT_SEARCH_PROVIDER?.trim().toLowerCase() ||
+  (process.env.LINKUP_API_KEY ? "linkup" : "brave");
+const searchProvider =
+  configuredSearchProvider === "linkup" && process.env.LINKUP_API_KEY
+    ? createLinkupSearchProvider({ apiKey: process.env.LINKUP_API_KEY })
+    : configuredSearchProvider === "brave" && process.env.BRAVE_SEARCH_API_KEY
+      ? createBraveSearchProvider({ apiKey: process.env.BRAVE_SEARCH_API_KEY })
+      : undefined;
+
+if (searchProvider) {
+  tools.push(createWebSearchTool({ provider: searchProvider }));
+} else if (
+  configuredSearchProvider === "linkup" ||
+  configuredSearchProvider === "brave"
+) {
+  const keyName =
+    configuredSearchProvider === "linkup"
+      ? "LINKUP_API_KEY"
+      : "BRAVE_SEARCH_API_KEY";
+  process.stderr.write(`${keyName} is not set; web_search is disabled\n`);
 } else {
   process.stderr.write(
-    "BRAVE_SEARCH_API_KEY is not set; web_search is disabled\n",
+    `Unknown search provider ${configuredSearchProvider}; web_search is disabled\n`,
   );
 }
 

@@ -147,6 +147,7 @@ export type DesktopModelProvider =
 export type DesktopLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
 export type DesktopTheme = "system" | "light" | "dark";
 export type DesktopProjectOpener = string;
+export type DesktopSearchProvider = "brave" | "linkup";
 
 export interface DesktopSettingsSnapshot {
   language: DesktopLanguage;
@@ -161,7 +162,9 @@ export interface DesktopSettingsSnapshot {
   geminiApiKeyConfigured: boolean;
   grokApiKeyConfigured: boolean;
   customApiKeyConfigured: boolean;
+  searchProvider: DesktopSearchProvider;
   searchApiKeyConfigured: boolean;
+  linkupApiKeyConfigured: boolean;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;
@@ -185,7 +188,9 @@ export interface DesktopSettingsUpdate {
   geminiApiKey?: string | null;
   grokApiKey?: string | null;
   customApiKey?: string | null;
+  searchProvider: DesktopSearchProvider;
   searchApiKey?: string | null;
+  linkupApiKey?: string | null;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;

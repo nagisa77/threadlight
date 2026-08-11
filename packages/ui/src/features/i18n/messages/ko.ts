@@ -52,8 +52,15 @@ export const ko: Messages = {
   customModel: "모델 ID",
   customModelDescription:
     "서비스가 제공하는 정확한 모델 이름 또는 ID를 입력하세요.",
-  searchApiKey: "검색 API Key",
-  searchApiKeyDescription: "Brave Search 웹 검색에 사용됩니다.",
+  searchProvider: "검색 공급자",
+  linkupSearchDescription:
+    "Linkup 에이전트 검색으로 인용 가능한 웹 소스를 반환합니다.",
+  braveSearchDescription:
+    "Brave Search로 페이지 제목, 링크 및 요약을 반환합니다.",
+  linkupApiKey: "Linkup API Key",
+  braveSearchApiKey: "Brave Search API Key",
+  linkupApiKeyDescription: "Linkup 웹 검색 요청에만 사용됩니다.",
+  braveSearchApiKeyDescription: "Brave Search 웹 검색 요청에만 사용됩니다.",
   savedAndReconnected: "저장하고 다시 연결했습니다",
   saved: "저장됨",
   saveRestartNotice:

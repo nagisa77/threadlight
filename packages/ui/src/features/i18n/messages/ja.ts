@@ -53,8 +53,16 @@ export const ja: Messages = {
   customModel: "モデル ID",
   customModelDescription:
     "サービスが公開している正確なモデル名または ID を入力します。",
-  searchApiKey: "検索 API Key",
-  searchApiKeyDescription: "Brave Search のウェブ検索に使用します。",
+  searchProvider: "検索プロバイダー",
+  linkupSearchDescription:
+    "Linkup のエージェント検索で引用可能なウェブソースを取得します。",
+  braveSearchDescription:
+    "Brave Search でページタイトル、リンク、スニペットを取得します。",
+  linkupApiKey: "Linkup API Key",
+  braveSearchApiKey: "Brave Search API Key",
+  linkupApiKeyDescription: "Linkup のウェブ検索リクエストにのみ使用します。",
+  braveSearchApiKeyDescription:
+    "Brave Search のウェブ検索リクエストにのみ使用します。",
   savedAndReconnected: "保存して再接続しました",
   saved: "保存しました",
   saveRestartNotice:

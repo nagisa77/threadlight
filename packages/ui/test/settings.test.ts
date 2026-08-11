@@ -9,6 +9,7 @@ import {
   DEFAULT_GROK_BASE_URL,
   DEFAULT_KIMI_BASE_URL,
   DEFAULT_QWEN_BASE_URL,
+  EMPTY_SEARCH_SECRETS,
   PROVIDER_OPTIONS,
   SettingsPage,
   SettingsSelectField,
@@ -170,7 +171,11 @@ describe("settings", () => {
           grok: { value: "", cleared: true },
           custom: { value: "", cleared: false },
         },
-        { value: "", cleared: false },
+        {
+          brave: { value: "", cleared: false },
+          linkup: { value: "  linkup-new  ", cleared: false },
+        },
+        "linkup",
         "deepseek",
         DEFAULT_QWEN_BASE_URL,
         DEFAULT_KIMI_BASE_URL,
@@ -186,11 +191,13 @@ describe("settings", () => {
       theme: "system",
       preferredProjectOpener: "",
       provider: "deepseek",
+      searchProvider: "linkup",
       deepSeekApiKey: "ds-new",
       qwenApiKey: null,
       kimiApiKey: "kimi-new",
       doubaoApiKey: "doubao-new",
       grokApiKey: null,
+      linkupApiKey: "linkup-new",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
       doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
@@ -215,7 +222,8 @@ describe("settings", () => {
           grok: { value: "", cleared: false },
           custom: { value: "", cleared: false },
         },
-        { value: "", cleared: false },
+        EMPTY_SEARCH_SECRETS,
+        "brave",
         "qwen",
         `  ${DEFAULT_QWEN_BASE_URL}  `,
         `  ${DEFAULT_KIMI_BASE_URL}  `,
@@ -231,6 +239,7 @@ describe("settings", () => {
       theme: "system",
       preferredProjectOpener: "",
       provider: "qwen",
+      searchProvider: "brave",
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
       doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
@@ -254,7 +263,8 @@ describe("settings", () => {
     expect(
       createSettingsUpdate(
         drafts,
-        { value: "", cleared: false },
+        EMPTY_SEARCH_SECRETS,
+        "brave",
         "custom",
         DEFAULT_QWEN_BASE_URL,
         DEFAULT_KIMI_BASE_URL,
@@ -275,8 +285,14 @@ describe("settings", () => {
 
   it("stores the custom model separately from the active provider model", () => {
     const update = createSettingsUpdate(
-      Object.fromEntries(PROVIDER_OPTIONS.map(({ value }) => [value, { value: "", cleared: false }])) as Parameters<typeof createSettingsUpdate>[0],
-      { value: "", cleared: false },
+      Object.fromEntries(
+        PROVIDER_OPTIONS.map(({ value }) => [
+          value,
+          { value: "", cleared: false },
+        ]),
+      ) as Parameters<typeof createSettingsUpdate>[0],
+      EMPTY_SEARCH_SECRETS,
+      "brave",
       "openai",
       DEFAULT_QWEN_BASE_URL,
       DEFAULT_KIMI_BASE_URL,
@@ -308,7 +324,8 @@ describe("settings", () => {
           grok: { value: "", cleared: false },
           custom: { value: "", cleared: false },
         },
-        { value: "", cleared: false },
+        EMPTY_SEARCH_SECRETS,
+        "brave",
         "openai",
         DEFAULT_QWEN_BASE_URL,
         DEFAULT_KIMI_BASE_URL,
@@ -336,7 +353,8 @@ describe("settings", () => {
           grok: { value: "", cleared: false },
           custom: { value: "", cleared: false },
         },
-        { value: "", cleared: false },
+        EMPTY_SEARCH_SECRETS,
+        "brave",
         "openai",
         DEFAULT_QWEN_BASE_URL,
         DEFAULT_KIMI_BASE_URL,
@@ -366,7 +384,9 @@ describe("settings", () => {
       geminiApiKeyConfigured: false,
       grokApiKeyConfigured: false,
       customApiKeyConfigured: false,
+      searchProvider: "linkup",
       searchApiKeyConfigured: true,
+      linkupApiKeyConfigured: true,
       qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
       kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
       doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
@@ -384,11 +404,13 @@ describe("settings", () => {
       theme: "dark",
       preferredProjectOpener: "cursor",
       provider: "kimi",
+      searchProvider: "linkup",
       model: "kimi-k3",
     });
     expect(update).not.toHaveProperty("openAIApiKey");
     expect(update).not.toHaveProperty("kimiApiKey");
     expect(update).not.toHaveProperty("searchApiKey");
+    expect(update).not.toHaveProperty("linkupApiKey");
   });
 
   it("includes the selected preferred project opener", () => {
@@ -404,7 +426,8 @@ describe("settings", () => {
           grok: { value: "", cleared: false },
           custom: { value: "", cleared: false },
         },
-        { value: "", cleared: false },
+        EMPTY_SEARCH_SECRETS,
+        "brave",
         "openai",
         DEFAULT_QWEN_BASE_URL,
         DEFAULT_KIMI_BASE_URL,

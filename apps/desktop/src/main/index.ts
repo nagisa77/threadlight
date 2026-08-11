@@ -18,6 +18,7 @@ import {
   shell,
 } from "electron";
 import {
+  THREADLIGHT_HOST_PROTOCOL_VERSION,
   THREADLIGHT_METHODS,
   type HostProjectsSnapshot,
   type HostDeliverySource,
@@ -553,6 +554,7 @@ function ensureAppServer(
             projectRoot,
             settingsStore?.runtimeSettings() ?? {
               provider: "openai",
+              searchProvider: "brave",
               qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
               kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
               doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
@@ -1539,7 +1541,7 @@ async function handleRemoteRuntimeConnect(
   const endpoint = normalizeRemoteRuntimeEndpoint(request.endpoint);
   const connection = new RemoteHostConnection(endpoint, request.token);
   const health = await connection.health();
-  if (health.protocolVersion !== 2) {
+  if (health.protocolVersion !== THREADLIGHT_HOST_PROTOCOL_VERSION) {
     throw new Error(
       `Unsupported Threadlight Host protocol: ${health.protocolVersion}`,
     );
@@ -1613,7 +1615,7 @@ async function handleHostUpdate(event: IpcMainInvokeEvent, value: unknown) {
   }
   const connection = new RemoteHostConnection(endpoint, token);
   const health = await connection.health();
-  if (health.protocolVersion !== 2) {
+  if (health.protocolVersion !== THREADLIGHT_HOST_PROTOCOL_VERSION) {
     throw new Error(
       `Unsupported Threadlight Host protocol: ${health.protocolVersion}`,
     );
@@ -2762,6 +2764,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
       "provider must be openai, deepseek, qwen, kimi, doubao, gemini, grok, or custom",
     );
   }
+  if (!isSearchProvider(update.searchProvider)) {
+    throw new Error("searchProvider must be brave or linkup");
+  }
   if (update.language !== undefined && !isLanguage(update.language)) {
     throw new Error("language must be zh-CN, zh-TW, en, ja, or ko");
   }
@@ -2800,6 +2805,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   }
   if (!isOptionalSecret(update.searchApiKey)) {
     throw new Error("searchApiKey must be a string or null");
+  }
+  if (!isOptionalSecret(update.linkupApiKey)) {
+    throw new Error("linkupApiKey must be a string or null");
   }
   if (typeof update.model !== "string" || !update.model.trim()) {
     throw new Error("model must be a non-empty string");
@@ -2841,6 +2849,7 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
       ? { preferredProjectOpener: update.preferredProjectOpener }
       : {}),
     provider: update.provider,
+    searchProvider: update.searchProvider,
     model: update.model.trim(),
     customModel: update.customModel.trim(),
     qwenBaseUrl: update.qwenBaseUrl.trim(),
@@ -2875,6 +2884,9 @@ function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
       : {}),
     ...(update.searchApiKey !== undefined
       ? { searchApiKey: update.searchApiKey }
+      : {}),
+    ...(update.linkupApiKey !== undefined
+      ? { linkupApiKey: update.linkupApiKey }
       : {}),
   } as DesktopSettingsUpdate;
 }
@@ -2958,6 +2970,12 @@ function isModelProvider(
     value === "grok" ||
     value === "custom"
   );
+}
+
+function isSearchProvider(
+  value: unknown,
+): value is DesktopSettingsUpdate["searchProvider"] {
+  return value === "brave" || value === "linkup";
 }
 
 function isOptionalSecret(value: unknown): value is string | null | undefined {

@@ -181,6 +181,8 @@ export type {
   SecretStorageBoundary,
   SettingsAdapter,
   SecretDraft,
+  SearchProviderId,
+  SearchSecretDrafts,
   SettingsSnapshot,
   SettingsUpdate,
 } from "./settings.js";

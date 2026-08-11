@@ -53,8 +53,16 @@ export const en: Messages = {
   customModel: "Model ID",
   customModelDescription:
     "Enter the exact model name or ID exposed by the service.",
-  searchApiKey: "Search API Key",
-  searchApiKeyDescription: "Used for Brave Search web searches.",
+  searchProvider: "Search provider",
+  linkupSearchDescription:
+    "Use Linkup agentic search to return citable web sources.",
+  braveSearchDescription:
+    "Use Brave Search to return page titles, links, and snippets.",
+  linkupApiKey: "Linkup API Key",
+  braveSearchApiKey: "Brave Search API Key",
+  linkupApiKeyDescription: "Used only for Linkup web search requests.",
+  braveSearchApiKeyDescription:
+    "Used only for Brave Search web search requests.",
   savedAndReconnected: "Saved and reconnected",
   saved: "Saved",
   saveRestartNotice:

@@ -69,22 +69,22 @@ describe("remote Web protocol handshake", () => {
     expect(error).toBeInstanceOf(IncompatibleHostProtocolError);
     if (!(error instanceof IncompatibleHostProtocolError)) return;
     expect(error).toMatchObject({
-      clientProtocolVersion: 2,
+      clientProtocolVersion: 3,
       hostProtocolVersion: 1,
       upgradeTarget: "host",
     });
-    expect(error.message).toContain("Web client protocol version: 2");
+    expect(error.message).toContain("Web client protocol version: 3");
     expect(error.message).toContain("Host protocol version: 1");
     expect(error.message).toContain("Update the Threadlight Host");
     expect(requests).toEqual(["https://host.example.com/v1/health"]);
   });
 
   it("recommends upgrading the Web client for a newer Host protocol", () => {
-    const error = new IncompatibleHostProtocolError(3);
+    const error = new IncompatibleHostProtocolError(4);
 
     expect(error.upgradeTarget).toBe("web");
-    expect(error.message).toContain("Web client protocol version: 2");
-    expect(error.message).toContain("Host protocol version: 3");
+    expect(error.message).toContain("Web client protocol version: 3");
+    expect(error.message).toContain("Host protocol version: 4");
     expect(error.message).toContain("Update this Threadlight Web client");
   });
 
@@ -103,7 +103,9 @@ describe("remote Web protocol handshake", () => {
       geminiApiKeyConfigured: false,
       grokApiKeyConfigured: false,
       customApiKeyConfigured: false,
+      searchProvider: "brave",
       searchApiKeyConfigured: false,
+      linkupApiKeyConfigured: false,
       qwenBaseUrl: "https://dashscope.example/v1",
       kimiBaseUrl: "https://kimi.example/v1",
       doubaoBaseUrl: "https://doubao.example/v1",
@@ -119,7 +121,7 @@ describe("remote Web protocol handshake", () => {
       const payload = url.endsWith("/v1/health")
         ? {
             ok: true,
-            protocolVersion: 2,
+            protocolVersion: 3,
             hostId: "host-current",
             name: "Current Host",
             homePath: "/host",

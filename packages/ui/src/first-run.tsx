@@ -62,6 +62,7 @@ export function firstRunSettingsUpdate(
     theme,
     preferredProjectOpener: settings.preferredProjectOpener,
     provider,
+    searchProvider: settings.searchProvider,
     qwenBaseUrl: settings.qwenBaseUrl,
     kimiBaseUrl: settings.kimiBaseUrl,
     doubaoBaseUrl: settings.doubaoBaseUrl,

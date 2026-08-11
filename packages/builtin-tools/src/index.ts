@@ -37,9 +37,9 @@ export {
   UPDATE_PLAN_TOOL_NAME,
   USER_SELECTED_PLAN_INSTRUCTIONS,
 } from "./update-plan.js";
-export {
-  PlanExecutionController,
-} from "./plan-execution-controller.js";
+export { PlanExecutionController } from "./plan-execution-controller.js";
+export { createBraveSearchProvider } from "./brave-search-provider.js";
+export { createLinkupSearchProvider } from "./linkup-search-provider.js";
 export { createWebSearchTool } from "./web-search.js";
 export { createWorkspaceInspectTool } from "./workspace-inspect.js";
 
@@ -78,9 +78,7 @@ export type {
   OAuthClientMetadata,
   OAuthTokens,
 } from "@modelcontextprotocol/sdk/shared/auth.js";
-export type {
-  OAuthDiscoveryState,
-} from "@modelcontextprotocol/sdk/client/auth.js";
+export type { OAuthDiscoveryState } from "@modelcontextprotocol/sdk/client/auth.js";
 export type {
   ManagedProcessSnapshot,
   ManagedProcessStatus,
@@ -96,13 +94,15 @@ export type {
   PlanSnapshot,
   UpdatePlanToolOptions,
 } from "./update-plan.js";
+export type { PlanExecutionPhase } from "./plan-execution-controller.js";
 export type {
-  PlanExecutionPhase,
-} from "./plan-execution-controller.js";
-export type {
+  WebSearchFreshness,
+  WebSearchItem,
+  WebSearchProvider,
+  WebSearchRequest,
   WebSearchResult,
   WebSearchToolOptions,
 } from "./web-search.js";
-export type {
-  WorkspaceInspectToolOptions,
-} from "./workspace-inspect.js";
+export type { BraveSearchProviderOptions } from "./brave-search-provider.js";
+export type { LinkupSearchProviderOptions } from "./linkup-search-provider.js";
+export type { WorkspaceInspectToolOptions } from "./workspace-inspect.js";

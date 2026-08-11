@@ -10,6 +10,7 @@ import { dirname } from "node:path";
 import type {
   HostLanguage,
   HostModelProvider,
+  HostSearchProvider,
   HostSettingsSnapshot,
   HostSettingsUpdate,
   HostTheme,
@@ -18,6 +19,7 @@ import type {
 type DesktopLanguage = HostLanguage;
 type DesktopModelProvider = HostModelProvider;
 type DesktopProjectOpener = string;
+type DesktopSearchProvider = HostSearchProvider;
 type DesktopSettingsSnapshot = HostSettingsSnapshot;
 type DesktopSettingsUpdate = HostSettingsUpdate;
 type DesktopTheme = HostTheme;
@@ -28,6 +30,7 @@ interface StoredSettings {
   theme?: DesktopTheme;
   preferredProjectOpener?: DesktopProjectOpener;
   provider?: DesktopModelProvider;
+  searchProvider?: DesktopSearchProvider;
   encryptedOpenAIApiKey?: string;
   encryptedDeepSeekApiKey?: string;
   encryptedQwenApiKey?: string;
@@ -37,6 +40,7 @@ interface StoredSettings {
   encryptedGrokApiKey?: string;
   encryptedCustomApiKey?: string;
   encryptedSearchApiKey?: string;
+  encryptedLinkupApiKey?: string;
   qwenBaseUrl?: string;
   kimiBaseUrl?: string;
   doubaoBaseUrl?: string;
@@ -54,6 +58,7 @@ export interface SecretCodec {
 
 export interface RuntimeSettings {
   provider: DesktopModelProvider;
+  searchProvider: DesktopSearchProvider;
   openAIApiKey?: string;
   deepSeekApiKey?: string;
   qwenApiKey?: string;
@@ -63,6 +68,7 @@ export interface RuntimeSettings {
   grokApiKey?: string;
   customApiKey?: string;
   searchApiKey?: string;
+  linkupApiKey?: string;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;
@@ -100,7 +106,9 @@ export class SettingsStore {
     private readonly codec: SecretCodec,
   ) {}
 
-  snapshot(environment: NodeJS.ProcessEnv = process.env): DesktopSettingsSnapshot {
+  snapshot(
+    environment: NodeJS.ProcessEnv = process.env,
+  ): DesktopSettingsSnapshot {
     const stored = this.read();
     const settings = this.runtimeSettingsFrom(stored, environment);
     return {
@@ -116,7 +124,9 @@ export class SettingsStore {
       geminiApiKeyConfigured: Boolean(settings.geminiApiKey),
       grokApiKeyConfigured: Boolean(settings.grokApiKey),
       customApiKeyConfigured: Boolean(settings.customApiKey),
+      searchProvider: settings.searchProvider,
       searchApiKeyConfigured: Boolean(settings.searchApiKey),
+      linkupApiKeyConfigured: Boolean(settings.linkupApiKey),
       qwenBaseUrl: settings.qwenBaseUrl,
       kimiBaseUrl: settings.kimiBaseUrl,
       doubaoBaseUrl: settings.doubaoBaseUrl,
@@ -140,21 +150,16 @@ export class SettingsStore {
       preferredProjectOpener:
         update.preferredProjectOpener ?? current.preferredProjectOpener,
       provider: update.provider,
+      searchProvider: updatedSearchProvider(
+        update.searchProvider,
+        current.searchProvider,
+      ),
       qwenBaseUrl: normalizeHttpUrl(update.qwenBaseUrl, "Qwen Base URL"),
       kimiBaseUrl: normalizeHttpUrl(update.kimiBaseUrl, "Kimi Base URL"),
-      doubaoBaseUrl: normalizeHttpUrl(
-        update.doubaoBaseUrl,
-        "Doubao Base URL",
-      ),
-      geminiBaseUrl: normalizeHttpUrl(
-        update.geminiBaseUrl,
-        "Gemini Base URL",
-      ),
+      doubaoBaseUrl: normalizeHttpUrl(update.doubaoBaseUrl, "Doubao Base URL"),
+      geminiBaseUrl: normalizeHttpUrl(update.geminiBaseUrl, "Gemini Base URL"),
       grokBaseUrl: normalizeHttpUrl(update.grokBaseUrl, "Grok Base URL"),
-      customBaseUrl: normalizeHttpUrl(
-        update.customBaseUrl,
-        "Custom Base URL",
-      ),
+      customBaseUrl: normalizeHttpUrl(update.customBaseUrl, "Custom Base URL"),
       customModel: requireNonEmpty(update.customModel, "Custom model"),
       model: requireNonEmpty(update.model, "Model"),
     };
@@ -171,18 +176,8 @@ export class SettingsStore {
       update.deepSeekApiKey,
       this.codec,
     );
-    updateSecret(
-      next,
-      "encryptedQwenApiKey",
-      update.qwenApiKey,
-      this.codec,
-    );
-    updateSecret(
-      next,
-      "encryptedKimiApiKey",
-      update.kimiApiKey,
-      this.codec,
-    );
+    updateSecret(next, "encryptedQwenApiKey", update.qwenApiKey, this.codec);
+    updateSecret(next, "encryptedKimiApiKey", update.kimiApiKey, this.codec);
     updateSecret(
       next,
       "encryptedDoubaoApiKey",
@@ -195,12 +190,7 @@ export class SettingsStore {
       update.geminiApiKey,
       this.codec,
     );
-    updateSecret(
-      next,
-      "encryptedGrokApiKey",
-      update.grokApiKey,
-      this.codec,
-    );
+    updateSecret(next, "encryptedGrokApiKey", update.grokApiKey, this.codec);
     updateSecret(
       next,
       "encryptedCustomApiKey",
@@ -211,6 +201,12 @@ export class SettingsStore {
       next,
       "encryptedSearchApiKey",
       update.searchApiKey,
+      this.codec,
+    );
+    updateSecret(
+      next,
+      "encryptedLinkupApiKey",
+      update.linkupApiKey,
       this.codec,
     );
 
@@ -230,8 +226,19 @@ export class SettingsStore {
   ): RuntimeSettings {
     const provider =
       stored.provider ?? parseProvider(environment.THREADLIGHT_PROVIDER);
+    const searchApiKey =
+      decryptOptional(stored.encryptedSearchApiKey, this.codec) ??
+      nonEmpty(environment.BRAVE_SEARCH_API_KEY);
+    const linkupApiKey =
+      decryptOptional(stored.encryptedLinkupApiKey, this.codec) ??
+      nonEmpty(environment.LINKUP_API_KEY);
+    const searchProvider =
+      stored.searchProvider ??
+      parseSearchProvider(environment.THREADLIGHT_SEARCH_PROVIDER) ??
+      (linkupApiKey && !searchApiKey ? "linkup" : "brave");
     return {
       provider,
+      searchProvider,
       openAIApiKey:
         decryptOptional(stored.encryptedOpenAIApiKey, this.codec) ??
         nonEmpty(environment.OPENAI_API_KEY),
@@ -256,9 +263,8 @@ export class SettingsStore {
       customApiKey:
         decryptOptional(stored.encryptedCustomApiKey, this.codec) ??
         nonEmpty(environment.CUSTOM_API_KEY),
-      searchApiKey:
-        decryptOptional(stored.encryptedSearchApiKey, this.codec) ??
-        nonEmpty(environment.BRAVE_SEARCH_API_KEY),
+      searchApiKey,
+      linkupApiKey,
       qwenBaseUrl:
         nonEmpty(stored.qwenBaseUrl) ??
         nonEmpty(environment.DASHSCOPE_BASE_URL) ??
@@ -327,33 +333,21 @@ export function runtimeEnvironment(
 ): NodeJS.ProcessEnv {
   return {
     THREADLIGHT_PROVIDER: settings.provider,
-    ...(settings.openAIApiKey
-      ? { OPENAI_API_KEY: settings.openAIApiKey }
-      : {}),
+    THREADLIGHT_SEARCH_PROVIDER: settings.searchProvider,
+    ...(settings.openAIApiKey ? { OPENAI_API_KEY: settings.openAIApiKey } : {}),
     ...(settings.deepSeekApiKey
       ? { DEEPSEEK_API_KEY: settings.deepSeekApiKey }
       : {}),
-    ...(settings.qwenApiKey
-      ? { DASHSCOPE_API_KEY: settings.qwenApiKey }
-      : {}),
-    ...(settings.kimiApiKey
-      ? { MOONSHOT_API_KEY: settings.kimiApiKey }
-      : {}),
-    ...(settings.doubaoApiKey
-      ? { ARK_API_KEY: settings.doubaoApiKey }
-      : {}),
-    ...(settings.geminiApiKey
-      ? { GEMINI_API_KEY: settings.geminiApiKey }
-      : {}),
-    ...(settings.grokApiKey
-      ? { XAI_API_KEY: settings.grokApiKey }
-      : {}),
-    ...(settings.customApiKey
-      ? { CUSTOM_API_KEY: settings.customApiKey }
-      : {}),
+    ...(settings.qwenApiKey ? { DASHSCOPE_API_KEY: settings.qwenApiKey } : {}),
+    ...(settings.kimiApiKey ? { MOONSHOT_API_KEY: settings.kimiApiKey } : {}),
+    ...(settings.doubaoApiKey ? { ARK_API_KEY: settings.doubaoApiKey } : {}),
+    ...(settings.geminiApiKey ? { GEMINI_API_KEY: settings.geminiApiKey } : {}),
+    ...(settings.grokApiKey ? { XAI_API_KEY: settings.grokApiKey } : {}),
+    ...(settings.customApiKey ? { CUSTOM_API_KEY: settings.customApiKey } : {}),
     ...(settings.searchApiKey
       ? { BRAVE_SEARCH_API_KEY: settings.searchApiKey }
       : {}),
+    ...(settings.linkupApiKey ? { LINKUP_API_KEY: settings.linkupApiKey } : {}),
     DASHSCOPE_BASE_URL: settings.qwenBaseUrl,
     MOONSHOT_BASE_URL: settings.kimiBaseUrl,
     ARK_BASE_URL: settings.doubaoBaseUrl,
@@ -375,7 +369,8 @@ function updateSecret(
     | "encryptedGeminiApiKey"
     | "encryptedGrokApiKey"
     | "encryptedCustomApiKey"
-    | "encryptedSearchApiKey",
+    | "encryptedSearchApiKey"
+    | "encryptedLinkupApiKey",
   value: string | null | undefined,
   codec: SecretCodec,
 ): void {
@@ -416,6 +411,7 @@ function isStoredSettings(value: unknown): value is StoredSettings {
   return (
     settings.version === 1 &&
     optionalProvider(settings.provider) &&
+    optionalSearchProvider(settings.searchProvider) &&
     optionalString(settings.encryptedOpenAIApiKey) &&
     optionalString(settings.encryptedDeepSeekApiKey) &&
     optionalString(settings.encryptedQwenApiKey) &&
@@ -425,6 +421,7 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.encryptedGrokApiKey) &&
     optionalString(settings.encryptedCustomApiKey) &&
     optionalString(settings.encryptedSearchApiKey) &&
+    optionalString(settings.encryptedLinkupApiKey) &&
     optionalString(settings.qwenBaseUrl) &&
     optionalString(settings.kimiBaseUrl) &&
     optionalString(settings.doubaoBaseUrl) &&
@@ -451,6 +448,21 @@ function optionalString(value: unknown): boolean {
 
 function optionalProvider(value: unknown): boolean {
   return value === undefined || isProvider(value);
+}
+
+function optionalSearchProvider(value: unknown): boolean {
+  return value === undefined || isSearchProvider(value);
+}
+
+function updatedSearchProvider(
+  value: unknown,
+  current: DesktopSearchProvider | undefined,
+): DesktopSearchProvider | undefined {
+  if (value === undefined) return current;
+  if (!isSearchProvider(value)) {
+    throw new Error("Search provider must be brave or linkup");
+  }
+  return value;
 }
 
 function optionalLanguage(value: unknown): boolean {
@@ -510,6 +522,16 @@ function isProvider(value: unknown): value is DesktopModelProvider {
 
 function parseProvider(value: string | undefined): DesktopModelProvider {
   return isProvider(value) ? value : "openai";
+}
+
+function isSearchProvider(value: unknown): value is DesktopSearchProvider {
+  return value === "brave" || value === "linkup";
+}
+
+function parseSearchProvider(
+  value: string | undefined,
+): DesktopSearchProvider | undefined {
+  return isSearchProvider(value) ? value : undefined;
 }
 
 function defaultModel(provider: DesktopModelProvider): string {

@@ -81,7 +81,9 @@ export interface SettingsSnapshot {
   geminiApiKeyConfigured: boolean;
   grokApiKeyConfigured: boolean;
   customApiKeyConfigured: boolean;
+  searchProvider: SearchProviderId;
   searchApiKeyConfigured: boolean;
+  linkupApiKeyConfigured: boolean;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;
@@ -105,7 +107,9 @@ export interface SettingsUpdate {
   geminiApiKey?: string | null;
   grokApiKey?: string | null;
   customApiKey?: string | null;
+  searchProvider: SearchProviderId;
   searchApiKey?: string | null;
+  linkupApiKey?: string | null;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;
@@ -119,9 +123,7 @@ export interface SettingsUpdate {
 export interface SettingsAdapter {
   load(): Promise<SettingsSnapshot>;
   save(update: SettingsUpdate): Promise<SettingsSnapshot>;
-  testProvider?(
-    request: ProviderTestRequest,
-  ): Promise<ProviderDiagnostic>;
+  testProvider?(request: ProviderTestRequest): Promise<ProviderDiagnostic>;
 }
 
 export type SecretStorageBoundary = "system" | "host-file";
@@ -163,6 +165,8 @@ export interface SecretDraft {
 }
 
 export type ProviderSecretDrafts = Record<ModelProviderId, SecretDraft>;
+export type SearchProviderId = "brave" | "linkup";
+export type SearchSecretDrafts = Record<SearchProviderId, SecretDraft>;
 
 const EMPTY_SECRET: SecretDraft = { value: "", cleared: false };
 const EMPTY_PROVIDER_SECRETS: ProviderSecretDrafts = {
@@ -174,6 +178,10 @@ const EMPTY_PROVIDER_SECRETS: ProviderSecretDrafts = {
   gemini: EMPTY_SECRET,
   grok: EMPTY_SECRET,
   custom: EMPTY_SECRET,
+};
+export const EMPTY_SEARCH_SECRETS: SearchSecretDrafts = {
+  brave: EMPTY_SECRET,
+  linkup: EMPTY_SECRET,
 };
 
 export function SettingsPage({
@@ -200,7 +208,10 @@ export function SettingsPage({
   const [providerKeys, setProviderKeys] = useState<ProviderSecretDrafts>(
     EMPTY_PROVIDER_SECRETS,
   );
-  const [searchKey, setSearchKey] = useState<SecretDraft>(EMPTY_SECRET);
+  const [searchKeys, setSearchKeys] =
+    useState<SearchSecretDrafts>(EMPTY_SEARCH_SECRETS);
+  const [searchProvider, setSearchProvider] =
+    useState<SearchProviderId>("brave");
   const [provider, setProvider] = useState<ModelProviderId>("openai");
   const [qwenBaseUrl, setQwenBaseUrl] = useState(DEFAULT_QWEN_BASE_URL);
   const [kimiBaseUrl, setKimiBaseUrl] = useState(DEFAULT_KIMI_BASE_URL);
@@ -255,6 +266,7 @@ export function SettingsPage({
         setPreferredProjectOpener(snapshot.preferredProjectOpener);
         onPreferredProjectOpenerChange?.(snapshot.preferredProjectOpener);
         setProvider(snapshot.provider);
+        setSearchProvider(snapshot.searchProvider);
         setQwenBaseUrl(snapshot.qwenBaseUrl);
         setKimiBaseUrl(snapshot.kimiBaseUrl);
         setDoubaoBaseUrl(snapshot.doubaoBaseUrl);
@@ -287,12 +299,15 @@ export function SettingsPage({
 
   const providerOption = providerDetails(provider);
   const providerKey = providerKeys[provider];
+  const searchKey = searchKeys[searchProvider];
   const dirty = settings
     ? Object.values(providerKeys).some(
         (draft) => draft.value.trim().length > 0 || draft.cleared,
       ) ||
-      searchKey.value.trim().length > 0 ||
-      searchKey.cleared ||
+      Object.values(searchKeys).some(
+        (draft) => draft.value.trim().length > 0 || draft.cleared,
+      ) ||
+      searchProvider !== settings.searchProvider ||
       provider !== settings.provider ||
       qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
       kimiBaseUrl.trim() !== settings.kimiBaseUrl ||
@@ -308,8 +323,10 @@ export function SettingsPage({
     ? Object.values(providerKeys).some(
         (draft) => draft.value.trim().length > 0 || draft.cleared,
       ) ||
-      searchKey.value.trim().length > 0 ||
-      searchKey.cleared ||
+      Object.values(searchKeys).some(
+        (draft) => draft.value.trim().length > 0 || draft.cleared,
+      ) ||
+      searchProvider !== settings.searchProvider ||
       provider !== settings.provider ||
       qwenBaseUrl.trim() !== settings.qwenBaseUrl ||
       kimiBaseUrl.trim() !== settings.kimiBaseUrl ||
@@ -328,10 +345,7 @@ export function SettingsPage({
     setProviderDiagnostic(undefined);
   }
 
-  function editProviderSecret(
-    targetProvider: ModelProviderId,
-    value: string,
-  ) {
+  function editProviderSecret(targetProvider: ModelProviderId, value: string) {
     setProviderKeys((drafts) => ({
       ...drafts,
       [targetProvider]: { value, cleared: false },
@@ -341,6 +355,22 @@ export function SettingsPage({
 
   function clearProviderSecret(targetProvider: ModelProviderId) {
     setProviderKeys((drafts) => ({
+      ...drafts,
+      [targetProvider]: { value: "", cleared: true },
+    }));
+    markEdited();
+  }
+
+  function editSearchSecret(targetProvider: SearchProviderId, value: string) {
+    setSearchKeys((drafts) => ({
+      ...drafts,
+      [targetProvider]: { value, cleared: false },
+    }));
+    markEdited();
+  }
+
+  function clearSearchSecret(targetProvider: SearchProviderId) {
+    setSearchKeys((drafts) => ({
       ...drafts,
       [targetProvider]: { value: "", cleared: true },
     }));
@@ -368,7 +398,10 @@ export function SettingsPage({
             createAppearanceSettingsUpdate(next),
           );
           persistedSettingsRef.current = snapshot;
-          if (!mountedRef.current || revision !== appearanceRevisionRef.current) {
+          if (
+            !mountedRef.current ||
+            revision !== appearanceRevisionRef.current
+          ) {
             return;
           }
           settingsRef.current = snapshot;
@@ -380,7 +413,10 @@ export function SettingsPage({
           onSettingsChange?.(snapshot);
           setAppearanceSaveStatus("saved");
         } catch (reason) {
-          if (!mountedRef.current || revision !== appearanceRevisionRef.current) {
+          if (
+            !mountedRef.current ||
+            revision !== appearanceRevisionRef.current
+          ) {
             return;
           }
           const persisted = persistedSettingsRef.current;
@@ -402,12 +438,7 @@ export function SettingsPage({
   }
 
   async function save() {
-    if (
-      !settings ||
-      !dirty ||
-      saving ||
-      appearancePendingRef.current > 0
-    ) {
+    if (!settings || !dirty || saving || appearancePendingRef.current > 0) {
       return;
     }
     setSaving(true);
@@ -419,7 +450,8 @@ export function SettingsPage({
       const snapshot = await adapter.save(
         createSettingsUpdate(
           providerKeys,
-          searchKey,
+          searchKeys,
+          searchProvider,
           provider,
           qwenBaseUrl,
           kimiBaseUrl,
@@ -439,7 +471,8 @@ export function SettingsPage({
       setSettings(snapshot);
       onSettingsChange?.(snapshot);
       setProviderKeys(EMPTY_PROVIDER_SECRETS);
-      setSearchKey(EMPTY_SECRET);
+      setSearchKeys(EMPTY_SEARCH_SECRETS);
+      setSearchProvider(snapshot.searchProvider);
       setSaved(true);
       setSavedWithRestart(shouldRestart);
       setPreferredProjectOpener(snapshot.preferredProjectOpener);
@@ -660,7 +693,12 @@ export function SettingsPage({
                       }}
                       options={[
                         ...(!isKnownModel(provider, model)
-                          ? [{ value: model, label: `${model} (${t("currentConfiguration")})` }]
+                          ? [
+                              {
+                                value: model,
+                                label: `${model} (${t("currentConfiguration")})`,
+                              },
+                            ]
                           : []),
                         ...providerOption.models.map((option) => ({
                           value: option.value,
@@ -692,7 +730,7 @@ export function SettingsPage({
                         ? t("qwenApiKey")
                         : provider === "custom"
                           ? t("customApiKey")
-                        : providerOption.keyLabel
+                          : providerOption.keyLabel
                     }
                     description={providerKeyDescription(provider, t)}
                     configured={providerKeyConfigured(settings, provider)}
@@ -791,21 +829,48 @@ export function SettingsPage({
                       }}
                     />
                   )}
+                  <SettingsSelectField
+                    id="search-provider-select"
+                    label={t("searchProvider")}
+                    description={t(
+                      searchProvider === "linkup"
+                        ? "linkupSearchDescription"
+                        : "braveSearchDescription",
+                    )}
+                    value={searchProvider}
+                    onChange={(value) => {
+                      setSearchProvider(value as SearchProviderId);
+                      markEdited();
+                    }}
+                    options={[
+                      { value: "linkup", label: "Linkup" },
+                      { value: "brave", label: "Brave Search" },
+                    ]}
+                  />
                   <SecretField
-                    id="search-api-key"
-                    label={t("searchApiKey")}
-                    description={t("searchApiKeyDescription")}
-                    configured={settings?.searchApiKeyConfigured ?? false}
+                    key={searchProvider}
+                    id={`${searchProvider}-search-api-key`}
+                    label={
+                      searchProvider === "linkup"
+                        ? t("linkupApiKey")
+                        : t("braveSearchApiKey")
+                    }
+                    description={t(
+                      searchProvider === "linkup"
+                        ? "linkupApiKeyDescription"
+                        : "braveSearchApiKeyDescription",
+                    )}
+                    configured={
+                      searchProvider === "linkup"
+                        ? (settings?.linkupApiKeyConfigured ?? false)
+                        : (settings?.searchApiKeyConfigured ?? false)
+                    }
                     draft={searchKey}
                     icon="search"
-                    onChange={(value) => {
-                      setSearchKey({ value, cleared: false });
-                      markEdited();
-                    }}
-                    onClear={() => {
-                      setSearchKey({ value: "", cleared: true });
-                      markEdited();
-                    }}
+                    onChange={(value) =>
+                      editSearchSecret(searchProvider, value)
+                    }
+                    onClear={() => clearSearchSecret(searchProvider)}
                   />
                 </div>
                 {adapter.testProvider && (
@@ -866,7 +931,6 @@ export function SettingsPage({
                   </div>
                 )}
               </section>
-
             </>
           )}
 
@@ -974,7 +1038,9 @@ export function SettingsSelectField({
   function handleTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      openAndFocus(open ? Math.min(selectedIndex + 1, options.length - 1) : selectedIndex);
+      openAndFocus(
+        open ? Math.min(selectedIndex + 1, options.length - 1) : selectedIndex,
+      );
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       openAndFocus(open ? Math.max(selectedIndex - 1, 0) : selectedIndex);
@@ -1010,14 +1076,13 @@ export function SettingsSelectField({
     <div className="settings-field model-field">
       <div className="settings-field-label">
         <div>
-          <label id={`${id}-label`} htmlFor={id}>{label}</label>
+          <label id={`${id}-label`} htmlFor={id}>
+            {label}
+          </label>
           <p>{description}</p>
         </div>
       </div>
-      <div
-        className={`model-select-wrap ${open ? "open" : ""}`}
-        ref={root}
-      >
+      <div className={`model-select-wrap ${open ? "open" : ""}`} ref={root}>
         <button
           ref={trigger}
           type="button"
@@ -1257,7 +1322,8 @@ function TextField({
 
 export function createSettingsUpdate(
   providerKeys: ProviderSecretDrafts,
-  searchKey: SecretDraft,
+  searchKeys: SearchSecretDrafts,
+  searchProvider: SearchProviderId,
   provider: ModelProviderId,
   qwenBaseUrl: string,
   kimiBaseUrl: string,
@@ -1276,6 +1342,7 @@ export function createSettingsUpdate(
     theme,
     preferredProjectOpener,
     provider,
+    searchProvider,
     qwenBaseUrl: qwenBaseUrl.trim(),
     kimiBaseUrl: kimiBaseUrl.trim(),
     doubaoBaseUrl: doubaoBaseUrl.trim(),
@@ -1292,7 +1359,8 @@ export function createSettingsUpdate(
     ...secretUpdate("geminiApiKey", providerKeys.gemini),
     ...secretUpdate("grokApiKey", providerKeys.grok),
     ...secretUpdate("customApiKey", providerKeys.custom),
-    ...secretUpdate("searchApiKey", searchKey),
+    ...secretUpdate("searchApiKey", searchKeys.brave),
+    ...secretUpdate("linkupApiKey", searchKeys.linkup),
   };
 }
 
@@ -1301,7 +1369,8 @@ export function createAppearanceSettingsUpdate(
 ): SettingsUpdate {
   return createSettingsUpdate(
     EMPTY_PROVIDER_SECRETS,
-    EMPTY_SECRET,
+    EMPTY_SEARCH_SECRETS,
+    settings.searchProvider,
     settings.provider,
     settings.qwenBaseUrl,
     settings.kimiBaseUrl,
@@ -1378,10 +1447,7 @@ function providerDiagnosticMessage(
   }
 }
 
-function providerDescription(
-  provider: ModelProviderId,
-  t: Translate,
-): string {
+function providerDescription(provider: ModelProviderId, t: Translate): string {
   if (provider === "deepseek") return t("providerDeepSeekDescription");
   if (provider === "qwen") return t("providerQwenDescription");
   if (provider === "kimi") return t("providerKimiDescription");
@@ -1406,21 +1472,21 @@ function providerKeyDescription(
   return t("providerOpenAIKeyDescription");
 }
 
-function secretUpdate<K extends keyof Pick<
-  SettingsUpdate,
-  | "openAIApiKey"
-  | "deepSeekApiKey"
-  | "qwenApiKey"
-  | "kimiApiKey"
-  | "doubaoApiKey"
-  | "geminiApiKey"
-  | "grokApiKey"
-  | "customApiKey"
-  | "searchApiKey"
->>(
-  key: K,
-  draft: SecretDraft,
-): Pick<SettingsUpdate, K> | Record<string, never> {
+function secretUpdate<
+  K extends keyof Pick<
+    SettingsUpdate,
+    | "openAIApiKey"
+    | "deepSeekApiKey"
+    | "qwenApiKey"
+    | "kimiApiKey"
+    | "doubaoApiKey"
+    | "geminiApiKey"
+    | "grokApiKey"
+    | "customApiKey"
+    | "searchApiKey"
+    | "linkupApiKey"
+  >,
+>(key: K, draft: SecretDraft): Pick<SettingsUpdate, K> | Record<string, never> {
   const value = draft.value.trim();
   if (value) return { [key]: value } as Pick<SettingsUpdate, K>;
   if (draft.cleared) return { [key]: null } as Pick<SettingsUpdate, K>;

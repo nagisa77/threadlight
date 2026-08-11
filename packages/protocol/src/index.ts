@@ -86,6 +86,7 @@ export type HostModelProvider =
 
 export type HostLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
 export type HostTheme = "system" | "light" | "dark";
+export type HostSearchProvider = "brave" | "linkup";
 
 export interface PullRequestChangeSummary {
   path: string;
@@ -114,7 +115,10 @@ export interface HostSettingsSnapshot {
   geminiApiKeyConfigured: boolean;
   grokApiKeyConfigured: boolean;
   customApiKeyConfigured: boolean;
+  searchProvider: HostSearchProvider;
+  /** Brave Search credential status. Kept under the legacy name for compatibility. */
   searchApiKeyConfigured: boolean;
+  linkupApiKeyConfigured: boolean;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;
@@ -139,7 +143,10 @@ export interface HostSettingsUpdate {
   geminiApiKey?: string | null;
   grokApiKey?: string | null;
   customApiKey?: string | null;
+  searchProvider?: HostSearchProvider;
+  /** Brave Search credential. Kept under the legacy name for compatibility. */
   searchApiKey?: string | null;
+  linkupApiKey?: string | null;
   qwenBaseUrl: string;
   kimiBaseUrl: string;
   doubaoBaseUrl: string;
@@ -704,7 +711,7 @@ export interface HostCodeHostCommitPushResult {
   status: HostCodeHostDeliveryStatus;
 }
 
-export const THREADLIGHT_HOST_PROTOCOL_VERSION = 2 as const;
+export const THREADLIGHT_HOST_PROTOCOL_VERSION = 3 as const;
 
 export interface ThreadlightHostHealth {
   ok: true;
@@ -928,12 +935,7 @@ export interface ConversationProgressData {
 }
 
 export type AgentTaskStatusData =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "interrupted";
+  "queued" | "running" | "completed" | "failed" | "cancelled" | "interrupted";
 
 export type AgentTaskPhaseData =
   "queued" | "thinking" | "working" | "waiting" | "done";
@@ -1008,10 +1010,7 @@ export interface AgentTreeData {
 }
 
 export type AgentRunStatusData =
-  | "active"
-  | "completed"
-  | "failed"
-  | "interrupted";
+  "active" | "completed" | "failed" | "interrupted";
 
 /**
  * Queryable, display-safe projection of one persisted agent thread.

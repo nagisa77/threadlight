@@ -30,7 +30,9 @@ const directories: string[] = [];
 const codec: SecretCodec = {
   encrypt: (value) => Buffer.from(`protected:${value}`).toString("base64"),
   decrypt: (value) =>
-    Buffer.from(value, "base64").toString("utf8").replace(/^protected:/, ""),
+    Buffer.from(value, "base64")
+      .toString("utf8")
+      .replace(/^protected:/, ""),
 };
 
 afterEach(() => {
@@ -61,7 +63,9 @@ describe("SettingsStore", () => {
         geminiApiKey: "gemini-secret",
         grokApiKey: "grok-secret",
         customApiKey: "custom-secret",
+        searchProvider: "linkup",
         searchApiKey: "search-secret",
+        linkupApiKey: "linkup-secret",
         ...DEFAULT_CONNECTIONS,
         customModel: DEFAULT_CUSTOM_MODEL,
         model: "  deepseek-v4-pro  ",
@@ -82,7 +86,9 @@ describe("SettingsStore", () => {
       geminiApiKeyConfigured: true,
       grokApiKeyConfigured: true,
       customApiKeyConfigured: true,
+      searchProvider: "linkup",
       searchApiKeyConfigured: true,
+      linkupApiKeyConfigured: true,
       ...DEFAULT_CONNECTIONS,
       customModel: DEFAULT_CUSTOM_MODEL,
       model: "deepseek-v4-pro",
@@ -98,11 +104,13 @@ describe("SettingsStore", () => {
       "grok-secret",
       "custom-secret",
       "search-secret",
+      "linkup-secret",
     ]) {
       expect(stored).not.toContain(secret);
     }
     expect(store.runtimeSettings({})).toEqual({
       provider: "deepseek",
+      searchProvider: "linkup",
       openAIApiKey: "openai-secret",
       deepSeekApiKey: "deepseek-secret",
       qwenApiKey: "qwen-secret",
@@ -112,6 +120,7 @@ describe("SettingsStore", () => {
       grokApiKey: "grok-secret",
       customApiKey: "custom-secret",
       searchApiKey: "search-secret",
+      linkupApiKey: "linkup-secret",
       ...DEFAULT_CONNECTIONS,
       model: "deepseek-v4-pro",
     });
@@ -150,6 +159,7 @@ describe("SettingsStore", () => {
       store.runtimeSettings({ OPENAI_API_KEY: "environment-key" }),
     ).toEqual({
       provider: "qwen",
+      searchProvider: "brave",
       openAIApiKey: "environment-key",
       deepSeekApiKey: undefined,
       qwenApiKey: undefined,
@@ -159,6 +169,7 @@ describe("SettingsStore", () => {
       grokApiKey: undefined,
       customApiKey: undefined,
       searchApiKey: undefined,
+      linkupApiKey: undefined,
       qwenBaseUrl: "https://example.test/compatible-mode/v1",
       kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
       doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
@@ -196,16 +207,18 @@ describe("SettingsStore", () => {
       openAIApiKeyConfigured: false,
       model: "gpt-5.6-sol",
     });
-    expect(store.runtimeSettings({ OPENAI_API_KEY: "environment-key" }))
-      .toMatchObject({
-        openAIApiKey: "environment-key",
-      });
+    expect(
+      store.runtimeSettings({ OPENAI_API_KEY: "environment-key" }),
+    ).toMatchObject({
+      openAIApiKey: "environment-key",
+    });
   });
 
   it("maps provider settings to child-process environment variables", () => {
     expect(
       runtimeEnvironment({
         provider: "qwen",
+        searchProvider: "brave",
         openAIApiKey: "openai",
         deepSeekApiKey: "deepseek",
         qwenApiKey: "qwen",
@@ -215,6 +228,7 @@ describe("SettingsStore", () => {
         grokApiKey: "grok",
         customApiKey: "custom",
         searchApiKey: "search",
+        linkupApiKey: "linkup",
         qwenBaseUrl: "https://qwen.example/v1",
         kimiBaseUrl: "https://kimi.example/v1",
         doubaoBaseUrl: "https://doubao.example/v1",
@@ -225,6 +239,7 @@ describe("SettingsStore", () => {
       }),
     ).toEqual({
       THREADLIGHT_PROVIDER: "qwen",
+      THREADLIGHT_SEARCH_PROVIDER: "brave",
       OPENAI_API_KEY: "openai",
       DEEPSEEK_API_KEY: "deepseek",
       DASHSCOPE_API_KEY: "qwen",
@@ -234,6 +249,7 @@ describe("SettingsStore", () => {
       XAI_API_KEY: "grok",
       CUSTOM_API_KEY: "custom",
       BRAVE_SEARCH_API_KEY: "search",
+      LINKUP_API_KEY: "linkup",
       DASHSCOPE_BASE_URL: "https://qwen.example/v1",
       MOONSHOT_BASE_URL: "https://kimi.example/v1",
       ARK_BASE_URL: "https://doubao.example/v1",
@@ -248,6 +264,7 @@ describe("SettingsStore", () => {
     expect(
       runtimeEnvironment({
         provider: "kimi",
+        searchProvider: "brave",
         openAIApiKey: "openai",
         deepSeekApiKey: "deepseek",
         qwenApiKey: "qwen",
@@ -267,6 +284,7 @@ describe("SettingsStore", () => {
       }),
     ).toEqual({
       THREADLIGHT_PROVIDER: "kimi",
+      THREADLIGHT_SEARCH_PROVIDER: "brave",
       OPENAI_API_KEY: "openai",
       DEEPSEEK_API_KEY: "deepseek",
       DASHSCOPE_API_KEY: "qwen",
@@ -316,6 +334,7 @@ describe("SettingsStore", () => {
     ({ provider, model, keyName, baseUrlName, key, baseUrl }) => {
       const settings = {
         provider,
+        searchProvider: "brave" as const,
         openAIApiKey: "openai",
         deepSeekApiKey: "deepseek",
         qwenApiKey: "qwen",
@@ -336,6 +355,7 @@ describe("SettingsStore", () => {
 
       expect(runtimeEnvironment(settings)).toEqual({
         THREADLIGHT_PROVIDER: provider,
+        THREADLIGHT_SEARCH_PROVIDER: "brave",
         OPENAI_API_KEY: "openai",
         DEEPSEEK_API_KEY: "deepseek",
         DASHSCOPE_API_KEY: "qwen",
@@ -362,6 +382,7 @@ describe("SettingsStore", () => {
     expect(
       runtimeEnvironment({
         provider: "custom",
+        searchProvider: "brave",
         ...emptyRuntimeSecrets(),
         searchApiKey: "search",
         ...DEFAULT_CONNECTIONS,
@@ -370,6 +391,7 @@ describe("SettingsStore", () => {
       }),
     ).toEqual({
       THREADLIGHT_PROVIDER: "custom",
+      THREADLIGHT_SEARCH_PROVIDER: "brave",
       BRAVE_SEARCH_API_KEY: "search",
       DASHSCOPE_BASE_URL: DEFAULT_QWEN_BASE_URL,
       MOONSHOT_BASE_URL: DEFAULT_KIMI_BASE_URL,
@@ -418,7 +440,35 @@ describe("SettingsStore", () => {
       theme: "system",
       preferredProjectOpener: "",
       provider: "openai",
+      searchProvider: "brave",
       model: "gpt-5.6-sol",
+    });
+    expect(
+      store.snapshot({ LINKUP_API_KEY: "environment-linkup" }),
+    ).toMatchObject({
+      searchProvider: "linkup",
+      linkupApiKeyConfigured: true,
+    });
+  });
+
+  it("keeps legacy search credentials assigned to Brave", () => {
+    const { store } = createStore();
+
+    const snapshot = store.update(
+      {
+        provider: "openai",
+        searchApiKey: "legacy-brave-key",
+        ...DEFAULT_CONNECTIONS,
+        customModel: DEFAULT_CUSTOM_MODEL,
+        model: "gpt-5.6-sol",
+      },
+      {},
+    );
+
+    expect(snapshot).toMatchObject({
+      searchProvider: "brave",
+      searchApiKeyConfigured: true,
+      linkupApiKeyConfigured: false,
     });
   });
 

@@ -1,108 +1,54 @@
 import { defineTool, type Tool } from "@threadlight/agent-loop";
 
-const DEFAULT_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 const DEFAULT_COUNT = 5;
-const DEFAULT_TIMEOUT_MS = 10_000;
-const BRAVE_SEARCH_LANGUAGES = [
-  "ar",
-  "eu",
-  "bn",
-  "bg",
-  "ca",
-  "zh-hans",
-  "zh-hant",
-  "hr",
-  "cs",
-  "da",
-  "nl",
-  "en",
-  "en-gb",
-  "et",
-  "fi",
-  "fr",
-  "gl",
-  "de",
-  "gu",
-  "he",
-  "hi",
-  "hu",
-  "is",
-  "it",
-  "jp",
-  "kn",
-  "ko",
-  "lv",
-  "lt",
-  "ms",
-  "ml",
-  "mr",
-  "nb",
-  "pl",
-  "pt-br",
-  "pt-pt",
-  "pa",
-  "ro",
-  "ru",
-  "sr",
-  "sk",
-  "sl",
-  "es",
-  "sv",
-  "ta",
-  "te",
-  "th",
-  "tr",
-  "uk",
-  "vi",
-] as const;
+const DEFAULT_TIMEOUT_MS = 15_000;
 
-type BraveSearchLanguage = (typeof BRAVE_SEARCH_LANGUAGES)[number];
+export type WebSearchFreshness = "pd" | "pw" | "pm" | "py";
 
-const BRAVE_SEARCH_LANGUAGE_SET = new Set<string>(BRAVE_SEARCH_LANGUAGES);
-const SEARCH_LANGUAGE_ALIASES: Readonly<Record<string, BraveSearchLanguage>> = {
-  ja: "jp",
-  zh: "zh-hans",
-  "zh-cn": "zh-hans",
-  "zh-sg": "zh-hans",
-  "zh-hk": "zh-hant",
-  "zh-mo": "zh-hant",
-  "zh-tw": "zh-hant",
-};
+export interface WebSearchRequest {
+  query: string;
+  count: number;
+  country?: string;
+  searchLanguage?: string;
+  freshness?: WebSearchFreshness;
+}
 
-type Fetch = typeof fetch;
+export interface WebSearchItem {
+  title: string;
+  url: string;
+  description: string;
+  age?: string;
+  language?: string;
+}
+
+export interface WebSearchProvider {
+  readonly id: string;
+  search(
+    request: WebSearchRequest,
+    context: { signal: AbortSignal },
+  ): Promise<readonly WebSearchItem[]>;
+}
 
 export interface WebSearchToolOptions {
-  apiKey: string;
-  fetch?: Fetch;
-  endpoint?: string;
+  provider: WebSearchProvider;
   defaultCount?: number;
   timeoutMs?: number;
 }
 
 export interface WebSearchResult {
   query: string;
-  results: Array<{
-    title: string;
-    url: string;
-    description: string;
-    age?: string;
-    language?: string;
-  }>;
+  results: WebSearchItem[];
 }
 
 interface WebSearchArguments {
   query: string;
   count: number;
   country?: string;
-  search_lang?: BraveSearchLanguage;
-  freshness?: "pd" | "pw" | "pm" | "py";
+  searchLanguage?: string;
+  freshness?: WebSearchFreshness;
 }
 
 export function createWebSearchTool(options: WebSearchToolOptions): Tool {
-  if (options.apiKey.trim().length === 0) {
-    throw new Error("apiKey must be a non-empty string");
-  }
-
   const defaultCount = integerInRange(
     options.defaultCount ?? DEFAULT_COUNT,
     1,
@@ -113,7 +59,6 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
     options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
     "timeoutMs",
   );
-  const fetchImplementation = options.fetch ?? globalThis.fetch;
 
   return defineTool({
     name: "web_search",
@@ -127,7 +72,7 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
           type: "string",
           minLength: 1,
           maxLength: 400,
-          description: "Search query, including operators such as site: or filetype:.",
+          description: "Natural-language web search query.",
         },
         count: {
           type: ["integer", "null"],
@@ -139,13 +84,14 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
           type: ["string", "null"],
           minLength: 2,
           maxLength: 2,
-          description: "Optional two-letter country code.",
+          description: "Optional two-letter country preference.",
         },
         search_lang: {
           type: ["string", "null"],
-          enum: [...BRAVE_SEARCH_LANGUAGES, null],
+          minLength: 2,
+          maxLength: 35,
           description:
-            "Optional Brave search-result language code. Use zh-hans for Simplified Chinese or zh-hant for Traditional Chinese.",
+            "Optional BCP-47 search-result language preference, such as en, ja, zh-Hans, or zh-Hant.",
         },
         freshness: {
           type: ["string", "null"],
@@ -159,38 +105,32 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
     },
     async execute(arguments_, context) {
       const parsed = parseArguments(arguments_, defaultCount);
-      const url = new URL(options.endpoint ?? DEFAULT_ENDPOINT);
-      url.searchParams.set("q", parsed.query);
-      url.searchParams.set("count", String(parsed.count));
-      if (parsed.country) url.searchParams.set("country", parsed.country);
-      if (parsed.search_lang) {
-        url.searchParams.set("search_lang", parsed.search_lang);
-      }
-      if (parsed.freshness) url.searchParams.set("freshness", parsed.freshness);
-
       const timeoutSignal = AbortSignal.timeout(timeoutMs);
-      const response = await fetchImplementation(url, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          "X-Subscription-Token": options.apiKey,
+      const results = await options.provider.search(
+        {
+          query: parsed.query,
+          count: parsed.count,
+          ...(parsed.country ? { country: parsed.country } : {}),
+          ...(parsed.searchLanguage
+            ? { searchLanguage: parsed.searchLanguage }
+            : {}),
+          ...(parsed.freshness ? { freshness: parsed.freshness } : {}),
         },
-        signal: AbortSignal.any([context.signal, timeoutSignal]),
-      });
+        { signal: AbortSignal.any([context.signal, timeoutSignal]) },
+      );
 
-      if (!response.ok) {
-        const detail = (await response.text()).slice(0, 500);
-        throw new Error(
-          `Brave Search API returned ${response.status}${detail ? `: ${detail}` : ""}`,
-        );
-      }
-
-      return parseResponse(parsed.query, await response.json());
+      return {
+        query: parsed.query,
+        results: results.slice(0, parsed.count),
+      } satisfies WebSearchResult;
     },
   });
 }
 
-function parseArguments(value: unknown, defaultCount: number): WebSearchArguments {
+function parseArguments(
+  value: unknown,
+  defaultCount: number,
+): WebSearchArguments {
   if (!isObject(value)) throw new Error("arguments must be an object");
 
   const query = value.query;
@@ -205,7 +145,16 @@ function parseArguments(value: unknown, defaultCount: number): WebSearchArgument
     throw new Error("country must be a two-letter code");
   }
 
-  const searchLang = parseSearchLanguage(value.search_lang);
+  const searchLanguage = optionalString(value.search_lang, "search_lang");
+  if (
+    searchLanguage !== undefined &&
+    !/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(
+      searchLanguage.replaceAll("_", "-"),
+    )
+  ) {
+    throw new Error("search_lang must be a valid BCP-47 language code");
+  }
+
   const freshness = value.freshness;
   if (
     freshness !== undefined &&
@@ -222,52 +171,9 @@ function parseArguments(value: unknown, defaultCount: number): WebSearchArgument
     query: query.trim(),
     count,
     country: country?.toUpperCase(),
-    search_lang: searchLang,
+    searchLanguage: searchLanguage?.replaceAll("_", "-"),
     freshness: freshness ?? undefined,
   };
-}
-
-function parseSearchLanguage(value: unknown): BraveSearchLanguage | undefined {
-  const searchLang = optionalString(value, "search_lang");
-  if (searchLang === undefined) return undefined;
-
-  const normalized = searchLang.trim().toLowerCase().replaceAll("_", "-");
-  const canonical = SEARCH_LANGUAGE_ALIASES[normalized] ?? normalized;
-  if (!BRAVE_SEARCH_LANGUAGE_SET.has(canonical)) {
-    throw new Error(
-      "search_lang must be a language supported by Brave Search (for Chinese, use zh-hans or zh-hant)",
-    );
-  }
-
-  return canonical as BraveSearchLanguage;
-}
-
-function parseResponse(query: string, value: unknown): WebSearchResult {
-  if (!isObject(value)) throw new Error("Brave Search API returned invalid JSON");
-
-  const web = value.web;
-  const rawResults = isObject(web) && Array.isArray(web.results) ? web.results : [];
-  const results = rawResults.flatMap((item) => {
-    if (!isObject(item)) return [];
-    if (typeof item.title !== "string" || typeof item.url !== "string") {
-      return [];
-    }
-
-    return [
-      {
-        title: item.title,
-        url: item.url,
-        description:
-          typeof item.description === "string" ? item.description : "",
-        ...(typeof item.age === "string" ? { age: item.age } : {}),
-        ...(typeof item.language === "string"
-          ? { language: item.language }
-          : {}),
-      },
-    ];
-  });
-
-  return { query, results };
 }
 
 function optionalString(value: unknown, name: string): string | undefined {
