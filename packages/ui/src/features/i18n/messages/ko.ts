@@ -879,6 +879,8 @@ export const ko: Messages = {
   agentModelStep: "모델 단계 {step}",
   toolArguments: "호출 인자",
   toolOutput: "도구 출력",
+  agentTurn: "{count}번째 턴",
+  agentTurnCount: "{count}턴",
   agentActiveCount: "{count}개 실행 중",
   agentDoneCount: "{count}개 완료",
   agentDetails: "Agent 세부 정보",

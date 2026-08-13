@@ -881,6 +881,68 @@
   font-variant-numeric: tabular-nums;
 }
 
+.agent-inspector-turns {
+  display: grid;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.agent-inspector-turn {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
+}
+
+.agent-inspector-turn > summary {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+  list-style: none;
+  cursor: pointer;
+}
+
+.agent-inspector-turn > summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-inspector-turn > summary span {
+  flex: 1;
+}
+
+.agent-inspector-turn > summary small {
+  color: var(--subtle);
+  font-size: 8px;
+  font-weight: 550;
+}
+
+.agent-inspector-turn > summary svg {
+  color: var(--subtle);
+  transition: transform 160ms var(--ease-out);
+}
+
+.agent-inspector-turn[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.agent-inspector-turn > div {
+  padding: 8px 9px 9px;
+  border-top: 1px solid var(--line);
+}
+
+.agent-inspector-turn > div > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .agent-action {
   display: inline-flex;
   min-height: 25px;

@@ -6,6 +6,7 @@ import {
   groupAdjacentAgentActivities,
 } from "../src/features/task-session/conversation-content.js";
 import { AgentPanel } from "../src/features/task-session/agent-panel.js";
+import { groupAgentThreads } from "../src/features/task-session/agent-threads.js";
 
 describe("AgentTreePanel", () => {
   const tree = {
@@ -147,6 +148,62 @@ describe("AgentTreePanel", () => {
       { id: "read-1", name: "read_file", status: "completed", count: 1 },
       { id: "search-3", name: "web_search", status: "running", count: 1 },
     ]);
+  });
+
+  it("keeps follow-up turns inside one stable logical agent", () => {
+    const followedUp = {
+      ...tree,
+      agents: [
+        {
+          ...tree.agents[0]!,
+          status: "completed" as const,
+          phase: "done" as const,
+        },
+        {
+          ...tree.agents[1]!,
+          agentThreadId: "explorer",
+          status: "completed" as const,
+          phase: "done" as const,
+          output: "Initial protocol findings",
+        },
+        {
+          ...tree.agents[1]!,
+          id: "explorer-follow-up",
+          agentThreadId: "explorer",
+          followUpOf: "explorer",
+          task: "Verify the recovery path",
+          status: "completed" as const,
+          phase: "done" as const,
+          createdAt: "2026-08-08T08:01:00.000Z",
+          output: "Recovery path verified",
+        },
+      ],
+    };
+    const childThreads = groupAgentThreads(
+      followedUp.agents.filter(({ parentId }) => parentId === tree.rootId),
+    );
+
+    expect(childThreads).toHaveLength(1);
+    expect(childThreads[0]).toMatchObject({
+      id: "explorer",
+      latest: { id: "explorer-follow-up" },
+    });
+    expect(childThreads[0]?.turns).toHaveLength(2);
+
+    const treeHtml = renderToStaticMarkup(<AgentTreePanel tree={followedUp} />);
+    expect(treeHtml).toContain("1 个已完成");
+    expect(treeHtml).toContain("2 轮");
+    expect(treeHtml.match(/class="agent-row pressable/g)).toHaveLength(1);
+
+    const panelHtml = renderToStaticMarkup(<AgentPanel tree={followedUp} />);
+    expect(panelHtml.match(/class="agent-panel-agent pressable/g)).toHaveLength(
+      2,
+    );
+    expect(panelHtml).toContain("第 1 轮");
+    expect(panelHtml).toContain("第 2 轮");
+    expect(panelHtml).toContain("Initial protocol findings");
+    expect(panelHtml).toContain("Verify the recovery path");
+    expect(panelHtml).toContain("Recovery path verified");
   });
 
   it("renders a conversation-like side panel with model, tool, and output details", () => {

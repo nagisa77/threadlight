@@ -36,6 +36,12 @@ import type {
   PendingAttachment,
   VoiceInputStatus,
 } from "../composer/controller.js";
+import {
+  groupAgentThreads,
+  totalAgentSteps,
+  totalAgentTokens,
+  type AgentThreadView,
+} from "./agent-threads.js";
 import type { ConversationProgress, ToolActivity } from "./session.js";
 
 export function ProgressList({
@@ -102,22 +108,22 @@ function AgentTreeContent({
   onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
-  const agents = tree.agents.filter(
-    ({ parentId }) => parentId === tree.rootId,
+  const agentThreads = groupAgentThreads(
+    tree.agents.filter(({ parentId }) => parentId === tree.rootId),
   );
-  const activeCount = agents.filter(
-    ({ status }) => status === "queued" || status === "running",
+  const activeCount = agentThreads.filter(
+    ({ latest }) => latest.status === "queued" || latest.status === "running",
   ).length;
-  const attentionCount = agents.filter(
-    ({ status, closedAt }) =>
-      !closedAt &&
-      (status === "failed" ||
-        status === "cancelled" ||
-        status === "interrupted"),
+  const attentionCount = agentThreads.filter(
+    ({ latest }) =>
+      !latest.closedAt &&
+      (latest.status === "failed" ||
+        latest.status === "cancelled" ||
+        latest.status === "interrupted"),
   ).length;
   const [expanded, setExpanded] = useState(live || attentionCount > 0);
   const [selectedId, setSelectedId] = useState<string>();
-  const selected = agents.find(({ id }) => id === selectedId);
+  const selected = agentThreads.find(({ id }) => id === selectedId);
   const threadId = controls?.threadId;
   const onCancel =
     controls && threadId
@@ -148,7 +154,7 @@ function AgentTreeContent({
         }
       : undefined;
 
-  if (agents.length === 0) return null;
+  if (agentThreads.length === 0) return null;
 
   return (
     <details
@@ -177,7 +183,7 @@ function AgentTreeContent({
         <span className="agent-tree-count">
           {activeCount > 0
             ? t("agentActiveCount", { count: activeCount })
-            : t("agentDoneCount", { count: agents.length })}
+            : t("agentDoneCount", { count: agentThreads.length })}
         </span>
         <ChevronRight
           className="agent-tree-chevron"
@@ -187,52 +193,60 @@ function AgentTreeContent({
       </summary>
       <div className="agent-tree-content">
         <div className="agent-tree-list" role="list">
-          {agents.map((agent) => (
-            <button
-              type="button"
-              className={`agent-row pressable${selectedId === agent.id ? " selected" : ""}`}
-              key={agent.id}
-              role="listitem"
-              aria-expanded={selectedId === agent.id}
-              onClick={() =>
-                setSelectedId((current) =>
-                  current === agent.id ? undefined : agent.id,
-                )
-              }
-            >
-              <AgentStatusIcon agent={agent} />
-              <span className="agent-row-copy">
-                <span className="agent-row-title">
-                  <strong>
-                    {agent.id === tree.rootId ? t("mainAgent") : agent.name}
-                  </strong>
-                  <small>{agent.task}</small>
+          {agentThreads.map((thread) => {
+            const agent = thread.latest;
+            return (
+              <button
+                type="button"
+                className={`agent-row pressable${selectedId === thread.id ? " selected" : ""}`}
+                key={thread.id}
+                role="listitem"
+                aria-expanded={selectedId === thread.id}
+                onClick={() =>
+                  setSelectedId((current) =>
+                    current === thread.id ? undefined : thread.id,
+                  )
+                }
+              >
+                <AgentStatusIcon agent={agent} />
+                <span className="agent-row-copy">
+                  <span className="agent-row-title">
+                    <strong>
+                      {agent.id === tree.rootId ? t("mainAgent") : agent.name}
+                    </strong>
+                    <small>{agent.task}</small>
+                  </span>
+                  <span className="agent-row-meta">
+                    <span>{agentStatusLabel(agent, t)}</span>
+                    {thread.turns.length > 1 && (
+                      <span>
+                        {t("agentTurnCount", { count: thread.turns.length })}
+                      </span>
+                    )}
+                    {agent.latestActivity && (
+                      <span className="agent-row-activity">
+                        {agent.latestActivity}
+                      </span>
+                    )}
+                  </span>
                 </span>
-                <span className="agent-row-meta">
-                  <span>{agentStatusLabel(agent, t)}</span>
-                  {agent.latestActivity && (
-                    <span className="agent-row-activity">
-                      {agent.latestActivity}
-                    </span>
-                  )}
+                <span className="agent-row-time">
+                  <Clock3 size={11} aria-hidden="true" />
+                  {formatAgentDuration(agent.elapsedMs, t)}
                 </span>
-              </span>
-              <span className="agent-row-time">
-                <Clock3 size={11} aria-hidden="true" />
-                {formatAgentDuration(agent.elapsedMs, t)}
-              </span>
-              <ChevronRight
-                className="agent-row-chevron"
-                size={13}
-                aria-hidden="true"
-              />
-            </button>
-          ))}
+                <ChevronRight
+                  className="agent-row-chevron"
+                  size={13}
+                  aria-hidden="true"
+                />
+              </button>
+            );
+          })}
         </div>
         {selected && (
           <AgentInspector
             key={selected.id}
-            agent={selected}
+            thread={selected}
             live={live}
             onCancel={onCancel}
             onRetry={onRetry}
@@ -245,19 +259,20 @@ function AgentTreeContent({
 }
 
 function AgentInspector({
-  agent,
+  thread,
   live,
   onCancel,
   onRetry,
   onSteer,
 }: {
-  agent: AgentTaskData;
+  thread: AgentThreadView;
   live: boolean;
   onCancel?(agentId: string): Promise<unknown>;
   onRetry?(agentId: string): Promise<unknown>;
   onSteer?(agentId: string, input: string): Promise<unknown>;
 }) {
   const { t } = useI18n();
+  const agent = thread.latest;
   const [direction, setDirection] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string>();
@@ -267,7 +282,8 @@ function AgentInspector({
     (agent.status === "failed" ||
       agent.status === "cancelled" ||
       agent.status === "interrupted");
-  const activityGroups = groupAdjacentAgentActivities(agent.activities);
+  const steps = totalAgentSteps(thread);
+  const tokens = totalAgentTokens(thread);
 
   const act = async (action: () => Promise<unknown>): Promise<boolean> => {
     if (busy) return false;
@@ -288,7 +304,7 @@ function AgentInspector({
     <section className="agent-inspector" aria-label={t("agentDetails")}>
       <div className="agent-inspector-header">
         <span>
-          <strong>{agent.name}</strong>
+          <strong>{thread.initial.name}</strong>
           <small>{agent.task}</small>
         </span>
         {live && active && onCancel && (
@@ -314,44 +330,75 @@ function AgentInspector({
           </button>
         )}
       </div>
-      {(agent.steps !== undefined || (agent.usage?.totalTokens ?? 0) > 0) && (
+      {(thread.turns.length > 1 || steps !== undefined || tokens > 0) && (
         <div className="agent-inspector-stats">
-          {agent.steps !== undefined && (
+          {thread.turns.length > 1 && (
+            <span>{t("agentTurnCount", { count: thread.turns.length })}</span>
+          )}
+          {steps !== undefined && (
             <span>
-              {agent.steps} {t("step")}
+              {steps} {t("step")}
             </span>
           )}
-          {(agent.usage?.totalTokens ?? 0) > 0 && (
+          {tokens > 0 && (
             <span>
-              {agent.usage?.totalTokens.toLocaleString()} {t("tokens")}
+              {tokens.toLocaleString()} {t("tokens")}
             </span>
           )}
         </div>
       )}
-      {agent.activities.length > 0 && (
-        <div className="agent-activities" aria-label={t("agentActivity")}>
-          {activityGroups.map((activity) => (
-            <span key={activity.id} data-status={activity.status}>
-              {activity.status === "running" ? (
-                <LoaderCircle className="spin" size={12} />
-              ) : activity.status === "failed" ? (
-                <X size={12} />
-              ) : (
-                <Check size={12} />
-              )}
-              <code>{activity.name}</code>
-              {activity.count > 1 && (
-                <span className="agent-activity-count">× {activity.count}</span>
-              )}
-            </span>
-          ))}
-        </div>
-      )}
-      {(agent.output || agent.error) && (
-        <div className={`agent-output${agent.error ? " error" : ""}`}>
-          <MarkdownContent>{agent.output ?? agent.error ?? ""}</MarkdownContent>
-        </div>
-      )}
+      <div className="agent-inspector-turns">
+        {thread.turns.map((turn, index) => {
+          const activityGroups = groupAdjacentAgentActivities(turn.activities);
+          return (
+            <details
+              className="agent-inspector-turn"
+              key={turn.id}
+              open={index === thread.turns.length - 1}
+            >
+              <summary>
+                <span>{t("agentTurn", { count: index + 1 })}</span>
+                <small>{agentStatusLabel(turn, t)}</small>
+                <ChevronRight size={12} aria-hidden="true" />
+              </summary>
+              <div>
+                <p>{turn.task}</p>
+                {turn.activities.length > 0 && (
+                  <div
+                    className="agent-activities"
+                    aria-label={t("agentActivity")}
+                  >
+                    {activityGroups.map((activity) => (
+                      <span key={activity.id} data-status={activity.status}>
+                        {activity.status === "running" ? (
+                          <LoaderCircle className="spin" size={12} />
+                        ) : activity.status === "failed" ? (
+                          <X size={12} />
+                        ) : (
+                          <Check size={12} />
+                        )}
+                        <code>{activity.name}</code>
+                        {activity.count > 1 && (
+                          <span className="agent-activity-count">
+                            × {activity.count}
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {(turn.output || turn.error) && (
+                  <div className={`agent-output${turn.error ? " error" : ""}`}>
+                    <MarkdownContent>
+                      {turn.output ?? turn.error ?? ""}
+                    </MarkdownContent>
+                  </div>
+                )}
+              </div>
+            </details>
+          );
+        })}
+      </div>
       {live && active && onSteer && (
         <form
           className="agent-steer"

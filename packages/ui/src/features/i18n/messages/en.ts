@@ -896,6 +896,8 @@ export const en: Messages = {
   agentModelStep: "Model step {step}",
   toolArguments: "Arguments",
   toolOutput: "Tool output",
+  agentTurn: "Turn {count}",
+  agentTurnCount: "{count} turns",
   agentActiveCount: "{count} active",
   agentDoneCount: "{count} done",
   agentDetails: "Agent details",

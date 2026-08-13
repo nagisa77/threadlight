@@ -70,6 +70,12 @@ describe("voice composer", () => {
     expect(preventDefault).toHaveBeenCalledOnce();
   });
 
+  it("keeps the mobile stop action mounted until its click fires", () => {
+    expect(appSource).toMatch(
+      /className="composer-action stop pressable"\s+onPointerDown=\{preserveComposerFocusOnPointerDown\}\s+onClick=\{\(\) => void interrupt\(\)\}/,
+    );
+  });
+
   it("keeps the mobile composer expanded for the full voice lifecycle", () => {
     expect(appSource).toContain(
       'voiceStatus !== "idle" ? " is-voice-active" : ""',

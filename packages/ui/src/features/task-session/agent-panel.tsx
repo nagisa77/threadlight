@@ -27,6 +27,13 @@ import {
 
 import { useI18n, type Translate } from "../../i18n.js";
 import { MarkdownContent } from "../../markdown.js";
+import {
+  groupAgentThreads,
+  totalAgentElapsedMs,
+  totalAgentSteps,
+  totalAgentTokens,
+  type AgentThreadView,
+} from "./agent-threads.js";
 
 export interface AgentPanelControls {
   client: Pick<ThreadlightClient, "cancelAgent" | "retryAgent" | "steerAgent">;
@@ -46,29 +53,33 @@ export function AgentPanel({
 }) {
   const { t } = useI18n();
   const agents = tree?.agents ?? [];
+  const agentThreads = useMemo(() => groupAgentThreads(agents), [agents]);
   const preferredId = useMemo(
     () =>
-      agents.find(
-        ({ parentId, status }) =>
-          parentId === tree?.rootId &&
-          (status === "running" || status === "queued"),
+      agentThreads.find(
+        ({ latest }) =>
+          latest.parentId === tree?.rootId &&
+          (latest.status === "running" || latest.status === "queued"),
       )?.id ??
-      agents.find(({ parentId }) => parentId === tree?.rootId)?.id ??
+      agentThreads.find(({ latest }) => latest.parentId === tree?.rootId)?.id ??
       tree?.rootId,
-    [agents, tree?.rootId],
+    [agentThreads, tree?.rootId],
   );
   const [selectedId, setSelectedId] = useState(preferredId);
   const [listCollapsed, setListCollapsed] = useState(false);
 
   useEffect(() => {
-    if (!agents.some(({ id }) => id === selectedId)) {
+    if (!agentThreads.some(({ id }) => id === selectedId)) {
       setSelectedId(preferredId);
     }
-  }, [agents, preferredId, selectedId]);
+  }, [agentThreads, preferredId, selectedId]);
 
-  const selected = agents.find(({ id }) => id === selectedId);
-  const active = agents.filter(
-    ({ status }) => status === "queued" || status === "running",
+  const selected = agentThreads.find(({ id }) => id === selectedId);
+  const childThreads = agentThreads.filter(
+    ({ latest }) => latest.parentId === tree?.rootId,
+  );
+  const active = childThreads.filter(
+    ({ latest }) => latest.status === "queued" || latest.status === "running",
   ).length;
 
   return (
@@ -78,7 +89,7 @@ export function AgentPanel({
       aria-label={t("agents")}
       hidden={hidden}
     >
-      {!tree || agents.length === 0 ? (
+      {!tree || agentThreads.length === 0 ? (
         <div className="agent-panel-empty">
           <GitBranch size={18} />
           <strong>{t("noAgentRuns")}</strong>
@@ -95,7 +106,7 @@ export function AgentPanel({
               <small>
                 {active > 0
                   ? t("agentActiveCount", { count: active })
-                  : t("agentDoneCount", { count: agents.length - 1 })}
+                  : t("agentDoneCount", { count: childThreads.length })}
                 {" · "}
                 {t("agentConcurrency", { count: tree.maxConcurrent })}
               </small>
@@ -124,7 +135,7 @@ export function AgentPanel({
             {selected && (
               <AgentConversation
                 key={selected.id}
-                agent={selected}
+                thread={selected}
                 isRoot={selected.id === tree.rootId}
                 live={live}
                 controls={controls}
@@ -136,24 +147,38 @@ export function AgentPanel({
               aria-label={t("agentList")}
               hidden={listCollapsed}
             >
-              {agents.map((agent) => (
-                <button
-                  type="button"
-                  key={agent.id}
-                  className={`agent-panel-agent pressable${agent.id === selectedId ? " selected" : ""}`}
-                  aria-current={agent.id === selectedId ? "true" : undefined}
-                  onClick={() => setSelectedId(agent.id)}
-                >
-                  <AgentStateIcon agent={agent} />
-                  <span>
-                    <strong>
-                      {agent.id === tree.rootId ? t("mainAgent") : agent.name}
-                    </strong>
-                    <small>{agent.task}</small>
-                  </span>
-                  <em>{agentStatus(agent, t)}</em>
-                </button>
-              ))}
+              {agentThreads.map((thread) => {
+                const agent = thread.latest;
+                return (
+                  <button
+                    type="button"
+                    key={thread.id}
+                    className={`agent-panel-agent pressable${thread.id === selectedId ? " selected" : ""}`}
+                    aria-current={thread.id === selectedId ? "true" : undefined}
+                    onClick={() => setSelectedId(thread.id)}
+                  >
+                    <AgentStateIcon agent={agent} />
+                    <span>
+                      <strong>
+                        {thread.id === tree.rootId
+                          ? t("mainAgent")
+                          : thread.initial.name}
+                      </strong>
+                      <small>{agent.task}</small>
+                    </span>
+                    <em>
+                      {agentStatus(agent, t)}
+                      {thread.turns.length > 1 && (
+                        <>
+                          {" "}
+                          ·{" "}
+                          {t("agentTurnCount", { count: thread.turns.length })}
+                        </>
+                      )}
+                    </em>
+                  </button>
+                );
+              })}
             </nav>
           </div>
         </>
@@ -163,17 +188,18 @@ export function AgentPanel({
 }
 
 function AgentConversation({
-  agent,
+  thread,
   isRoot,
   live,
   controls,
 }: {
-  agent: AgentTaskData;
+  thread: AgentThreadView;
   isRoot: boolean;
   live: boolean;
   controls?: AgentPanelControls;
 }) {
   const { t } = useI18n();
+  const agent = thread.latest;
   const [direction, setDirection] = useState("");
   const [taskExpanded, setTaskExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -185,9 +211,11 @@ function AgentConversation({
       agent.status === "cancelled" ||
       agent.status === "interrupted");
   const canControl = live && !isRoot && controls?.threadId;
-  const transcript = agent.transcript ?? [];
-  const taskExpandable = agent.task.length > 72 || agent.task.includes("\n");
-  const taskId = `agent-task-${agent.id}`;
+  const taskExpandable =
+    thread.initial.task.length > 72 || thread.initial.task.includes("\n");
+  const taskId = `agent-task-${thread.id}`;
+  const steps = totalAgentSteps(thread);
+  const tokens = totalAgentTokens(thread);
 
   const act = async (action: () => Promise<unknown>): Promise<boolean> => {
     if (busy) return false;
@@ -210,7 +238,7 @@ function AgentConversation({
         <div className="agent-conversation-title-row">
           <span className="agent-conversation-identity">
             <AgentStateIcon agent={agent} />
-            <strong>{isRoot ? t("mainAgent") : agent.name}</strong>
+            <strong>{isRoot ? t("mainAgent") : thread.initial.name}</strong>
             <small>{agentStatus(agent, t)}</small>
           </span>
           <div className="agent-conversation-actions">
@@ -265,7 +293,7 @@ function AgentConversation({
         <div
           className={`agent-conversation-task${taskExpanded ? " expanded" : ""}`}
         >
-          <p id={taskId}>{agent.task}</p>
+          <p id={taskId}>{thread.initial.task}</p>
           {taskExpandable && (
             <button
               type="button"
@@ -289,16 +317,19 @@ function AgentConversation({
       </header>
       <div className="agent-conversation-meta">
         <span>
-          <Clock3 size={11} /> {formatDuration(agent.elapsedMs, t)}
+          <Clock3 size={11} /> {formatDuration(totalAgentElapsedMs(thread), t)}
         </span>
-        {agent.steps !== undefined && (
+        {thread.turns.length > 1 && (
+          <span>{t("agentTurnCount", { count: thread.turns.length })}</span>
+        )}
+        {steps !== undefined && (
           <span>
-            {agent.steps} {t("step")}
+            {steps} {t("step")}
           </span>
         )}
-        {(agent.usage?.totalTokens ?? 0) > 0 && (
+        {tokens > 0 && (
           <span>
-            {agent.usage?.totalTokens.toLocaleString()} {t("tokens")}
+            {tokens.toLocaleString()} {t("tokens")}
           </span>
         )}
       </div>
@@ -307,30 +338,14 @@ function AgentConversation({
         {t("agentVisibleProcessNote")}
       </p>
       <div className="agent-transcript" aria-label={t("agentActivity")}>
-        {transcript.map((entry) => (
-          <AgentTranscriptEntry key={entry.id} entry={entry} />
+        {thread.turns.map((turn, index) => (
+          <AgentTurnTranscript
+            key={turn.id}
+            turn={turn}
+            index={index}
+            showTask={index > 0}
+          />
         ))}
-        {transcript.length === 0 && active && (
-          <div className="agent-transcript-thinking">
-            <LoaderCircle className="spin" size={14} />
-            {t("agentThinking")}
-          </div>
-        )}
-        {transcript.length === 0 && (agent.output || agent.error) && (
-          <div
-            className={`agent-transcript-message${agent.error ? " error" : ""}`}
-          >
-            <MarkdownContent>
-              {agent.output ?? agent.error ?? ""}
-            </MarkdownContent>
-          </div>
-        )}
-        {transcript.length === 0 &&
-          !active &&
-          !agent.output &&
-          !agent.error && (
-            <div className="agent-transcript-empty">{t("noAgentActivity")}</div>
-          )}
       </div>
       {canControl && active && (
         <form
@@ -376,6 +391,49 @@ function AgentConversation({
         </p>
       )}
     </article>
+  );
+}
+
+function AgentTurnTranscript({
+  turn,
+  index,
+  showTask,
+}: {
+  turn: AgentTaskData;
+  index: number;
+  showTask: boolean;
+}) {
+  const { t } = useI18n();
+  const transcript = turn.transcript ?? [];
+  const active = turn.status === "queued" || turn.status === "running";
+
+  return (
+    <section className="agent-turn">
+      <header className="agent-turn-header">
+        <span>{t("agentTurn", { count: index + 1 })}</span>
+        <small>{agentStatus(turn, t)}</small>
+      </header>
+      {showTask && <p className="agent-turn-task">{turn.task}</p>}
+      {transcript.map((entry) => (
+        <AgentTranscriptEntry key={entry.id} entry={entry} />
+      ))}
+      {transcript.length === 0 && active && (
+        <div className="agent-transcript-thinking">
+          <LoaderCircle className="spin" size={14} />
+          {t("agentThinking")}
+        </div>
+      )}
+      {transcript.length === 0 && (turn.output || turn.error) && (
+        <div
+          className={`agent-transcript-message${turn.error ? " error" : ""}`}
+        >
+          <MarkdownContent>{turn.output ?? turn.error ?? ""}</MarkdownContent>
+        </div>
+      )}
+      {transcript.length === 0 && !active && !turn.output && !turn.error && (
+        <div className="agent-transcript-empty">{t("noAgentActivity")}</div>
+      )}
+    </section>
   );
 }
 

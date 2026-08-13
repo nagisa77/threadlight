@@ -556,6 +556,71 @@ body.is-resizing-workspace .workspace-split-handle::after {
   padding: 12px 14px 18px;
 }
 
+.agent-turn {
+  position: relative;
+  padding-left: 16px;
+}
+
+.agent-turn + .agent-turn {
+  margin-top: 16px;
+}
+
+.agent-turn::before {
+  position: absolute;
+  top: 5px;
+  bottom: -21px;
+  left: 4px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.agent-turn:last-child::before {
+  bottom: 0;
+}
+
+.agent-turn::after {
+  position: absolute;
+  top: 5px;
+  left: 1px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+  content: "";
+}
+
+.agent-turn-header {
+  display: flex;
+  min-height: 17px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.agent-turn-header small {
+  color: var(--subtle);
+  font-size: 8px;
+  font-weight: 550;
+}
+
+.agent-turn-task {
+  margin: 0 0 9px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 64%, transparent);
+  font-size: 9px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .agent-transcript-message,
 .agent-transcript-tool,
 .agent-transcript-thinking,

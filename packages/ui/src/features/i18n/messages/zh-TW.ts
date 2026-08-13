@@ -824,6 +824,8 @@ export const zhTW: Messages = {
   agentModelStep: "模型步驟 {step}",
   toolArguments: "呼叫參數",
   toolOutput: "工具輸出",
+  agentTurn: "第 {count} 輪",
+  agentTurnCount: "{count} 輪",
   agentActiveCount: "{count} 個執行中",
   agentDoneCount: "{count} 個已完成",
   agentDetails: "Agent 詳情",

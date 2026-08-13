@@ -817,6 +817,8 @@ export const zh = {
   agentModelStep: "模型步骤 {step}",
   toolArguments: "调用参数",
   toolOutput: "工具输出",
+  agentTurn: "第 {count} 轮",
+  agentTurnCount: "{count} 轮",
   agentActiveCount: "{count} 个运行中",
   agentDoneCount: "{count} 个已完成",
   agentDetails: "Agent 详情",

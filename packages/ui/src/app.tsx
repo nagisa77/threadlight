@@ -3034,9 +3034,6 @@ function ThreadlightAppContent({
     }
   }
 
-  function stopRunningTurn() {
-    void interrupt();
-  }
   function openReviewPanel() {
     setWorkspacePanelOpen(true);
     setWorkspaceReviewRequest((request) => request + 1);
@@ -4214,7 +4211,8 @@ function ThreadlightAppContent({
                         <button
                           type="button"
                           className="composer-action stop pressable"
-                          onClick={stopRunningTurn}
+                          onPointerDown={preserveComposerFocusOnPointerDown}
+                          onClick={() => void interrupt()}
                           aria-label={t("stopRun")}
                           title={t("stop")}
                         >

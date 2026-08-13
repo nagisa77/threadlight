@@ -883,6 +883,8 @@ export const ja: Messages = {
   agentModelStep: "モデルステップ {step}",
   toolArguments: "引数",
   toolOutput: "ツール出力",
+  agentTurn: "第 {count} ターン",
+  agentTurnCount: "{count} ターン",
   agentActiveCount: "{count} 件実行中",
   agentDoneCount: "{count} 件完了",
   agentDetails: "Agent の詳細",
