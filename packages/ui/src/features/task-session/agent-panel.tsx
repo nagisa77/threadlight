@@ -28,7 +28,7 @@ import {
 import { useI18n, type Translate } from "../../i18n.js";
 import { MarkdownContent } from "../../markdown.js";
 import {
-  groupAgentThreads,
+  agentThreadTree,
   totalAgentElapsedMs,
   totalAgentSteps,
   totalAgentTokens,
@@ -53,13 +53,20 @@ export function AgentPanel({
 }) {
   const { t } = useI18n();
   const agents = tree?.agents ?? [];
-  const agentThreads = useMemo(() => groupAgentThreads(agents), [agents]);
+  const agentThreads = useMemo(
+    () => (tree ? agentThreadTree(agents, tree.rootId) : []),
+    [agents, tree?.rootId],
+  );
   const preferredId = useMemo(
     () =>
       agentThreads.find(
         ({ latest }) =>
           latest.parentId === tree?.rootId &&
           (latest.status === "running" || latest.status === "queued"),
+      )?.id ??
+      agentThreads.find(
+        ({ latest }) =>
+          latest.status === "running" || latest.status === "queued",
       )?.id ??
       agentThreads.find(({ latest }) => latest.parentId === tree?.rootId)?.id ??
       tree?.rootId,
@@ -75,9 +82,7 @@ export function AgentPanel({
   }, [agentThreads, preferredId, selectedId]);
 
   const selected = agentThreads.find(({ id }) => id === selectedId);
-  const childThreads = agentThreads.filter(
-    ({ latest }) => latest.parentId === tree?.rootId,
-  );
+  const childThreads = agentThreads.filter(({ id }) => id !== tree?.rootId);
   const active = childThreads.filter(
     ({ latest }) => latest.status === "queued" || latest.status === "running",
   ).length;
@@ -154,6 +159,10 @@ export function AgentPanel({
                     type="button"
                     key={thread.id}
                     className={`agent-panel-agent pressable${thread.id === selectedId ? " selected" : ""}`}
+                    data-depth={thread.depth}
+                    style={{
+                      paddingInlineStart: `${12 + thread.depth * 14}px`,
+                    }}
                     aria-current={thread.id === selectedId ? "true" : undefined}
                     onClick={() => setSelectedId(thread.id)}
                   >
@@ -408,6 +417,18 @@ function AgentTurnTranscript({
 }) {
   const { t } = useI18n();
   const transcript = turn.transcript ?? [];
+  const timeline = [
+    ...(turn.messages ?? []).map((message) => ({
+      id: message.id,
+      at: message.createdAt,
+      message,
+    })),
+    ...transcript.map((entry) => ({
+      id: entry.id,
+      at: entry.startedAt,
+      entry,
+    })),
+  ].sort((left, right) => left.at.localeCompare(right.at));
   const active = turn.status === "queued" || turn.status === "running";
 
   return (
@@ -419,23 +440,36 @@ function AgentTurnTranscript({
         </header>
       )}
       {showTask && <p className="agent-turn-task">{turn.task}</p>}
-      {transcript.map((entry) => (
-        <AgentTranscriptEntry key={entry.id} entry={entry} />
-      ))}
-      {transcript.length === 0 && active && (
+      {timeline.map((item) =>
+        "message" in item ? (
+          <section
+            className="agent-transcript-message agent-transcript-agent-message"
+            key={item.id}
+          >
+            <header>
+              <SendHorizontal size={12} />
+              <span>{item.message.fromAgentName}</span>
+            </header>
+            <MarkdownContent>{item.message.text}</MarkdownContent>
+          </section>
+        ) : (
+          <AgentTranscriptEntry key={item.id} entry={item.entry} />
+        ),
+      )}
+      {timeline.length === 0 && active && (
         <div className="agent-transcript-thinking">
           <LoaderCircle className="spin" size={14} />
           {t("agentThinking")}
         </div>
       )}
-      {transcript.length === 0 && (turn.output || turn.error) && (
+      {timeline.length === 0 && (turn.output || turn.error) && (
         <div
           className={`agent-transcript-message${turn.error ? " error" : ""}`}
         >
           <MarkdownContent>{turn.output ?? turn.error ?? ""}</MarkdownContent>
         </div>
       )}
-      {transcript.length === 0 && !active && !turn.output && !turn.error && (
+      {timeline.length === 0 && !active && !turn.output && !turn.error && (
         <div className="agent-transcript-empty">{t("noAgentActivity")}</div>
       )}
     </section>

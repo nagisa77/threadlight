@@ -947,6 +947,17 @@ export interface AgentTaskActivityData {
   durationMs?: number;
 }
 
+export interface AgentTaskMessageData {
+  id: string;
+  fromAgentId: string;
+  fromAgentThreadId: string;
+  fromAgentName: string;
+  toAgentThreadId: string;
+  text: string;
+  createdAt: string;
+  delivery: "active" | "follow_up";
+}
+
 export type AgentTaskTranscriptEntryData =
   | {
       id: string;
@@ -977,8 +988,10 @@ export type AgentTaskTranscriptEntryData =
 /** Display-safe projection of one provider-neutral agent task. */
 export interface AgentTaskData {
   id: string;
+  /** Stable parent agent-thread ID; the root record has no parent. */
   parentId?: string;
   agentThreadId?: string;
+  agentPath?: string;
   retryOf?: string;
   followUpOf?: string;
   closedAt?: string;
@@ -999,6 +1012,7 @@ export interface AgentTaskData {
   steps?: number;
   usage?: TokenUsageData;
   activities: readonly AgentTaskActivityData[];
+  messages?: readonly AgentTaskMessageData[];
   /** Ordered visible model/tool activity. Hidden provider reasoning is excluded. */
   transcript?: readonly AgentTaskTranscriptEntryData[];
 }
@@ -1488,7 +1502,8 @@ export interface ThreadlightNotificationMap {
       | "interrupted"
       | "followed_up"
       | "closed"
-      | "steered";
+      | "steered"
+      | "messaged";
     tree: AgentTreeData;
   };
   "turn/queue/updated": {

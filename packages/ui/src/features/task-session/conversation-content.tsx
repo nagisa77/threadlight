@@ -37,7 +37,7 @@ import type {
   VoiceInputStatus,
 } from "../composer/controller.js";
 import {
-  groupAgentThreads,
+  agentThreadTree,
   totalAgentSteps,
   totalAgentTokens,
   type AgentThreadView,
@@ -108,9 +108,9 @@ function AgentTreeContent({
   onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
-  const agentThreads = groupAgentThreads(
-    tree.agents.filter(({ parentId }) => parentId === tree.rootId),
-  );
+  const agentThreads = agentThreadTree(tree.agents, tree.rootId, {
+    includeRoot: false,
+  });
   const activeCount = agentThreads.filter(
     ({ latest }) => latest.status === "queued" || latest.status === "running",
   ).length;
@@ -199,6 +199,10 @@ function AgentTreeContent({
               <button
                 type="button"
                 className={`agent-row pressable${selectedId === thread.id ? " selected" : ""}`}
+                data-depth={thread.depth}
+                style={{
+                  paddingInlineStart: `${12 + thread.depth * 14}px`,
+                }}
                 key={thread.id}
                 role="listitem"
                 aria-expanded={selectedId === thread.id}
@@ -363,6 +367,15 @@ function AgentInspector({
               </summary>
               <div>
                 <p>{turn.task}</p>
+                {(turn.messages ?? []).map((message) => (
+                  <div className="agent-peer-message" key={message.id}>
+                    <span>
+                      <SendHorizontal size={11} />
+                      {message.fromAgentName}
+                    </span>
+                    <p>{message.text}</p>
+                  </div>
+                ))}
                 {turn.activities.length > 0 && (
                   <div
                     className="agent-activities"

@@ -73,7 +73,7 @@ curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --o
 
 | 能力                   | Threadlight 提供什么                                                          |
 | ---------------------- | ----------------------------------------------------------------------------- |
-| 多 Agent 编排          | 根 Agent 可委派、追问、等待、重试和中断子 Agent，并在结束前收集结果。         |
+| 多 Agent 编排          | 任意 Agent 可继续委派，以稳定任务名互发消息、唤醒原线程并保留上下文；父子生命周期、持久化恢复与单写者锁由 Runtime 统一管理。 |
 | 受控 Plan 模式         | 先只读研究，再按验收标准逐步执行；没有完成证据时拒绝提前收尾。                |
 | 全过程可观察           | Plan、模型输出、工具调用、命令日志、文件变化、来源和 token usage 保持可见。   |
 | 工程工作区             | 对话、Git worktree、文件、Diff、终端、Review、Commit、Push 与 PR 共用上下文。 |

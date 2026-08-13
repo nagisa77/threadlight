@@ -6,7 +6,10 @@ import {
   groupAdjacentAgentActivities,
 } from "../src/features/task-session/conversation-content.js";
 import { AgentPanel } from "../src/features/task-session/agent-panel.js";
-import { groupAgentThreads } from "../src/features/task-session/agent-threads.js";
+import {
+  agentThreadTree,
+  groupAgentThreads,
+} from "../src/features/task-session/agent-threads.js";
 
 describe("AgentTreePanel", () => {
   const tree = {
@@ -271,6 +274,69 @@ describe("AgentTreePanel", () => {
     expect(html).not.toContain("第 1 轮");
     expect(html.indexOf('class="agent-conversation"')).toBeLessThan(
       html.indexOf('class="agent-panel-list"'),
+    );
+  });
+
+  it("renders nested logical agents in hierarchy order and exposes peer messages", () => {
+    const nested = {
+      ...tree,
+      agents: [
+        tree.agents[0]!,
+        {
+          ...tree.agents[1]!,
+          id: "coordinator",
+          agentThreadId: "coordinator-thread",
+          agentPath: "/root/coordinator",
+          name: "coordinator",
+          task: "Coordinate nested research",
+          messages: [
+            {
+              id: "peer-message",
+              fromAgentId: "evidence-turn",
+              fromAgentThreadId: "evidence-thread",
+              fromAgentName: "evidence",
+              toAgentThreadId: "coordinator-thread",
+              text: "The nested evidence is ready.",
+              createdAt: "2026-08-08T08:00:03.000Z",
+              delivery: "active" as const,
+            },
+          ],
+        },
+        {
+          ...tree.agents[1]!,
+          id: "evidence-turn",
+          parentId: "coordinator-thread",
+          agentThreadId: "evidence-thread",
+          agentPath: "/root/coordinator/evidence",
+          name: "evidence",
+          task: "Collect evidence",
+          status: "completed" as const,
+          phase: "done" as const,
+        },
+      ],
+    };
+
+    const hierarchy = agentThreadTree(nested.agents, nested.rootId, {
+      includeRoot: false,
+    });
+    expect(hierarchy.map(({ id, depth }) => ({ id, depth }))).toEqual([
+      { id: "coordinator-thread", depth: 0 },
+      { id: "evidence-thread", depth: 1 },
+    ]);
+
+    const treeHtml = renderToStaticMarkup(
+      <AgentTreePanel tree={nested} live />,
+    );
+    expect(treeHtml).toContain('data-depth="0"');
+    expect(treeHtml).toContain('data-depth="1"');
+    expect(treeHtml.indexOf("coordinator")).toBeLessThan(
+      treeHtml.indexOf("evidence"),
+    );
+
+    const panelHtml = renderToStaticMarkup(<AgentPanel tree={nested} live />);
+    expect(panelHtml).toContain("The nested evidence is ready.");
+    expect(panelHtml).toContain(
+      'class="agent-transcript-message agent-transcript-agent-message"',
     );
   });
 });

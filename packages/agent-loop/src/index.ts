@@ -13,6 +13,7 @@ export type {
   AgentRuntimeThreadLifecycleSnapshot,
   AgentLifecycleErrorCode,
   AgentTaskActivity,
+  AgentTaskMessage,
   AgentTaskPhase,
   AgentTaskSnapshot,
   AgentTaskStatus,

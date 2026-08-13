@@ -155,6 +155,7 @@ interface SharedAppServerOptions {
     profiles: readonly SubagentProfile[];
     maxConcurrent?: number;
     maxAgents?: number;
+    maxDepth?: number;
   };
 }
 
@@ -1372,6 +1373,7 @@ export class AppServer {
               resumableThreads: resumableAgentThreads(thread.conversation),
               maxConcurrent: this.multiAgent.maxConcurrent,
               maxAgents: this.multiAgent.maxAgents,
+              maxDepth: this.multiAgent.maxDepth,
               wallNow: this.now,
               createChildRunOptions: () => ({
                 toolScopeId: threadId,
@@ -2242,9 +2244,7 @@ function childDiagnosticsScope(
   tree: AgentTreeSnapshot | undefined,
 ): DiagnosticsScope {
   if (!tree) return diagnosticsScope([], []);
-  const children = tree.agents.filter(
-    ({ parentId }) => parentId === tree.rootId,
-  );
+  const children = tree.agents.filter(({ id }) => id !== tree.rootId);
   const modelSteps: DiagnosticsScope["modelSteps"][number][] = [];
   const toolCalls: DiagnosticsScope["toolCalls"][number][] = [];
   for (const child of children) {
@@ -2992,7 +2992,7 @@ function interruptActiveAgentRuns(
 function visibleAgentTree(
   tree: AgentTreeSnapshot | undefined,
 ): tree is AgentTreeSnapshot {
-  return tree?.agents.some(({ parentId }) => parentId === tree.rootId) ?? false;
+  return tree?.agents.some(({ id }) => id !== tree.rootId) ?? false;
 }
 
 function appendTurnTools(

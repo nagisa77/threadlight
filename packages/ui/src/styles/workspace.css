@@ -389,6 +389,10 @@ body.is-resizing-workspace .workspace-split-handle::after {
     background-color 160ms ease;
 }
 
+.agent-panel-agent:not([data-depth="0"]) {
+  background: color-mix(in srgb, var(--surface) 34%, transparent);
+}
+
 .agent-panel-agent.selected {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, var(--panel));
@@ -634,6 +638,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .agent-transcript-message {
   padding: 10px 11px;
+}
+
+.agent-transcript-agent-message {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 48%, var(--line));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
 }
 
 .agent-transcript-message.error,

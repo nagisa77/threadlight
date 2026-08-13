@@ -305,6 +305,18 @@ export interface AgentTaskActivity {
   durationMs?: number;
 }
 
+/** Display-safe record of one inter-agent message delivered by the orchestrator. */
+export interface AgentTaskMessage {
+  id: string;
+  fromAgentId: string;
+  fromAgentThreadId: string;
+  fromAgentName: string;
+  toAgentThreadId: string;
+  text: string;
+  createdAt: string;
+  delivery: "active" | "follow_up";
+}
+
 /** Display-safe, provider-neutral record of one visible subagent event. */
 export type AgentTaskTranscriptEntry =
   | {
@@ -335,9 +347,12 @@ export type AgentTaskTranscriptEntry =
 
 export interface AgentTaskSnapshot {
   id: string;
+  /** Stable parent agent-thread ID; the root record has no parent. */
   parentId?: string;
   /** Stable identity shared by every follow-up/retry turn in one child thread. */
   agentThreadId?: string;
+  /** Caller-scoped canonical address, stable across turns in one thread. */
+  agentPath?: string;
   retryOf?: string;
   followUpOf?: string;
   /** Once set, this child thread rejects every future collaboration action. */
@@ -359,6 +374,7 @@ export interface AgentTaskSnapshot {
   steps?: number;
   usage?: TokenUsage;
   activities: readonly AgentTaskActivity[];
+  messages?: readonly AgentTaskMessage[];
   transcript: readonly AgentTaskTranscriptEntry[];
 }
 
@@ -378,7 +394,8 @@ export type AgentTreeUpdateReason =
   | "interrupted"
   | "followed_up"
   | "closed"
-  | "steered";
+  | "steered"
+  | "messaged";
 
 export interface AgentTreeEvent {
   type: "agent.tree.updated";
@@ -432,16 +449,20 @@ export interface ResumableAgentThread {
 
 export type AgentLifecycleErrorCode =
   | "agent_busy"
+  | "agent_ambiguous"
   | "agent_closed"
   | "agent_not_found"
   | "agent_state_unavailable"
-  | "agent_not_attached";
+  | "agent_not_attached"
+  | "agent_write_conflict";
 
 export interface AgentOrchestratorOptions extends RunOptions {
   profiles: readonly SubagentProfile[];
   resumableThreads?: readonly ResumableAgentThread[];
   maxConcurrent?: number;
   maxAgents?: number;
+  /** Maximum delegation depth below the root agent. Defaults to 3. */
+  maxDepth?: number;
   wallNow?: () => Date;
   onAgentTreeEvent?: (event: AgentTreeEvent) => void;
   onRuntimeCheckpoint?: (

@@ -254,6 +254,7 @@ const server = new AppServer({
   multiAgent: {
     maxConcurrent: 3,
     maxAgents: 8,
+    maxDepth: 3,
     profiles: subagentProfiles,
   },
   generateConversationTitles: true,

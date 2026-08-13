@@ -1680,4 +1680,301 @@ describe("AgentOrchestrator", () => {
 
     expect(result.output).toBe("Dynamic tool is visible");
   });
+
+  it("supports nested delegation, stable task addressing, follow-up context, and child-to-parent messages", async () => {
+    let rootTurns = 0;
+    let coordinatorTurns = 0;
+    let researcherTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (
+          request.instructions.includes("You are /root/coordinator/evidence")
+        ) {
+          researcherTurns += 1;
+          if (researcherTurns === 1) {
+            expect(request.input).toBe("Collect the first fact");
+            expect(request.tools.map(({ name }) => name)).toEqual(
+              expect.arrayContaining([
+                "spawn_agent",
+                "send_message",
+                "followup_task",
+              ]),
+            );
+            return {
+              text: "First fact",
+              toolCalls: [],
+              state: { evidenceRound: 1 },
+            };
+          }
+          expect(request.input).toBe("Refine the fact");
+          expect(request.state).toEqual({ evidenceRound: 1 });
+          expect(request.history).toEqual([
+            { role: "user", text: "Collect the first fact" },
+            { role: "assistant", text: "First fact" },
+          ]);
+          return {
+            text: "Refined fact",
+            toolCalls: [],
+            state: { evidenceRound: 2 },
+          };
+        }
+
+        if (request.instructions.includes("You are /root/coordinator")) {
+          coordinatorTurns += 1;
+          if (coordinatorTurns === 1) {
+            return {
+              text: "Delegating evidence collection.",
+              toolCalls: [
+                {
+                  id: "spawn-evidence",
+                  name: "spawn_agent",
+                  arguments: {
+                    role: "reader",
+                    taskName: "evidence",
+                    task: "Collect the first fact",
+                  },
+                },
+              ],
+            };
+          }
+          if (coordinatorTurns === 2) {
+            return {
+              text: "Waiting for evidence.",
+              toolCalls: [
+                { id: "wait-evidence", name: "wait_for_agents", arguments: {} },
+              ],
+            };
+          }
+          if (coordinatorTurns === 3) {
+            expect(request.toolResults?.[0]?.output).toContain("First fact");
+            return {
+              text: "Continuing the same researcher.",
+              toolCalls: [
+                {
+                  id: "followup-evidence",
+                  name: "followup_task",
+                  arguments: {
+                    target: "evidence",
+                    message: "Refine the fact",
+                  },
+                },
+              ],
+            };
+          }
+          if (coordinatorTurns === 4) {
+            return {
+              text: "Waiting for refined evidence.",
+              toolCalls: [
+                {
+                  id: "wait-refined-evidence",
+                  name: "wait_for_agents",
+                  arguments: { agentIds: ["evidence"] },
+                },
+              ],
+            };
+          }
+          if (coordinatorTurns === 5) {
+            expect(request.toolResults?.[0]?.output).toContain("Refined fact");
+            return {
+              text: "Reporting to the main agent.",
+              toolCalls: [
+                {
+                  id: "message-root",
+                  name: "send_message",
+                  arguments: {
+                    target: "/root",
+                    message: "Nested research produced a refined fact.",
+                  },
+                },
+              ],
+            };
+          }
+          return { text: "Coordinator complete.", toolCalls: [] };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Starting a coordinator.",
+            toolCalls: [
+              {
+                id: "spawn-coordinator",
+                name: "spawn_agent",
+                arguments: {
+                  role: "reader",
+                  taskName: "coordinator",
+                  task: "Coordinate nested research",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          return {
+            text: "Waiting for the hierarchy.",
+            toolCalls: [
+              {
+                id: "wait-coordinator",
+                name: "wait_for_agents",
+                arguments: {},
+              },
+            ],
+          };
+        }
+        expect(request.input).toContain("Message from coordinator");
+        expect(request.input).toContain(
+          "Nested research produced a refined fact.",
+        );
+        return { text: "Nested collaboration complete.", toolCalls: [] };
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "reader",
+          description: "Read and coordinate",
+          instructions: "PROFILE_READER",
+          toolAccess: "read-only",
+        },
+      ],
+      maxConcurrent: 3,
+      maxDepth: 3,
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT", maxSteps: 12 }),
+      "Run nested collaboration",
+    );
+
+    expect(result.output).toBe("Nested collaboration complete.");
+    const coordinator = orchestrator.snapshot.agents.find(
+      ({ agentPath }) => agentPath === "/root/coordinator",
+    );
+    const evidenceTurns = orchestrator.snapshot.agents.filter(
+      ({ agentPath }) => agentPath === "/root/coordinator/evidence",
+    );
+    expect(coordinator).toEqual(
+      expect.objectContaining({
+        parentId: orchestrator.snapshot.rootId,
+        name: "coordinator",
+        status: "completed",
+      }),
+    );
+    expect(evidenceTurns).toHaveLength(2);
+    expect(evidenceTurns[0]).toEqual(
+      expect.objectContaining({
+        parentId: coordinator?.agentThreadId,
+        name: "evidence",
+        status: "completed",
+      }),
+    );
+    expect(evidenceTurns[1]).toEqual(
+      expect.objectContaining({
+        agentThreadId: evidenceTurns[0]?.agentThreadId,
+        followUpOf: evidenceTurns[0]?.id,
+        messages: [
+          expect.objectContaining({
+            fromAgentName: "coordinator",
+            delivery: "follow_up",
+            text: "Refine the fact",
+          }),
+        ],
+      }),
+    );
+    expect(
+      orchestrator.snapshot.agents.find(
+        ({ id }) => id === orchestrator.snapshot.rootId,
+      )?.messages,
+    ).toEqual([
+      expect.objectContaining({
+        fromAgentName: "coordinator",
+        delivery: "active",
+      }),
+    ]);
+  });
+
+  it("rejects nested write ownership that could deadlock the hierarchy", async () => {
+    let rootTurns = 0;
+    let writerTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          writerTurns += 1;
+          if (writerTurns === 1) {
+            return {
+              text: "Trying unsafe nested write delegation.",
+              toolCalls: [
+                {
+                  id: "nested-writer",
+                  name: "spawn_agent",
+                  arguments: {
+                    role: "writer",
+                    taskName: "nested_writer",
+                    task: "Write from a nested agent",
+                  },
+                },
+              ],
+            };
+          }
+          expect(request.toolResults?.[0]).toEqual(
+            expect.objectContaining({
+              isError: true,
+              error: expect.objectContaining({ code: "agent_write_conflict" }),
+            }),
+          );
+          return { text: "Unsafe delegation rejected.", toolCalls: [] };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Starting writer.",
+            toolCalls: [
+              {
+                id: "spawn-writer",
+                name: "spawn_agent",
+                arguments: {
+                  role: "writer",
+                  taskName: "writer",
+                  task: "Own the workspace",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          return {
+            text: "Waiting for writer.",
+            toolCalls: [
+              { id: "wait-writer", name: "wait_for_agents", arguments: {} },
+            ],
+          };
+        }
+        return { text: "Write ownership remained safe.", toolCalls: [] };
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "writer",
+          description: "Write",
+          instructions: "PROFILE_WRITER",
+          toolAccess: "all",
+        },
+      ],
+      maxConcurrent: 2,
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT" }),
+      "Protect write ownership",
+    );
+
+    expect(result.output).toBe("Write ownership remained safe.");
+    expect(
+      orchestrator.snapshot.agents.filter(
+        ({ agentPath }) => agentPath === "/root/writer/nested_writer",
+      ),
+    ).toHaveLength(0);
+  });
 });

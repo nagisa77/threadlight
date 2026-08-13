@@ -9,6 +9,7 @@ import type {
   AgentOrchestratorOptions,
   AgentRunCheckpoint,
   AgentRuntimeSnapshot,
+  AgentTaskMessage,
   AgentTaskSnapshot,
   AgentTreeEvent,
   AgentTreeSnapshot,
@@ -29,6 +30,8 @@ import type {
 } from "./types.js";
 
 const SPAWN_AGENT_TOOL = "spawn_agent";
+const SEND_MESSAGE_TOOL = "send_message";
+const FOLLOWUP_TASK_TOOL = "followup_task";
 const FOLLOW_UP_AGENT_TOOL = "follow_up_agent";
 const RETRY_AGENT_TOOL = "retry_agent";
 const CHECK_AGENTS_TOOL = "check_agents";
@@ -38,6 +41,8 @@ const INTERRUPT_AGENT_TOOL = "interrupt_agent";
 const CLOSE_AGENT_TOOL = "close_agent";
 const COLLABORATION_TOOLS = new Set([
   SPAWN_AGENT_TOOL,
+  SEND_MESSAGE_TOOL,
+  FOLLOWUP_TASK_TOOL,
   FOLLOW_UP_AGENT_TOOL,
   RETRY_AGENT_TOOL,
   CHECK_AGENTS_TOOL,
@@ -59,6 +64,7 @@ const MAILBOX_UPDATE_REASONS = new Set<AgentTreeUpdateReason>([
   "followed_up",
   "closed",
   "steered",
+  "messaged",
 ]);
 
 interface Deferred<T> {
@@ -81,11 +87,16 @@ interface AgentTaskRecord {
 }
 
 interface SpawnOptions {
+  callerId?: string;
+  parentId?: string;
+  name?: string;
+  agentPath?: string;
   retryOf?: string;
   followUpOf?: string;
   agentThreadId?: string;
   modelState?: unknown;
   history?: readonly ModelConversationMessage[];
+  message?: AgentTaskMessage;
 }
 
 interface AgentMailboxEvent {
@@ -126,6 +137,7 @@ export class AgentOrchestrator {
   private readonly rootId = randomUUID();
   private readonly maxConcurrent: number;
   private readonly maxAgents: number;
+  private readonly maxDepth: number;
   private readonly wallNow: () => Date;
   private rootSignal?: AbortSignal;
   private rootAgent?: Agent;
@@ -185,6 +197,7 @@ export class AgentOrchestrator {
     }
     this.maxConcurrent = positiveInteger(options.maxConcurrent, 3);
     this.maxAgents = positiveInteger(options.maxAgents, 8);
+    this.maxDepth = positiveInteger(options.maxDepth, 3);
     this.wallNow = options.wallNow ?? (() => new Date());
   }
 
@@ -237,14 +250,7 @@ export class AgentOrchestrator {
     await this.flushRuntimeCheckpoints();
     const tools = [
       ...(rootAgent.tools ?? []),
-      this.spawnTool(),
-      this.followUpTool(),
-      this.retryTool(),
-      this.checkTool(),
-      this.waitTool(),
-      this.steerTool(),
-      this.interruptTool(),
-      this.closeTool(),
+      ...this.collaborationTools(this.rootId),
     ];
     assertUniqueToolNames(tools);
     const orchestratedAgent: Agent = {
@@ -257,6 +263,9 @@ export class AgentOrchestrator {
     };
     const controller = new OrchestrationRunController(
       this,
+      this.rootId,
+      this.rootId,
+      true,
       this.options.controller,
     );
 
@@ -265,6 +274,15 @@ export class AgentOrchestrator {
       const result = await this.loop.run(orchestratedAgent, input, {
         ...runOptions,
         controller,
+        takeAdditionalInput: async () => {
+          const message = root.pendingInput.shift();
+          if (message !== undefined) {
+            this.scheduleRuntimeCheckpoint();
+            await this.flushRuntimeCheckpoints();
+            return message;
+          }
+          return runOptions.takeAdditionalInput?.();
+        },
         onCheckpoint: async (checkpoint) => {
           this.recordCheckpoint(root, checkpoint);
           await runOptions.onCheckpoint?.(checkpoint);
@@ -280,7 +298,7 @@ export class AgentOrchestrator {
       await this.flushRuntimeCheckpoints();
       return {
         ...result,
-        usage: this.childRecords().reduce(
+        usage: this.nonRootRecords().reduce(
           (usage, { snapshot }) => addUsage(usage, snapshot.usage),
           { ...result.usage },
         ),
@@ -301,7 +319,13 @@ export class AgentOrchestrator {
   }
 
   cancel(agentId: string): boolean {
-    const record = this.currentChildRecord(agentId);
+    let record: AgentTaskRecord | undefined;
+    try {
+      record = this.currentAgentRecord(this.rootId, agentId);
+    } catch (error) {
+      if (error instanceof ToolExecutionError) return false;
+      throw error;
+    }
     if (
       !record ||
       record.snapshot.closedAt !== undefined ||
@@ -309,12 +333,7 @@ export class AgentOrchestrator {
     ) {
       return false;
     }
-    record.controller.abort(new Error("Agent stopped by user"));
-    if (record.snapshot.status === "queued") {
-      this.removeFromQueue(record.snapshot.id);
-    }
-    this.detachChildExecution(record);
-    this.cancelRecord(record, "Stopped by user");
+    this.cancelSubtree(record, "Stopped by user");
     this.scheduleRuntimeCheckpoint();
     this.pump();
     return true;
@@ -331,9 +350,18 @@ export class AgentOrchestrator {
   }
 
   private steerOrThrow(agentId: string, input: string): void {
+    this.steerFromOrThrow(this.rootId, agentId, input);
+  }
+
+  private steerFromOrThrow(
+    callerThreadId: string,
+    agentId: string,
+    input: string,
+  ): void {
     const instruction = input.trim();
     if (!instruction) throw new Error("Agent direction is required");
-    const target = this.lifecycleTarget(agentId, "steering");
+    const target = this.lifecycleTarget(callerThreadId, agentId, "steering");
+    this.assertLifecycleAuthority(callerThreadId, target, agentId, "steering");
     this.assertThreadOpen(target, agentId, "steering");
     const record = target.records.at(-1);
     if (!record || isTerminal(record.snapshot.status)) {
@@ -356,7 +384,15 @@ export class AgentOrchestrator {
   }
 
   private retryOrThrow(agentId: string): AgentTaskSnapshot {
-    const target = this.lifecycleTarget(agentId, "retry");
+    return this.retryFromOrThrow(this.rootId, agentId);
+  }
+
+  private retryFromOrThrow(
+    callerThreadId: string,
+    agentId: string,
+  ): AgentTaskSnapshot {
+    const target = this.lifecycleTarget(callerThreadId, agentId, "retry");
+    this.assertLifecycleAuthority(callerThreadId, target, agentId, "retry");
     this.assertThreadContinuable(target, agentId, "retry");
     const previous = target.records.at(-1);
     const latestTask = previous?.snapshot ?? target.resumable?.latestTask;
@@ -370,7 +406,17 @@ export class AgentOrchestrator {
         "its persisted profile is unavailable",
       );
     }
+    const parentId =
+      latestTask.parentId && this.currentRecordForThread(latestTask.parentId)
+        ? latestTask.parentId
+        : callerThreadId;
     return this.spawn(profileName, latestTask.task, {
+      callerId: callerThreadId,
+      parentId,
+      name: latestTask.name,
+      ...(parentId === latestTask.parentId && latestTask.agentPath
+        ? { agentPath: latestTask.agentPath }
+        : {}),
       retryOf: latestTask.id,
       agentThreadId: target.threadId,
     });
@@ -386,9 +432,19 @@ export class AgentOrchestrator {
   }
 
   private followUpOrThrow(agentId: string, input: string): AgentTaskSnapshot {
+    return this.followUpFromOrThrow(this.rootId, agentId, input);
+  }
+
+  private followUpFromOrThrow(
+    callerThreadId: string,
+    agentId: string,
+    input: string,
+    message?: AgentTaskMessage,
+  ): AgentTaskSnapshot {
     const instruction = input.trim();
     if (!instruction) throw new Error("Agent follow-up input is required");
-    const target = this.lifecycleTarget(agentId, "follow-up");
+    const target = this.lifecycleTarget(callerThreadId, agentId, "follow-up");
+    this.assertLifecycleAuthority(callerThreadId, target, agentId, "follow-up");
     this.assertThreadContinuable(target, agentId, "follow-up");
     const previous = target.records.at(-1);
     const latestTask = previous?.snapshot ?? target.resumable?.latestTask;
@@ -414,11 +470,22 @@ export class AgentOrchestrator {
         "neither opaque model state nor conversation history is available",
       );
     }
+    const parentId =
+      latestTask.parentId && this.currentRecordForThread(latestTask.parentId)
+        ? latestTask.parentId
+        : callerThreadId;
     return this.spawn(profileName, instruction, {
+      callerId: callerThreadId,
+      parentId,
+      name: latestTask.name,
+      ...(parentId === latestTask.parentId && latestTask.agentPath
+        ? { agentPath: latestTask.agentPath }
+        : {}),
       followUpOf: latestTask.id,
       agentThreadId: target.threadId,
       modelState,
       history,
+      ...(message ? { message } : {}),
     });
   }
 
@@ -433,18 +500,34 @@ export class AgentOrchestrator {
   }
 
   private interruptOrThrow(agentId: string): void {
-    const target = this.lifecycleTarget(agentId, "interruption");
+    this.interruptFromOrThrow(this.rootId, agentId);
+  }
+
+  private interruptFromOrThrow(callerThreadId: string, agentId: string): void {
+    const target = this.lifecycleTarget(
+      callerThreadId,
+      agentId,
+      "interruption",
+    );
+    this.assertLifecycleAuthority(
+      callerThreadId,
+      target,
+      agentId,
+      "interruption",
+    );
     this.assertThreadOpen(target, agentId, "interruption");
     const record = target.records.at(-1);
     if (!record || isTerminal(record.snapshot.status)) {
       throw lifecycleError("agent_not_attached", agentId, "interruption");
     }
-    record.controller.abort(new Error("Agent interrupted by parent"));
-    if (record.snapshot.status === "queued") {
-      this.removeFromQueue(record.snapshot.id);
+    for (const member of this.subtreeActiveRecords(target.threadId)) {
+      member.controller.abort(new Error("Agent interrupted by collaborator"));
+      if (member.snapshot.status === "queued") {
+        this.removeFromQueue(member.snapshot.id);
+      }
+      this.detachChildExecution(member);
+      this.interruptRecord(member, "Interrupted by collaborator");
     }
-    this.detachChildExecution(record);
-    this.interruptRecord(record, "Interrupted by parent agent");
     this.pump();
   }
 
@@ -459,7 +542,12 @@ export class AgentOrchestrator {
   }
 
   private closeOrThrow(agentId: string): void {
-    const target = this.lifecycleTarget(agentId, "close");
+    this.closeFromOrThrow(this.rootId, agentId);
+  }
+
+  private closeFromOrThrow(callerThreadId: string, agentId: string): void {
+    const target = this.lifecycleTarget(callerThreadId, agentId, "close");
+    this.assertLifecycleAuthority(callerThreadId, target, agentId, "close");
     this.assertThreadOpen(target, agentId, "close");
     if (
       target.records.length === 0 &&
@@ -469,8 +557,11 @@ export class AgentOrchestrator {
       throw lifecycleError("agent_not_attached", agentId, "close");
     }
     const closedAt = this.wallNow().toISOString();
-    this.threadClosures.set(target.threadId, closedAt);
-    for (const record of target.records) {
+    const subtree = this.subtreeThreadIds(target.threadId);
+    for (const threadId of subtree) this.threadClosures.set(threadId, closedAt);
+    for (const record of this.nonRootRecords().filter((candidate) =>
+      subtree.has(agentThreadId(candidate)),
+    )) {
       record.collected = true;
       if (!isTerminal(record.snapshot.status)) {
         record.controller.abort(new Error("Agent thread closed by parent"));
@@ -489,15 +580,18 @@ export class AgentOrchestrator {
     this.pump();
   }
 
-  hasActiveWriter(): boolean {
+  hasActiveWriter(exceptTaskId?: string): boolean {
     return [...this.running, ...this.detachedWriters].some((id) => {
+      if (id === exceptTaskId) return false;
       const profile = this.records.get(id)?.profile;
       return profile?.toolAccess === "all";
     });
   }
 
-  completionBlocker(): string | undefined {
-    const children = this.childRecords();
+  completionBlocker(callerThreadId: string, root: boolean): string | undefined {
+    const children = root
+      ? this.nonRootRecords()
+      : this.directChildRecords(callerThreadId);
     const active = children.filter(
       ({ snapshot }) => !isTerminal(snapshot.status),
     );
@@ -518,13 +612,14 @@ export class AgentOrchestrator {
     }
   }
 
-  rootWriteDecision(
+  writeDecision(
+    callerTaskId: string,
     call: ToolCall,
     tool: Tool | undefined,
   ): RunControllerToolDecision | undefined {
     if (
       COLLABORATION_TOOLS.has(call.name) ||
-      !this.hasActiveWriter() ||
+      !this.hasActiveWriter(callerTaskId) ||
       tool?.mutability === "read"
     ) {
       return;
@@ -552,6 +647,7 @@ export class AgentOrchestrator {
     const record = this.createRecord({
       id: this.rootId,
       agentThreadId: this.rootId,
+      agentPath: "/root",
       name: agent.name,
       role: "root",
       task,
@@ -562,6 +658,7 @@ export class AgentOrchestrator {
       elapsedMs: 0,
       latestActivity: "Planning",
       activities: [],
+      messages: [],
       transcript: [],
     });
     this.emit(record, "created");
@@ -583,18 +680,59 @@ export class AgentOrchestrator {
     }
     const profile = this.profiles.get(profileName);
     if (!profile) throw new Error(`Unknown subagent profile: ${profileName}`);
+    const parentId = options.parentId ?? this.rootId;
+    const callerId = options.callerId ?? parentId;
+    const parent = this.currentRecordForThread(parentId);
+    const caller = this.currentRecordForThread(callerId);
+    if (!parent) {
+      throw lifecycleError("agent_not_attached", parentId, "delegation");
+    }
+    if (!caller) {
+      throw lifecycleError("agent_not_attached", callerId, "delegation");
+    }
+    if (callerId !== this.rootId && this.running.size >= this.maxConcurrent) {
+      throw new Error(
+        `No delegation slot is available (${this.maxConcurrent} active); finish or interrupt another agent before starting nested work`,
+      );
+    }
+    const parentDepth = agentDepth(parent.snapshot.agentPath);
+    if (!options.agentThreadId && parentDepth >= this.maxDepth) {
+      throw new Error(
+        `Agent delegation depth limit reached (${this.maxDepth})`,
+      );
+    }
+    if (
+      caller.profile?.toolAccess === "all" &&
+      profile.toolAccess === "all" &&
+      !isTerminal(caller.snapshot.status)
+    ) {
+      throw lifecycleError(
+        "agent_write_conflict",
+        callerId,
+        "delegation",
+        "a write-capable agent cannot wait on another write-capable child while it owns the workspace",
+      );
+    }
     const normalizedTask = task.trim();
     if (!normalizedTask) throw new Error("Subagent task is required");
     const id = randomUUID();
     const threadId = options.agentThreadId ?? id;
+    const name = options.agentThreadId
+      ? (options.name ?? profile.name)
+      : options.name
+        ? this.assertChildNameAvailable(parentId, options.name)
+        : this.availableChildName(parentId, profile.name);
+    const agentPath =
+      options.agentPath ?? `${parent.snapshot.agentPath ?? "/root"}/${name}`;
     const record = this.createRecord(
       {
         id,
-        parentId: this.rootId,
+        parentId,
         agentThreadId: threadId,
+        agentPath,
         ...(options.retryOf ? { retryOf: options.retryOf } : {}),
         ...(options.followUpOf ? { followUpOf: options.followUpOf } : {}),
-        name: profile.name,
+        name,
         role: profile.name,
         task: normalizedTask,
         status: "queued",
@@ -603,6 +741,7 @@ export class AgentOrchestrator {
         elapsedMs: 0,
         latestActivity: "Queued",
         activities: [],
+        messages: options.message ? [options.message] : [],
         transcript: [],
       },
       profile,
@@ -666,27 +805,41 @@ export class AgentOrchestrator {
     this.scheduleRuntimeCheckpoint();
     const childOptions = this.options.createChildRunOptions?.({
       agentId: record.snapshot.id,
-      parentId: this.rootId,
+      parentId: record.snapshot.parentId ?? this.rootId,
       profile,
     });
     const signal = combineSignals(this.rootSignal, record.controller.signal);
     const childAgent: Agent = {
-      name: profile.name,
+      name: record.snapshot.name,
       instructions: [
         rootAgent.instructions,
         "SUBAGENT ROLE",
         profile.instructions,
-        "Work only on the delegated task. Do not ask the user questions. Return a concise result with concrete evidence for the parent agent.",
+        `AGENT IDENTITY\nYou are ${record.snapshot.agentPath ?? record.snapshot.name}. Your stable thread ID is ${agentThreadId(record)}.`,
+        delegationInstructions([...this.profiles.values()], this.maxConcurrent),
+        "Work only on the delegated task. Do not ask the user questions. You may delegate bounded subtasks and exchange messages when that materially helps. Return a concise result with concrete evidence for your parent agent.",
       ].join("\n\n"),
       model: profile.model ?? rootAgent.model,
       provider: profile.provider ?? rootAgent.provider,
-      tools: childTools(rootAgent.tools ?? [], profile),
+      tools: childTools(
+        rootAgent.tools ?? [],
+        profile,
+        this.collaborationTools(agentThreadId(record)),
+      ),
       maxSteps: profile.maxSteps ?? rootAgent.maxSteps,
     };
     const delegatedCheckpoint = childOptions?.onCheckpoint;
+    const controller = new OrchestrationRunController(
+      this,
+      agentThreadId(record),
+      record.snapshot.id,
+      false,
+      childOptions?.controller,
+    );
     const promise = this.loop
       .run(childAgent, record.snapshot.task, {
         ...childOptions,
+        controller,
         signal,
         ...((record.history?.length ?? 0) > 0
           ? {
@@ -1068,11 +1221,26 @@ export class AgentOrchestrator {
     );
   }
 
-  private spawnTool(): Tool {
+  private collaborationTools(callerThreadId: string): Tool[] {
+    return [
+      this.spawnTool(callerThreadId),
+      this.sendMessageTool(callerThreadId),
+      this.followupTaskTool(callerThreadId),
+      this.followUpTool(callerThreadId),
+      this.retryTool(callerThreadId),
+      this.checkTool(callerThreadId),
+      this.waitTool(callerThreadId),
+      this.steerTool(callerThreadId),
+      this.interruptTool(callerThreadId),
+      this.closeTool(callerThreadId),
+    ];
+  }
+
+  private spawnTool(callerThreadId: string): Tool {
     return {
       name: SPAWN_AGENT_TOOL,
       description:
-        "Start an independent subagent task. Returns immediately so multiple tasks can run concurrently.",
+        "Start a direct child-agent task. Returns immediately so independent tasks can run concurrently.",
       parameters: {
         type: "object",
         properties: {
@@ -1086,6 +1254,12 @@ export class AgentOrchestrator {
             minLength: 1,
             description: "Self-contained delegated task and expected result",
           },
+          taskName: {
+            type: "string",
+            pattern: "^[a-z0-9][a-z0-9_-]{0,63}$",
+            description:
+              "Optional stable sibling-unique name used for addressing, such as api_review",
+          },
         },
         required: ["role", "task"],
         additionalProperties: false,
@@ -1096,6 +1270,13 @@ export class AgentOrchestrator {
         const snapshot = this.spawn(
           stringArgument(values.role, "role"),
           stringArgument(values.task, "task"),
+          {
+            callerId: callerThreadId,
+            parentId: callerThreadId,
+            ...(values.taskName === undefined
+              ? {}
+              : { name: taskNameArgument(values.taskName) }),
+          },
         );
         await this.flushRuntimeCheckpoints();
         return snapshot;
@@ -1103,32 +1284,74 @@ export class AgentOrchestrator {
     };
   }
 
-  private followUpTool(): Tool {
+  private sendMessageTool(callerThreadId: string): Tool {
+    return {
+      name: SEND_MESSAGE_TOOL,
+      description:
+        "Send a message to a queued or running agent. Delivery happens at the next safe model/tool boundary without starting a new turn.",
+      parameters: collaborationMessageParameters(
+        "Message, evidence, question, or correction for the active agent",
+      ),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const target = stringArgument(values.target, "target");
+        const message = this.sendMessageOrThrow(
+          callerThreadId,
+          target,
+          stringArgument(values.message, "message"),
+        );
+        await this.flushRuntimeCheckpoints();
+        return { accepted: true, message };
+      },
+    };
+  }
+
+  private followupTaskTool(callerThreadId: string): Tool {
+    return {
+      name: FOLLOWUP_TASK_TOOL,
+      description:
+        "Wake an idle agent with follow-up work in the same stable thread, preserving opaque provider state and visible history.",
+      parameters: collaborationMessageParameters(
+        "The next task or question for the idle agent",
+      ),
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const target = stringArgument(values.target, "target");
+        const text = stringArgument(values.message, "message");
+        const message = this.agentMessage(
+          callerThreadId,
+          target,
+          text,
+          "follow_up",
+        );
+        const snapshot = this.followUpFromOrThrow(
+          callerThreadId,
+          target,
+          text,
+          message,
+        );
+        await this.flushRuntimeCheckpoints();
+        return snapshot;
+      },
+    };
+  }
+
+  private followUpTool(callerThreadId: string): Tool {
     return {
       name: FOLLOW_UP_AGENT_TOOL,
       description:
-        "Continue an idle subagent thread with a new task while preserving its provider model state. Returns a new linked turn ID in the same agent thread.",
-      parameters: {
-        type: "object",
-        properties: {
-          agentId: {
-            type: "string",
-            description: "Agent or agent-thread ID returned by spawn/follow-up",
-          },
-          input: {
-            type: "string",
-            minLength: 1,
-            description: "The next task or question for the same agent",
-          },
-        },
-        required: ["agentId", "input"],
-        additionalProperties: false,
-      },
+        "Compatibility alias for continuing an idle agent thread with preserved provider state.",
+      parameters: collaborationInputParameters(
+        "The next task or question for the same agent",
+      ),
       mutability: "read",
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        const snapshot = this.followUpOrThrow(
+        const snapshot = this.followUpFromOrThrow(
+          callerThreadId,
           agentId,
           stringArgument(values.input, "input"),
         );
@@ -1138,55 +1361,56 @@ export class AgentOrchestrator {
     };
   }
 
-  private retryTool(): Tool {
+  private retryTool(callerThreadId: string): Tool {
     return {
       name: RETRY_AGENT_TOOL,
       description:
-        "Retry a finished or interrupted agent turn from fresh provider state while keeping it linked to the same agent thread.",
+        "Retry a finished or interrupted agent turn from fresh provider state while keeping the same stable agent thread.",
       parameters: collaborationTargetParameters(),
       mutability: "read",
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        const snapshot = this.retryOrThrow(agentId);
+        const snapshot = this.retryFromOrThrow(callerThreadId, agentId);
         await this.flushRuntimeCheckpoints();
         return snapshot;
       },
     };
   }
 
-  private checkTool(): Tool {
+  private checkTool(callerThreadId: string): Tool {
     return {
       name: CHECK_AGENTS_TOOL,
       description:
-        "Inspect the latest state of selected subagents without waiting. Returns current status snapshots for deciding whether to wait, follow up, or interrupt.",
+        "Inspect selected agents without waiting. Omit IDs to inspect this caller's direct children.",
       parameters: collaborationTargetsParameters(
-        "Subagent IDs to inspect; omit to inspect every current subagent thread",
+        "Agent IDs, names, or canonical paths; omit for direct children",
       ),
       mutability: "read",
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const requested = optionalAgentIds(values.agentIds);
         const records = requested
-          ? this.resolveCurrentChildRecords(requested)
-          : this.currentChildRecords();
+          ? this.resolveCurrentAgentRecords(callerThreadId, requested)
+          : this.currentDirectChildRecords(callerThreadId);
         return collaborationStatus(records);
       },
     };
   }
 
-  private waitTool(): Tool {
+  private waitTool(callerThreadId: string): Tool {
     return {
       name: WAIT_FOR_AGENTS_TOOL,
       description:
-        "Wait until a selected subagent has a meaningful update or the bounded timeout expires. Returns partial status snapshots, so one stuck provider or tool cannot block the parent indefinitely.",
+        "Wait for selected agents or, by default, this caller's direct children. The wait is bounded and returns partial status snapshots.",
       parameters: {
         type: "object",
         properties: {
           agentIds: {
             type: "array",
             items: { type: "string" },
-            description: "Subagent IDs to wait for; omit to wait for all",
+            description:
+              "Agent IDs, names, or canonical paths; omit for direct children",
           },
           timeoutMs: {
             type: "integer",
@@ -1202,7 +1426,7 @@ export class AgentOrchestrator {
         const values = objectArguments(arguments_);
         const requested = optionalAgentIds(values.agentIds);
         const timeoutMs = waitTimeoutArgument(values.timeoutMs);
-        let records = this.waitRecords(requested);
+        let records = this.waitRecords(callerThreadId, requested);
         let wakeReason:
           "all_terminal" | "results_available" | "agent_updated" | "timeout";
         let mailboxEvent: AgentMailboxEvent | undefined;
@@ -1225,7 +1449,7 @@ export class AgentOrchestrator {
           wakeReason = wake.reason;
           if (wake.reason === "agent_updated") mailboxEvent = wake.event;
           await Promise.resolve();
-          records = this.waitRecords(requested);
+          records = this.waitRecords(callerThreadId, requested);
         }
 
         for (const record of records) {
@@ -1245,11 +1469,11 @@ export class AgentOrchestrator {
     };
   }
 
-  private steerTool(): Tool {
+  private steerTool(callerThreadId: string): Tool {
     return {
       name: STEER_AGENT_TOOL,
       description:
-        "Add direction or a constraint to a queued or running subagent. The message is delivered at the next safe model/tool boundary.",
+        "Add direction or a constraint to a queued or running agent at its next safe boundary.",
       parameters: collaborationInputParameters(
         "Direction or constraint for the active agent",
       ),
@@ -1257,84 +1481,108 @@ export class AgentOrchestrator {
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        this.steerOrThrow(agentId, stringArgument(values.input, "input"));
+        this.steerFromOrThrow(
+          callerThreadId,
+          agentId,
+          stringArgument(values.input, "input"),
+        );
         await this.flushRuntimeCheckpoints();
         return { agentId, accepted: true };
       },
     };
   }
 
-  private interruptTool(): Tool {
+  private interruptTool(callerThreadId: string): Tool {
     return {
       name: INTERRUPT_AGENT_TOOL,
       description:
-        "Interrupt the current turn of an agent without closing its thread. A later follow-up may continue from the latest persisted model state.",
+        "Interrupt an agent's current turn and active descendants without closing their reusable threads.",
       parameters: collaborationTargetParameters(),
       mutability: "read",
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        this.interruptOrThrow(agentId);
+        this.interruptFromOrThrow(callerThreadId, agentId);
         await this.flushRuntimeCheckpoints();
         return { agentId, interrupted: true };
       },
     };
   }
 
-  private closeTool(): Tool {
+  private closeTool(callerThreadId: string): Tool {
     return {
       name: CLOSE_AGENT_TOOL,
       description:
-        "Permanently close an agent thread, interrupting active work and discarding any uncollected requirement. Closed threads cannot receive follow-ups.",
+        "Permanently close an agent thread and its descendant threads. Closed threads reject future collaboration actions.",
       parameters: collaborationTargetParameters(),
       mutability: "read",
       execute: async (arguments_) => {
         const values = objectArguments(arguments_);
         const agentId = stringArgument(values.agentId, "agentId");
-        this.closeOrThrow(agentId);
+        this.closeFromOrThrow(callerThreadId, agentId);
         await this.flushRuntimeCheckpoints();
         return { agentId, closed: true };
       },
     };
   }
 
-  private childRecords(): AgentTaskRecord[] {
+  private nonRootRecords(): AgentTaskRecord[] {
     return [...this.records.values()].filter(
-      ({ snapshot }) => snapshot.parentId === this.rootId,
+      ({ snapshot }) => snapshot.id !== this.rootId,
     );
   }
 
-  private childThreadRecords(agentId: string): AgentTaskRecord[] {
-    const direct = this.records.get(agentId);
-    const threadId =
-      direct?.snapshot.parentId === this.rootId
-        ? agentThreadId(direct)
-        : (this.resumableTaskThreads.get(agentId) ?? agentId);
-    return this.childRecords().filter(
+  private recordsForThread(threadId: string): AgentTaskRecord[] {
+    return [...this.records.values()].filter(
       (record) => agentThreadId(record) === threadId,
     );
   }
 
-  private currentChildRecord(agentId: string): AgentTaskRecord | undefined {
-    return this.childThreadRecords(agentId).at(-1);
+  private currentRecordForThread(
+    threadId: string,
+  ): AgentTaskRecord | undefined {
+    return this.recordsForThread(threadId).at(-1);
   }
 
-  private currentChildRecords(): AgentTaskRecord[] {
+  private directChildRecords(parentThreadId: string): AgentTaskRecord[] {
+    return this.nonRootRecords().filter(
+      ({ snapshot }) => snapshot.parentId === parentThreadId,
+    );
+  }
+
+  private currentDirectChildRecords(parentThreadId: string): AgentTaskRecord[] {
     const records = new Map<string, AgentTaskRecord>();
-    for (const record of this.childRecords()) {
+    for (const record of this.directChildRecords(parentThreadId)) {
       records.set(agentThreadId(record), record);
     }
     return [...records.values()];
   }
 
-  private resolveCurrentChildRecords(
+  private currentAgentRecord(
+    callerThreadId: string,
+    reference: string,
+  ): AgentTaskRecord | undefined {
+    const target = this.lifecycleTarget(
+      callerThreadId,
+      reference,
+      "agent lookup",
+    );
+    return target.records.at(-1);
+  }
+
+  private resolveCurrentAgentRecords(
+    callerThreadId: string,
     agentIds: readonly string[],
   ): AgentTaskRecord[] {
     const records = agentIds.map((id) => {
-      const record = this.currentChildRecord(id);
+      const target = this.lifecycleTarget(
+        callerThreadId,
+        id,
+        "status inspection",
+      );
+      this.assertThreadOpen(target, id, "status inspection");
+      const record = target.records.at(-1);
       if (!record) {
-        const target = this.lifecycleTarget(id, "status inspection");
-        this.assertThreadOpen(target, id, "status inspection");
         throw lifecycleError("agent_not_attached", id, "status inspection");
       }
       return record;
@@ -1343,11 +1591,12 @@ export class AgentOrchestrator {
   }
 
   private waitRecords(
+    callerThreadId: string,
     agentIds: readonly string[] | undefined,
   ): AgentTaskRecord[] {
     return agentIds
-      ? this.resolveCurrentChildRecords(agentIds)
-      : this.childRecords().filter(
+      ? this.resolveCurrentAgentRecords(callerThreadId, agentIds)
+      : this.directChildRecords(callerThreadId).filter(
           ({ collected, snapshot }) => !collected && !snapshot.closedAt,
         );
   }
@@ -1393,7 +1642,7 @@ export class AgentOrchestrator {
   }
 
   private threadHasActiveRunById(threadId: string): boolean {
-    const currentActive = this.childThreadRecords(threadId).some(
+    const currentActive = this.recordsForThread(threadId).some(
       ({ snapshot }) => !isTerminal(snapshot.status),
     );
     if (currentActive) return true;
@@ -1401,20 +1650,14 @@ export class AgentOrchestrator {
     return resumable ? !isTerminal(resumable.latestTask.status) : false;
   }
 
-  private resumableThread(agentId: string): ResumableAgentThread | undefined {
-    const threadId = this.resumableTaskThreads.get(agentId) ?? agentId;
-    return this.resumableThreads.get(threadId);
-  }
-
   private lifecycleTarget(
+    callerThreadId: string,
     agentId: string,
     operation: string,
   ): AgentLifecycleTarget {
-    const records = this.childThreadRecords(agentId);
-    const resumable = this.resumableThread(agentId);
-    const threadId = records[0]
-      ? agentThreadId(records[0])
-      : resumable?.agentThreadId;
+    const threadId = this.resolveThreadId(callerThreadId, agentId, operation);
+    const records = this.recordsForThread(threadId);
+    const resumable = this.resumableThreads.get(threadId);
     if (!threadId) {
       throw lifecycleError("agent_not_found", agentId, operation);
     }
@@ -1423,6 +1666,67 @@ export class AgentOrchestrator {
       records,
       ...(resumable ? { resumable } : {}),
     };
+  }
+
+  private resolveThreadId(
+    callerThreadId: string,
+    reference: string,
+    operation: string,
+  ): string {
+    const directRecord = this.records.get(reference);
+    if (directRecord) return agentThreadId(directRecord);
+    if (this.recordsForThread(reference).length > 0) return reference;
+    const persistedThread =
+      this.resumableTaskThreads.get(reference) ??
+      (this.resumableThreads.has(reference) ? reference : undefined);
+    if (persistedThread) return persistedThread;
+
+    const addressable = new Map<
+      string,
+      { threadId: string; snapshot: AgentTaskSnapshot }
+    >();
+    for (const thread of this.resumableThreads.values()) {
+      addressable.set(thread.agentThreadId, {
+        threadId: thread.agentThreadId,
+        snapshot: thread.latestTask,
+      });
+    }
+    for (const record of this.currentLogicalRecords()) {
+      const threadId = agentThreadId(record);
+      addressable.set(threadId, { threadId, snapshot: record.snapshot });
+    }
+    const candidates = [...addressable.values()];
+    const byPath = candidates.filter(
+      ({ snapshot }) => snapshot.agentPath === reference,
+    );
+    if (byPath.length === 1) return byPath[0]!.threadId;
+
+    const directChildren = this.currentDirectChildRecords(callerThreadId);
+    const byRelativeName = directChildren.filter(
+      ({ snapshot }) => snapshot.name === reference,
+    );
+    if (byRelativeName.length === 1) return agentThreadId(byRelativeName[0]!);
+
+    const byGlobalName = candidates.filter(
+      ({ snapshot }) => snapshot.name === reference,
+    );
+    if (byGlobalName.length === 1) return byGlobalName[0]!.threadId;
+    if (
+      byPath.length > 1 ||
+      byRelativeName.length > 1 ||
+      byGlobalName.length > 1
+    ) {
+      throw lifecycleError("agent_ambiguous", reference, operation);
+    }
+    throw lifecycleError("agent_not_found", reference, operation);
+  }
+
+  private currentLogicalRecords(): AgentTaskRecord[] {
+    const records = new Map<string, AgentTaskRecord>();
+    for (const record of this.records.values()) {
+      records.set(agentThreadId(record), record);
+    }
+    return [...records.values()];
   }
 
   private assertThreadOpen(
@@ -1435,6 +1739,28 @@ export class AgentOrchestrator {
     }
     if (this.closed) {
       throw lifecycleError("agent_not_attached", agentId, operation);
+    }
+  }
+
+  private assertLifecycleAuthority(
+    callerThreadId: string,
+    target: AgentLifecycleTarget,
+    agentId: string,
+    operation: string,
+  ): void {
+    const latest =
+      target.records.at(-1)?.snapshot ?? target.resumable?.latestTask;
+    const directChild = latest?.parentId === callerThreadId;
+    if (
+      target.threadId === this.rootId ||
+      (callerThreadId !== this.rootId && !directChild)
+    ) {
+      throw lifecycleError(
+        "agent_not_attached",
+        agentId,
+        operation,
+        "lifecycle controls are limited to the caller's direct children",
+      );
     }
   }
 
@@ -1452,7 +1778,7 @@ export class AgentOrchestrator {
   private threadClosedAt(threadId: string): string | undefined {
     return (
       this.threadClosures.get(threadId) ??
-      this.childThreadRecords(threadId).find(
+      this.recordsForThread(threadId).find(
         ({ snapshot }) => snapshot.closedAt !== undefined,
       )?.snapshot.closedAt ??
       this.resumableThreads.get(threadId)?.latestTask.closedAt
@@ -1466,7 +1792,7 @@ export class AgentOrchestrator {
         threadIds.add(thread.agentThreadId);
       }
     }
-    for (const record of this.childRecords()) {
+    for (const record of this.nonRootRecords()) {
       const threadId = agentThreadId(record);
       if (!this.threadClosedAt(threadId)) threadIds.add(threadId);
     }
@@ -1476,7 +1802,7 @@ export class AgentOrchestrator {
   private childThreadHistory(
     record: AgentTaskRecord,
   ): readonly ModelConversationMessage[] {
-    const records = this.childThreadRecords(agentThreadId(record));
+    const records = this.recordsForThread(agentThreadId(record));
     return [
       ...(records[0]?.history ?? []),
       ...records.flatMap(({ snapshot }) =>
@@ -1490,8 +1816,168 @@ export class AgentOrchestrator {
     ];
   }
 
+  private availableChildName(parentThreadId: string, base: string): string {
+    const normalized = normalizedTaskName(base);
+    const names = this.childNames(parentThreadId);
+    if (!names.has(normalized)) return normalized;
+    let suffix = 2;
+    while (names.has(`${normalized}-${suffix}`)) suffix += 1;
+    return `${normalized}-${suffix}`;
+  }
+
+  private assertChildNameAvailable(
+    parentThreadId: string,
+    name: string,
+  ): string {
+    if (this.childNames(parentThreadId).has(name)) {
+      throw new Error(
+        `Agent task name ${name} is already in use under ${this.callerLabel(parentThreadId)}`,
+      );
+    }
+    return name;
+  }
+
+  private childNames(parentThreadId: string): Set<string> {
+    const names = new Set(
+      this.currentDirectChildRecords(parentThreadId).map(
+        ({ snapshot }) => snapshot.name,
+      ),
+    );
+    const parentPath =
+      this.currentRecordForThread(parentThreadId)?.snapshot.agentPath;
+    if (!parentPath) return names;
+    for (const thread of this.resumableThreads.values()) {
+      const task = thread.latestTask;
+      if (this.threadClosedAt(thread.agentThreadId) || !task.agentPath)
+        continue;
+      if (parentAgentPath(task.agentPath) === parentPath) names.add(task.name);
+    }
+    return names;
+  }
+
+  private callerLabel(threadId: string): string {
+    return (
+      this.currentRecordForThread(threadId)?.snapshot.agentPath ?? threadId
+    );
+  }
+
+  private agentMessage(
+    callerThreadId: string,
+    targetReference: string,
+    text: string,
+    delivery: AgentTaskMessage["delivery"],
+  ): AgentTaskMessage {
+    const caller = this.currentRecordForThread(callerThreadId);
+    if (!caller) {
+      throw lifecycleError(
+        "agent_not_attached",
+        callerThreadId,
+        "message delivery",
+      );
+    }
+    const targetThreadId = this.resolveThreadId(
+      callerThreadId,
+      targetReference,
+      "message delivery",
+    );
+    if (targetThreadId === callerThreadId) {
+      throw new Error("An agent cannot send a collaboration message to itself");
+    }
+    return {
+      id: randomUUID(),
+      fromAgentId: caller.snapshot.id,
+      fromAgentThreadId: callerThreadId,
+      fromAgentName: caller.snapshot.name,
+      toAgentThreadId: targetThreadId,
+      text,
+      createdAt: this.wallNow().toISOString(),
+      delivery,
+    };
+  }
+
+  private sendMessageOrThrow(
+    callerThreadId: string,
+    targetReference: string,
+    text: string,
+  ): AgentTaskMessage {
+    const target = this.lifecycleTarget(
+      callerThreadId,
+      targetReference,
+      "message delivery",
+    );
+    this.assertThreadOpen(target, targetReference, "message delivery");
+    const record = target.records.at(-1);
+    if (!record || isTerminal(record.snapshot.status)) {
+      throw lifecycleError(
+        "agent_not_attached",
+        targetReference,
+        "active message delivery",
+        "use followup_task to wake an idle agent",
+      );
+    }
+    const message = this.agentMessage(
+      callerThreadId,
+      targetReference,
+      text,
+      "active",
+    );
+    record.pendingInput.push(formatAgentMessage(message));
+    this.patchRecord(record, "messaged", {
+      latestActivity: `Message from ${message.fromAgentName}`,
+      messages: [...(record.snapshot.messages ?? []), message],
+    });
+    this.scheduleRuntimeCheckpoint();
+    return message;
+  }
+
+  private subtreeThreadIds(threadId: string): Set<string> {
+    const descendants = new Set([threadId]);
+    const candidates = [
+      ...this.currentLogicalRecords().map(({ snapshot }) => snapshot),
+      ...[...this.resumableThreads.values()].map(
+        ({ latestTask }) => latestTask,
+      ),
+    ];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const candidate of candidates) {
+        const candidateThreadId = candidate.agentThreadId ?? candidate.id;
+        if (
+          candidate.parentId &&
+          descendants.has(candidate.parentId) &&
+          !descendants.has(candidateThreadId)
+        ) {
+          descendants.add(candidateThreadId);
+          changed = true;
+        }
+      }
+    }
+    return descendants;
+  }
+
+  private subtreeActiveRecords(threadId: string): AgentTaskRecord[] {
+    const subtree = this.subtreeThreadIds(threadId);
+    return this.nonRootRecords().filter(
+      (record) =>
+        subtree.has(agentThreadId(record)) &&
+        !isTerminal(record.snapshot.status),
+    );
+  }
+
+  private cancelSubtree(record: AgentTaskRecord, reason: string): void {
+    for (const member of this.subtreeActiveRecords(agentThreadId(record))) {
+      member.controller.abort(new Error(reason));
+      if (member.snapshot.status === "queued") {
+        this.removeFromQueue(member.snapshot.id);
+      }
+      this.detachChildExecution(member);
+      this.cancelRecord(member, reason);
+    }
+  }
+
   private cancelRemaining(reason: string): void {
-    for (const record of this.childRecords()) {
+    for (const record of this.nonRootRecords()) {
       if (isTerminal(record.snapshot.status)) continue;
       record.controller.abort(new Error(reason));
       if (record.snapshot.status === "queued") {
@@ -1524,6 +2010,9 @@ export class AgentOrchestrator {
 class OrchestrationRunController implements RunController {
   constructor(
     private readonly orchestrator: AgentOrchestrator,
+    private readonly callerThreadId: string,
+    private readonly callerTaskId: string,
+    private readonly root: boolean,
     private readonly delegate?: RunController,
   ) {}
 
@@ -1532,7 +2021,7 @@ class OrchestrationRunController implements RunController {
   ): Promise<RunControllerModelDirective> {
     return Promise.resolve(this.delegate?.beforeModel?.(context) ?? {}).then(
       (directive) => {
-        this.orchestrator.syncRootTools(context.tools);
+        if (this.root) this.orchestrator.syncRootTools(context.tools);
         return directive;
       },
     );
@@ -1543,7 +2032,11 @@ class OrchestrationRunController implements RunController {
     tool: Tool | undefined,
     context: RunControllerContext,
   ): Promise<RunControllerToolDecision> {
-    const ownership = this.orchestrator.rootWriteDecision(call, tool);
+    const ownership = this.orchestrator.writeDecision(
+      this.callerTaskId,
+      call,
+      tool,
+    );
     if (ownership) return ownership;
     return (
       (await this.delegate?.beforeToolCall?.(call, tool, context)) ?? {
@@ -1565,7 +2058,10 @@ class OrchestrationRunController implements RunController {
     context: RunControllerContext,
   ): Promise<string | undefined> {
     const delegated = await this.delegate?.validateCompletion?.(turn, context);
-    return delegated ?? this.orchestrator.completionBlocker();
+    return (
+      delegated ??
+      this.orchestrator.completionBlocker(this.callerThreadId, this.root)
+    );
   }
 
   resolveCompletionOutput(
@@ -1581,6 +2077,7 @@ function rootRunOptions(options: AgentOrchestratorOptions): RunOptions {
     profiles: _profiles,
     maxConcurrent: _maxConcurrent,
     maxAgents: _maxAgents,
+    maxDepth: _maxDepth,
     resumableThreads: _resumableThreads,
     wallNow: _wallNow,
     onAgentTreeEvent: _onAgentTreeEvent,
@@ -1596,16 +2093,21 @@ function rootRunOptions(options: AgentOrchestratorOptions): RunOptions {
 function childTools(
   tools: readonly Tool[],
   profile: SubagentProfile,
+  collaborationTools: readonly Tool[],
 ): readonly Tool[] {
-  const excluded = new Set([
-    ...COLLABORATION_TOOLS,
-    ...(profile.excludedTools ?? []),
-  ]);
-  return tools.filter(
+  const excluded = new Set(profile.excludedTools ?? []);
+  const base = tools.filter(
     (tool) =>
+      !COLLABORATION_TOOLS.has(tool.name) &&
       !excluded.has(tool.name) &&
       (profile.toolAccess === "all" || tool.mutability === "read"),
   );
+  const collaboration = collaborationTools.filter(
+    (tool) => !excluded.has(tool.name),
+  );
+  const combined = [...base, ...collaboration];
+  assertUniqueToolNames(combined);
+  return combined;
 }
 
 function delegationInstructions(
@@ -1615,8 +2117,10 @@ function delegationInstructions(
   return [
     "MULTI-AGENT DELEGATION",
     "Delegate only concrete, independent work that benefits from parallel execution or focused context. Keep small sequential work in the parent agent.",
-    `At most ${maxConcurrent} subagents run concurrently. Start independent tasks with ${SPAWN_AGENT_TOOL}, continue useful parent work, then use ${CHECK_AGENTS_TOOL} for a non-blocking status snapshot or ${WAIT_FOR_AGENTS_TOOL} for a bounded mailbox wait before using their findings or finishing.`,
-    `Use ${STEER_AGENT_TOOL} to add direction to active work. Use ${FOLLOW_UP_AGENT_TOOL} for related work that should continue a finished or interrupted agent with its preserved model state; use ${SPAWN_AGENT_TOOL} for an independent task.`,
+    `At most ${maxConcurrent} agents run concurrently. Start direct children with ${SPAWN_AGENT_TOOL}, continue useful work, then use ${CHECK_AGENTS_TOOL} for status or ${WAIT_FOR_AGENTS_TOOL} for a bounded wait before using their findings or finishing.`,
+    `Give spawned work a stable taskName when another agent may need to address it. Targets accept task IDs, stable thread IDs, caller-relative task names, or canonical paths such as /root/research/api_review.`,
+    `Use ${SEND_MESSAGE_TOOL} for a running agent and ${FOLLOWUP_TASK_TOOL} to wake an idle agent in its existing context. Use ${STEER_AGENT_TOOL} for parent-style direction.`,
+    `Use ${FOLLOW_UP_AGENT_TOOL} only as the legacy alias for ${FOLLOWUP_TASK_TOOL}; use ${SPAWN_AGENT_TOOL} for independent work.`,
     `Use ${RETRY_AGENT_TOOL} to rerun a finished or interrupted turn from fresh provider state while retaining its thread linkage.`,
     `Agent threads persist for the whole parent conversation: finishing a child turn does not delete or close its thread. Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,
     "Do not duplicate the same task across agents. Give each task enough context to be completed without asking the user.",
@@ -1634,6 +2138,9 @@ function cloneSnapshot(snapshot: AgentTaskSnapshot): AgentTaskSnapshot {
     ...snapshot,
     ...(snapshot.usage ? { usage: { ...snapshot.usage } } : {}),
     activities: snapshot.activities.map((activity) => ({ ...activity })),
+    ...(snapshot.messages
+      ? { messages: snapshot.messages.map((message) => ({ ...message })) }
+      : {}),
     transcript: snapshot.transcript.map((entry) => ({
       ...entry,
       ...(entry.kind === "model" && entry.usage
@@ -1710,6 +2217,9 @@ function collaborationStatus(records: readonly AgentTaskRecord[]): {
   agents: Array<{
     id: string;
     agentThreadId: string;
+    agentPath?: string;
+    parentId?: string;
+    name: string;
     role: string;
     task: string;
     status: AgentTaskSnapshot["status"];
@@ -1725,6 +2235,9 @@ function collaborationStatus(records: readonly AgentTaskRecord[]): {
   const agents = records.map(({ snapshot }) => ({
     id: snapshot.id,
     agentThreadId: snapshot.agentThreadId ?? snapshot.id,
+    ...(snapshot.agentPath ? { agentPath: snapshot.agentPath } : {}),
+    ...(snapshot.parentId ? { parentId: snapshot.parentId } : {}),
+    name: snapshot.name,
     role: snapshot.role,
     task: snapshot.task,
     status: snapshot.status,
@@ -1766,6 +2279,65 @@ function collaborationInputParameters(
     required: ["agentId", "input"],
     additionalProperties: false,
   };
+}
+
+function collaborationMessageParameters(
+  messageDescription: string,
+): Tool["parameters"] {
+  return {
+    type: "object",
+    properties: {
+      target: {
+        type: "string",
+        description:
+          "Agent task ID, stable thread ID, caller-relative task name, or canonical path",
+      },
+      message: {
+        type: "string",
+        minLength: 1,
+        description: messageDescription,
+      },
+    },
+    required: ["target", "message"],
+    additionalProperties: false,
+  };
+}
+
+function taskNameArgument(value: unknown): string {
+  const name = stringArgument(value, "taskName");
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) {
+    throw new Error(
+      "taskName must start with a lowercase letter or digit and contain only lowercase letters, digits, underscores, or hyphens",
+    );
+  }
+  return name;
+}
+
+function normalizedTaskName(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return normalized || "agent";
+}
+
+function agentDepth(path: string | undefined): number {
+  if (!path) return 0;
+  return Math.max(0, path.split("/").filter(Boolean).length - 1);
+}
+
+function parentAgentPath(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index <= 0 ? "/root" : path.slice(0, index);
+}
+
+function formatAgentMessage(message: AgentTaskMessage): string {
+  return [
+    `Message from ${message.fromAgentName} (${message.fromAgentThreadId}):`,
+    message.text,
+  ].join("\n");
 }
 
 function normalizedTokenUsage(usage: Partial<TokenUsage>): TokenUsage {
@@ -1829,13 +2401,17 @@ function lifecycleError(
   const message =
     code === "agent_busy"
       ? `Agent ${agentId} already has an active run and is unavailable for ${operation}`
-      : code === "agent_closed"
-        ? `Agent ${agentId} is closed and unavailable for ${operation}`
-        : code === "agent_not_found"
-          ? `Agent ${agentId} was not found for ${operation}`
-          : code === "agent_state_unavailable"
-            ? `Agent ${agentId} state is unavailable for ${operation}${detail ? `: ${detail}` : ""}`
-            : `Agent ${agentId} is not attached to the current orchestrator for ${operation}`;
+      : code === "agent_ambiguous"
+        ? `Agent reference ${agentId} is ambiguous for ${operation}; use its stable thread ID or canonical path`
+        : code === "agent_closed"
+          ? `Agent ${agentId} is closed and unavailable for ${operation}`
+          : code === "agent_not_found"
+            ? `Agent ${agentId} was not found for ${operation}`
+            : code === "agent_state_unavailable"
+              ? `Agent ${agentId} state is unavailable for ${operation}${detail ? `: ${detail}` : ""}`
+              : code === "agent_write_conflict"
+                ? `Agent ${agentId} cannot perform ${operation}${detail ? `: ${detail}` : ""}`
+                : `Agent ${agentId} is not attached to the current orchestrator for ${operation}${detail ? `: ${detail}` : ""}`;
   return new ToolExecutionError(message, {
     code,
     retryable: code === "agent_busy" || code === "agent_not_attached",

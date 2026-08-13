@@ -357,6 +357,7 @@ function isAgentTask(value: unknown): boolean {
     (task.parentId === undefined || typeof task.parentId === "string") &&
     (task.agentThreadId === undefined ||
       typeof task.agentThreadId === "string") &&
+    (task.agentPath === undefined || typeof task.agentPath === "string") &&
     (task.retryOf === undefined || typeof task.retryOf === "string") &&
     (task.followUpOf === undefined || typeof task.followUpOf === "string") &&
     (task.closedAt === undefined || typeof task.closedAt === "string") &&
@@ -406,9 +407,26 @@ function isAgentTask(value: unknown): boolean {
         (item.durationMs === undefined || isNonNegativeNumber(item.durationMs))
       );
     }) &&
+    (task.messages === undefined ||
+      (Array.isArray(task.messages) && task.messages.every(isAgentMessage))) &&
     (task.transcript === undefined ||
       (Array.isArray(task.transcript) &&
         task.transcript.every(isAgentTranscriptEntry)))
+  );
+}
+
+function isAgentMessage(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const message = value as Record<string, unknown>;
+  return (
+    typeof message.id === "string" &&
+    typeof message.fromAgentId === "string" &&
+    typeof message.fromAgentThreadId === "string" &&
+    typeof message.fromAgentName === "string" &&
+    typeof message.toAgentThreadId === "string" &&
+    typeof message.text === "string" &&
+    typeof message.createdAt === "string" &&
+    (message.delivery === "active" || message.delivery === "follow_up")
   );
 }
 
