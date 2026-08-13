@@ -581,10 +581,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
 .agent-turn::after {
   position: absolute;
-  top: 5px;
-  left: 1px;
-  width: 7px;
-  height: 7px;
+  top: 4px;
+  left: 0;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
   border: 2px solid var(--panel);
   border-radius: 50%;
   background: var(--accent);

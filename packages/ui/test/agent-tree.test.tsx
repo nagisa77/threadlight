@@ -267,6 +267,8 @@ describe("AgentTreePanel", () => {
     expect(html).toContain('class="agent-action danger pressable"');
     expect(html).toContain('aria-label="停止"');
     expect(html).toContain("<span>停止</span>");
+    expect(html).not.toContain('class="agent-turn"');
+    expect(html).not.toContain("第 1 轮");
     expect(html.indexOf('class="agent-conversation"')).toBeLessThan(
       html.indexOf('class="agent-panel-list"'),
     );

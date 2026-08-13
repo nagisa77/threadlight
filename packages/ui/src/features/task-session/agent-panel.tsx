@@ -344,6 +344,7 @@ function AgentConversation({
             turn={turn}
             index={index}
             showTask={index > 0}
+            showTimeline={thread.turns.length > 1}
           />
         ))}
       </div>
@@ -398,21 +399,25 @@ function AgentTurnTranscript({
   turn,
   index,
   showTask,
+  showTimeline,
 }: {
   turn: AgentTaskData;
   index: number;
   showTask: boolean;
+  showTimeline: boolean;
 }) {
   const { t } = useI18n();
   const transcript = turn.transcript ?? [];
   const active = turn.status === "queued" || turn.status === "running";
 
   return (
-    <section className="agent-turn">
-      <header className="agent-turn-header">
-        <span>{t("agentTurn", { count: index + 1 })}</span>
-        <small>{agentStatus(turn, t)}</small>
-      </header>
+    <section className={showTimeline ? "agent-turn" : undefined}>
+      {showTimeline && (
+        <header className="agent-turn-header">
+          <span>{t("agentTurn", { count: index + 1 })}</span>
+          <small>{agentStatus(turn, t)}</small>
+        </header>
+      )}
       {showTask && <p className="agent-turn-task">{turn.task}</p>}
       {transcript.map((entry) => (
         <AgentTranscriptEntry key={entry.id} entry={entry} />
