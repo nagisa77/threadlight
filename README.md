@@ -9,25 +9,49 @@
 <p align="center">
   <a href="./README.en.md">English</a> ·
   <a href="https://threadlight.xyz">官方网站</a> ·
-  <a href="./docs/SELF_HOSTING.zh-CN.md">完整自部署说明</a>
+  <a href="./docs/SELF_HOSTING.zh-CN.md">自部署</a> ·
+  <a href="./docs/DEVELOPMENT.zh-CN.md">开发指南</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/nagisa77/threadlight/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/nagisa77/threadlight?display_name=tag&sort=semver"></a>
+  <a href="./LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-E2743C"></a>
 </p>
 
 <p align="center">
   <img src="./docs/images/threadlight-overview.png" width="1200" alt="Threadlight 多 Agent 工程工作区">
 </p>
 
-## Showcase
+## 为什么是 Threadlight
+
+真实工程任务很少在一次模型调用里结束。它们会经历研究、计划、委派、工具执行、文件修改、终端进程、Review、交付，以及中断后的继续。Threadlight 把这些环节变成 Runtime 的显式状态，而不是把一切藏在聊天框背后。
+
+| 普通 Agent 客户端 | Threadlight |
+| --- | --- |
+| 多 Agent 常常只是多个临时对话 | 父子线程、生命周期、消息与恢复由 Runtime 管理 |
+| 工具执行结束后只剩最终回答 | Plan、工具、终端、文件、Diff 与 token usage 保持可观察 |
+| 中断后依赖重新描述上下文 | 对话、Agent 树与 opaque model state 持久化 |
+| Provider 协议渗入业务循环 | 厂商 wire format 只存在于 Adapter |
+| 生成代码后自行切换工具交付 | Worktree、Review、Commit、Push 与 Draft PR 共用任务上下文 |
+
+## 实战 Showcase
 
 无需预先准备项目，直接在空任务中粘贴 Query，Threadlight 会创建代码、运行测试并产出文件。
 
-| Case | Query | 执行过程 | 结果 |
+| Case | Query | 执行过程 | 可交互结果 |
 | --- | --- | --- | --- |
-| AI Agent 技术雷达 | `从零创建 ai-agent-radar：联网核实主流 AI Coding Agent 的能力、价格和来源，制作支持筛选、对比和权重排名的网站。并行使用多个 Agent，完成后测试、启动并截图。` | <a href="./docs/images/showcase/ai-agent-radar.png"><img src="./docs/images/showcase/ai-agent-radar.png" width="420" alt="AI Agent 技术雷达执行过程"></a> | |
 | 线上事故回放 | `从零创建 incident-replay-lab：制作可播放的电商线上事故沙盘，包含服务拓扑、实时指标、事件流、时间轴和自动复盘。完成后测试、启动并保存事故高峰截图。` | <a href="./docs/images/showcase/incident-replay-lab.png"><img src="./docs/images/showcase/incident-replay-lab.png" width="420" alt="线上事故回放执行过程"></a> | <a href="./docs/images/showcase/incident-replay-lab-result.png"><img src="./docs/images/showcase/incident-replay-lab-result.png" width="420" alt="线上事故回放结果"></a> |
 | 全球地震观察站 | `从零创建 earthquake-observatory：获取 USGS 最近 30 天地震数据，制作支持时间播放、震级筛选、深度分析和地区排行的交互地图。完成后测试、启动并截图。` | <a href="./docs/images/showcase/earthquake-observatory.png"><img src="./docs/images/showcase/earthquake-observatory.png" width="420" alt="全球地震观察站执行过程"></a> | <a href="./docs/images/showcase/earthquake-observatory-result.png"><img src="./docs/images/showcase/earthquake-observatory-result.png" width="420" alt="全球地震观察站结果"></a> |
 | 城市地铁运行沙盘 | `从零创建 metro-simulator：制作动态地铁网络，实时显示列车、客流和站点状态；用户可制造延误、关闭车站并观察自动改道。完成后测试、启动并截图。` | <a href="./docs/images/showcase/metro-simulator.png"><img src="./docs/images/showcase/metro-simulator.png" width="420" alt="城市地铁运行沙盘执行过程"></a> | <a href="./docs/images/showcase/metro-simulator-result.png"><img src="./docs/images/showcase/metro-simulator-result.png" width="420" alt="城市地铁运行沙盘结果"></a> |
 
 ## 快速开始
+
+| 我想要… | 推荐入口 |
+| --- | --- |
+| 在自己的 Mac / Linux 上运行完整 Host + Web | [一键自部署](#推荐一键自部署-host--web) |
+| 使用原生 macOS 工作台 | [下载桌面端](#macos-桌面端) |
+| 从浏览器连接自己的远程 Host | [Web 客户端](#web-客户端) |
 
 ### 推荐：一键自部署 Host + Web
 
@@ -83,5 +107,52 @@ curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --o
 | 可恢复状态             | 对话、Agent 树和 opaque model state 跨工具轮次持久化，支持中断后继续。        |
 
 内置工具以当前用户权限运行，不提供操作系统级 sandbox。请只使用可信工作区；需要强隔离时请配合容器或虚拟机。
+
+## 架构
+
+Threadlight 的边界按“交互、传输、运行、适配”划分。`agent-loop` 不理解 HTTP、JSON-RPC 或任何厂商 wire format；`app-server` 负责线程/turn 编排，但不把 transport 细节塞进 Loop；模型专属状态以 opaque value 跨工具轮次保存。
+
+```mermaid
+flowchart LR
+  UI["Desktop / Web / Custom UI"] --> Client["Client"]
+  Client --> Protocol["Protocol"]
+  Protocol --> Server["App Server"]
+  Server --> Loop["Agent Loop"]
+  Server --> Tools["Built-in Tools"]
+  Server --> Memory["Project Memory"]
+  Loop --> Adapters["Model Provider Adapters"]
+  Adapters --> Providers["OpenAI Responses / Compatible / Custom"]
+```
+
+| 边界 | 职责 | 不应该包含 |
+| --- | --- | --- |
+| `packages/agent-loop` | Provider-neutral 模型/工具循环，多 Agent 调度与生命周期 | HTTP、JSON-RPC、厂商 wire format |
+| `packages/model-providers` | 把具体模型协议适配成统一 `ModelProvider` | 工作区、UI、任务交付逻辑 |
+| `packages/app-server` | 线程、turn、能力、持久化与 Runtime 编排 | 桌面窗口、Web 路由与视觉状态 |
+| `packages/protocol` + `packages/client` | 稳定数据契约与 transport-neutral 客户端 | 模型推理策略 |
+| `packages/host-core` + `packages/terminal-core` | 工作区、交付、自动化与终端基础能力 | Provider 专属协议 |
+| `packages/ui` | Desktop/Web 共用的产品界面与交互 | Electron 主进程或 Host transport 细节 |
+
+## 开发与验证
+
+```bash
+npm install
+npm test
+```
+
+每个新行为都必须有 scripted model provider 驱动的离线测试。提交前还可以运行完整质量门禁：
+
+```bash
+npm run check
+```
+
+详见[开发指南](./docs/DEVELOPMENT.zh-CN.md)与[贡献指南](./CONTRIBUTING.md)。
+
+## 当前边界
+
+- macOS 桌面端目前优先支持 Apple Silicon，发布包仍是未签名测试构建。
+- Web 客户端只是交互界面，必须连接你自己的 Host；不要把未加密的 Host 端口暴露到公网。
+- 审批模式控制工具写入与外部访问，但不等于操作系统级 sandbox。
+- Threadlight 适合可信工作区内的本地/自托管工程流程；生产使用前仍需评估权限、网络暴露与隔离方案。
 
 Apache-2.0 · [源码](https://github.com/nagisa77/threadlight) · [参与贡献](./CONTRIBUTING.md)

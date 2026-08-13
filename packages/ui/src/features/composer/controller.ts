@@ -93,8 +93,6 @@ export function useComposerController() {
   }>();
   const [connectorBusy, setConnectorBusy] = useState(false);
   const [connectorError, setConnectorError] = useState<string>();
-  const [voiceStatus, setVoiceStatus] = useState<VoiceInputStatus>("idle");
-  const [voiceError, setVoiceError] = useState<string>();
   const [pendingAttachments, setPendingAttachments] = useState<
     PendingAttachment[]
   >([]);
@@ -105,10 +103,6 @@ export function useComposerController() {
   const textarea = useRef<HTMLTextAreaElement>(null);
   const composing = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
-  const mediaRecorder = useRef<MediaRecorder | undefined>(undefined);
-  const mediaStream = useRef<MediaStream | undefined>(undefined);
-  const recordedChunks = useRef<Blob[]>([]);
-  const voiceOperation = useRef(0);
   const dragDepth = useRef(0);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
 
@@ -139,10 +133,6 @@ export function useComposerController() {
     setConnectorBusy,
     connectorError,
     setConnectorError,
-    voiceStatus,
-    setVoiceStatus,
-    voiceError,
-    setVoiceError,
     pendingAttachments,
     setPendingAttachments,
     preparingAttachments,
@@ -155,10 +145,6 @@ export function useComposerController() {
     textarea,
     composing,
     fileInput,
-    mediaRecorder,
-    mediaStream,
-    recordedChunks,
-    voiceOperation,
     dragDepth,
     pendingAttachmentsRef,
   };

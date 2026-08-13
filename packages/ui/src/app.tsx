@@ -108,18 +108,8 @@ import {
 } from "./execution-policy.js";
 import { DiagnosticsPage, type DiagnosticsAdapter } from "./diagnostics.js";
 import type { AutomationAdapter } from "./automations.js";
-import {
-  I18nProvider,
-  isLanguage,
-  useI18n,
-  type Language,
-  type Translate,
-} from "./i18n.js";
-import {
-  ThemeProvider,
-  isThemePreference,
-  type ThemePreference,
-} from "./theme.js";
+import { isLanguage, useI18n, type Language, type Translate } from "./i18n.js";
+import { isThemePreference, type ThemePreference } from "./theme.js";
 import type { TerminalAdapter } from "./terminal.js";
 import { scopeFor, terminalWorkspaceContextLabel } from "./terminal-context.js";
 import type {
@@ -128,13 +118,6 @@ import type {
   WorkspaceAdapter,
   WorkspaceFileOpenRequest,
 } from "./workspace-panel.js";
-import {
-  MAX_VOICE_AUDIO_BYTES,
-  appendVoiceTranscript,
-  preferredRecordingMimeType,
-  voiceInputErrorMessage,
-  type VoiceInputAdapter,
-} from "./voice-input.js";
 import {
   activeProject,
   prepareFirstRunDemoProject,
@@ -258,6 +241,7 @@ import {
   useComposerController,
   type PendingAttachment,
 } from "./features/composer/controller.js";
+import { useVoiceInputController } from "./features/composer/voice-input-controller.js";
 import {
   completeFirstRun,
   MOBILE_SIDEBAR_QUERY,
@@ -287,6 +271,12 @@ import type {
   ComputerShareSnapshot,
   ComputerShareTarget,
 } from "./features/task-session/computer-types.js";
+import {
+  ThreadlightAppShell,
+  type AppShellState,
+  type ThreadlightAppProps,
+} from "./features/app-shell/app-shell.js";
+export type { ThreadlightAppProps } from "./features/app-shell/app-shell.js";
 export {
   activateComposerMenuOnPointerDown,
   createSubmissionGate,
@@ -382,34 +372,6 @@ function DeferredTerminalPanel({ label }: { label: string }) {
   );
 }
 
-export interface ThreadlightAppProps {
-  client: ThreadlightClient;
-  initialThreadId?: string;
-  initialLanguage?: Language;
-  initialSettings?: SettingsSnapshot;
-  initialProjects?: ProjectsSnapshot;
-  onInitialViewReady?(): void;
-  onThreadChange?(threadId?: string): void;
-  onLanguageChange?(language: Language): void;
-  clipboard?: ClipboardAdapter;
-  settings?: SettingsAdapter;
-  diagnostics?: DiagnosticsAdapter;
-  automations?: AutomationAdapter;
-  projects?: ProjectsAdapter;
-  memory?: ProjectMemoryAdapter;
-  search?: SearchAdapter;
-  voiceInput?: VoiceInputAdapter;
-  connectorAuthorization?: ConnectorAuthorizationAdapter;
-  attachmentStage?: AttachmentStageAdapter;
-  attachmentPreview?: AttachmentPreviewAdapter;
-  computerShare?: ComputerShareAdapter;
-  computerPermissions?: ComputerPermissionAdapter;
-  terminal?: TerminalAdapter;
-  workspace?: WorkspaceAdapter;
-  projectOpener?: ProjectOpenerAdapter;
-  executionPolicy?: ExecutionPolicyAdapter;
-}
-
 const COMPUTER_PERMISSION_RESUME_KEY = "threadlight:computer-permission-resume";
 const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
 export function composerProviderIsReady(
@@ -428,64 +390,10 @@ export function projectSupportsDevelopmentMode(
 }
 const MAX_COMPOSER_ATTACHMENTS = 10;
 export function ThreadlightApp(props: ThreadlightAppProps) {
-  const [language, setLanguage] = useState<Language>(
-    () =>
-      (isLanguage(props.initialSettings?.language)
-        ? props.initialSettings.language
-        : props.initialLanguage) ?? "zh-CN",
-  );
-  const [theme, setTheme] = useState<ThemePreference>(
-    () =>
-      (isThemePreference(props.initialSettings?.theme)
-        ? props.initialSettings.theme
-        : undefined) ?? "system",
-  );
-  const [preferredProjectOpener, setPreferredProjectOpener] =
-    useState<ProjectOpenerId>(
-      () => props.initialSettings?.preferredProjectOpener ?? "",
-    );
-
-  const changeLanguage = useCallback(
-    (nextLanguage: Language) => {
-      setLanguage(nextLanguage);
-      props.onLanguageChange?.(nextLanguage);
-    },
-    [props.onLanguageChange],
-  );
-
-  useEffect(() => {
-    if (props.initialSettings) return;
-    let active = true;
-    void props.settings
-      ?.load()
-      .then((snapshot) => {
-        if (active && isLanguage(snapshot.language)) {
-          changeLanguage(snapshot.language);
-        }
-        if (active && isThemePreference(snapshot.theme))
-          setTheme(snapshot.theme);
-        if (active) {
-          setPreferredProjectOpener(snapshot.preferredProjectOpener);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [changeLanguage, props.initialSettings, props.settings]);
-
   return (
-    <ThemeProvider preference={theme}>
-      <I18nProvider language={language}>
-        <ThreadlightAppContent
-          {...props}
-          onLanguageChange={changeLanguage}
-          onThemeChange={setTheme}
-          preferredProjectOpener={preferredProjectOpener}
-          onPreferredProjectOpenerChange={setPreferredProjectOpener}
-        />
-      </I18nProvider>
-    </ThemeProvider>
+    <ThreadlightAppShell app={props}>
+      {(shell) => <ThreadlightAppContent {...props} {...shell} />}
+    </ThreadlightAppShell>
   );
 }
 
@@ -517,12 +425,7 @@ function ThreadlightAppContent({
   onThemeChange,
   preferredProjectOpener,
   onPreferredProjectOpenerChange,
-}: ThreadlightAppProps & {
-  onLanguageChange(language: Language): void;
-  onThemeChange(theme: ThemePreference): void;
-  preferredProjectOpener: ProjectOpenerId;
-  onPreferredProjectOpenerChange(opener: ProjectOpenerId): void;
-}) {
+}: ThreadlightAppProps & AppShellState) {
   const { language, t } = useI18n();
   const {
     mobileSidebar,
@@ -658,10 +561,6 @@ function ThreadlightAppContent({
     setConnectorBusy,
     connectorError,
     setConnectorError,
-    voiceStatus,
-    setVoiceStatus,
-    voiceError,
-    setVoiceError,
     pendingAttachments,
     setPendingAttachments,
     preparingAttachments,
@@ -674,13 +573,17 @@ function ThreadlightAppContent({
     textarea,
     composing,
     fileInput,
-    mediaRecorder,
-    mediaStream,
-    recordedChunks,
-    voiceOperation,
     dragDepth,
     pendingAttachmentsRef,
   } = useComposerController();
+  const {
+    status: voiceStatus,
+    error: voiceError,
+    setError: setVoiceError,
+    start: startVoiceInput,
+    stop: stopVoiceInput,
+    cancel: cancelVoiceInput,
+  } = useVoiceInputController({ adapter: voiceInput, setInput, textarea, t });
   const [computerShareSnapshot, setComputerShareSnapshot] =
     useState<ComputerShareSnapshot>();
   const [computerShareError, setComputerShareError] = useState<string>();
@@ -1825,27 +1728,6 @@ function ThreadlightAppContent({
     }
   }, [computerShare, computerShareSnapshot?.active]);
 
-  const releaseVoiceCapture = useCallback(() => {
-    const recorder = mediaRecorder.current;
-    if (recorder) {
-      recorder.ondataavailable = null;
-      recorder.onstop = null;
-      recorder.onerror = null;
-      if (recorder.state !== "inactive") recorder.stop();
-    }
-    mediaRecorder.current = undefined;
-    for (const track of mediaStream.current?.getTracks() ?? []) track.stop();
-    mediaStream.current = undefined;
-    recordedChunks.current = [];
-  }, []);
-
-  const cancelVoiceInput = useCallback(() => {
-    voiceOperation.current += 1;
-    releaseVoiceCapture();
-    setVoiceStatus("idle");
-    setVoiceError(undefined);
-  }, [releaseVoiceCapture]);
-
   const dismissComposerErrors = useCallback(() => {
     setVoiceError(undefined);
     setAttachmentError(undefined);
@@ -1984,131 +1866,6 @@ function ThreadlightAppContent({
     });
     return () => cancelAnimationFrame(frame);
   }, [pendingSearchJump, state.messages, state.threadId]);
-
-  useEffect(
-    () => () => {
-      voiceOperation.current += 1;
-      releaseVoiceCapture();
-    },
-    [releaseVoiceCapture],
-  );
-
-  async function startVoiceInput() {
-    if (!voiceInput || voiceStatus !== "idle") return;
-    const operation = ++voiceOperation.current;
-    setVoiceError(undefined);
-    setVoiceStatus("requesting");
-
-    try {
-      if (!window.isSecureContext) {
-        throw new Error(t("microphoneSecureContextRequired"));
-      }
-      await voiceInput.prepare?.();
-      if (operation !== voiceOperation.current) return;
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error(t("microphoneRecordingUnsupported"));
-      }
-      if (typeof MediaRecorder === "undefined") {
-        throw new Error(t("voiceInputUnsupported"));
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
-      if (operation !== voiceOperation.current) {
-        for (const track of stream.getTracks()) track.stop();
-        return;
-      }
-      mediaStream.current = stream;
-      const mimeType = preferredRecordingMimeType((candidate) =>
-        MediaRecorder.isTypeSupported(candidate),
-      );
-      const recorder = new MediaRecorder(
-        stream,
-        mimeType ? { mimeType } : undefined,
-      );
-      mediaRecorder.current = recorder;
-      recordedChunks.current = [];
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordedChunks.current.push(event.data);
-      };
-      recorder.onerror = () => {
-        if (operation !== voiceOperation.current) return;
-        releaseVoiceCapture();
-        setVoiceStatus("idle");
-        setVoiceError(t("recordingInterrupted"));
-      };
-      recorder.onstop = () => {
-        void finishVoiceInput(recorder, operation);
-      };
-      recorder.start();
-      setVoiceStatus("recording");
-    } catch (error) {
-      if (operation !== voiceOperation.current) return;
-      releaseVoiceCapture();
-      setVoiceStatus("idle");
-      setVoiceError(voiceInputErrorMessage(error, t));
-    }
-  }
-
-  function stopVoiceInput() {
-    const recorder = mediaRecorder.current;
-    if (!recorder || voiceStatus !== "recording") return;
-    setVoiceStatus("transcribing");
-    if (recorder.state === "inactive") {
-      void finishVoiceInput(recorder, voiceOperation.current);
-    } else {
-      recorder.stop();
-    }
-  }
-
-  async function finishVoiceInput(recorder: MediaRecorder, operation: number) {
-    if (
-      !voiceInput ||
-      operation !== voiceOperation.current ||
-      recorder !== mediaRecorder.current
-    ) {
-      return;
-    }
-    setVoiceStatus("transcribing");
-    const chunks = recordedChunks.current;
-    const mimeType = recorder.mimeType || chunks[0]?.type || "audio/webm";
-    mediaRecorder.current = undefined;
-    for (const track of mediaStream.current?.getTracks() ?? []) track.stop();
-    mediaStream.current = undefined;
-    recordedChunks.current = [];
-
-    try {
-      const recording = new Blob(chunks, { type: mimeType });
-      if (recording.size === 0) throw new Error(t("emptyRecording"));
-      if (recording.size > MAX_VOICE_AUDIO_BYTES) {
-        throw new Error(t("recordingTooLarge"));
-      }
-      const transcript = await voiceInput.transcribe({
-        audio: await recording.arrayBuffer(),
-        mimeType,
-      });
-      if (operation !== voiceOperation.current) return;
-      setInput((value) => appendVoiceTranscript(value, transcript));
-      requestAnimationFrame(() => {
-        const element = textarea.current;
-        if (!element) return;
-        element.style.height = "auto";
-        element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
-        element.focus();
-      });
-    } catch (error) {
-      if (operation === voiceOperation.current) {
-        setVoiceError(voiceInputErrorMessage(error, t));
-      }
-    } finally {
-      if (operation === voiceOperation.current) setVoiceStatus("idle");
-    }
-  }
 
   function addAttachments(files: readonly File[]) {
     if (

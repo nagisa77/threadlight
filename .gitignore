@@ -9,3 +9,11 @@ release/
 coverage/
 artifacts/
 .threadlight/
+apps/site/.astro/content.d.ts
+apps/site/.astro/content-modules.mjs
+apps/site/.astro/types.d.ts
+apps/site/.astro/content-assets.mjs
+apps/site/.astro/preview.log
+apps/site/.astro/dev.json
+apps/site/.astro/dev.log
+apps/site/.astro/settings.json

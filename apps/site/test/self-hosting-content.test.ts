@@ -44,6 +44,9 @@ describe("homepage launch choices", () => {
     expect(pageSource).toContain(
       'document.querySelectorAll<HTMLButtonElement>("[data-copy]")',
     );
+    expect(pageSource).toContain('id="copy-status"');
+    expect(pageSource).toContain('aria-live="polite"');
+    expect(pageSource).toContain("data-announcement");
     expect(styles).toMatch(/@media \(max-width: 1080px\)[\s\S]*\.launch-grid/);
     expect(styles).toMatch(
       /@media \(max-width: 760px\)[\s\S]*\.launch-card-recommended/,

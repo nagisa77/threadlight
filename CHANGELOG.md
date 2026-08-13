@@ -4,6 +4,20 @@ All notable changes to Threadlight are documented here. The project follows [Sem
 
 ## Unreleased
 
+### Changed
+
+- Split collaboration contracts, orchestration transcript bookkeeping, generated-content parsing, application shell state, and voice input lifecycle out of the largest runtime and UI orchestrators.
+- Reworked the project website and bilingual READMEs around the runtime architecture, complete Showcase results, clearer launch paths, and explicit production boundaries.
+
+### Added
+
+- Added three publish-ready Xiaohongshu campaigns with 19 original carousel pages built from real Threadlight task evidence and Showcase results.
+- Added English Remote Host and separate Web deployment guides, structured GitHub issue forms, and a read-only self-host service-manager version command.
+
+### Fixed
+
+- Copy controls on the project website now announce success to screen readers without changing the visual interaction.
+
 ## 1.0.0 - 2026-08-10
 
 First stable release of Threadlight.

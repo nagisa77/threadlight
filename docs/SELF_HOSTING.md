@@ -108,4 +108,4 @@ The default `main` channel is intentionally mutable. For a pinned deployment, se
 - Built-in tools are not an operating-system sandbox. Use trusted projects or add container/VM isolation.
 - Back up the Host data directory and project `.threadlight` directories.
 
-For a separately deployed Web client or cross-origin access, see [Web deployment](./WEB_DEPLOYMENT.zh-CN.md). For Host protocol and source CLI details, see [Remote Host](./REMOTE_HOST.zh-CN.md).
+For a separately deployed Web client or cross-origin access, see [Web deployment](./WEB_DEPLOYMENT.md). For Host protocol and source CLI details, see [Remote Host](./REMOTE_HOST.md).

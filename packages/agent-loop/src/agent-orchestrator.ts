@@ -1,6 +1,46 @@
 import { randomUUID } from "node:crypto";
 
 import { AgentLoop } from "./agent-loop.js";
+import {
+  CHECK_AGENTS_TOOL,
+  CLOSE_AGENT_TOOL,
+  COLLABORATION_TOOLS,
+  DEFAULT_AGENT_WAIT_TIMEOUT_MS,
+  MAX_AGENT_WAIT_TIMEOUT_MS,
+  FOLLOWUP_TASK_TOOL,
+  FOLLOW_UP_AGENT_TOOL,
+  INTERRUPT_AGENT_TOOL,
+  RETRY_AGENT_TOOL,
+  SEND_MESSAGE_TOOL,
+  SPAWN_AGENT_TOOL,
+  STEER_AGENT_TOOL,
+  WAIT_FOR_AGENTS_TOOL,
+  collaborationInputParameters,
+  collaborationMessageParameters,
+  collaborationTargetParameters,
+  collaborationTargetsParameters,
+  delegationInstructions,
+  assertUniqueToolNames,
+  normalizedTaskName,
+  objectArguments,
+  optionalAgentIds,
+  stringArgument,
+  taskNameArgument,
+  toolsForChild,
+  waitTimeoutArgument,
+} from "./collaboration-contract.js";
+import {
+  addUsage,
+  cloneSnapshot,
+  ensureModelTranscript,
+  modelTranscriptId,
+  normalizedTokenUsage,
+  serializeTranscriptValue,
+  summarize,
+  transcriptField,
+  truncate,
+  updateTranscript,
+} from "./orchestration-transcript.js";
 import { ToolExecutionError } from "./tool-error.js";
 import type {
   Agent,
@@ -29,32 +69,7 @@ import type {
   TokenUsage,
 } from "./types.js";
 
-const SPAWN_AGENT_TOOL = "spawn_agent";
-const SEND_MESSAGE_TOOL = "send_message";
-const FOLLOWUP_TASK_TOOL = "followup_task";
-const FOLLOW_UP_AGENT_TOOL = "follow_up_agent";
-const RETRY_AGENT_TOOL = "retry_agent";
-const CHECK_AGENTS_TOOL = "check_agents";
-const WAIT_FOR_AGENTS_TOOL = "wait_for_agents";
-const STEER_AGENT_TOOL = "steer_agent";
-const INTERRUPT_AGENT_TOOL = "interrupt_agent";
-const CLOSE_AGENT_TOOL = "close_agent";
-const COLLABORATION_TOOLS = new Set([
-  SPAWN_AGENT_TOOL,
-  SEND_MESSAGE_TOOL,
-  FOLLOWUP_TASK_TOOL,
-  FOLLOW_UP_AGENT_TOOL,
-  RETRY_AGENT_TOOL,
-  CHECK_AGENTS_TOOL,
-  WAIT_FOR_AGENTS_TOOL,
-  STEER_AGENT_TOOL,
-  INTERRUPT_AGENT_TOOL,
-  CLOSE_AGENT_TOOL,
-]);
 const MAX_PERSISTED_OUTPUT = 20_000;
-const MAX_TRANSCRIPT_FIELD = 20_000;
-const DEFAULT_AGENT_WAIT_TIMEOUT_MS = 30_000;
-const MAX_AGENT_WAIT_TIMEOUT_MS = 300_000;
 const MAILBOX_UPDATE_REASONS = new Set<AgentTreeUpdateReason>([
   "created",
   "completed",
@@ -821,7 +836,7 @@ export class AgentOrchestrator {
       ].join("\n\n"),
       model: profile.model ?? rootAgent.model,
       provider: profile.provider ?? rootAgent.provider,
-      tools: childTools(
+      tools: toolsForChild(
         rootAgent.tools ?? [],
         profile,
         this.collaborationTools(agentThreadId(record)),
@@ -932,10 +947,7 @@ export class AgentOrchestrator {
           entry.kind === "model"
             ? {
                 ...entry,
-                text: truncate(
-                  `${entry.text}${event.delta}`,
-                  MAX_TRANSCRIPT_FIELD,
-                ),
+                text: transcriptField(`${entry.text}${event.delta}`),
                 ...(event.outputVisibility
                   ? { outputVisibility: event.outputVisibility }
                   : {}),
@@ -964,7 +976,7 @@ export class AgentOrchestrator {
             ? {
                 ...entry,
                 status: "completed" as const,
-                text: truncate(event.text, MAX_TRANSCRIPT_FIELD),
+                text: transcriptField(event.text),
                 completedAt,
                 ...(event.durationMs === undefined
                   ? {}
@@ -1002,9 +1014,8 @@ export class AgentOrchestrator {
           kind: "tool" as const,
           name: event.call.name,
           status: "running" as const,
-          arguments: truncate(
+          arguments: transcriptField(
             serializeTranscriptValue(event.call.arguments),
-            MAX_TRANSCRIPT_FIELD,
           ),
           startedAt: this.wallNow().toISOString(),
         },
@@ -1042,7 +1053,7 @@ export class AgentOrchestrator {
                 status: event.result.isError
                   ? ("failed" as const)
                   : ("completed" as const),
-                output: truncate(event.result.output, MAX_TRANSCRIPT_FIELD),
+                output: transcriptField(event.result.output),
                 ...(event.result.isError ? { isError: true } : {}),
                 ...(event.result.error?.code
                   ? { errorCode: event.result.error.code }
@@ -2122,121 +2133,8 @@ function rootRunOptions(options: AgentOrchestratorOptions): RunOptions {
   return runOptions;
 }
 
-function childTools(
-  tools: readonly Tool[],
-  profile: SubagentProfile,
-  collaborationTools: readonly Tool[],
-): readonly Tool[] {
-  const excluded = new Set(profile.excludedTools ?? []);
-  const base = tools.filter(
-    (tool) =>
-      !COLLABORATION_TOOLS.has(tool.name) &&
-      !excluded.has(tool.name) &&
-      (profile.toolAccess === "all" || tool.mutability === "read"),
-  );
-  const collaboration = collaborationTools.filter(
-    (tool) => !excluded.has(tool.name),
-  );
-  const combined = [...base, ...collaboration];
-  assertUniqueToolNames(combined);
-  return combined;
-}
-
-function delegationInstructions(
-  profiles: readonly SubagentProfile[],
-  maxConcurrent: number,
-): string {
-  return [
-    "MULTI-AGENT DELEGATION",
-    "Delegate only concrete, independent work that benefits from parallel execution or focused context. Keep small sequential work in the parent agent.",
-    `At most ${maxConcurrent} agents run concurrently. Start direct children with ${SPAWN_AGENT_TOOL}, continue useful work, then use ${CHECK_AGENTS_TOOL} for status or ${WAIT_FOR_AGENTS_TOOL} for a bounded wait before using their findings or finishing.`,
-    `Give spawned work a stable taskName when another agent may need to address it. Targets accept task IDs, stable thread IDs, caller-relative task names, or canonical paths such as /root/research/api_review.`,
-    `Use ${SEND_MESSAGE_TOOL} for a running agent and ${FOLLOWUP_TASK_TOOL} to wake an idle agent in its existing context. Use ${STEER_AGENT_TOOL} for parent-style direction.`,
-    `For peer dialogue, review, or debate, avoid manually relaying one agent's output through the parent. Include stable peer task names in delegated instructions so agents can inspect or wait for peers, use ${SEND_MESSAGE_TOOL} while a peer is active, and use ${FOLLOWUP_TASK_TOOL} when a read-only peer is idle.`,
-    "Keep interrupt, close, retry, and write-capable follow-up under the owning parent; peer communication must not grant peer lifecycle or write authority.",
-    `Use ${FOLLOW_UP_AGENT_TOOL} only as the legacy alias for ${FOLLOWUP_TASK_TOOL}; use ${SPAWN_AGENT_TOOL} for independent work.`,
-    `Use ${RETRY_AGENT_TOOL} to rerun a finished or interrupted turn from fresh provider state while retaining its thread linkage.`,
-    `Agent threads persist for the whole parent conversation: finishing a child turn does not delete or close its thread. Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,
-    "Do not duplicate the same task across agents. Give each task enough context to be completed without asking the user.",
-    "A write-capable subagent has exclusive workspace write ownership while active. The parent may continue read-only work and must wait before writing.",
-    "Available roles:",
-    ...profiles.map(
-      (profile) =>
-        `- ${profile.name} (${profile.toolAccess === "all" ? "write-capable" : "read-only"}): ${profile.description}`,
-    ),
-  ].join("\n");
-}
-
-function cloneSnapshot(snapshot: AgentTaskSnapshot): AgentTaskSnapshot {
-  return {
-    ...snapshot,
-    ...(snapshot.usage ? { usage: { ...snapshot.usage } } : {}),
-    activities: snapshot.activities.map((activity) => ({ ...activity })),
-    ...(snapshot.messages
-      ? { messages: snapshot.messages.map((message) => ({ ...message })) }
-      : {}),
-    transcript: snapshot.transcript.map((entry) => ({
-      ...entry,
-      ...(entry.kind === "model" && entry.usage
-        ? { usage: { ...entry.usage } }
-        : {}),
-    })),
-  };
-}
-
 function agentThreadId(record: AgentTaskRecord): string {
   return record.snapshot.agentThreadId ?? record.snapshot.id;
-}
-
-function collaborationTargetParameters(): Tool["parameters"] {
-  return {
-    type: "object",
-    properties: {
-      agentId: {
-        type: "string",
-        description: "Agent or stable agent-thread ID",
-      },
-    },
-    required: ["agentId"],
-    additionalProperties: false,
-  };
-}
-
-function collaborationTargetsParameters(
-  description: string,
-): Tool["parameters"] {
-  return {
-    type: "object",
-    properties: {
-      agentIds: {
-        type: "array",
-        items: { type: "string" },
-        description,
-      },
-    },
-    additionalProperties: false,
-  };
-}
-
-function optionalAgentIds(value: unknown): string[] | undefined {
-  if (value === undefined) return;
-  if (!Array.isArray(value)) throw new Error("agentIds must be an array");
-  return value.map((id) => stringArgument(id, "agentIds"));
-}
-
-function waitTimeoutArgument(value: unknown): number {
-  if (value === undefined) return DEFAULT_AGENT_WAIT_TIMEOUT_MS;
-  if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < 1 ||
-    value > MAX_AGENT_WAIT_TIMEOUT_MS
-  ) {
-    throw new Error(
-      `timeoutMs must be an integer between 1 and ${MAX_AGENT_WAIT_TIMEOUT_MS}`,
-    );
-  }
-  return value;
 }
 
 function uniqueAgentRecords(
@@ -2294,69 +2192,6 @@ function collaborationStatus(records: readonly AgentTaskRecord[]): {
   };
 }
 
-function collaborationInputParameters(
-  inputDescription: string,
-): Tool["parameters"] {
-  return {
-    type: "object",
-    properties: {
-      agentId: {
-        type: "string",
-        description: "Agent or stable agent-thread ID",
-      },
-      input: {
-        type: "string",
-        minLength: 1,
-        description: inputDescription,
-      },
-    },
-    required: ["agentId", "input"],
-    additionalProperties: false,
-  };
-}
-
-function collaborationMessageParameters(
-  messageDescription: string,
-): Tool["parameters"] {
-  return {
-    type: "object",
-    properties: {
-      target: {
-        type: "string",
-        description:
-          "Agent task ID, stable thread ID, caller-relative task name, or canonical path",
-      },
-      message: {
-        type: "string",
-        minLength: 1,
-        description: messageDescription,
-      },
-    },
-    required: ["target", "message"],
-    additionalProperties: false,
-  };
-}
-
-function taskNameArgument(value: unknown): string {
-  const name = stringArgument(value, "taskName");
-  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(name)) {
-    throw new Error(
-      "taskName must start with a lowercase letter or digit and contain only lowercase letters, digits, underscores, or hyphens",
-    );
-  }
-  return name;
-}
-
-function normalizedTaskName(value: string): string {
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
-  return normalized || "agent";
-}
-
 function agentDepth(path: string | undefined): number {
   if (!path) return 0;
   return Math.max(0, path.split("/").filter(Boolean).length - 1);
@@ -2372,58 +2207,6 @@ function formatAgentMessage(message: AgentTaskMessage): string {
     `Message from ${message.fromAgentName} (${message.fromAgentThreadId}):`,
     message.text,
   ].join("\n");
-}
-
-function normalizedTokenUsage(usage: Partial<TokenUsage>): TokenUsage {
-  return {
-    inputTokens: usage.inputTokens ?? 0,
-    outputTokens: usage.outputTokens ?? 0,
-    totalTokens: usage.totalTokens ?? 0,
-  };
-}
-
-function modelTranscriptId(step: number): string {
-  return `model:${step}`;
-}
-
-function ensureModelTranscript(
-  transcript: AgentTaskSnapshot["transcript"],
-  step: number,
-  startedAt: string,
-): AgentTaskSnapshot["transcript"] {
-  const id = modelTranscriptId(step);
-  return transcript.some((entry) => entry.id === id)
-    ? transcript
-    : [
-        ...transcript,
-        {
-          id,
-          kind: "model",
-          step,
-          status: "running",
-          text: "",
-          startedAt,
-        },
-      ];
-}
-
-function updateTranscript(
-  transcript: AgentTaskSnapshot["transcript"],
-  id: string,
-  update: (
-    entry: AgentTaskSnapshot["transcript"][number],
-  ) => AgentTaskSnapshot["transcript"][number],
-): AgentTaskSnapshot["transcript"] {
-  return transcript.map((entry) => (entry.id === id ? update(entry) : entry));
-}
-
-function serializeTranscriptValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2) ?? "null";
-  } catch {
-    return String(value);
-  }
 }
 
 function lifecycleError(
@@ -2485,48 +2268,6 @@ function elapsedSince(startedAt: string | undefined, now: Date): number {
   return Math.max(0, now.getTime() - Date.parse(startedAt));
 }
 
-function objectArguments(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Tool arguments must be an object");
-  }
-  return value as Record<string, unknown>;
-}
-
-function stringArgument(value: unknown, name: string): string {
-  if (typeof value !== "string" || !value.trim()) {
-    throw new Error(`${name} must be a non-empty string`);
-  }
-  return value.trim();
-}
-
-function summarize(output: string): string {
-  return truncate(output.replace(/\s+/g, " ").trim(), 240);
-}
-
-function truncate(value: string, limit: number): string {
-  return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
-}
-
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function addUsage(
-  total: RunResult["usage"],
-  next: RunResult["usage"] | undefined,
-): RunResult["usage"] {
-  return {
-    inputTokens: total.inputTokens + (next?.inputTokens ?? 0),
-    outputTokens: total.outputTokens + (next?.outputTokens ?? 0),
-    totalTokens: total.totalTokens + (next?.totalTokens ?? 0),
-  };
-}
-
-function assertUniqueToolNames(tools: readonly Tool[]): void {
-  const names = new Set<string>();
-  for (const tool of tools) {
-    if (names.has(tool.name))
-      throw new Error(`Duplicate agent tool: ${tool.name}`);
-    names.add(tool.name);
-  }
 }

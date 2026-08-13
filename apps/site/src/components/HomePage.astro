@@ -10,6 +10,9 @@ import capabilitiesImage from "../../../../docs/images/threadlight-capabilities.
 import computerUseImage from "../../../../docs/images/threadlight-computer-use.png";
 import remoteHostImage from "../../../../docs/images/threadlight-remote-host.png";
 import automationsImage from "../../../../docs/images/threadlight-automations.png";
+import incidentReplayImage from "../../../../docs/images/showcase/incident-replay-lab-result.png";
+import earthquakeImage from "../../../../docs/images/showcase/earthquake-observatory-result.png";
+import metroImage from "../../../../docs/images/showcase/metro-simulator-result.png";
 
 interface Props {
   locale: "zh" | "en";
@@ -25,6 +28,7 @@ const copy = isEnglish
       skip: "Skip to content",
       nav: {
         product: "Product",
+        showcase: "Showcase",
         agents: "Multi-agent",
         plan: "Plan mode",
         capabilities: "Capabilities",
@@ -59,6 +63,7 @@ const copy = isEnglish
           command: "One-line install",
           copy: "Copy",
           copied: "Copied",
+          copiedAnnouncement: "Host and Web install command copied.",
           requirement: "Node.js 22+ · builds latest main",
           guide: "Deployment guide",
         },
@@ -71,6 +76,7 @@ const copy = isEnglish
           requirement: "Node.js 22+ · macOS or Linux",
           open: "Open Web client",
           guide: "Host deployment guide",
+          copiedAnnouncement: "Host-only install command copied.",
         },
         source: "Open the source code",
         proof: ["Stable 1.0", "macOS first", "Apache-2.0"],
@@ -135,6 +141,17 @@ const copy = isEnglish
           ["Execute", "Tools, terminals, search, MCP, and Computer Use"],
           ["Review", "Files, changes, source, and focused diffs"],
           ["Deliver", "Apply, commit, push, or open a draft PR"],
+        ],
+      },
+      showcase: {
+        eyebrow: "BUILT IN REAL TASKS",
+        title: "Ask for an outcome. Inspect the whole path there.",
+        description:
+          "These projects started from a single prompt in an empty task. Threadlight delegated research and implementation, ran the code, and kept the evidence visible for review.",
+        cases: [
+          ["Incident replay lab", "Deterministic service topology, live metrics, event stream, playback timeline, and an auto-generated postmortem."],
+          ["Earthquake observatory", "USGS data, time playback, magnitude filters, depth analysis, and regional ranking in one interactive map."],
+          ["Metro operations simulator", "Animated trains, passenger flow, injected delays, station closures, and automatic rerouting."],
         ],
       },
       capabilities: {
@@ -202,6 +219,7 @@ const copy = isEnglish
       skip: "跳到主要内容",
       nav: {
         product: "产品",
+        showcase: "实战案例",
         agents: "多 Agent",
         plan: "Plan 模式",
         capabilities: "能力系统",
@@ -236,6 +254,7 @@ const copy = isEnglish
           command: "一行安装",
           copy: "复制",
           copied: "已复制",
+          copiedAnnouncement: "Host 与 Web 一键安装命令已复制。",
           requirement: "需要 Node.js 22+ · 构建最新 main",
           guide: "部署说明",
         },
@@ -248,6 +267,7 @@ const copy = isEnglish
           requirement: "需要 Node.js 22+ · macOS 或 Linux",
           open: "打开 Web 客户端",
           guide: "Host 部署说明",
+          copiedAnnouncement: "仅 Host 安装命令已复制。",
         },
         source: "打开源代码",
         proof: ["正式版 1.0", "macOS 优先", "Apache-2.0"],
@@ -312,6 +332,17 @@ const copy = isEnglish
           ["执行", "工具、终端、搜索、MCP 与 Computer Use"],
           ["审阅", "文件、变更、源码与聚焦 Diff"],
           ["交付", "应用、提交、推送或创建 Draft PR"],
+        ],
+      },
+      showcase: {
+        eyebrow: "真实任务产出",
+        title: "只给结果目标，也能看清抵达它的全过程。",
+        description:
+          "这些项目都从空任务里的一段 Query 开始。Threadlight 完成研究委派、实现、运行和验证，并把每一步证据留在同一条时间线上。",
+        cases: [
+          ["线上事故回放沙盘", "确定性服务拓扑、实时指标、事件流、播放时间轴与自动复盘报告。"],
+          ["全球地震观察站", "整合 USGS 数据、时间播放、震级筛选、深度分析与地区排行。"],
+          ["城市地铁运行沙盘", "动态列车与客流、延误注入、车站关闭，以及可观察的自动改道。"],
         ],
       },
       capabilities: {
@@ -401,6 +432,7 @@ const selfHostDocsLink = isEnglish
     </a>
     <nav class="desktop-nav" aria-label="Primary navigation">
       <a href="#product">{copy.nav.product}</a>
+      <a href="#showcase">{copy.nav.showcase}</a>
       <a href="#multi-agent">{copy.nav.agents}</a>
       <a href="#plan">{copy.nav.plan}</a>
       <a href="#capabilities">{copy.nav.capabilities}</a>
@@ -436,7 +468,7 @@ const selfHostDocsLink = isEnglish
             <div class="code-card launch-command">
               <div class="code-toolbar">
                 <span>{copy.hero.selfHost.command}</span>
-                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied}>{copy.hero.selfHost.copy}</button>
+                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied} data-announcement={copy.hero.selfHost.copiedAnnouncement}>{copy.hero.selfHost.copy}</button>
               </div>
               <pre><code>{selfHostCommand}</code></pre>
             </div>
@@ -467,7 +499,7 @@ const selfHostDocsLink = isEnglish
             <div class="code-card host-only-command">
               <div class="code-toolbar">
                 <span>{copy.hero.hostOnly.command}</span>
-                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied}>{copy.hero.selfHost.copy}</button>
+                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied} data-announcement={copy.hero.hostOnly.copiedAnnouncement}>{copy.hero.selfHost.copy}</button>
               </div>
               <pre><code>{hostOnlyCommand}</code></pre>
             </div>
@@ -631,6 +663,31 @@ const selfHostDocsLink = isEnglish
     </div>
   </section>
 
+  <section class="showcase-section section-pad" id="showcase" aria-labelledby="showcase-title">
+    <div class="showcase-grid" aria-hidden="true"></div>
+    <div class="shell">
+      <div class="section-heading showcase-heading">
+        <p class="eyebrow dark-eyebrow">{copy.showcase.eyebrow}</p>
+        <h2 id="showcase-title">{copy.showcase.title}</h2>
+        <p>{copy.showcase.description}</p>
+      </div>
+      <div class="showcase-cases">
+        <article class="showcase-card showcase-card-wide">
+          <div class="showcase-copy"><span>01</span><div><h3>{copy.showcase.cases[0][0]}</h3><p>{copy.showcase.cases[0][1]}</p></div></div>
+          <div class="showcase-media"><Image src={incidentReplayImage} alt={copy.showcase.cases[0][0]} widths={[720, 1200, 1800]} sizes="(max-width: 760px) 94vw, 720px" loading="lazy" quality={86} /></div>
+        </article>
+        <article class="showcase-card">
+          <div class="showcase-copy"><span>02</span><div><h3>{copy.showcase.cases[1][0]}</h3><p>{copy.showcase.cases[1][1]}</p></div></div>
+          <div class="showcase-media"><Image src={earthquakeImage} alt={copy.showcase.cases[1][0]} widths={[640, 960, 1440]} sizes="(max-width: 760px) 94vw, 500px" loading="lazy" quality={86} /></div>
+        </article>
+        <article class="showcase-card showcase-card-full">
+          <div class="showcase-copy"><span>03</span><div><h3>{copy.showcase.cases[2][0]}</h3><p>{copy.showcase.cases[2][1]}</p></div></div>
+          <div class="showcase-media"><Image src={metroImage} alt={copy.showcase.cases[2][0]} widths={[720, 1200, 1800]} sizes="(max-width: 760px) 94vw, 820px" loading="lazy" quality={86} /></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
   <section class="light-section capabilities-section section-pad" id="capabilities" aria-labelledby="capabilities-title">
     <div class="shell">
       <div class="section-heading centered-heading">
@@ -718,6 +775,8 @@ const selfHostDocsLink = isEnglish
   </div>
 </footer>
 
+<p id="copy-status" class="sr-only" aria-live="polite" aria-atomic="true"></p>
+
 <script>
   document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((copyButton) => {
     copyButton.addEventListener("click", async () => {
@@ -727,6 +786,8 @@ const selfHostDocsLink = isEnglish
         await copyText(code);
         const original = copyButton.textContent;
         copyButton.textContent = copyButton.dataset.copied ?? original;
+        const status = document.querySelector<HTMLElement>("#copy-status");
+        if (status) status.textContent = copyButton.dataset.announcement ?? "";
         window.setTimeout(() => {
           copyButton.textContent = original;
         }, 1400);

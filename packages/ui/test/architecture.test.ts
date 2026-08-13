@@ -11,7 +11,7 @@ function lines(path: string): number {
 
 describe("UI feature boundaries", () => {
   it("keeps the application and workspace orchestrators below the agreed limits", () => {
-    expect(lines("../src/app.tsx")).toBeLessThan(4_500);
+    expect(lines("../src/app.tsx")).toBeLessThan(4_300);
     expect(lines("../src/workspace-panel.tsx")).toBeLessThan(1_800);
     expect(lines("../src/i18n.tsx")).toBeLessThan(150);
   });
@@ -32,6 +32,13 @@ describe("UI feature boundaries", () => {
       expect(controllerSource).toContain(`export function ${controller}`);
       expect(app).toContain(`./features/${feature}/controller.js`);
     }
+
+    expect(
+      source("../src/features/composer/voice-input-controller.ts"),
+    ).toContain("export function useVoiceInputController");
+    expect(source("../src/features/app-shell/app-shell.tsx")).toContain(
+      "export function ThreadlightAppShell",
+    );
 
     const flatFeatureFiles = readdirSync(
       new URL("../src/features", import.meta.url),

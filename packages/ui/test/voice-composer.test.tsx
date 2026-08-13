@@ -22,6 +22,13 @@ const appSource = readFileSync(
   new URL("../src/app.tsx", import.meta.url),
   "utf8",
 );
+const voiceInputControllerSource = readFileSync(
+  new URL(
+    "../src/features/composer/voice-input-controller.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 describe("voice composer", () => {
   it("always queues composer submissions while a turn is running", () => {
@@ -112,7 +119,9 @@ describe("voice composer", () => {
     activateVoiceInputFromClick({ detail: 1 }, activate);
 
     expect(activate).toHaveBeenCalledOnce();
-    expect(appSource).toContain("microphoneSecureContextRequired");
+    expect(voiceInputControllerSource).toContain(
+      "microphoneSecureContextRequired",
+    );
   });
 
   it("keeps keyboard activation available without duplicating pointer input", () => {

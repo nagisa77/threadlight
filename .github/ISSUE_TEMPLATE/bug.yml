@@ -1,0 +1,79 @@
+name: Bug report
+description: Report a reproducible problem in Threadlight
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Threadlight. Remove API keys, access tokens, private source code, and project data from everything you share.
+  - type: input
+    id: version
+    attributes:
+      label: Threadlight version
+      description: Use the release number, commit SHA, or self-host service-manager version.
+      placeholder: v1.0.0 or commit abc1234
+    validations:
+      required: true
+  - type: dropdown
+    id: operating-system
+    attributes:
+      label: Operating system
+      options:
+        - macOS Apple Silicon
+        - macOS Intel
+        - Linux
+        - Windows (Web client)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - macOS DMG
+        - One-line Host + Web installer
+        - Host-only installer
+        - Source checkout
+        - GitHub Pages Web client
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest sequence that reproduces the problem consistently.
+      placeholder: |
+        1. Open…
+        2. Select…
+        3. Observe…
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Optional. Remove secrets, tokens, private paths, source code, and project data before pasting.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed API keys, access tokens, private source code, and project data.
+          required: true

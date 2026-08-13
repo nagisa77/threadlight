@@ -22,6 +22,7 @@ if [ -z "$PACKAGE_URL" ] && [ -n "$RELEASE_VERSION" ]; then
   PACKAGE_URL="https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"
 fi
 INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://threadlight.xyz/install.sh}
+MANAGER_VERSION=1.0.0
 TEMP_ROOT=
 
 cleanup_temporary_files() {
@@ -460,6 +461,10 @@ fail() {
   exit 1
 }
 
+print_version() {
+  printf 'threadlight-self-host %s\n' "$MANAGER_VERSION"
+}
+
 usage() {
   cat <<'EOF'
 Usage: threadlight-self-host <command> [options]
@@ -472,6 +477,7 @@ Commands:
   status        Show service status
   logs          Follow service logs
   show-token    Print the saved Web access token
+  version       Print the service manager version without contacting the service
 
 Install options:
   --host <address>      Listen address (default: 127.0.0.1)
@@ -500,6 +506,7 @@ case "$command" in
   status) service_action status ;;
   logs) service_logs ;;
   show-token) show_token ;;
+  version|--version) print_version ;;
   help|-h|--help) usage ;;
   *)
     printf 'Unknown command: %s\n\n' "$command" >&2

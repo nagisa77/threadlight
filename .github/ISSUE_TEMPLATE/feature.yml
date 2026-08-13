@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a focused improvement to Threadlight
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem before the implementation. Please do not include API keys, access tokens, private source code, or project data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is difficult today, and who encounters it?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed outcome
+      description: Describe the user-visible result rather than prescribing an internal implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. Include workarounds or smaller approaches you tried.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Agent runtime
+        - Desktop app
+        - Web client
+        - Self-hosted Host
+        - Provider adapter
+        - Website or documentation
+        - Contributor experience
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional. Share sanitized examples, sketches, or links that clarify the request.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I did not include API keys, access tokens, private source code, or project data.
+          required: true

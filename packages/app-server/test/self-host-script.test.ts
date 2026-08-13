@@ -54,6 +54,7 @@ describe("one-line self-host installer", () => {
       "default: ~/.local/share/threadlight-self-host/data",
     );
     expect(help).toContain("--host-only");
+    expect(help).toContain("version       Print the service manager version");
     expect(help).not.toContain("--project");
     expect(installer).toContain("host_home=$RUNTIME_ROOT/data");
     expect(installer).toContain(".legacy-home-migrated");
@@ -61,6 +62,20 @@ describe("one-line self-host installer", () => {
       "$RUNTIME_ROOT/lib/node_modules/@threadlight/host/web",
     );
     expect(installer).not.toContain("host_home=$HOME/.threadlight");
+  });
+
+  it("reports the service manager version without reading local state", () => {
+    const commandVersion = execFileSync("sh", [installerPath, "version"], {
+      encoding: "utf8",
+      env: { HOME: "/does-not-need-to-exist", PATH: process.env.PATH },
+    });
+    const flagVersion = execFileSync("sh", [installerPath, "--version"], {
+      encoding: "utf8",
+      env: { HOME: "/does-not-need-to-exist", PATH: process.env.PATH },
+    });
+
+    expect(commandVersion).toBe("threadlight-self-host 1.0.0\n");
+    expect(flagVersion).toBe(commandVersion);
   });
 
   it("builds Host and Web from main while preserving explicit package channels", () => {
