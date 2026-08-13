@@ -7,6 +7,7 @@ import {
 } from "../src/features/task-session/conversation-content.js";
 import { AgentPanel } from "../src/features/task-session/agent-panel.js";
 import {
+  agentTaskRepresentedByMessage,
   agentThreadTree,
   groupAgentThreads,
 } from "../src/features/task-session/agent-threads.js";
@@ -178,6 +179,18 @@ describe("AgentTreePanel", () => {
           status: "completed" as const,
           phase: "done" as const,
           createdAt: "2026-08-08T08:01:00.000Z",
+          messages: [
+            {
+              id: "follow-up-message",
+              fromAgentId: "root",
+              fromAgentThreadId: "root",
+              fromAgentName: "threadlight",
+              toAgentThreadId: "explorer",
+              text: "Verify the recovery path",
+              createdAt: "2026-08-08T08:01:00.000Z",
+              delivery: "follow_up" as const,
+            },
+          ],
           output: "Recovery path verified",
         },
       ],
@@ -206,7 +219,11 @@ describe("AgentTreePanel", () => {
     expect(panelHtml).toContain("第 2 轮");
     expect(panelHtml).toContain("Initial protocol findings");
     expect(panelHtml).toContain("Verify the recovery path");
+    expect(panelHtml).not.toContain(
+      'class="agent-turn-task">Verify the recovery path',
+    );
     expect(panelHtml).toContain("Recovery path verified");
+    expect(agentTaskRepresentedByMessage(followedUp.agents[2]!)).toBe(true);
   });
 
   it("renders a conversation-like side panel with model, tool, and output details", () => {

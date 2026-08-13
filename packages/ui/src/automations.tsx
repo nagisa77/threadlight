@@ -12,6 +12,7 @@ import {
   PencilLine,
   Play,
   Plus,
+  Search,
   Sparkles,
   TestTube2,
   Trash2,
@@ -420,7 +421,459 @@ export function automationTemplates(
   }));
 }
 
+const AUTOMATION_UI_COPY: Record<
+  Language,
+  { search: string; suggestions: string }
+> = {
+  "zh-CN": { search: "搜索已安排任务", suggestions: "建议" },
+  "zh-TW": { search: "搜尋已排程工作", suggestions: "建議" },
+  en: { search: "Search scheduled tasks", suggestions: "Suggestions" },
+  ja: { search: "スケジュール済みタスクを検索", suggestions: "おすすめ" },
+  ko: { search: "예약된 작업 검색", suggestions: "추천" },
+};
+
 export function AutomationsPage({
+  adapter,
+  projectId,
+  projectName,
+  onOpenThread,
+}: {
+  adapter: AutomationAdapter;
+  projectId: string;
+  projectName: string;
+  onOpenThread?(threadId: string): void;
+}) {
+  const { language } = useI18n();
+  const copy = AUTOMATION_COPY[language];
+  const uiCopy = AUTOMATION_UI_COPY[language];
+  const templates = automationTemplates(language);
+  const [snapshot, setSnapshot] = useState<AutomationsSnapshot>();
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string>();
+  const [error, setError] = useState<string>();
+  const [draft, setDraft] = useState<AutomationDraft>();
+  const [pendingDelete, setPendingDelete] = useState<string>();
+  const [filter, setFilter] = useState<"all" | "enabled" | "paused">("all");
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const load = (initial = false) => {
+      if (initial) {
+        setLoading(true);
+        setError(undefined);
+      }
+      void adapter
+        .load(projectId)
+        .then((value) => {
+          if (active) setSnapshot(value);
+        })
+        .catch((reason) => {
+          if (active && initial) setError(errorMessage(reason));
+        })
+        .finally(() => {
+          if (active && initial) setLoading(false);
+        });
+    };
+    load(true);
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, 15_000);
+    const unsubscribe = adapter.subscribe((value) => {
+      if (active && value.projectId === projectId) setSnapshot(value);
+    });
+    return () => {
+      active = false;
+      window.clearInterval(refreshTimer);
+      unsubscribe();
+    };
+  }, [adapter, projectId]);
+
+  async function saveDraft(value: AutomationDraft) {
+    setBusyId(value.id ?? "create");
+    setError(undefined);
+    try {
+      const request = {
+        projectId,
+        name: value.name,
+        kind: value.kind,
+        prompt: value.prompt,
+        enabled: value.enabled,
+        schedule: value.schedule,
+      };
+      const next = value.id
+        ? await adapter.update({ ...request, id: value.id })
+        : await adapter.create(request);
+      setSnapshot(next);
+      setDraft(undefined);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  async function toggle(automation: Automation) {
+    setBusyId(automation.id);
+    setError(undefined);
+    const previous = snapshot;
+    setSnapshot((current) =>
+      current
+        ? {
+            ...current,
+            automations: current.automations.map((item) =>
+              item.id === automation.id
+                ? { ...item, enabled: !item.enabled }
+                : item,
+            ),
+          }
+        : current,
+    );
+    try {
+      setSnapshot(
+        await adapter.update({
+          projectId,
+          id: automation.id,
+          name: automation.name,
+          kind: automation.kind,
+          prompt: automation.prompt,
+          enabled: !automation.enabled,
+          schedule: automation.schedule,
+        }),
+      );
+    } catch (reason) {
+      setSnapshot(previous);
+      setError(errorMessage(reason));
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  async function runNow(automation: Automation) {
+    setBusyId(automation.id);
+    setError(undefined);
+    try {
+      setSnapshot(await adapter.run(projectId, automation.id));
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  async function remove(automation: Automation) {
+    setBusyId(automation.id);
+    setError(undefined);
+    try {
+      setSnapshot(await adapter.delete(projectId, automation.id));
+      setPendingDelete(undefined);
+    } catch (reason) {
+      setError(errorMessage(reason));
+    } finally {
+      setBusyId(undefined);
+    }
+  }
+
+  const automations = snapshot?.automations ?? [];
+  const enabledCount = automations.filter((item) => item.enabled).length;
+  const pausedCount = automations.length - enabledCount;
+  const normalizedQuery = query.trim().toLocaleLowerCase(language);
+  const visibleAutomations = automations.filter((automation) => {
+    if (filter === "enabled" && !automation.enabled) return false;
+    if (filter === "paused" && automation.enabled) return false;
+    if (!normalizedQuery) return true;
+    return [automation.name, automation.prompt, copy.kind[automation.kind]]
+      .join(" ")
+      .toLocaleLowerCase(language)
+      .includes(normalizedQuery);
+  });
+  const suggestionTemplates = [
+    "full-tests",
+    "dependency-health",
+    "issue-triage",
+  ]
+    .map((id) => templates.find((template) => template.id === id))
+    .filter((template): template is AutomationTemplate => Boolean(template));
+
+  return (
+    <>
+      <header className="workspace-header automations-header">
+        <span aria-hidden="true" />
+        <button
+          type="button"
+          className="automations-primary pressable"
+          onClick={() => setDraft(defaultDraft("custom", language))}
+        >
+          <Plus size={14} />
+          {copy.newAutomation}
+        </button>
+      </header>
+      <section className="automations-scroll">
+        <div className="automations-page">
+          <header className="automations-hero">
+            <h1>{copy.title}</h1>
+            <p>{copy.subtitle.replace("{project}", projectName)}</p>
+          </header>
+
+          {error && (
+            <div className="automations-error" role="alert">
+              <CircleAlert size={15} />
+              <span>{error}</span>
+              <button
+                type="button"
+                className="icon-button pressable"
+                aria-label={copy.dismiss}
+                onClick={() => setError(undefined)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          <label className="automations-search">
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              value={query}
+              placeholder={uiCopy.search}
+              aria-label={uiCopy.search}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            {query && (
+              <button
+                type="button"
+                className="icon-button pressable"
+                aria-label={copy.dismiss}
+                onClick={() => setQuery("")}
+              >
+                <X size={13} />
+              </button>
+            )}
+          </label>
+
+          <div
+            className="automations-filter"
+            role="group"
+            aria-label={copy.filter}
+          >
+            {(["all", "enabled", "paused"] as const).map((value) => (
+              <button
+                type="button"
+                className={`pressable ${filter === value ? "active" : ""}`}
+                aria-pressed={filter === value}
+                key={value}
+                onClick={() => setFilter(value)}
+              >
+                {value === "all"
+                  ? copy.all
+                  : value === "enabled"
+                    ? copy.enabled
+                    : copy.paused}
+                <span>
+                  {value === "all"
+                    ? automations.length
+                    : value === "enabled"
+                      ? enabledCount
+                      : pausedCount}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {loading && !snapshot ? (
+            <div className="automations-empty">
+              <LoaderCircle className="spin" size={16} />
+              {copy.loading}
+            </div>
+          ) : visibleAutomations.length === 0 ? (
+            <div className="automations-filter-empty">
+              <CalendarClock size={18} />
+              <strong>
+                {automations.length === 0 ? copy.emptyTitle : copy.filterEmpty}
+              </strong>
+              {automations.length === 0 && <span>{copy.emptyDescription}</span>}
+            </div>
+          ) : (
+            <div className="automation-list">
+              {visibleAutomations.map((automation) => {
+                const running = automation.lastRun?.status === "running";
+                const busy = busyId === automation.id || running;
+                const needsAttention =
+                  automation.lastRun?.status === "attention" ||
+                  automation.lastRun?.status === "failed";
+                return (
+                  <article
+                    className={`automation-task-row ${automation.enabled ? "enabled" : "paused"}`}
+                    key={automation.id}
+                  >
+                    <button
+                      type="button"
+                      className="automation-task-main pressable"
+                      aria-label={`${copy.edit}: ${automation.name}`}
+                      onClick={() => setDraft({ ...automation })}
+                    >
+                      <span
+                        className={`automation-task-status ${needsAttention ? "attention" : ""}`}
+                        aria-hidden="true"
+                      >
+                        {running ? (
+                          <LoaderCircle className="spin" size={14} />
+                        ) : automation.enabled ? (
+                          <Play size={11} fill="currentColor" />
+                        ) : (
+                          <Circle size={14} />
+                        )}
+                      </span>
+                      <span className="automation-task-copy">
+                        <span className="automation-task-title">
+                          <strong>{automation.name}</strong>
+                          {automation.lastRun && (
+                            <small className={automation.lastRun.status}>
+                              {copy.status[automation.lastRun.status]}
+                            </small>
+                          )}
+                        </span>
+                        <span className="automation-task-meta">
+                          <span>
+                            {formatSchedule(automation.schedule, language, copy)}
+                          </span>
+                          <i aria-hidden="true">·</i>
+                          <span>
+                            {automation.enabled && automation.nextRunAt
+                              ? `${copy.nextRun} ${formatDateTime(
+                                  automation.nextRunAt,
+                                  language,
+                                )}`
+                              : copy.paused}
+                          </span>
+                        </span>
+                        {needsAttention && automation.lastRun?.summary && (
+                          <span className="automation-task-summary">
+                            {automation.lastRun.summary}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <div className="automation-task-actions">
+                      {automation.lastRun?.threadId && (
+                        <button
+                          type="button"
+                          className="automation-text-action pressable"
+                          onClick={() =>
+                            onOpenThread?.(automation.lastRun!.threadId!)
+                          }
+                        >
+                          {copy.openTask}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="icon-button pressable"
+                        aria-label={`${copy.runNow}: ${automation.name}`}
+                        disabled={busy}
+                        onClick={() => void runNow(automation)}
+                      >
+                        {running ? (
+                          <LoaderCircle className="spin" size={14} />
+                        ) : (
+                          <Play size={14} />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        className="automation-state-button pressable"
+                        aria-label={`${automation.enabled ? copy.disabled : copy.enabled}: ${automation.name}`}
+                        aria-pressed={automation.enabled}
+                        disabled={busy}
+                        onClick={() => void toggle(automation)}
+                      >
+                        <span aria-hidden="true" />
+                      </button>
+                      {pendingDelete === automation.id ? (
+                        <div className="automation-delete-confirm">
+                          <button
+                            type="button"
+                            className="automation-danger pressable"
+                            disabled={busy}
+                            onClick={() => void remove(automation)}
+                          >
+                            {copy.confirmDelete}
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button pressable"
+                            aria-label={copy.cancel}
+                            onClick={() => setPendingDelete(undefined)}
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="icon-button pressable danger"
+                          aria-label={`${copy.delete}: ${automation.name}`}
+                          disabled={busy}
+                          onClick={() => setPendingDelete(automation.id)}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+
+          <section className="automation-suggestions">
+            <h2>{uiCopy.suggestions}</h2>
+            <div>
+              {suggestionTemplates.map((template) => (
+                <button
+                  type="button"
+                  className="automation-suggestion pressable"
+                  key={template.id}
+                  onClick={() => setDraft(draftFromTemplate(template))}
+                >
+                  <span className={`automation-template-icon ${template.kind}`}>
+                    {kindIcon(template.kind, 16)}
+                  </span>
+                  <span>
+                    <strong>{template.name}</strong>
+                    <small>
+                      {formatSchedule(template.schedule, language, copy)}
+                    </small>
+                    <em>{template.description}</em>
+                  </span>
+                  <Plus size={16} aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+            <p>
+              <CheckCircle2 size={14} />
+              {copy.safetyNote}
+            </p>
+          </section>
+        </div>
+      </section>
+      {draft && (
+        <AutomationEditor
+          draft={draft}
+          language={language}
+          copy={copy}
+          timeZone={snapshot?.timeZone}
+          saving={busyId === (draft.id ?? "create")}
+          onChange={setDraft}
+          onCancel={() => setDraft(undefined)}
+          onSave={() => void saveDraft(draft)}
+        />
+      )}
+    </>
+  );
+}
+
+export function LegacyAutomationsPage({
   adapter,
   projectId,
   projectName,

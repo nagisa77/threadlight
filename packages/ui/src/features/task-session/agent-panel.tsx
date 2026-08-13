@@ -28,6 +28,7 @@ import {
 import { useI18n, type Translate } from "../../i18n.js";
 import { MarkdownContent } from "../../markdown.js";
 import {
+  agentTaskRepresentedByMessage,
   agentThreadTree,
   totalAgentElapsedMs,
   totalAgentSteps,
@@ -439,7 +440,9 @@ function AgentTurnTranscript({
           <small>{agentStatus(turn, t)}</small>
         </header>
       )}
-      {showTask && <p className="agent-turn-task">{turn.task}</p>}
+      {showTask && !agentTaskRepresentedByMessage(turn) && (
+        <p className="agent-turn-task">{turn.task}</p>
+      )}
       {timeline.map((item) =>
         "message" in item ? (
           <section
@@ -456,13 +459,13 @@ function AgentTurnTranscript({
           <AgentTranscriptEntry key={item.id} entry={item.entry} />
         ),
       )}
-      {timeline.length === 0 && active && (
+      {transcript.length === 0 && active && (
         <div className="agent-transcript-thinking">
           <LoaderCircle className="spin" size={14} />
           {t("agentThinking")}
         </div>
       )}
-      {timeline.length === 0 && (turn.output || turn.error) && (
+      {transcript.length === 0 && (turn.output || turn.error) && (
         <div
           className={`agent-transcript-message${turn.error ? " error" : ""}`}
         >

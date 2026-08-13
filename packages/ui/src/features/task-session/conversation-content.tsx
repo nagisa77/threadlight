@@ -37,6 +37,7 @@ import type {
   VoiceInputStatus,
 } from "../composer/controller.js";
 import {
+  agentTaskRepresentedByMessage,
   agentThreadTree,
   totalAgentSteps,
   totalAgentTokens,
@@ -366,7 +367,7 @@ function AgentInspector({
                 <ChevronRight size={12} aria-hidden="true" />
               </summary>
               <div>
-                <p>{turn.task}</p>
+                {!agentTaskRepresentedByMessage(turn) && <p>{turn.task}</p>}
                 {(turn.messages ?? []).map((message) => (
                   <div className="agent-peer-message" key={message.id}>
                     <span>

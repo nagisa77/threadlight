@@ -1893,6 +1893,176 @@ describe("AgentOrchestrator", () => {
     ]);
   });
 
+  it("lets a read-only peer continue another idle peer without root relaying", async () => {
+    let rootTurns = 0;
+    let firstPeerTurns = 0;
+    let secondPeerTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("You are /root/peer_a")) {
+          firstPeerTurns += 1;
+          if (firstPeerTurns === 1) {
+            return {
+              text: "Peer A opening",
+              toolCalls: [],
+              state: { peerRound: 1 },
+            };
+          }
+          expect(request.input).toBe("Reply directly to Peer B");
+          expect(request.state).toEqual({ peerRound: 1 });
+          expect(request.history).toEqual([
+            { role: "user", text: "Publish an opening" },
+            { role: "assistant", text: "Peer A opening" },
+          ]);
+          return {
+            text: "Peer A direct reply",
+            toolCalls: [],
+            state: { peerRound: 2 },
+          };
+        }
+
+        if (request.instructions.includes("You are /root/peer_b")) {
+          secondPeerTurns += 1;
+          if (secondPeerTurns === 1) {
+            return {
+              text: "Waiting for Peer A.",
+              toolCalls: [
+                {
+                  id: "wait-peer-a-opening",
+                  name: "wait_for_agents",
+                  arguments: { agentIds: ["peer_a"] },
+                },
+              ],
+            };
+          }
+          if (secondPeerTurns === 2) {
+            expect(request.toolResults?.[0]?.output).toContain(
+              "Peer A opening",
+            );
+            return {
+              text: "Asking Peer A directly.",
+              toolCalls: [
+                {
+                  id: "peer-followup",
+                  name: "followup_task",
+                  arguments: {
+                    target: "peer_a",
+                    message: "Reply directly to Peer B",
+                  },
+                },
+              ],
+            };
+          }
+          if (secondPeerTurns === 3) {
+            return {
+              text: "Waiting for the direct reply.",
+              toolCalls: [
+                {
+                  id: "wait-peer-a-reply",
+                  name: "wait_for_agents",
+                  arguments: { agentIds: ["peer_a"] },
+                },
+              ],
+            };
+          }
+          expect(request.toolResults?.[0]?.output).toContain(
+            "Peer A direct reply",
+          );
+          return { text: "Peer dialogue complete.", toolCalls: [] };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Starting two peers.",
+            toolCalls: [
+              {
+                id: "spawn-peer-a",
+                name: "spawn_agent",
+                arguments: {
+                  role: "reader",
+                  taskName: "peer_a",
+                  task: "Publish an opening",
+                },
+              },
+              {
+                id: "spawn-peer-b",
+                name: "spawn_agent",
+                arguments: {
+                  role: "reader",
+                  taskName: "peer_b",
+                  task: "Wait for peer_a, then continue it directly",
+                },
+              },
+            ],
+          };
+        }
+        const statusOutput = request.toolResults?.[0]?.output;
+        const status = statusOutput?.startsWith("{")
+          ? (JSON.parse(statusOutput) as { activeAgentIds?: string[] })
+          : undefined;
+        if (
+          rootTurns === 2 ||
+          (status?.activeAgentIds?.length ?? 0) > 0 ||
+          request.input?.includes("Subagent")
+        ) {
+          return {
+            text: "Waiting without relaying peer content.",
+            toolCalls: [
+              {
+                id: `root-wait-${rootTurns}`,
+                name: "wait_for_agents",
+                arguments: {},
+              },
+            ],
+          };
+        }
+        return { text: "Peer-to-peer flow complete.", toolCalls: [] };
+      },
+    };
+    const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
+      profiles: [
+        {
+          name: "reader",
+          description: "Read-only peer",
+          instructions: "PROFILE_READER",
+          toolAccess: "read-only",
+        },
+      ],
+      maxConcurrent: 3,
+    });
+
+    const result = await orchestrator.run(
+      defineAgent({ name: "root", instructions: "ROOT", maxSteps: 12 }),
+      "Run peer dialogue",
+    );
+
+    expect(result.output).toBe("Peer-to-peer flow complete.");
+    const peerATurns = orchestrator.snapshot.agents.filter(
+      ({ agentPath }) => agentPath === "/root/peer_a",
+    );
+    expect(peerATurns).toHaveLength(2);
+    expect(peerATurns[1]).toEqual(
+      expect.objectContaining({
+        followUpOf: peerATurns[0]?.id,
+        messages: [
+          expect.objectContaining({
+            fromAgentName: "peer_b",
+            delivery: "follow_up",
+          }),
+        ],
+      }),
+    );
+    const root = orchestrator.snapshot.agents.find(
+      ({ id }) => id === orchestrator.snapshot.rootId,
+    );
+    expect(
+      root?.transcript
+        .filter(({ kind }) => kind === "tool")
+        .map((entry) => (entry.kind === "tool" ? entry.name : undefined)),
+    ).not.toContain("followup_task");
+  });
+
   it("rejects nested write ownership that could deadlock the hierarchy", async () => {
     let rootTurns = 0;
     let writerTurns = 0;

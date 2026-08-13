@@ -444,7 +444,7 @@ export class AgentOrchestrator {
     const instruction = input.trim();
     if (!instruction) throw new Error("Agent follow-up input is required");
     const target = this.lifecycleTarget(callerThreadId, agentId, "follow-up");
-    this.assertLifecycleAuthority(callerThreadId, target, agentId, "follow-up");
+    this.assertFollowUpAuthority(callerThreadId, target, agentId);
     this.assertThreadContinuable(target, agentId, "follow-up");
     const previous = target.records.at(-1);
     const latestTask = previous?.snapshot ?? target.resumable?.latestTask;
@@ -1311,7 +1311,7 @@ export class AgentOrchestrator {
     return {
       name: FOLLOWUP_TASK_TOOL,
       description:
-        "Wake an idle agent with follow-up work in the same stable thread, preserving opaque provider state and visible history.",
+        "Wake an idle direct child or read-only peer with follow-up work in the same stable thread, preserving opaque provider state and visible history.",
       parameters: collaborationMessageParameters(
         "The next task or question for the idle agent",
       ),
@@ -1764,6 +1764,38 @@ export class AgentOrchestrator {
     }
   }
 
+  private assertFollowUpAuthority(
+    callerThreadId: string,
+    target: AgentLifecycleTarget,
+    agentId: string,
+  ): void {
+    const latestRecord = target.records.at(-1);
+    const latest = latestRecord?.snapshot ?? target.resumable?.latestTask;
+    const profileName =
+      latestRecord?.profile?.name ?? target.resumable?.profileName;
+    const profile = profileName ? this.profiles.get(profileName) : undefined;
+    const caller = this.currentRecordForThread(callerThreadId)?.snapshot;
+    const directChild = latest?.parentId === callerThreadId;
+    const sibling =
+      caller?.parentId !== undefined && latest?.parentId === caller.parentId;
+    const safePeer =
+      target.threadId !== this.rootId &&
+      sibling &&
+      profile !== undefined &&
+      profile.toolAccess !== "all";
+    if (
+      target.threadId === this.rootId ||
+      (callerThreadId !== this.rootId && !directChild && !safePeer)
+    ) {
+      throw lifecycleError(
+        "agent_not_attached",
+        agentId,
+        "follow-up",
+        "sibling agents may wake read-only peers; write-capable and unrelated agents remain limited to their direct parent",
+      );
+    }
+  }
+
   private assertThreadContinuable(
     target: AgentLifecycleTarget,
     agentId: string,
@@ -2120,6 +2152,8 @@ function delegationInstructions(
     `At most ${maxConcurrent} agents run concurrently. Start direct children with ${SPAWN_AGENT_TOOL}, continue useful work, then use ${CHECK_AGENTS_TOOL} for status or ${WAIT_FOR_AGENTS_TOOL} for a bounded wait before using their findings or finishing.`,
     `Give spawned work a stable taskName when another agent may need to address it. Targets accept task IDs, stable thread IDs, caller-relative task names, or canonical paths such as /root/research/api_review.`,
     `Use ${SEND_MESSAGE_TOOL} for a running agent and ${FOLLOWUP_TASK_TOOL} to wake an idle agent in its existing context. Use ${STEER_AGENT_TOOL} for parent-style direction.`,
+    `For peer dialogue, review, or debate, avoid manually relaying one agent's output through the parent. Include stable peer task names in delegated instructions so agents can inspect or wait for peers, use ${SEND_MESSAGE_TOOL} while a peer is active, and use ${FOLLOWUP_TASK_TOOL} when a read-only peer is idle.`,
+    "Keep interrupt, close, retry, and write-capable follow-up under the owning parent; peer communication must not grant peer lifecycle or write authority.",
     `Use ${FOLLOW_UP_AGENT_TOOL} only as the legacy alias for ${FOLLOWUP_TASK_TOOL}; use ${SPAWN_AGENT_TOOL} for independent work.`,
     `Use ${RETRY_AGENT_TOOL} to rerun a finished or interrupted turn from fresh provider state while retaining its thread linkage.`,
     `Agent threads persist for the whole parent conversation: finishing a child turn does not delete or close its thread. Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,

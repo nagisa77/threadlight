@@ -108,3 +108,20 @@ export function totalAgentTokens(thread: AgentThreadView): number {
     0,
   );
 }
+
+/** True when the structured follow-up message already represents this turn's task. */
+export function agentTaskRepresentedByMessage(agent: AgentTaskData): boolean {
+  const task = normalizedAgentText(agent.task);
+  return (
+    task.length > 0 &&
+    (agent.messages ?? []).some(
+      (message) =>
+        message.delivery === "follow_up" &&
+        normalizedAgentText(message.text) === task,
+    )
+  );
+}
+
+function normalizedAgentText(value: string): string {
+  return value.replaceAll("\r\n", "\n").trim();
+}
