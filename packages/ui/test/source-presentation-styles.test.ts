@@ -10,7 +10,7 @@ describe("source presentation styles", () => {
       /\.source-citation-marker\s*\{[^}]*color:\s*var\(--muted\);[^}]*background:\s*color-mix\(in srgb, var\(--ink\) 6%, transparent\);/s,
     );
     expect(styles).toMatch(
-      /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.source-citation-marker:hover\s*\{[^}]*color:\s*white;[^}]*background:\s*#11110f;/s,
+      /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.source-citation-marker:hover\s*\{[^}]*color:\s*white;[^}]*background:\s*#111113;/s,
     );
   });
 

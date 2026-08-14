@@ -876,7 +876,7 @@ export class DesktopComputerService {
       height: COMPUTER_CANVAS_HEIGHT,
       show: false,
       frame: false,
-      backgroundColor: "#171815",
+      backgroundColor: "#18181a",
       webPreferences: {
         sandbox: true,
         contextIsolation: true,

@@ -89,6 +89,30 @@ describe("dialog action hierarchy", () => {
     );
   });
 
+  it("keeps full access visibly red across its trigger and menu state", () => {
+    expect(styles).toMatch(
+      /\.conversation-access-trigger\.full\s*\{[^}]*border-color:[^;]*var\(--danger\)[^;]*;[^}]*color:\s*var\(--danger\);[^}]*background:[^;]*var\(--danger\)/s,
+    );
+    expect(styles).toMatch(
+      /\.conversation-access-option\.full\s*\{[^}]*color:\s*var\(--danger\);/s,
+    );
+    expect(styles).toMatch(
+      /\.conversation-access-option\.full\[aria-checked="true"\]\s*\{[^}]*background:[^;]*var\(--danger\)/s,
+    );
+    expect(styles).toMatch(
+      /\.action-popover \.conversation-access-option\.full:hover:not\(:disabled\)\s*\{[^}]*color:\s*var\(--danger\);[^}]*background:[^;]*var\(--danger\)/s,
+    );
+  });
+
+  it("gives the new-task project picker a clear neutral hover state", () => {
+    expect(styles).toMatch(
+      /\.new-task-project-trigger\s*\{[^}]*border-radius:\s*5px;[^}]*transition:[^}]*background-color 140ms ease,/s,
+    );
+    expect(styles).toMatch(
+      /\.new-task-project-trigger:hover:not\(:disabled\)\s*\{[^}]*border-bottom-color:\s*transparent;[^}]*color:\s*var\(--ink\);[^}]*background:[^;]*var\(--ink\) 8%/s,
+    );
+  });
+
   it("keeps the remote file browser bounded and directly scrollable", () => {
     expect(styles).toMatch(
       /\.remote-system-file-list\s*\{[^}]*height:\s*min\(340px,[^;]*;[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain;/s,

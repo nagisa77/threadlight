@@ -37,7 +37,21 @@ describe("theme", () => {
       /html\[data-theme="dark"\] \.composer-share-action:hover:not\(:disabled\)\s*\{[^}]*background:\s*#34353a;/s,
     );
     expect(css).toMatch(
-      /html\[data-theme="dark"\] \.agent-transcript-tool pre\s*\{[^}]*color:\s*#e3e2de;[^}]*background:\s*#292a2e;/s,
+      /html\[data-theme="dark"\] \.agent-transcript-tool pre\s*\{[^}]*color:\s*#e3e3e6;[^}]*background:\s*#292a2e;/s,
+    );
+  });
+
+  it("uses neutral grayscale tokens instead of the former orange brand accent", () => {
+    const css = readUiStyles();
+
+    expect(css).toMatch(
+      /:root\s*\{[^}]*--surface:\s*#f7f7f8;[^}]*--sidebar:\s*#f0f0f2;[^}]*--accent:\s*#303034;[^}]*--accent-soft:\s*#e9e9eb;/s,
+    );
+    expect(css).toMatch(
+      /html\[data-theme="dark"\]\s*\{[^}]*--surface:\s*#1a1a1c;[^}]*--sidebar:\s*#151517;[^}]*--accent:\s*#73737a;[^}]*--accent-soft:\s*#303034;/s,
+    );
+    expect(css).not.toMatch(
+      /#(?:d56a3a|df7b4d|e2743c|ee8047|f1c8af|f5e3d8)\b/i,
     );
   });
 

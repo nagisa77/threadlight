@@ -1,6 +1,6 @@
 :root {
   --web-card-shadow:
-    0 1px 2px rgb(36 36 32 / 4%), 0 22px 56px rgb(36 36 32 / 8%);
+    0 1px 2px rgb(36 36 40 / 4%), 0 22px 56px rgb(36 36 40 / 8%);
 }
 
 .web-connect-shell {
@@ -44,7 +44,7 @@
   border-radius: 10px;
   color: var(--muted);
   background: color-mix(in srgb, var(--panel) 90%, transparent);
-  box-shadow: 0 1px 2px rgb(36 36 32 / 4%);
+  box-shadow: 0 1px 2px rgb(36 36 40 / 4%);
   backdrop-filter: blur(12px);
 }
 
@@ -531,7 +531,7 @@
   border-radius: 10px;
   color: var(--accent);
   background: var(--panel);
-  box-shadow: 0 1px 2px rgb(36 36 32 / 4%);
+  box-shadow: 0 1px 2px rgb(36 36 40 / 4%);
 }
 
 .web-bootstrap-wordmark {

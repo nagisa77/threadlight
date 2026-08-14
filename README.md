@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/nagisa77/threadlight/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/nagisa77/threadlight/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/nagisa77/threadlight?display_name=tag&sort=semver"></a>
-  <a href="./LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-E2743C"></a>
+  <a href="./LICENSE"><img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-3A3A3F"></a>
 </p>
 
 <p align="center">

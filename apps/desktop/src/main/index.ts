@@ -405,7 +405,7 @@ function createWindow(): void {
     show: false,
     title: "Threadlight",
     icon: appIconPath,
-    backgroundColor: "#f7f6f2",
+    backgroundColor: "#f7f7f8",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
       preload: resolve(import.meta.dirname, "../preload/index.cjs"),

@@ -145,6 +145,6 @@ function terminalTheme(theme: ResolvedTheme) {
     brightBlue: "#5c8faa",
     brightMagenta: "#9873a3",
     brightCyan: "#5c9998",
-    brightWhite: "#f7f6f2",
+    brightWhite: "#f7f7f8",
   };
 }

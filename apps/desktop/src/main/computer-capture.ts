@@ -14,7 +14,7 @@ export function computerCaptureHtml(): string {
       :root {
         color-scheme: dark;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-        background: #171815;
+        background: #18181a;
       }
       * { box-sizing: border-box; }
       html, body {
@@ -22,7 +22,7 @@ export function computerCaptureHtml(): string {
         height: 100%;
         margin: 0;
         overflow: hidden;
-        background: #171815;
+        background: #18181a;
       }
       #canvas {
         position: relative;
@@ -35,7 +35,7 @@ export function computerCaptureHtml(): string {
         overflow: hidden;
         border: 1px solid rgba(255,255,255,.14);
         border-radius: 10px;
-        background: #090a09;
+        background: #0a0a0c;
         box-shadow: 0 12px 34px rgba(0,0,0,.28);
       }
       .label {
@@ -49,7 +49,7 @@ export function computerCaptureHtml(): string {
         gap: 7px;
         overflow: hidden;
         color: rgba(255,255,255,.9);
-        background: #23241f;
+        background: #232326;
         border-bottom: 1px solid rgba(255,255,255,.1);
         font-size: 12px;
         font-weight: 590;
@@ -68,7 +68,7 @@ export function computerCaptureHtml(): string {
         position: absolute;
         display: block;
         object-fit: fill;
-        background: #090a09;
+        background: #0a0a0c;
         pointer-events: none;
       }
       #cursor {
@@ -91,7 +91,7 @@ export function computerCaptureHtml(): string {
         content: "";
         position: absolute;
         inset: 2px;
-        background: #171815;
+        background: #18181a;
         clip-path: polygon(0 0, 0 75%, 23% 57%, 40% 89%, 47% 85%, 32% 53%, 61% 53%);
       }
     </style>

@@ -116,7 +116,7 @@ export function computerPreviewHtml(): string {
       :root {
         color-scheme: light;
         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-        color: #34332f;
+        color: #343438;
         background: transparent;
         --ease-out: cubic-bezier(.23, 1, .32, 1);
         --ease-in-out: cubic-bezier(.77, 0, .175, 1);
@@ -210,7 +210,7 @@ export function computerPreviewHtml(): string {
         border: 1px solid rgba(255,255,255,.86);
         border-radius: 14px;
         outline: 0;
-        background: #f2f1ed;
+        background: #f2f2f3;
         box-shadow:
           0 16px 42px rgba(68,64,56,.16),
           0 2px 7px rgba(68,64,56,.08),
@@ -243,7 +243,7 @@ export function computerPreviewHtml(): string {
         display: block;
         width: 100%;
         overflow: hidden;
-        background: #f2f1ed;
+        background: #f2f2f3;
       }
       .source-frame video {
         display: block;
