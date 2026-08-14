@@ -29,6 +29,10 @@ export {
   MarkdownContent,
   localFileContextMenuPosition,
   parseLocalFileReference,
+  sourceDisplayName,
+  sourceFaviconUrl,
+  sourcePresentationKind,
+  sourcesForCitation,
   workspaceFileReference,
 } from "./markdown.js";
 export { MemoryDocument, ProjectMemoryPage } from "./memory.js";

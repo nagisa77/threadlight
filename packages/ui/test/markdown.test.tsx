@@ -6,6 +6,10 @@ import {
   MarkdownContent,
   localFileContextMenuPosition,
   parseLocalFileReference,
+  sourceDisplayName,
+  sourceFaviconUrl,
+  sourcePresentationKind,
+  sourcesForCitation,
   workspaceFileReference,
 } from "../src/index.js";
 
@@ -69,16 +73,53 @@ const ready = true;
           },
         ]}
       >
-        {
-          "Threadlight is an agent runtime.[1](threadlight-source:citation-1)"
-        }
+        {"Threadlight is an agent runtime.[1](threadlight-source:citation-1)"}
       </MarkdownContent>,
     );
 
     expect(html).toContain('class="source-citation-marker pressable"');
     expect(html).toContain("查看引用 1");
+    expect(html).toContain("Example");
     expect(html).toContain("1 个来源");
+    expect(html).not.toContain('class="source-citation-more"');
     expect(html).not.toContain('href="threadlight-source:');
+  });
+
+  it("renders a compact brand and overflow count for multi-source citations", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownContent
+        sources={[
+          {
+            id: "s1",
+            title: "Threadlight repository",
+            url: "https://github.com/nagisa77/threadlight",
+            domain: "github.com",
+          },
+          {
+            id: "s2",
+            title: "Threadlight docs",
+            url: "https://threadlight.xyz/docs",
+            domain: "threadlight.xyz",
+          },
+        ]}
+        citations={[
+          {
+            id: "citation-1",
+            sourceIds: ["s1", "s2"],
+            excerpt: "Threadlight has a provider-neutral agent loop.",
+          },
+        ]}
+      >
+        {
+          "Threadlight has a provider-neutral agent loop.[1](threadlight-source:citation-1)"
+        }
+      </MarkdownContent>,
+    );
+
+    expect(html).toContain("GitHub");
+    expect(html).toContain('class="source-citation-more"');
+    expect(html).toContain("+1");
+    expect(html).not.toContain(">1</button>");
   });
 
   it("does not mark non-web links as external web pages", () => {
@@ -192,5 +233,50 @@ const ready = true;
       source: "workspace",
       path: "packages/ui/src/index.ts",
     });
+  });
+});
+
+describe("source presentation", () => {
+  const sources = [
+    {
+      id: "s1",
+      title: "GitHub",
+      url: "https://github.com/nagisa77/threadlight",
+      domain: "github.com",
+    },
+    {
+      id: "s2",
+      title: "Docs",
+      url: "https://docs.example.com/threadlight",
+      domain: "docs.example.com",
+    },
+  ] as const;
+
+  it("uses anchored previews on desktop and a collection page on mobile", () => {
+    expect(sourcePresentationKind("citation-1", 1280)).toBe("preview");
+    expect(sourcePresentationKind("citation-1", 720)).toBe("collection");
+    expect(sourcePresentationKind(undefined, 1280)).toBe("collection");
+  });
+
+  it("preserves citation source order and ignores missing source ids", () => {
+    expect(
+      sourcesForCitation(
+        {
+          id: "citation-1",
+          sourceIds: ["s2", "missing", "s1"],
+          excerpt: "Supported statement",
+        },
+        sources,
+      ).map((source) => source.id),
+    ).toEqual(["s2", "s1"]);
+  });
+
+  it("formats recognizable brands and safe favicon URLs", () => {
+    expect(sourceDisplayName(sources[0])).toBe("GitHub");
+    expect(sourceDisplayName(sources[1])).toBe("Docs");
+    expect(sourceFaviconUrl(sources[1].url)).toBe(
+      "https://docs.example.com/favicon.ico",
+    );
+    expect(sourceFaviconUrl("javascript:alert(1)")).toBeUndefined();
   });
 });

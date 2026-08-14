@@ -277,28 +277,26 @@ html[data-theme="dark"] .markdown-content .local-file-link {
   color: #58a6ff;
 }
 
-html[data-theme="dark"] :is(
-  .source-drawer,
-  .source-card
-) {
+html[data-theme="dark"] :is(.source-collection, .source-preview) {
   border-color: var(--line-strong);
   background: var(--panel);
   box-shadow: none;
 }
 
-html[data-theme="dark"] :is(
-  .source-citation-marker,
-  .source-card-number
-) {
-  color: #f0a17b;
-  background: rgb(223 123 77 / 13%);
+html[data-theme="dark"] .source-citation-marker {
+  color: var(--muted);
+  background: #292a2e;
 }
 
-html[data-theme="dark"] :is(
-  .source-card-excerpt,
-  .message-sources-trigger
-) {
-  border-color: var(--line);
+html[data-theme="dark"] .source-citation-more {
+  color: var(--subtle);
+}
+
+html[data-theme="dark"] .message-sources-trigger {
+  background: #292a2e;
+}
+
+html[data-theme="dark"] :is(.source-card.active, .source-card.featured) {
   background: #292a2e;
 }
 

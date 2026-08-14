@@ -9,11 +9,14 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  ArrowLeft,
+  ArrowRight,
   BookOpen,
   ExternalLink,
   Eye,
   FileCode2,
   FolderOpen,
+  Globe2,
   LoaderCircle,
   LocateFixed,
   X,
@@ -27,6 +30,11 @@ import type {
 
 import { useI18n, type Language } from "./i18n.js";
 import { Dialog } from "./dialog.js";
+import {
+  anchoredPopoverPosition,
+  observePopoverAnchor,
+  type PopoverPosition,
+} from "./popover.js";
 
 export interface MarkdownContentProps {
   children: string;
@@ -52,6 +60,20 @@ export interface FileReaderReference extends WorkspaceFileReference {
   source: "workspace" | "system";
 }
 
+type SourceSurface =
+  | {
+      kind: "preview";
+      citationId: string;
+      openerId: string;
+    }
+  | {
+      kind: "collection";
+      activeCitationId?: string;
+    };
+
+const SOURCE_MOBILE_BREAKPOINT = 720;
+const SOURCE_PREVIEW_WIDTH = 360;
+
 export function MarkdownContent({
   children,
   onOpenLocalFile,
@@ -62,27 +84,112 @@ export function MarkdownContent({
   const { language } = useI18n();
   const labels = sourceCopy(language);
   const citationNamespace = useId().replaceAll(":", "");
-  const sourceTrigger = useRef<HTMLButtonElement>(null);
-  const lastSourceOpener = useRef<HTMLElement | null>(null);
-  const [sourceDrawer, setSourceDrawer] = useState<{
-    citationId?: string;
-  }>();
+  const lastSourceOpener = useRef<{
+    element: HTMLElement;
+    id?: string;
+  } | null>(null);
+  const previewCloseTimer = useRef<number | undefined>(undefined);
+  const [sourceSurface, setSourceSurface] = useState<SourceSurface>();
   const citationById = new Map(
     citations.map((citation) => [citation.id, citation]),
   );
 
+  useEffect(() => {
+    if (sourceSurface?.kind !== "preview") return;
+    const movePreviewToMobilePage = () => {
+      if (sourceViewportWidth() > SOURCE_MOBILE_BREAKPOINT) return;
+      setSourceSurface({
+        kind: "collection",
+        activeCitationId: sourceSurface.citationId,
+      });
+    };
+    window.addEventListener("resize", movePreviewToMobilePage);
+    window.visualViewport?.addEventListener("resize", movePreviewToMobilePage);
+    return () => {
+      window.removeEventListener("resize", movePreviewToMobilePage);
+      window.visualViewport?.removeEventListener(
+        "resize",
+        movePreviewToMobilePage,
+      );
+    };
+  }, [sourceSurface]);
+
+  useEffect(
+    () => () => {
+      if (previewCloseTimer.current !== undefined) {
+        window.clearTimeout(previewCloseTimer.current);
+      }
+    },
+    [],
+  );
+
+  function cancelPreviewClose() {
+    if (previewCloseTimer.current === undefined) return;
+    window.clearTimeout(previewCloseTimer.current);
+    previewCloseTimer.current = undefined;
+  }
+
+  function previewSources(citationId: string, opener: HTMLElement) {
+    if (
+      sourcePresentationKind(citationId, sourceViewportWidth()) !== "preview"
+    ) {
+      return;
+    }
+    cancelPreviewClose();
+    rememberSourceOpener(opener);
+    setSourceSurface({ kind: "preview", citationId, openerId: opener.id });
+  }
+
+  function schedulePreviewClose() {
+    cancelPreviewClose();
+    previewCloseTimer.current = window.setTimeout(() => {
+      previewCloseTimer.current = undefined;
+      setSourceSurface((current) =>
+        current?.kind === "preview" ? undefined : current,
+      );
+    }, 140);
+  }
+
+  function closePreview() {
+    cancelPreviewClose();
+    setSourceSurface((current) =>
+      current?.kind === "preview" ? undefined : current,
+    );
+  }
+
   function openSources(citationId: string | undefined, opener: HTMLElement) {
-    lastSourceOpener.current = opener;
-    setSourceDrawer(citationId ? { citationId } : {});
+    cancelPreviewClose();
+    rememberSourceOpener(opener);
+    setSourceSurface(
+      sourcePresentationKind(citationId, sourceViewportWidth()) === "preview"
+        ? { kind: "preview", citationId: citationId!, openerId: opener.id }
+        : {
+            kind: "collection",
+            ...(citationId ? { activeCitationId: citationId } : {}),
+          },
+    );
   }
 
   function closeSources() {
-    setSourceDrawer(undefined);
-    requestAnimationFrame(() => lastSourceOpener.current?.focus());
+    setSourceSurface(undefined);
+    requestAnimationFrame(() => {
+      const remembered = lastSourceOpener.current;
+      const current = remembered?.id
+        ? document.getElementById(remembered.id)
+        : remembered?.element;
+      current?.focus();
+    });
+  }
+
+  function rememberSourceOpener(opener: HTMLElement) {
+    lastSourceOpener.current = {
+      element: opener,
+      ...(opener.id ? { id: opener.id } : {}),
+    };
   }
 
   function locateCitation(citationId: string) {
-    setSourceDrawer(undefined);
+    setSourceSurface(undefined);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         const marker = document.getElementById(
@@ -112,6 +219,8 @@ export function MarkdownContent({
       const citationId = parseSourceCitationHref(href);
       const citation = citationId ? citationById.get(citationId) : undefined;
       if (citation) {
+        const citationSources = sourcesForCitation(citation, sources);
+        const primarySource = citationSources[0];
         return (
           <button
             type="button"
@@ -121,9 +230,29 @@ export function MarkdownContent({
               "{number}",
               String(linkChildren),
             )}
+            onPointerEnter={(event) =>
+              previewSources(citation.id, event.currentTarget)
+            }
+            onPointerLeave={schedulePreviewClose}
+            onFocus={(event) =>
+              previewSources(citation.id, event.currentTarget)
+            }
+            onBlur={schedulePreviewClose}
             onClick={(event) => openSources(citation.id, event.currentTarget)}
           >
-            {linkChildren}
+            {primarySource ? (
+              <>
+                <SourceIcon source={primarySource} size={12} />
+                <span>{sourceDisplayName(primarySource)}</span>
+                {citationSources.length > 1 ? (
+                  <span className="source-citation-more">
+                    +{citationSources.length - 1}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              linkChildren
+            )}
           </button>
         );
       }
@@ -178,7 +307,6 @@ export function MarkdownContent({
       </Markdown>
       {sources.length > 0 && citations.length > 0 ? (
         <button
-          ref={sourceTrigger}
           type="button"
           className="message-sources-trigger pressable"
           onClick={(event) => openSources(undefined, event.currentTarget)}
@@ -187,12 +315,22 @@ export function MarkdownContent({
           {labels.sourceCount.replace("{count}", String(sources.length))}
         </button>
       ) : null}
-      {sourceDrawer
+      {sourceSurface?.kind === "preview" ? (
+        <SourcePreviewPopover
+          citation={citationById.get(sourceSurface.citationId)}
+          sources={sources}
+          openerId={sourceSurface.openerId}
+          onKeepOpen={cancelPreviewClose}
+          onRequestClose={schedulePreviewClose}
+          onClose={closePreview}
+        />
+      ) : null}
+      {sourceSurface?.kind === "collection"
         ? createPortal(
-            <SourceDrawer
+            <SourceCollection
               sources={sources}
               citations={citations}
-              activeCitationId={sourceDrawer.citationId}
+              activeCitationId={sourceSurface.activeCitationId}
               onClose={closeSources}
               onLocate={locateCitation}
             />,
@@ -203,7 +341,166 @@ export function MarkdownContent({
   );
 }
 
-function SourceDrawer({
+function SourcePreviewPopover({
+  citation,
+  sources,
+  openerId,
+  onKeepOpen,
+  onRequestClose,
+  onClose,
+}: {
+  citation: MessageCitationData | undefined;
+  sources: readonly MessageSourceData[];
+  openerId: string;
+  onKeepOpen(): void;
+  onRequestClose(): void;
+  onClose(): void;
+}) {
+  const { language } = useI18n();
+  const labels = sourceCopy(language);
+  const root = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const titleId = useId();
+  const previewSources = citation ? sourcesForCitation(citation, sources) : [];
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [position, setPosition] = useState<PopoverPosition>();
+  const activeSource = previewSources[activeIndex] ?? previewSources[0];
+
+  useEffect(() => {
+    if (previewSources.length === 0) {
+      onCloseRef.current();
+      return;
+    }
+    const reposition = () => {
+      const opener = document.getElementById(openerId);
+      if (!opener) {
+        onCloseRef.current();
+        return;
+      }
+      const bounds = opener.getBoundingClientRect();
+      const viewportWidth = sourceViewportWidth();
+      const width = Math.min(SOURCE_PREVIEW_WIDTH, viewportWidth - 24);
+      setPosition(
+        anchoredPopoverPosition(bounds, {
+          width,
+          height:
+            root.current?.offsetHeight ??
+            (previewSources.length > 1 ? 166 : 118),
+          viewportWidth,
+          viewportHeight: sourceViewportHeight(),
+          gap: 10,
+          margin: 12,
+          align: "start",
+        }),
+      );
+    };
+    return observePopoverAnchor(reposition);
+  }, [openerId, previewSources.length]);
+
+  useEffect(() => {
+    function handleOutsidePointer(event: PointerEvent) {
+      const opener = document.getElementById(openerId);
+      if (
+        event.target instanceof Node &&
+        !root.current?.contains(event.target) &&
+        !opener?.contains(event.target)
+      ) {
+        onCloseRef.current();
+      }
+    }
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onCloseRef.current();
+    }
+    window.addEventListener("pointerdown", handleOutsidePointer);
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("pointerdown", handleOutsidePointer);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [openerId]);
+
+  if (!activeSource) return null;
+
+  const popover = (
+    <div
+      ref={root}
+      className={`source-preview ${previewSources.length > 1 ? "multiple" : "single"}`}
+      data-dialog-portal=""
+      role="dialog"
+      aria-labelledby={titleId}
+      style={
+        {
+          top: position?.top,
+          bottom: position?.bottom,
+          left: position?.left,
+          width: `min(${SOURCE_PREVIEW_WIDTH}px, calc(100vw - 24px))`,
+          transformOrigin: position?.transformOrigin,
+          visibility: position ? "visible" : "hidden",
+        } satisfies CSSProperties
+      }
+      onPointerEnter={onKeepOpen}
+      onPointerLeave={onRequestClose}
+      onFocusCapture={onKeepOpen}
+      onBlurCapture={onRequestClose}
+    >
+      {previewSources.length > 1 ? (
+        <div className="source-preview-pagination">
+          <div>
+            <button
+              type="button"
+              className="source-preview-nav pressable"
+              aria-label={labels.previousSource}
+              onClick={() =>
+                setActiveIndex(
+                  (activeIndex - 1 + previewSources.length) %
+                    previewSources.length,
+                )
+              }
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <button
+              type="button"
+              className="source-preview-nav pressable"
+              aria-label={labels.nextSource}
+              onClick={() =>
+                setActiveIndex((activeIndex + 1) % previewSources.length)
+              }
+            >
+              <ArrowRight size={16} />
+            </button>
+          </div>
+          <span>
+            {activeIndex + 1}/{previewSources.length}
+          </span>
+        </div>
+      ) : null}
+      <a
+        className="source-preview-link pressable"
+        href={activeSource.url}
+        target="_blank"
+        rel="noreferrer noopener"
+      >
+        <span className="source-preview-domain">
+          <SourceIcon source={activeSource} size={15} />
+          <span>{sourceDisplayName(activeSource)}</span>
+          <ExternalLink className="source-preview-external" size={14} />
+        </span>
+        <strong id={titleId}>{activeSource.title}</strong>
+        {activeSource.description ? (
+          <small>{activeSource.description}</small>
+        ) : null}
+      </a>
+    </div>
+  );
+
+  return createPortal(popover, document.body);
+}
+
+function SourceCollection({
   sources,
   citations,
   activeCitationId,
@@ -233,12 +530,12 @@ function SourceDrawer({
     <Dialog
       as="aside"
       backdropClassName="source-drawer-backdrop"
-      className="source-drawer"
+      className="source-collection"
       aria-labelledby={titleId}
       initialFocusRef={closeButton}
       onClose={onClose}
     >
-      <header className="source-drawer-header">
+      <header className="source-collection-header">
         <div>
           <h2 id={titleId}>{labels.sources}</h2>
           <p>
@@ -248,7 +545,7 @@ function SourceDrawer({
         <button
           ref={closeButton}
           type="button"
-          className="source-drawer-close pressable"
+          className="source-collection-close pressable"
           aria-label={labels.close}
           title={labels.close}
           onClick={onClose}
@@ -257,8 +554,8 @@ function SourceDrawer({
         </button>
       </header>
 
-      <div className="source-drawer-list">
-        {orderedSources.map((source) => {
+      <div className="source-collection-list">
+        {orderedSources.map((source, index) => {
           const sourceCitations = citations.filter((citation) =>
             citation.sourceIds.includes(source.id),
           );
@@ -270,13 +567,25 @@ function SourceDrawer({
           return (
             <article
               key={source.id}
-              className={`source-card ${active ? "active" : ""}`}
+              className={`source-card ${active ? "active" : ""} ${
+                !activeCitation && index === 0 ? "featured" : ""
+              }`}
             >
               <div className="source-card-domain">
-                <span className="source-card-number">
-                  {sourceNumber(source, sources)}
-                </span>
-                <span>{source.domain}</span>
+                <SourceIcon source={source} size={17} />
+                <span>{sourceDisplayName(source)}</span>
+                <button
+                  type="button"
+                  className="source-card-locate pressable"
+                  aria-label={labels.locate}
+                  title={labels.locate}
+                  disabled={!preferredCitation}
+                  onClick={() =>
+                    preferredCitation && onLocate(preferredCitation.id)
+                  }
+                >
+                  <LocateFixed size={14} />
+                </button>
                 <a
                   href={source.url}
                   target="_blank"
@@ -287,56 +596,105 @@ function SourceDrawer({
                   <ExternalLink size={13} />
                 </a>
               </div>
-              <button
-                type="button"
+              <a
                 className="source-card-title pressable"
-                onClick={() =>
-                  preferredCitation && onLocate(preferredCitation.id)
-                }
+                href={source.url}
+                target="_blank"
+                rel="noreferrer noopener"
               >
                 <strong>{source.title}</strong>
                 {source.description ? <span>{source.description}</span> : null}
-                <small>
-                  <LocateFixed size={12} />
-                  {labels.locate}
-                </small>
-              </button>
-              {sourceCitations.length > 1 ? (
-                <div className="source-card-citations">
-                  <p>
-                    {labels.supports.replace(
-                      "{count}",
-                      String(sourceCitations.length),
-                    )}
-                  </p>
-                  {sourceCitations.map((citation) => (
-                    <button
-                      key={citation.id}
-                      type="button"
-                      className={`source-card-excerpt pressable ${
-                        citation.id === activeCitationId ? "active" : ""
-                      }`}
-                      onClick={() => onLocate(citation.id)}
-                    >
-                      “{citation.excerpt}”
-                    </button>
-                  ))}
-                </div>
-              ) : preferredCitation?.excerpt ? (
-                <button
-                  type="button"
-                  className="source-card-excerpt pressable"
-                  onClick={() => onLocate(preferredCitation.id)}
-                >
-                  “{preferredCitation.excerpt}”
-                </button>
-              ) : null}
+              </a>
             </article>
           );
         })}
       </div>
     </Dialog>
   );
+}
+
+function SourceIcon({
+  source,
+  size,
+}: {
+  source: MessageSourceData;
+  size: number;
+}) {
+  const favicon = sourceFaviconUrl(source.url);
+  return (
+    <span
+      className="source-site-icon"
+      style={{ "--source-icon-size": `${size}px` } as CSSProperties}
+      aria-hidden="true"
+    >
+      <Globe2 size={size} />
+      {favicon ? (
+        <img
+          src={favicon}
+          alt=""
+          width={size}
+          height={size}
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={(event) => event.currentTarget.remove()}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+export function sourcePresentationKind(
+  citationId: string | undefined,
+  viewportWidth: number,
+): "preview" | "collection" {
+  return citationId && viewportWidth > SOURCE_MOBILE_BREAKPOINT
+    ? "preview"
+    : "collection";
+}
+
+export function sourcesForCitation(
+  citation: MessageCitationData,
+  sources: readonly MessageSourceData[],
+): MessageSourceData[] {
+  const sourceById = new Map(sources.map((source) => [source.id, source]));
+  return citation.sourceIds.flatMap((id) => {
+    const source = sourceById.get(id);
+    return source ? [source] : [];
+  });
+}
+
+export function sourceDisplayName(source: MessageSourceData): string {
+  const domain = source.domain.toLowerCase().replace(/^www\./, "");
+  if (domain === "github.com" || domain.endsWith(".github.com"))
+    return "GitHub";
+  if (domain === "deepseek.com" || domain.endsWith(".deepseek.com")) {
+    return "DeepSeek";
+  }
+  const stem = domain.split(".")[0];
+  return stem && !domain.includes("localhost")
+    ? `${stem[0]?.toUpperCase() ?? ""}${stem.slice(1)}`
+    : source.domain;
+}
+
+export function sourceFaviconUrl(url: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+      ? new URL("/favicon.ico", parsed.origin).href
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function sourceViewportWidth(): number {
+  if (typeof window === "undefined") return Number.POSITIVE_INFINITY;
+  return window.visualViewport?.width ?? window.innerWidth;
+}
+
+function sourceViewportHeight(): number {
+  if (typeof window === "undefined") return 800;
+  return window.visualViewport?.height ?? window.innerHeight;
 }
 
 function parseSourceCitationHref(href: string | undefined): string | undefined {
@@ -349,65 +707,67 @@ function citationAnchorId(namespace: string, citationId: string): string {
   return `source-${namespace}-${citationId}`;
 }
 
-function sourceNumber(
-  source: MessageSourceData,
-  sources: readonly MessageSourceData[],
-): number {
-  const encoded = /^s(\d+)$/.exec(source.id)?.[1];
-  return encoded ? Number(encoded) : sources.indexOf(source) + 1;
-}
-
 function sourceCopy(language: Language) {
   return {
     "zh-CN": {
       sources: "来源",
       sourceCount: "{count} 个来源",
-      drawerSubtitle: "{count} 个网页来源，点击可定位到对应原句",
+      drawerSubtitle: "共 {count} 个网页来源",
       openCitation: "查看引用 {number}",
       openPage: "打开原网页",
       locate: "定位到对应原句",
       supports: "支持 {count} 处内容",
       close: "关闭来源",
+      previousSource: "上一个来源",
+      nextSource: "下一个来源",
     },
     "zh-TW": {
       sources: "來源",
       sourceCount: "{count} 個來源",
-      drawerSubtitle: "{count} 個網頁來源，點擊可定位到對應原句",
+      drawerSubtitle: "共 {count} 個網頁來源",
       openCitation: "查看引用 {number}",
       openPage: "開啟原網頁",
       locate: "定位到對應原句",
       supports: "支援 {count} 處內容",
       close: "關閉來源",
+      previousSource: "上一個來源",
+      nextSource: "下一個來源",
     },
     en: {
       sources: "Sources",
       sourceCount: "{count} sources",
-      drawerSubtitle: "{count} web sources · select one to locate its sentence",
+      drawerSubtitle: "{count} web sources",
       openCitation: "View citation {number}",
       openPage: "Open original page",
       locate: "Locate cited sentence",
       supports: "Supports {count} passages",
       close: "Close sources",
+      previousSource: "Previous source",
+      nextSource: "Next source",
     },
     ja: {
       sources: "出典",
       sourceCount: "{count} 件の出典",
-      drawerSubtitle: "{count} 件のウェブ出典・選択すると該当文へ移動",
+      drawerSubtitle: "ウェブ出典 {count} 件",
       openCitation: "引用 {number} を表示",
       openPage: "元のページを開く",
       locate: "引用文へ移動",
       supports: "{count} 箇所を裏付け",
       close: "出典を閉じる",
+      previousSource: "前の出典",
+      nextSource: "次の出典",
     },
     ko: {
       sources: "출처",
       sourceCount: "출처 {count}개",
-      drawerSubtitle: "웹 출처 {count}개 · 선택하면 인용 문장으로 이동",
+      drawerSubtitle: "웹 출처 {count}개",
       openCitation: "인용 {number} 보기",
       openPage: "원본 페이지 열기",
       locate: "인용 문장으로 이동",
       supports: "{count}개 문단 지원",
       close: "출처 닫기",
+      previousSource: "이전 출처",
+      nextSource: "다음 출처",
     },
   }[language];
 }
