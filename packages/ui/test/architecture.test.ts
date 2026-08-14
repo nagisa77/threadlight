@@ -82,6 +82,17 @@ describe("UI feature boundaries", () => {
     expect(lines("../src/styles.css")).toBeLessThan(20);
   });
 
+  it("keeps markdown link renderers mounted during source preview updates", () => {
+    const markdown = source("../src/markdown.tsx");
+
+    expect(markdown).toContain(
+      "const MARKDOWN_COMPONENTS: Components = { a: MarkdownAnchor };",
+    );
+    expect(markdown).toContain("components={MARKDOWN_COMPONENTS}");
+    expect(markdown).toContain("<MarkdownLinkContext.Provider");
+    expect(markdown).not.toContain("const components: Components = {");
+  });
+
   it("prevents feature slices from importing sibling feature internals", () => {
     const featureRoot = new URL("../src/features/", import.meta.url);
     const violations: string[] = [];

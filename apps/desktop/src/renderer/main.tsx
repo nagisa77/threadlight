@@ -290,6 +290,7 @@ if (!root) throw new Error("Missing root element");
 createRoot(root).render(
   <ThreadlightApp
     client={client}
+    taskLinksEnabled={false}
     clipboard={clipboard}
     connectorAuthorization={connectorAuthorization}
     settings={settings}

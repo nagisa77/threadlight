@@ -22,12 +22,14 @@ import type { ProductivityMessage } from "./model.js";
 export function TaskProductivityMenu({
   disabled,
   bookmarkCount,
+  taskLinksEnabled,
   onCopyReference,
   onExport,
   onOpenBookmarks,
 }: {
   disabled?: boolean;
   bookmarkCount: number;
+  taskLinksEnabled?: boolean;
   onCopyReference(): Promise<void>;
   onExport(): void;
   onOpenBookmarks(): void;
@@ -69,7 +71,7 @@ export function TaskProductivityMenu({
           setPosition(
             anchoredPopoverPosition(bounds, {
               width: 224,
-              height: 142,
+              height: taskLinksEnabled ? 142 : 104,
               align: "end",
               placement: "bottom",
             }),
@@ -101,19 +103,21 @@ export function TaskProductivityMenu({
           anchorRef={trigger}
           anchorOptions={{
             width: 224,
-            height: 142,
+            height: taskLinksEnabled ? 142 : 104,
             align: "end",
             placement: "bottom",
           }}
           returnFocusRef={trigger}
           onClose={() => setPosition(undefined)}
         >
-          <ActionPopoverItem
-            icon={<Link2 size={15} />}
-            onSelect={() => void copyReference()}
-          >
-            {t("copyTaskReference")}
-          </ActionPopoverItem>
+          {taskLinksEnabled && (
+            <ActionPopoverItem
+              icon={<Link2 size={15} />}
+              onSelect={() => void copyReference()}
+            >
+              {t("copyTaskReference")}
+            </ActionPopoverItem>
+          )}
           <ActionPopoverItem
             icon={<Download size={15} />}
             onSelect={() => {

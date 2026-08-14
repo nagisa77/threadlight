@@ -3253,13 +3253,17 @@ html[data-platform="desktop"][data-os="macos"]
   padding: 42px 38px 28px;
 }
 
+.conversation.is-empty .conversation-inner {
+  height: 100%;
+}
+
 .conversation.has-conversation-changes .conversation-inner {
   padding-bottom: 72px;
 }
 
 .empty-state {
   display: flex;
-  min-height: calc(100vh - 250px);
+  min-height: 100%;
   align-items: center;
   flex-direction: column;
   justify-content: center;

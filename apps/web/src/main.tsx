@@ -183,6 +183,7 @@ function WebApp() {
       >
         <App
           client={session.client}
+          taskLinksEnabled
           initialThreadId={initialThreadId}
           initialLanguage={language}
           initialSettings={session.bootstrap.settings}

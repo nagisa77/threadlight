@@ -351,6 +351,7 @@ export function ThreadlightApp(props: ThreadlightAppProps) {
 
 function ThreadlightAppContent({
   client,
+  taskLinksEnabled = false,
   clipboard,
   settings,
   diagnostics,
@@ -628,13 +629,12 @@ function ThreadlightAppContent({
   const selectedModel = newTaskDraft
     ? (draftModel?.model ?? state.model)
     : state.model;
-  // Prefer the persisted conversation title (same source the sidebar uses);
-  // fall back to the first user message until a generated title exists, then
-  // to the generic placeholder.
+  // Prefer the persisted sidebar title, then the first user message.
   const headerTitle =
     currentConversation?.title && currentConversation.title !== t("task")
       ? currentConversation.title
       : state.messages[0]?.text || t("task");
+  const isEmpty = state.messages.length === 0 && state.connection !== "error";
   const taskProductivity = useTaskProductivity({
     threadId: state.threadId,
     title: headerTitle,
@@ -3434,6 +3434,7 @@ function ThreadlightAppContent({
                   state.connection === "ready" && Boolean(state.threadId)
                 }
                 bookmarkCount={taskProductivity.bookmarkedMessages.length}
+                taskLinksEnabled={taskLinksEnabled}
                 onCopyReference={taskProductivity.copyReference}
                 onExport={taskProductivity.exportConversation}
                 onOpenBookmarks={() => taskProductivity.setBookmarksOpen(true)}
@@ -3441,7 +3442,7 @@ function ThreadlightAppContent({
 
               <section
                 ref={conversation}
-                className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""} ${showJumpToLatest || state.plan || hasConversationChanges ? "has-composer-floats" : ""}`}
+                className={`conversation ${isEmpty ? "is-empty" : ""} ${hasConversationChanges ? "has-conversation-changes" : ""} ${showJumpToLatest || state.plan || hasConversationChanges ? "has-composer-floats" : ""}`}
                 aria-live="polite"
                 onScroll={(event) => {
                   const following = isNearBottom(event.currentTarget);
@@ -3474,8 +3475,7 @@ function ThreadlightAppContent({
                     />
                   ) : null}
 
-                  {state.messages.length === 0 &&
-                  state.connection !== "error" ? (
+                  {isEmpty ? (
                     <EmptyState
                       connecting={state.connection === "connecting"}
                       project={currentProject}

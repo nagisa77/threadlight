@@ -168,6 +168,16 @@ describe("agent panel layout", () => {
 });
 
 describe("expanded composer layout", () => {
+  it("fits the initial empty state to its conversation row without overflow", () => {
+    expect(styles).toMatch(
+      /\.conversation\.is-empty \.conversation-inner\s*\{[^}]*height:\s*100%;/s,
+    );
+    expect(styles).toMatch(/\.empty-state\s*\{[^}]*min-height:\s*100%;/s);
+    expect(styles).not.toMatch(
+      /\.empty-state\s*\{[^}]*min-height:\s*calc\(100d?vh/s,
+    );
+  });
+
   it("keeps composer guidance and draft feedback on one compact row", () => {
     expect(styles).toMatch(
       /\.composer-footer-status\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*white-space:\s*nowrap;/s,

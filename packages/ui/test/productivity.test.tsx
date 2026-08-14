@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
@@ -19,6 +20,23 @@ import {
   MessageBookmarksDialog,
   TaskProductivityMenu,
 } from "../src/features/productivity/task-actions.js";
+
+const appSource = readFileSync(
+  new URL("../src/app.tsx", import.meta.url),
+  "utf8",
+);
+const taskActionsSource = readFileSync(
+  new URL("../src/features/productivity/task-actions.tsx", import.meta.url),
+  "utf8",
+);
+const desktopRendererSource = readFileSync(
+  new URL("../../../apps/desktop/src/renderer/main.tsx", import.meta.url),
+  "utf8",
+);
+const webRendererSource = readFileSync(
+  new URL("../../../apps/web/src/main.tsx", import.meta.url),
+  "utf8",
+);
 
 class MemoryStorage implements KeyValueStorage {
   readonly values = new Map<string, string>();
@@ -158,6 +176,7 @@ describe("task productivity", () => {
     const menu = renderToStaticMarkup(
       <TaskProductivityMenu
         bookmarkCount={2}
+        taskLinksEnabled
         onCopyReference={vi.fn(async () => {})}
         onExport={vi.fn()}
         onOpenBookmarks={vi.fn()}
@@ -172,5 +191,15 @@ describe("task productivity", () => {
     expect(status).toContain("↑↓ 浏览输入历史");
     expect(status).toContain('role="status"');
     expect(status).toContain("草稿已保存");
+  });
+
+  it("offers task links only in the web client", () => {
+    expect(desktopRendererSource).toContain("taskLinksEnabled={false}");
+    expect(webRendererSource).toMatch(/<App[\s\S]*?taskLinksEnabled/);
+    expect(appSource).toMatch(
+      /<TaskHeader[\s\S]*?taskLinksEnabled=\{taskLinksEnabled\}[\s\S]*?onCopyReference=\{taskProductivity\.copyReference\}/s,
+    );
+    expect(taskActionsSource).toContain("{taskLinksEnabled && (");
+    expect(taskActionsSource).toContain("height: taskLinksEnabled ? 142 : 104");
   });
 });

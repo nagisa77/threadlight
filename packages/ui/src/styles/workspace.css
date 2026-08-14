@@ -3654,7 +3654,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .empty-state {
-    min-height: calc(100dvh - 210px);
+    min-height: 100%;
     padding: 34px 0;
   }
 

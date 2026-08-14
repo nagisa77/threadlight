@@ -32,6 +32,7 @@ import type {
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;
+  taskLinksEnabled?: boolean;
   initialThreadId?: string;
   initialLanguage?: Language;
   initialSettings?: SettingsSnapshot;

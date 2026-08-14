@@ -1,8 +1,11 @@
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useRef,
   useState,
+  type ComponentProps,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -73,6 +76,23 @@ type SourceSurface =
 
 const SOURCE_MOBILE_BREAKPOINT = 720;
 const SOURCE_PREVIEW_WIDTH = 360;
+
+interface MarkdownLinkContextValue {
+  citationById: ReadonlyMap<string, MessageCitationData>;
+  citationNamespace: string;
+  labels: ReturnType<typeof sourceCopy>;
+  onOpenLocalFile?: MarkdownContentProps["onOpenLocalFile"];
+  onRevealLocalFile?: MarkdownContentProps["onRevealLocalFile"];
+  openSources(citationId: string | undefined, opener: HTMLElement): void;
+  previewSources(citationId: string, opener: HTMLElement): void;
+  schedulePreviewClose(): void;
+  sources: readonly MessageSourceData[];
+}
+
+const MarkdownLinkContext = createContext<MarkdownLinkContextValue | null>(
+  null,
+);
+const MARKDOWN_COMPONENTS: Components = { a: MarkdownAnchor };
 
 export function MarkdownContent({
   children,
@@ -214,97 +234,33 @@ export function MarkdownContent({
     });
   }
 
-  const components: Components = {
-    a({ href, node: _node, className, children: linkChildren, ...props }) {
-      const citationId = parseSourceCitationHref(href);
-      const citation = citationId ? citationById.get(citationId) : undefined;
-      if (citation) {
-        const citationSources = sourcesForCitation(citation, sources);
-        const primarySource = citationSources[0];
-        return (
-          <button
-            type="button"
-            id={citationAnchorId(citationNamespace, citation.id)}
-            className="source-citation-marker pressable"
-            aria-label={labels.openCitation.replace(
-              "{number}",
-              String(linkChildren),
-            )}
-            onPointerEnter={(event) =>
-              previewSources(citation.id, event.currentTarget)
-            }
-            onPointerLeave={schedulePreviewClose}
-            onFocus={(event) =>
-              previewSources(citation.id, event.currentTarget)
-            }
-            onBlur={schedulePreviewClose}
-            onClick={(event) => openSources(citation.id, event.currentTarget)}
-          >
-            {primarySource ? (
-              <>
-                <SourceIcon source={primarySource} size={12} />
-                <span>{sourceDisplayName(primarySource)}</span>
-                {citationSources.length > 1 ? (
-                  <span className="source-citation-more">
-                    +{citationSources.length - 1}
-                  </span>
-                ) : null}
-              </>
-            ) : (
-              linkChildren
-            )}
-          </button>
-        );
-      }
-      const localFile = parseLocalFileReference(href);
-      if (localFile && onOpenLocalFile) {
-        return (
-          <LocalFileLink
-            href={href}
-            {...props}
-            className={["local-file-link", className].filter(Boolean).join(" ")}
-            reference={localFile}
-            onOpen={onOpenLocalFile}
-            onReveal={onRevealLocalFile}
-          >
-            {linkChildren}
-          </LocalFileLink>
-        );
-      }
-
-      if (!isWebUrl(href)) {
-        return (
-          <a href={href} className={className} {...props}>
-            {linkChildren}
-          </a>
-        );
-      }
-
-      return (
-        <a
-          href={href}
-          {...props}
-          className={className}
-          target="_blank"
-          rel="noreferrer noopener"
-        >
-          {linkChildren}
-        </a>
-      );
-    },
-  };
-
   return (
     <div className="markdown-content">
-      <Markdown
-        components={components}
-        remarkPlugins={[remarkGfm]}
-        urlTransform={(url) =>
-          url.startsWith("threadlight-source:") ? url : defaultUrlTransform(url)
-        }
+      <MarkdownLinkContext.Provider
+        value={{
+          citationById,
+          citationNamespace,
+          labels,
+          onOpenLocalFile,
+          onRevealLocalFile,
+          openSources,
+          previewSources,
+          schedulePreviewClose,
+          sources,
+        }}
       >
-        {children}
-      </Markdown>
+        <Markdown
+          components={MARKDOWN_COMPONENTS}
+          remarkPlugins={[remarkGfm]}
+          urlTransform={(url) =>
+            url.startsWith("threadlight-source:")
+              ? url
+              : defaultUrlTransform(url)
+          }
+        >
+          {children}
+        </Markdown>
+      </MarkdownLinkContext.Provider>
       {sources.length > 0 && citations.length > 0 ? (
         <button
           type="button"
@@ -338,6 +294,105 @@ export function MarkdownContent({
           )
         : null}
     </div>
+  );
+}
+
+function MarkdownAnchor({
+  href,
+  node: _node,
+  className,
+  children: linkChildren,
+  ...props
+}: ComponentProps<"a"> & { node?: unknown }) {
+  const context = useContext(MarkdownLinkContext);
+  if (!context) {
+    throw new Error("Markdown links must be rendered inside MarkdownContent");
+  }
+
+  const {
+    citationById,
+    citationNamespace,
+    labels,
+    onOpenLocalFile,
+    onRevealLocalFile,
+    openSources,
+    previewSources,
+    schedulePreviewClose,
+    sources,
+  } = context;
+  const citationId = parseSourceCitationHref(href);
+  const citation = citationId ? citationById.get(citationId) : undefined;
+  if (citation) {
+    const citationSources = sourcesForCitation(citation, sources);
+    const primarySource = citationSources[0];
+    return (
+      <button
+        type="button"
+        id={citationAnchorId(citationNamespace, citation.id)}
+        className="source-citation-marker pressable"
+        aria-label={labels.openCitation.replace(
+          "{number}",
+          String(linkChildren),
+        )}
+        onPointerEnter={(event) =>
+          previewSources(citation.id, event.currentTarget)
+        }
+        onPointerLeave={schedulePreviewClose}
+        onFocus={(event) => previewSources(citation.id, event.currentTarget)}
+        onBlur={schedulePreviewClose}
+        onClick={(event) => openSources(citation.id, event.currentTarget)}
+      >
+        {primarySource ? (
+          <>
+            <SourceIcon source={primarySource} size={12} />
+            <span>{sourceDisplayName(primarySource)}</span>
+            {citationSources.length > 1 ? (
+              <span className="source-citation-more">
+                +{citationSources.length - 1}
+              </span>
+            ) : null}
+          </>
+        ) : (
+          linkChildren
+        )}
+      </button>
+    );
+  }
+
+  const localFile = parseLocalFileReference(href);
+  if (localFile && onOpenLocalFile) {
+    return (
+      <LocalFileLink
+        href={href}
+        {...props}
+        className={["local-file-link", className].filter(Boolean).join(" ")}
+        reference={localFile}
+        onOpen={onOpenLocalFile}
+        onReveal={onRevealLocalFile}
+      >
+        {linkChildren}
+      </LocalFileLink>
+    );
+  }
+
+  if (!isWebUrl(href)) {
+    return (
+      <a href={href} className={className} {...props}>
+        {linkChildren}
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      {...props}
+      className={className}
+      target="_blank"
+      rel="noreferrer noopener"
+    >
+      {linkChildren}
+    </a>
   );
 }
 

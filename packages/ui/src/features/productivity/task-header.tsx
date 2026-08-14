@@ -10,6 +10,7 @@ export function TaskHeader({
   running,
   connectionReady,
   bookmarkCount,
+  taskLinksEnabled,
   onCopyReference,
   onExport,
   onOpenBookmarks,
@@ -20,6 +21,7 @@ export function TaskHeader({
   running: boolean;
   connectionReady: boolean;
   bookmarkCount: number;
+  taskLinksEnabled?: boolean;
   onCopyReference(): Promise<void>;
   onExport(): void;
   onOpenBookmarks(): void;
@@ -40,6 +42,7 @@ export function TaskHeader({
         <TaskProductivityMenu
           disabled={!connectionReady}
           bookmarkCount={bookmarkCount}
+          taskLinksEnabled={taskLinksEnabled}
           onCopyReference={onCopyReference}
           onExport={onExport}
           onOpenBookmarks={onOpenBookmarks}
