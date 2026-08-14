@@ -34,9 +34,7 @@ describe("computer share picture in picture", () => {
       new URL("../src/main/computer-service.ts", import.meta.url),
       "utf8",
     );
-    expect(service).toContain(
-      "COMPUTER_PREVIEW_WORKSPACE_VISIBILITY",
-    );
+    expect(service).toContain("COMPUTER_PREVIEW_WORKSPACE_VISIBILITY");
   });
 
   it("renders the live shared stream in a frameless stack", () => {
@@ -67,6 +65,14 @@ describe("computer share picture in picture", () => {
     expect(html).not.toContain("navigator.mediaDevices.getDisplayMedia");
   });
 
+  it("localizes native preview controls through the desktop catalog", () => {
+    const html = computerPreviewHtml("en");
+
+    expect(html).toContain('title="Close picture in picture"');
+    expect(html).toContain("No windows are being shared");
+    expect(html).toContain('"Bring shared window to front"');
+  });
+
   it("handles trackpad pinch scaling within explicit limits", () => {
     const html = computerPreviewHtml();
 
@@ -77,18 +83,12 @@ describe("computer share picture in picture", () => {
       "window.threadlightComputerPreview.resize(pendingPinchDeltaY)",
     );
     expect(html).toContain("transform: scale(var(--preview-scale, 1))");
-    expect(
-      nextComputerPreviewScale(
-        COMPUTER_PREVIEW_MAX_SCALE,
-        -1_000,
-      ),
-    ).toBe(COMPUTER_PREVIEW_MAX_SCALE);
-    expect(
-      nextComputerPreviewScale(
-        COMPUTER_PREVIEW_MIN_SCALE,
-        1_000,
-      ),
-    ).toBe(COMPUTER_PREVIEW_MIN_SCALE);
+    expect(nextComputerPreviewScale(COMPUTER_PREVIEW_MAX_SCALE, -1_000)).toBe(
+      COMPUTER_PREVIEW_MAX_SCALE,
+    );
+    expect(nextComputerPreviewScale(COMPUTER_PREVIEW_MIN_SCALE, 1_000)).toBe(
+      COMPUTER_PREVIEW_MIN_SCALE,
+    );
   });
 
   it("does not enumerate applications or run a periodic loop while sharing", () => {
@@ -111,9 +111,7 @@ describe("computer share picture in picture", () => {
     const captureHtml = computerCaptureHtml();
 
     expect(captureHtml).toContain("async createPreviewOffer(key)");
-    expect(captureHtml).toContain(
-      "peer.addTrack(track, capture.stream)",
-    );
+    expect(captureHtml).toContain("peer.addTrack(track, capture.stream)");
     expect(captureHtml).toContain("async acceptPreviewAnswer(key, answer)");
     expect(captureHtml).toContain("stopPreviewRelays()");
   });
@@ -131,9 +129,7 @@ describe("computer share picture in picture", () => {
     expect(configureSelection).toContain(
       "await this.captureSession.replace(sources)",
     );
-    expect(configureSelection).toContain(
-      "await this.syncLivePreview(true)",
-    );
+    expect(configureSelection).toContain("await this.syncLivePreview(true)");
     expect(configureSelection.indexOf("syncLivePreview(true)")).toBeLessThan(
       configureSelection.indexOf("captureSharedFrame()"),
     );
@@ -178,23 +174,25 @@ describe("computer share picture in picture", () => {
 
     expect(landscape).toEqual({ width: 404, height: 220 });
     expect(portrait).toEqual({ width: 160, height: 284 });
-    expect(scaledComputerPreviewSize(
-      {
-        width: 1440,
-        height: 900,
-        tiles: [
-          {
-            sourceId: "window:1",
-            name: "Landscape",
-            applicationName: "Test",
-            tile: { x: 0, y: 0, width: 400, height: 300 },
-            content: { x: 0, y: 0, width: 400, height: 200 },
-            sourceBounds: { x: 0, y: 0, width: 400, height: 200 },
-          },
-        ],
-      },
-      1.5,
-    )).toEqual({ width: 606, height: 330 });
+    expect(
+      scaledComputerPreviewSize(
+        {
+          width: 1440,
+          height: 900,
+          tiles: [
+            {
+              sourceId: "window:1",
+              name: "Landscape",
+              applicationName: "Test",
+              tile: { x: 0, y: 0, width: 400, height: 300 },
+              content: { x: 0, y: 0, width: 400, height: 200 },
+              sourceBounds: { x: 0, y: 0, width: 400, height: 200 },
+            },
+          ],
+        },
+        1.5,
+      ),
+    ).toEqual({ width: 606, height: 330 });
   });
 
   it("drags the preview manually without blocking interactive content", () => {
@@ -203,7 +201,7 @@ describe("computer share picture in picture", () => {
     expect(html).toContain('.source-card[data-front="true"]');
     expect(html).toContain('shell.addEventListener("pointerdown"');
     expect(html).toContain('shell.addEventListener("pointermove"');
-    expect(html).toContain('window.threadlightComputerPreview.drag(');
+    expect(html).toContain("window.threadlightComputerPreview.drag(");
     expect(html).toContain("shell.setPointerCapture(event.pointerId)");
     expect(html).toContain("Math.hypot(");
     expect(html).not.toContain("-webkit-app-region: drag");

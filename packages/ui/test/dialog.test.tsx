@@ -81,11 +81,12 @@ describe("Dialog", () => {
       "../src/execution-policy.tsx",
       "../src/markdown.tsx",
       "../src/workspace-panel.tsx",
-      "../src/features/delivery/delivery-center.tsx",
+      "../src/features/delivery/code-host-card.tsx",
       "../src/features/delivery/review-view.tsx",
       "../src/features/navigation/project-dialogs.tsx",
       "../src/features/navigation/remote-project-picker.tsx",
       "../src/features/navigation/project-sidebar.tsx",
+      "../src/features/productivity/task-actions.tsx",
     ];
     const modalSources = modalFiles.map((path) =>
       readFileSync(new URL(path, import.meta.url), "utf8"),
@@ -105,7 +106,7 @@ describe("Dialog", () => {
         (count, source) => count + (source.match(/<Dialog\b/g)?.length ?? 0),
         0,
       ),
-    ).toBe(15);
+    ).toBe(16);
     expect(dialogSource).toContain('event.key === "Escape"');
     expect(dialogSource).toContain("element.inert = true");
     expect(dialogSource).toContain("restoreDialogFocus(controller)");

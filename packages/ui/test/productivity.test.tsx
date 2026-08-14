@@ -22,7 +22,7 @@ import {
 } from "../src/features/productivity/task-actions.js";
 
 const appSource = readFileSync(
-  new URL("../src/app-root.tsx", import.meta.url),
+  new URL("../src/conversation-surface.tsx", import.meta.url),
   "utf8",
 );
 const taskActionsSource = readFileSync(
@@ -197,7 +197,7 @@ describe("task productivity", () => {
     expect(desktopRendererSource).toContain("taskLinksEnabled={false}");
     expect(webRendererSource).toMatch(/<App[\s\S]*?taskLinksEnabled/);
     expect(appSource).toMatch(
-      /<TaskHeader[\s\S]*?taskLinksEnabled=\{taskLinksEnabled\}[\s\S]*?onCopyReference=\{taskProductivity\.copyReference\}/s,
+      /<TaskHeader[\s\S]*?taskLinksEnabled=\{taskLinksEnabled\}[\s\S]*?onCopyReference=\{productivity\.copyReference\}/s,
     );
     expect(taskActionsSource).toContain("{taskLinksEnabled && (");
     expect(taskActionsSource).toContain("height: taskLinksEnabled ? 142 : 104");

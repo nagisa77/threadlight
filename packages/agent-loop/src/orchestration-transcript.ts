@@ -1,14 +1,8 @@
-import type {
-  AgentTaskSnapshot,
-  RunResult,
-  TokenUsage,
-} from "./types.js";
+import type { AgentTaskSnapshot, RunResult, TokenUsage } from "./types.js";
 
 const MAX_TRANSCRIPT_FIELD = 20_000;
 
-export function cloneSnapshot(
-  snapshot: AgentTaskSnapshot,
-): AgentTaskSnapshot {
+export function cloneSnapshot(snapshot: AgentTaskSnapshot): AgentTaskSnapshot {
   return {
     ...snapshot,
     ...(snapshot.usage ? { usage: { ...snapshot.usage } } : {}),

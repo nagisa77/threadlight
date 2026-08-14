@@ -35,14 +35,7 @@ export class AgentLoop {
     emit({ type: "run.started", runId });
 
     try {
-      return await this.execute(
-        agent,
-        input,
-        runId,
-        startedAt,
-        options,
-        emit,
-      );
+      return await this.execute(agent, input, runId, startedAt, options, emit);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       emit({
@@ -156,10 +149,7 @@ export class AgentLoop {
 
       if (turn.toolCalls.length === 0) {
         const completionError = options.controller?.validateCompletion
-          ? await options.controller.validateCompletion(
-              turn,
-              controllerContext,
-            )
+          ? await options.controller.validateCompletion(turn, controllerContext)
           : undefined;
         if (completionError) {
           continuationInput = completionError;
@@ -191,20 +181,12 @@ export class AgentLoop {
       for (const [index, call] of turn.toolCalls.entries()) {
         options.signal?.throwIfAborted();
         toolResults.push(
-          await this.executeTool(
-            call,
-            tools,
-            runId,
+          await this.executeTool(call, tools, runId, step, options, emit, {
             step,
-            options,
-            emit,
-            {
-              step,
-              phase: "tool_started",
-              modelState: state,
-              usage: { ...usage },
-            },
-          ),
+            phase: "tool_started",
+            modelState: state,
+            usage: { ...usage },
+          }),
         );
         await options.onCheckpoint?.({
           step,
@@ -245,11 +227,7 @@ export class AgentLoop {
     const tool = tools.find((candidate) => candidate.name === call.name);
     const controllerContext = { runId, step, tools };
     const decision = options.controller?.beforeToolCall
-      ? await options.controller.beforeToolCall(
-          call,
-          tool,
-          controllerContext,
-        )
+      ? await options.controller.beforeToolCall(call, tool, controllerContext)
       : undefined;
     if (decision && !decision.allowed) {
       return {
@@ -305,11 +283,7 @@ export class AgentLoop {
       durationMs: elapsed(toolStartedAt, options),
     });
     if (options.controller?.afterToolCall) {
-      await options.controller.afterToolCall(
-        call,
-        result,
-        controllerContext,
-      );
+      await options.controller.afterToolCall(call, result, controllerContext);
     }
     return result;
   }
@@ -329,15 +303,11 @@ function mergeAdditionalInput(
 ): string | undefined {
   const next = additional?.trim();
   if (!next) return current;
-  const block =
-    `[Additional user instruction received while the run was active]\n${next}`;
+  const block = `[Additional user instruction received while the run was active]\n${next}`;
   return current ? `${current}\n\n${block}` : block;
 }
 
-function skippedToolResult(
-  call: ToolCall,
-  tools: readonly Tool[],
-): ToolResult {
+function skippedToolResult(call: ToolCall, tools: readonly Tool[]): ToolResult {
   const kind = tools.find(({ name }) => name === call.name)?.kind;
   return {
     callId: call.id,

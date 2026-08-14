@@ -4,6 +4,7 @@ import type {
   HostDirectoryListOptions,
   HostDirectoryListing,
   HostFileListing,
+  HostLanguage,
   HostProjectDiagnosticBundle,
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -145,7 +146,7 @@ export type DesktopModelProvider =
   | "gemini"
   | "grok"
   | "custom";
-export type DesktopLanguage = "zh-CN" | "zh-TW" | "en" | "ja" | "ko";
+export type DesktopLanguage = HostLanguage;
 export type DesktopTheme = "system" | "light" | "dark";
 export type DesktopProjectOpener = string;
 export type DesktopSearchProvider = "brave" | "linkup";

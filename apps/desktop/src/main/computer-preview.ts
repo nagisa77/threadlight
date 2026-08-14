@@ -1,4 +1,7 @@
+import type { HostLanguage } from "@threadlight/protocol";
+
 import type { ComputerFrameLayout } from "./computer-layout.js";
+import { desktopCopy } from "./desktop-copy.js";
 
 export const COMPUTER_PREVIEW_URL = "threadlight-computer://preview/";
 
@@ -102,7 +105,8 @@ function clampComputerPreviewScale(scale: number): number {
   );
 }
 
-export function computerPreviewHtml(): string {
+export function computerPreviewHtml(language: HostLanguage = "zh-CN"): string {
+  const copy = desktopCopy(language).computerPreview;
   return `<!doctype html>
 <html lang="zh-CN">
   <head>
@@ -286,7 +290,7 @@ export function computerPreviewHtml(): string {
   <body>
     <main id="shell">
       <div id="controls">
-        <button id="close" type="button" title="关闭画中画" aria-label="关闭画中画">
+        <button id="close" type="button" title="${copy.close}" aria-label="${copy.close}">
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4 4l8 8M12 4l-8 8"></path>
           </svg>
@@ -294,7 +298,7 @@ export function computerPreviewHtml(): string {
       </div>
       <section id="stage">
         <div id="cards"></div>
-        <div id="empty">没有正在共享的窗口</div>
+        <div id="empty">${copy.empty}</div>
       </section>
     </main>
     <script>
@@ -369,7 +373,7 @@ export function computerPreviewHtml(): string {
         card.type = "button";
         card.className = "source-card";
         card.dataset.sourceId = tile.sourceId;
-        card.setAttribute("aria-label", "将共享窗口放到最前");
+        card.setAttribute("aria-label", "${copy.bringToFront}");
 
         const frame = document.createElement("span");
         frame.className = "source-frame";

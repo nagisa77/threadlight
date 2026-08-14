@@ -1,0 +1,65 @@
+@media (prefers-reduced-motion: reduce) {
+  .pressable,
+  .message-action,
+  .connection-error,
+  .missing-thread-recovery,
+  .activity-heading,
+  .activity-chevron,
+  .plan-status-popover,
+  .project-opener-menu,
+  .local-file-context-menu,
+  .action-popover,
+  .development-mode-chevron,
+  .conversation-access-chevron,
+  .model-trigger-arrow {
+    transition-duration: 0ms;
+  }
+
+  .sidebar {
+    transition-duration: 0ms !important;
+  }
+
+  .dialog-backdrop,
+  .delete-dialog,
+  .connector-dialog,
+  .bookmarks-dialog,
+  .delivery-dialog,
+  .thread-delete-button {
+    transition-duration: 0ms;
+  }
+
+  .connection-error {
+    transform: none;
+  }
+
+  .missing-thread-recovery {
+    transform: none;
+  }
+
+  .workspace-header h1,
+  .thread-title {
+    animation-name: title-reveal-fade;
+  }
+
+  .running-badge svg,
+  .thinking-row svg,
+  .spin {
+    animation: loading-pulse 1.2s ease-in-out infinite alternate;
+  }
+
+  .delete-dialog,
+  .connector-dialog,
+  .delivery-dialog {
+    transform: none;
+  }
+}
+
+@keyframes loading-pulse {
+  from {
+    opacity: 0.45;
+  }
+
+  to {
+    opacity: 1;
+  }
+}

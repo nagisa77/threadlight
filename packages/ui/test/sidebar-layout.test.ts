@@ -6,7 +6,7 @@ import { readUiStyles } from "./style-source.js";
 
 const styles = readUiStyles();
 const appSource = readFileSync(
-  new URL("../src/app-root.tsx", import.meta.url),
+  new URL("../src/app-view.tsx", import.meta.url),
   "utf8",
 );
 const desktopRenderer = readFileSync(

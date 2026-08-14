@@ -18,8 +18,8 @@ import {
   scheduleComposerErrorDismissal,
 } from "../src/features/composer/controller.js";
 
-const appSource = readFileSync(
-  new URL("../src/app-root.tsx", import.meta.url),
+const composerSource = readFileSync(
+  new URL("../src/composer-surface.tsx", import.meta.url),
   "utf8",
 );
 const voiceInputControllerSource = readFileSync(
@@ -82,19 +82,19 @@ describe("voice composer", () => {
   });
 
   it("keeps the mobile stop action mounted until its click fires", () => {
-    expect(appSource).toMatch(
+    expect(composerSource).toMatch(
       /className="composer-action stop pressable"\s+onPointerDown=\{preserveComposerFocusOnPointerDown\}\s+onClick=\{\(\) => void interrupt\(\)\}/,
     );
   });
 
   it("keeps the mobile composer expanded for the full voice lifecycle", () => {
-    expect(appSource).toContain(
+    expect(composerSource).toContain(
       'voiceStatus !== "idle" ? " is-voice-active" : ""',
     );
-    expect(appSource).not.toMatch(
+    expect(composerSource).not.toMatch(
       /selectedCapabilities\.length > 0 \|\|\s*voiceError/,
     );
-    expect(appSource).toContain("dismissComposerErrors();");
+    expect(composerSource).toContain("dismissErrors();");
   });
 
   it("automatically dismisses composer errors after five seconds", () => {

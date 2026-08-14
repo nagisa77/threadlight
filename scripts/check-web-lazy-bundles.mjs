@@ -2,10 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
-const manifestPath = resolve(
-  root,
-  "apps/web/dist/.vite/manifest.json",
-);
+const manifestPath = resolve(root, "apps/web/dist/.vite/manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
 const records = Object.entries(manifest);
 
@@ -16,6 +13,7 @@ const app = recordNamed("app");
 const settings = recordNamed("settings");
 const automations = recordNamed("automations");
 const workspace = recordNamed("workspace-panel");
+const workspaceFileView = recordNamed("workspace-file-view");
 const diffViewer = recordNamed("diff-viewer");
 const syntaxHighlighter = recordNamed("syntax-highlighter");
 const terminalViewport = recordNamed("terminal-viewport");
@@ -34,6 +32,7 @@ for (const [key, label] of [
   [settings[0], "Settings"],
   [automations[0], "Automations"],
   [workspace[0], "Workspace panel"],
+  [workspaceFileView[0], "Workspace file view"],
   [diffViewer[0], "Diff viewer"],
   [syntaxHighlighter[0], "Refractor"],
   [terminalViewport[0], "xterm"],
@@ -45,19 +44,40 @@ for (const [key, label] of [
 
 assertDynamicReference(entry[1], app[0], "connection page", "Threadlight app");
 assertDynamicReference(app[1], settings[0], "Threadlight app", "Settings");
-assertDynamicReference(app[1], automations[0], "Threadlight app", "Automations");
-assertDynamicReference(app[1], workspace[0], "Threadlight app", "Workspace panel");
-assertDynamicReference(workspace[1], diffViewer[0], "Workspace panel", "Diff viewer");
 assertDynamicReference(
-  workspace[1],
-  syntaxHighlighter[0],
+  app[1],
+  automations[0],
+  "Threadlight app",
+  "Automations",
+);
+assertDynamicReference(
+  app[1],
+  workspace[0],
+  "Threadlight app",
   "Workspace panel",
+);
+assertStaticReference(
+  workspace[1],
+  workspaceFileView[0],
+  "Workspace panel",
+  "Workspace file view",
+);
+assertDynamicReference(
+  workspaceFileView[1],
+  diffViewer[0],
+  "Workspace file view",
+  "Diff viewer",
+);
+assertDynamicReference(
+  workspaceFileView[1],
+  syntaxHighlighter[0],
+  "Workspace file view",
   "Refractor syntax highlighter",
 );
 assertDynamicReference(
-  workspace[1],
+  workspaceFileView[1],
   terminalViewport[0],
-  "Workspace panel",
+  "Workspace file view",
   "xterm viewport",
 );
 
@@ -88,6 +108,12 @@ function assertDynamic([, record], label) {
 function assertDynamicReference(record, dependency, owner, label) {
   if (!(record.dynamicImports ?? []).includes(dependency)) {
     fail(`${owner} does not dynamically import ${label}.`);
+  }
+}
+
+function assertStaticReference(record, dependency, owner, label) {
+  if (!(record.imports ?? []).includes(dependency)) {
+    fail(`${owner} does not import ${label}.`);
   }
 }
 

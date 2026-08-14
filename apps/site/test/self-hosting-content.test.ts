@@ -6,10 +6,11 @@ const pageSource = readFileSync(
   new URL("../src/components/HomePage.astro", import.meta.url),
   "utf8",
 );
-const styles = readFileSync(
-  new URL("../src/styles/site.css", import.meta.url),
-  "utf8",
-);
+const styles = ["site.css", "site-foundation.css", "site-sections.css"]
+  .map((file) =>
+    readFileSync(new URL(`../src/styles/${file}`, import.meta.url), "utf8"),
+  )
+  .join("\n");
 
 describe("homepage launch choices", () => {
   it("offers desktop, hosted Web, and recommended one-line self-hosting", () => {

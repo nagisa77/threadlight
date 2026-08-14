@@ -5,6 +5,11 @@ import {
   useMemo,
   type ReactNode,
 } from "react";
+import {
+  isHostLanguage,
+  SUPPORTED_LANGUAGES,
+  type HostLanguage,
+} from "@threadlight/protocol";
 
 import { en } from "./features/i18n/messages/en.js";
 import { ja } from "./features/i18n/messages/ja.js";
@@ -16,14 +21,8 @@ import type {
   TranslationKey,
 } from "./features/i18n/messages/types.js";
 
-export const SUPPORTED_LANGUAGES = [
-  "zh-CN",
-  "zh-TW",
-  "en",
-  "ja",
-  "ko",
-] as const;
-export type Language = (typeof SUPPORTED_LANGUAGES)[number];
+export { SUPPORTED_LANGUAGES };
+export type Language = HostLanguage;
 
 export const LANGUAGE_OPTIONS: readonly {
   value: Language;
@@ -88,16 +87,14 @@ export function useI18n(): I18nValue {
 }
 
 export function isLanguage(value: unknown): value is Language {
-  return (
-    typeof value === "string" &&
-    (SUPPORTED_LANGUAGES as readonly string[]).includes(value)
-  );
+  return isHostLanguage(value);
 }
 
 /** Validates that every scoped catalog provides the same shape for every locale. */
 export function defineMessageCatalog<Schema extends object>(
   catalog: MessageCatalog<Schema>,
 ): MessageCatalog<Schema> {
+  validateCatalog(catalog);
   return catalog;
 }
 
@@ -122,4 +119,73 @@ export function formatMessage(
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>
     key in values ? String(values[key]) : match,
   );
+}
+
+function validateCatalog<Schema extends object>(
+  catalog: MessageCatalog<Schema>,
+): void {
+  const canonicalLanguage = SUPPORTED_LANGUAGES[0];
+  const canonical = catalog[canonicalLanguage];
+  for (const language of SUPPORTED_LANGUAGES.slice(1)) {
+    validateCatalogValue(canonical, catalog[language], language, "");
+  }
+}
+
+function validateCatalogValue(
+  canonical: unknown,
+  candidate: unknown,
+  language: Language,
+  path: string,
+): void {
+  if (typeof canonical === "string") {
+    if (typeof candidate !== "string") {
+      throw new Error(`Invalid message at ${language}.${path}`);
+    }
+    const expected = placeholders(canonical);
+    const actual = placeholders(candidate);
+    if (expected.join("\0") !== actual.join("\0")) {
+      throw new Error(`Placeholder mismatch at ${language}.${path}`);
+    }
+    return;
+  }
+  if (Array.isArray(canonical)) {
+    if (!Array.isArray(candidate) || candidate.length !== canonical.length) {
+      throw new Error(`Catalog shape mismatch at ${language}.${path}`);
+    }
+    canonical.forEach((value, index) => {
+      validateCatalogValue(
+        value,
+        candidate[index],
+        language,
+        `${path}[${index}]`,
+      );
+    });
+    return;
+  }
+  if (canonical && typeof canonical === "object") {
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate)
+    ) {
+      throw new Error(`Catalog shape mismatch at ${language}.${path}`);
+    }
+    const expectedKeys = Object.keys(canonical as object).sort();
+    const actualKeys = Object.keys(candidate as object).sort();
+    if (expectedKeys.join("\0") !== actualKeys.join("\0")) {
+      throw new Error(`Catalog keys mismatch at ${language}.${path}`);
+    }
+    for (const key of expectedKeys) {
+      validateCatalogValue(
+        (canonical as Record<string, unknown>)[key],
+        (candidate as Record<string, unknown>)[key],
+        language,
+        path ? `${path}.${key}` : key,
+      );
+    }
+  }
+}
+
+function placeholders(message: string): string[] {
+  return [...message.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
 }

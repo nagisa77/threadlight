@@ -675,7 +675,11 @@ body.is-resizing-workspace {
 .secret-input-wrap input::placeholder {
   color: #aaaab0;
   font-family:
-    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
     sans-serif;
 }
 

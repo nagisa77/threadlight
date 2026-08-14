@@ -7,6 +7,12 @@ export default defineConfig({
   main: {},
   preload: {
     build: {
+      // Sandboxed Electron preload scripts can only require Electron and a
+      // small Node.js allowlist. Bundle the protocol values used by the bridge
+      // instead of leaving a workspace-package require in the output.
+      externalizeDeps: {
+        exclude: ["@threadlight/protocol"],
+      },
       rollupOptions: {
         input: {
           index: resolve(import.meta.dirname, "src/preload/index.ts"),

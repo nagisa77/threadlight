@@ -5,6 +5,14 @@ import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 const siteCssUrl = new URL("../src/styles/site.css", import.meta.url);
+const siteFoundationCssUrl = new URL(
+  "../src/styles/site-foundation.css",
+  import.meta.url,
+);
+const siteSectionsCssUrl = new URL(
+  "../src/styles/site-sections.css",
+  import.meta.url,
+);
 const appIconSvgUrl = new URL(
   "../../desktop/resources/app-icon.svg",
   import.meta.url,
@@ -21,7 +29,9 @@ const retiredBrandColors = /#(?:d56a3a|df7b4d|e2743c|ee8047|f1c8af|f5e3d8)\b/i;
 
 describe("neutral brand palette", () => {
   it("keeps the website, icon source, and README badges free of the retired orange palette", () => {
-    const siteCss = readFileSync(siteCssUrl, "utf8");
+    const siteCss = [siteCssUrl, siteFoundationCssUrl, siteSectionsCssUrl]
+      .map((url) => readFileSync(url, "utf8"))
+      .join("\n");
     const appIconSvg = readFileSync(appIconSvgUrl, "utf8");
     const readmes = `${readFileSync(readmeUrl, "utf8")}\n${readFileSync(englishReadmeUrl, "utf8")}`;
 

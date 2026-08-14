@@ -2,11 +2,16 @@ import { readFileSync } from "node:fs";
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import {
+  SUPPORTED_LANGUAGES as PROTOCOL_LANGUAGES,
+  isHostLanguage,
+} from "@threadlight/protocol";
 
 import {
   defineMessageCatalog,
   I18nProvider,
   LANGUAGE_OPTIONS,
+  SUPPORTED_LANGUAGES,
   useI18n,
   type Language,
 } from "../src/i18n.js";
@@ -78,6 +83,24 @@ describe("i18n", () => {
       ko: { label: "레이블" },
     });
     expect(catalog.ja.label).toBe("ラベル");
+  });
+
+  it("rejects placeholder drift in scoped catalogs", () => {
+    expect(() =>
+      defineMessageCatalog<{ greeting: string }>({
+        "zh-CN": { greeting: "你好，{name}" },
+        "zh-TW": { greeting: "你好，{name}" },
+        en: { greeting: "Hello" },
+        ja: { greeting: "こんにちは、{name}" },
+        ko: { greeting: "안녕하세요, {name}" },
+      }),
+    ).toThrow("Placeholder mismatch at en.greeting");
+  });
+
+  it("uses the protocol locale contract as the single source of truth", () => {
+    expect(SUPPORTED_LANGUAGES).toBe(PROTOCOL_LANGUAGES);
+    expect(PROTOCOL_LANGUAGES.every(isHostLanguage)).toBe(true);
+    expect(isHostLanguage("zh")).toBe(false);
   });
 
   it("ships Chinese, English, and Japanese language choices", () => {

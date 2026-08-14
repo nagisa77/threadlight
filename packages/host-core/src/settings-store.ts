@@ -15,6 +15,7 @@ import type {
   HostSettingsUpdate,
   HostTheme,
 } from "@threadlight/protocol";
+import { isHostLanguage } from "@threadlight/protocol";
 
 type DesktopLanguage = HostLanguage;
 type DesktopModelProvider = HostModelProvider;
@@ -470,13 +471,7 @@ function optionalLanguage(value: unknown): boolean {
 }
 
 function isLanguage(value: unknown): value is DesktopLanguage {
-  return (
-    value === "zh-CN" ||
-    value === "zh-TW" ||
-    value === "en" ||
-    value === "ja" ||
-    value === "ko"
-  );
+  return isHostLanguage(value);
 }
 
 function parseLanguage(value: unknown): DesktopLanguage {

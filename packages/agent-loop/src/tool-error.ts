@@ -10,6 +10,8 @@ export class ToolExecutionError extends Error {
   }
 }
 
-export function toolErrorMetadata(error: unknown): ToolErrorMetadata | undefined {
+export function toolErrorMetadata(
+  error: unknown,
+): ToolErrorMetadata | undefined {
   return error instanceof ToolExecutionError ? error.toolError : undefined;
 }

@@ -12,9 +12,23 @@ function lines(path: string): number {
 describe("UI feature boundaries", () => {
   it("keeps the application and workspace orchestrators below the agreed limits", () => {
     expect(lines("../src/app.tsx")).toBeLessThan(1_000);
-    expect(lines("../src/app-root.tsx")).toBeLessThan(2_500);
-    expect(lines("../src/workspace-panel.tsx")).toBeLessThan(1_800);
-    expect(lines("../src/i18n.tsx")).toBeLessThan(150);
+    expect(lines("../src/app-root.tsx")).toBeLessThan(1_000);
+    expect(lines("../src/workspace-panel.tsx")).toBeLessThan(1_200);
+    expect(lines("../src/i18n.tsx")).toBeLessThan(300);
+  });
+
+  it("keeps repository-owned source and test files at or below 1200 lines", () => {
+    const repositoryRoot = new URL("../../../", import.meta.url);
+    const oversized = ["apps", "packages", "scripts"]
+      .flatMap((directory) =>
+        repositoryFiles(new URL(`${directory}/`, repositoryRoot)),
+      )
+      .flatMap((file) => {
+        const count = readFileSync(file, "utf8").split("\n").length;
+        return count > 1_200 ? [`${file.pathname}: ${count}`] : [];
+      });
+
+    expect(oversized).toEqual([]);
   });
 
   it("keeps state owners and feature modules grouped by domain", () => {
@@ -83,7 +97,7 @@ describe("UI feature boundaries", () => {
     for (const path of [
       "../src/automations.tsx",
       "../src/execution-policy.tsx",
-      "../src/markdown.tsx",
+      "../src/markdown-source-model.ts",
       "../../../apps/web/src/connection-page.tsx",
     ]) {
       const contents = source(path);
@@ -155,5 +169,24 @@ function featureFiles(directory: URL): URL[] {
     if (entry.isDirectory())
       return featureFiles(new URL(`${entry.name}/`, directory));
     return /\.[jt]sx?$/.test(entry.name) ? [child] : [];
+  });
+}
+
+function repositoryFiles(directory: URL): URL[] {
+  const ignoredDirectories = new Set([
+    "coverage",
+    "dist",
+    "node_modules",
+    "out",
+  ]);
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) {
+      return ignoredDirectories.has(entry.name)
+        ? []
+        : repositoryFiles(new URL(`${entry.name}/`, directory));
+    }
+    return /\.(?:astro|cjs|css|js|jsx|mjs|ts|tsx)$/.test(entry.name)
+      ? [new URL(entry.name, directory)]
+      : [];
   });
 }
