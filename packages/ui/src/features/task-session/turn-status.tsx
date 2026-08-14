@@ -15,31 +15,12 @@ import {
 } from "lucide-react";
 
 import { useI18n } from "../../i18n.js";
-import type { ConversationProgress } from "./session.js";
 import type {
   ComputerPermissionCapability,
   ComputerPermissionSnapshot,
   ComputerShareSnapshot,
 } from "./computer-types.js";
-import type {
-  ConversationChangesSnapshot,
-  WorkspaceFileOpenRequest,
-} from "../../workspace-panel.js";
-
-export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
-  "exec_command",
-  "process_status",
-  "process_read",
-  "process_wait",
-  "process_kill",
-  "apply_patch",
-  "write_file",
-  "edit_file",
-] as const;
-
-const workspaceChangeRefreshTools = new Set<string>(
-  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
-);
+import type { ConversationChangesSnapshot } from "../../workspace-panel.js";
 
 export function MessageActions({
   role,
@@ -347,62 +328,6 @@ export function currentPlanStep(plan: AgentPlanData): number | undefined {
   if (active >= 0) return active + 1;
   const pending = plan.items.findIndex((item) => item.status === "pending");
   return pending >= 0 ? pending + 1 : plan.items.length;
-}
-
-export function planDocumentOpenRequest(
-  plan: AgentPlanData | undefined,
-  threadId: string | undefined,
-  activeDocumentKey: string | undefined,
-  requestId: number,
-):
-  | {
-      documentKey: string;
-      openPanel: boolean;
-      request: WorkspaceFileOpenRequest;
-    }
-  | undefined {
-  if (!threadId || !plan?.documentPath || !plan.documentVersion) {
-    return;
-  }
-  const documentKey = `${threadId}\u0000${plan.documentPath}`;
-  const openPanel = activeDocumentKey !== documentKey;
-  return {
-    documentKey,
-    openPanel,
-    request: {
-      id: requestId,
-      path: plan.documentPath,
-      activate: openPanel,
-    },
-  };
-}
-
-export function conversationChangesRefreshKey(
-  progress: readonly ConversationProgress[],
-): string {
-  return progress
-    .flatMap((step) => step.activities)
-    .filter(
-      (activity) =>
-        workspaceChangeRefreshTools.has(activity.name) &&
-        (activity.status !== "running" || activity.process !== undefined),
-    )
-    .map(
-      (activity) =>
-        `${activity.id}:${activity.status}:${activity.process?.sessionId ?? ""}`,
-    )
-    .join("\u0000");
-}
-
-export function clampWorkspacePanelWidth(
-  requestedWidth: number,
-  workspaceWidth: number,
-): number {
-  const minimumWidth = Math.min(420, workspaceWidth / 2);
-  const maximumWidth = Math.max(minimumWidth, workspaceWidth - 360);
-  return Math.round(
-    Math.min(maximumWidth, Math.max(minimumWidth, requestedWidth)),
-  );
 }
 
 export function ComputerPermissionCard({

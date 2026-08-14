@@ -26,6 +26,7 @@ import type {
   HostWorktreeDeliveryUndoResult,
   ThreadlightHostHealth,
 } from "@threadlight/protocol";
+import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
 
 export interface HttpHostClientOptions {
   endpoint: string;
@@ -480,7 +481,7 @@ export class HttpHostClient {
     );
     const result = await this.jsonResponse<{ text: string }>(response);
     if (typeof result.text !== "string" || !result.text.trim()) {
-      throw new Error("语音转写没有返回文字，请重试。");
+      throw new Error(VOICE_INPUT_ERROR_CODES.emptyTranscript);
     }
     return result.text.trim();
   }

@@ -1,3 +1,5 @@
+import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
+
 export interface AudioTranscriptionRequest {
   audio: ArrayBuffer;
   mimeType: string;
@@ -25,15 +27,17 @@ export async function transcribeAudio(
 ): Promise<string> {
   const apiKey = options.apiKey.trim();
   if (!apiKey) {
-    throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+    throw new Error(VOICE_INPUT_ERROR_CODES.openAiKeyRequired);
   }
 
   const mimeType = normalizeMimeType(request.mimeType);
   const extension = AUDIO_FORMATS.get(mimeType);
-  if (!extension) throw new Error("当前录音格式不支持语音转写。");
-  if (request.audio.byteLength === 0) throw new Error("没有录到声音，请重试。");
+  if (!extension) throw new Error(VOICE_INPUT_ERROR_CODES.unsupportedFormat);
+  if (request.audio.byteLength === 0) {
+    throw new Error(VOICE_INPUT_ERROR_CODES.emptyRecording);
+  }
   if (request.audio.byteLength > MAX_TRANSCRIPTION_BYTES) {
-    throw new Error("录音超过 25 MB，请缩短后重试。");
+    throw new Error(VOICE_INPUT_ERROR_CODES.recordingTooLarge);
   }
 
   const form = new FormData();
@@ -53,14 +57,14 @@ export async function transcribeAudio(
       body: form,
     });
   } catch {
-    throw new Error("无法连接语音转写服务，请检查网络后重试。");
+    throw new Error(VOICE_INPUT_ERROR_CODES.serviceUnavailable);
   }
 
   if (!response.ok) throw await transcriptionError(response);
 
   const body = (await response.json()) as unknown;
   if (!isTranscriptionResponse(body) || !body.text.trim()) {
-    throw new Error("语音转写没有返回文字，请重试。");
+    throw new Error(VOICE_INPUT_ERROR_CODES.emptyTranscript);
   }
   return body.text.trim();
 }
@@ -87,10 +91,10 @@ function normalizeMimeType(value: string): string {
 
 async function transcriptionError(response: Response): Promise<Error> {
   if (response.status === 401) {
-    return new Error("OpenAI API Key 无效，请在设置中更新后重试。");
+    return new Error(VOICE_INPUT_ERROR_CODES.openAiKeyInvalid);
   }
   if (response.status === 429) {
-    return new Error("语音转写暂时达到用量限制，请稍后重试。");
+    return new Error(VOICE_INPUT_ERROR_CODES.rateLimited);
   }
 
   let detail = "";
@@ -100,13 +104,13 @@ async function transcriptionError(response: Response): Promise<Error> {
   } catch {
     // The status code is enough when the upstream response is not JSON.
   }
-  const suffix = detail ? `：${detail.slice(0, 180)}` : "";
-  return new Error(`语音转写失败（${response.status}）${suffix}`);
+  const suffix = detail ? `:${encodeURIComponent(detail.slice(0, 180))}` : "";
+  return new Error(
+    `${VOICE_INPUT_ERROR_CODES.transcriptionFailed}:${response.status}${suffix}`,
+  );
 }
 
-function isTranscriptionResponse(
-  value: unknown,
-): value is { text: string } {
+function isTranscriptionResponse(value: unknown): value is { text: string } {
   return (
     !!value &&
     typeof value === "object" &&
@@ -115,9 +119,7 @@ function isTranscriptionResponse(
   );
 }
 
-function isApiError(
-  value: unknown,
-): value is { error: { message: string } } {
+function isApiError(value: unknown): value is { error: { message: string } } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const error = (value as Record<string, unknown>).error;
   return (

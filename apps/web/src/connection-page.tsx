@@ -12,9 +12,11 @@ import {
   Trash2,
 } from "lucide-react";
 import {
+  defineMessageCatalog,
   I18nProvider,
   isLanguage,
   LANGUAGE_OPTIONS,
+  messagesFor,
   type Language,
 } from "@threadlight/ui/i18n";
 import { isThemePreference, ThemeProvider } from "@threadlight/ui/theme";
@@ -39,6 +41,7 @@ interface ConnectionCopy {
   eyebrow: string;
   savedHosts: string;
   hostName: string;
+  hostNamePlaceholder: string;
   newHost: string;
   editHost: string;
   newHostLink: string;
@@ -61,7 +64,7 @@ interface ConnectionCopy {
   endpointFormatError: string;
 }
 
-const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
+const CONNECTION_COPY = defineMessageCatalog<ConnectionCopy>({
   en: {
     preferences: "Connection page preferences",
     language: "Language",
@@ -75,6 +78,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     eyebrow: "WEB CLIENT",
     savedHosts: "Saved hosts",
     hostName: "Name (optional)",
+    hostNamePlaceholder: "Production",
     newHost: "Connect a new Host",
     editHost: "Edit saved Host",
     newHostLink: "New Host",
@@ -113,6 +117,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     eyebrow: "WEB 客户端",
     savedHosts: "已保存的主机",
     hostName: "名称（可选）",
+    hostNamePlaceholder: "生产环境",
     newHost: "连接新的 Host",
     editHost: "编辑已保存的主机",
     newHostLink: "连接新主机",
@@ -150,6 +155,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     eyebrow: "WEB 用戶端",
     savedHosts: "已儲存的主機",
     hostName: "名稱（選填）",
+    hostNamePlaceholder: "正式環境",
     newHost: "連線新的 Host",
     editHost: "編輯已儲存的主機",
     newHostLink: "連線新主機",
@@ -187,6 +193,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     eyebrow: "WEB クライアント",
     savedHosts: "保存済みホスト",
     hostName: "名前（任意）",
+    hostNamePlaceholder: "本番環境",
     newHost: "新しい Host に接続",
     editHost: "保存済みホストを編集",
     newHostLink: "新しいホスト",
@@ -226,6 +233,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     eyebrow: "WEB 클라이언트",
     savedHosts: "저장된 호스트",
     hostName: "이름(선택)",
+    hostNamePlaceholder: "프로덕션",
     newHost: "새 Host에 연결",
     editHost: "저장된 Host 편집",
     newHostLink: "새 호스트",
@@ -252,7 +260,7 @@ const CONNECTION_COPY: Record<Language, ConnectionCopy> = {
     endpointFormatError:
       "주소 형식이 올바르지 않습니다. 호스트와 포트를 확인하세요.",
   },
-};
+});
 
 const PREF_STORAGE_KEY = "threadlight:web:connect-prefs";
 
@@ -434,7 +442,7 @@ function RemoteConnectionContent({
   const armedTimer = useRef<number | undefined>(undefined);
   const savedTimer = useRef<number | undefined>(undefined);
   const endpointInputRef = useRef<HTMLInputElement>(null);
-  const copy = CONNECTION_COPY[language];
+  const copy = messagesFor(CONNECTION_COPY, language);
 
   const selectedHost = savedHosts.find((host) => host.id === selectedId);
   const editingSaved = selectedHost !== undefined;
@@ -707,7 +715,7 @@ function RemoteConnectionContent({
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    placeholder="Production"
+                    placeholder={copy.hostNamePlaceholder}
                     value={hostName}
                     onChange={(event) => setHostName(event.target.value)}
                     disabled={connecting}
@@ -857,7 +865,7 @@ function initialSelectedHost(
 }
 
 export function connectionPageCopy(language: Language): ConnectionCopy {
-  return CONNECTION_COPY[language];
+  return messagesFor(CONNECTION_COPY, language);
 }
 
 export function connectionError(

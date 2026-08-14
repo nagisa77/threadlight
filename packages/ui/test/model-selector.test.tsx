@@ -10,7 +10,10 @@ import {
 import {
   isKnownModel,
   modelDescription,
+  providerDescription,
   providerDetails,
+  providerKeyDescription,
+  providerKeyLabel,
 } from "../src/model-catalog.js";
 import type { Translate } from "../src/i18n.js";
 
@@ -26,7 +29,11 @@ function translate(key: string): string {
 describe("ModelSelector", () => {
   it("provides a responsive brain icon alongside the full model label", () => {
     const html = renderToStaticMarkup(
-      <ModelSelector disabled={false} t={translate as Translate} onSelect={() => undefined} />,
+      <ModelSelector
+        disabled={false}
+        t={translate as Translate}
+        onSelect={() => undefined}
+      />,
     );
 
     expect(html).toContain("lucide-chevron-up");
@@ -39,19 +46,28 @@ describe("ModelSelector", () => {
       isCurrentModelSelection("openai", "gpt-5.6-sol", "openai", "gpt-5.6-sol"),
     ).toBe(true);
     expect(
-      isCurrentModelSelection("openai", "gpt-5.6-sol", "deepseek", "gpt-5.6-sol"),
+      isCurrentModelSelection(
+        "openai",
+        "gpt-5.6-sol",
+        "deepseek",
+        "gpt-5.6-sol",
+      ),
     ).toBe(false);
   });
 
   it("shows the saved custom model even when another provider is active", () => {
     expect(
-      configuredModelForProvider("custom", {
-        customModel: "local/vision-model",
-      } as Parameters<typeof configuredModelForProvider>[1], "gpt-5.6-sol"),
+      configuredModelForProvider(
+        "custom",
+        {
+          customModel: "local/vision-model",
+        } as Parameters<typeof configuredModelForProvider>[1],
+        "gpt-5.6-sol",
+      ),
     ).toBe("local/vision-model");
-    expect(
-      configuredModelForProvider("custom", undefined, "gpt-5.6-sol"),
-    ).toBe("llama3.2");
+    expect(configuredModelForProvider("custom", undefined, "gpt-5.6-sol")).toBe(
+      "llama3.2",
+    );
     expect(selectorSource).toContain('level.provider === "custom"');
   });
 
@@ -62,7 +78,7 @@ describe("ModelSelector", () => {
 
   it("shows provider rows as submenu entries with a trailing chevron", () => {
     expect(selectorSource).toContain("ChevronRight");
-    expect(selectorSource).toContain("aria-haspopup=\"menu\"");
+    expect(selectorSource).toContain('aria-haspopup="menu"');
   });
 
   it("drops the decorative per-provider color dots", () => {
@@ -78,8 +94,23 @@ describe("model catalog", () => {
   });
 
   it("describes the custom provider model by its settings hint", () => {
+    expect(modelDescription("custom", "llama3.2", translate as Translate)).toBe(
+      "customModelDescription",
+    );
+  });
+
+  it("routes localized provider credentials through catalog helpers", () => {
+    expect(providerDescription("openai", translate as Translate)).toBe(
+      "providerOpenAIDescription",
+    );
+    expect(providerKeyLabel("qwen", translate as Translate)).toBe("qwenApiKey");
+    expect(providerKeyDescription("deepseek", translate as Translate)).toBe(
+      "providerDeepSeekKeyDescription",
+    );
     expect(
-      modelDescription("custom", "llama3.2", translate as Translate),
-    ).toBe("customModelDescription");
+      modelDescription("openai", "gpt-5.6-sol", translate as Translate),
+    ).toBe("modelComplex");
+    expect(selectorSource).not.toContain("providerOption.description");
+    expect(selectorSource).not.toContain("option.description ||");
   });
 });

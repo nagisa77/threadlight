@@ -21,6 +21,8 @@ import {
   PROVIDER_OPTIONS,
   SettingsSelectField,
   ThemePicker,
+  providerKeyDescription,
+  providerKeyLabel,
   providerLabel,
   providerIsConfiguredFor,
   providerIsConfigured,
@@ -345,8 +347,8 @@ export function FirstRunGuide({
                 )}
                 <label className="first-run-secret" htmlFor="first-run-key">
                   <span className="first-run-field-label">
-                    <span>{selectedProvider.keyLabel}</span>
-                    <small>{selectedProvider.keyDescription}</small>
+                    <span>{providerKeyLabel(provider, t)}</span>
+                    <small>{providerKeyDescription(provider, t)}</small>
                   </span>
                   <span className="first-run-input-frame">
                     <KeyRound size={16} aria-hidden="true" />

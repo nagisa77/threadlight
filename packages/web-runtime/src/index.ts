@@ -5,7 +5,9 @@ import {
   ThreadlightClient,
 } from "@threadlight/client";
 import {
+  CONNECTOR_AUTH_ERROR_CODES,
   THREADLIGHT_HOST_PROTOCOL_VERSION,
+  VOICE_INPUT_ERROR_CODES,
   type HostDirectoryListOptions,
   type HostProjectsSnapshot,
   type HostProjectSummary,
@@ -198,7 +200,7 @@ export async function createRemoteWebSession(
     async prepare() {
       const snapshot = await host.settings();
       if (!snapshot.openAIApiKeyConfigured) {
-        throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+        throw new Error(VOICE_INPUT_ERROR_CODES.openAiKeyRequired);
       }
     },
     transcribe: (recording) => host.transcribeAudio(recording),
@@ -266,9 +268,7 @@ function remoteConnectorAuthorization(
     async authorize<Result>(action: () => Promise<Result>) {
       const popup = openWindow();
       if (!popup) {
-        throw new Error(
-          "浏览器阻止了 OAuth 授权窗口，请允许此站点打开弹窗后重试。",
-        );
+        throw new Error(CONNECTOR_AUTH_ERROR_CODES.popupBlocked);
       }
       let navigated = false;
       let rejectNavigation!: (error: unknown) => void;
@@ -284,7 +284,7 @@ function remoteConnectorAuthorization(
               throw new Error("OAuth authorization URL must use HTTPS.");
             }
             if (popup.closed) {
-              throw new Error("OAuth 授权窗口已关闭，请重新连接。");
+              throw new Error(CONNECTOR_AUTH_ERROR_CODES.popupClosed);
             }
             popup.location.replace(authorizationUrl.toString());
             navigated = true;

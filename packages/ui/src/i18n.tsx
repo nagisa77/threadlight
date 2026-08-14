@@ -44,10 +44,12 @@ const messages: Record<Language, Messages> = {
   ko,
 };
 
-export type Translate = (
-  key: TranslationKey,
-  values?: Record<string, string | number>,
-) => string;
+export type Translate = (key: TranslationKey, values?: MessageValues) => string;
+
+export type MessageValues = Record<string, string | number>;
+export type MessageCatalog<Schema extends object> = Readonly<
+  Record<Language, Readonly<Schema>>
+>;
 
 interface I18nValue {
   language: Language;
@@ -56,7 +58,7 @@ interface I18nValue {
 
 const I18nContext = createContext<I18nValue>({
   language: "zh-CN",
-  t: (key, values) => interpolate(zh[key], values),
+  t: (key, values) => formatMessage(zh[key], values),
 });
 
 export function I18nProvider({
@@ -73,7 +75,7 @@ export function I18nProvider({
   const value = useMemo<I18nValue>(
     () => ({
       language,
-      t: (key, values) => interpolate(messages[language][key], values),
+      t: (key, values) => formatMessage(messages[language][key], values),
     }),
     [language],
   );
@@ -92,9 +94,29 @@ export function isLanguage(value: unknown): value is Language {
   );
 }
 
-function interpolate(
+/** Validates that every scoped catalog provides the same shape for every locale. */
+export function defineMessageCatalog<Schema extends object>(
+  catalog: MessageCatalog<Schema>,
+): MessageCatalog<Schema> {
+  return catalog;
+}
+
+export function messagesFor<Schema extends object>(
+  catalog: MessageCatalog<Schema>,
+  language: Language,
+): Readonly<Schema> {
+  return catalog[language];
+}
+
+export function useMessageCatalog<Schema extends object>(
+  catalog: MessageCatalog<Schema>,
+): Readonly<Schema> {
+  return messagesFor(catalog, useI18n().language);
+}
+
+export function formatMessage(
   template: string,
-  values: Record<string, string | number> | undefined,
+  values?: MessageValues,
 ): string {
   if (!values) return template;
   return template.replace(/\{(\w+)\}/g, (match, key: string) =>

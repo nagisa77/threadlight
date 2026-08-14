@@ -18,8 +18,10 @@ import {
   shell,
 } from "electron";
 import {
+  ATTACHMENT_ERROR_CODES,
   THREADLIGHT_HOST_PROTOCOL_VERSION,
   THREADLIGHT_METHODS,
+  VOICE_INPUT_ERROR_CODES,
   type HostProjectsSnapshot,
   type HostDeliverySource,
   type AttachmentData,
@@ -2511,7 +2513,7 @@ async function handleAudioTranscription(
   }
   const apiKey = settingsStore.runtimeSettings().openAIApiKey;
   if (!apiKey) {
-    throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+    throw new Error(VOICE_INPUT_ERROR_CODES.openAiKeyRequired);
   }
   return transcribeAudio(request, { apiKey });
 }
@@ -2523,7 +2525,7 @@ async function handleAttachmentReference(
   requireTrustedSender(event);
   const activeProject = projectStore ? currentActiveProject() : undefined;
   if (!activeProject) {
-    throw new Error("请先打开项目，再添加附件。");
+    throw new Error(ATTACHMENT_ERROR_CODES.projectRequired);
   }
   const request = parseAttachmentReferenceRequest(value);
   if (isRemoteHost()) {

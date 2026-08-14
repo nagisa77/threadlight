@@ -22,7 +22,7 @@ import {
 } from "../src/features/productivity/task-actions.js";
 
 const appSource = readFileSync(
-  new URL("../src/app.tsx", import.meta.url),
+  new URL("../src/app-root.tsx", import.meta.url),
   "utf8",
 );
 const taskActionsSource = readFileSync(

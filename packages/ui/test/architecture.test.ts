@@ -11,7 +11,8 @@ function lines(path: string): number {
 
 describe("UI feature boundaries", () => {
   it("keeps the application and workspace orchestrators below the agreed limits", () => {
-    expect(lines("../src/app.tsx")).toBeLessThan(4_300);
+    expect(lines("../src/app.tsx")).toBeLessThan(1_000);
+    expect(lines("../src/app-root.tsx")).toBeLessThan(2_500);
     expect(lines("../src/workspace-panel.tsx")).toBeLessThan(1_800);
     expect(lines("../src/i18n.tsx")).toBeLessThan(150);
   });
@@ -23,7 +24,7 @@ describe("UI feature boundaries", () => {
       ["navigation", "useNavigationController"],
       ["delivery", "useDeliveryController"],
     ] as const;
-    const app = source("../src/app.tsx");
+    const app = source("../src/app-root.tsx");
 
     for (const [feature, controller] of controllers) {
       const controllerSource = source(
@@ -39,6 +40,10 @@ describe("UI feature boundaries", () => {
     expect(source("../src/features/app-shell/app-shell.tsx")).toContain(
       "export function ThreadlightAppShell",
     );
+    expect(source("../src/app.tsx")).toContain('export * from "./app-root.js"');
+    expect(app).toContain("useNavigationRuntime");
+    expect(app).toContain("useTaskSessionRuntime");
+    expect(app).toContain("useDeliveryRuntime");
 
     const flatFeatureFiles = readdirSync(
       new URL("../src/features", import.meta.url),
@@ -47,6 +52,19 @@ describe("UI feature boundaries", () => {
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name);
     expect(flatFeatureFiles).toEqual([]);
+  });
+
+  it("does not replace the app monolith with a controller monolith", () => {
+    for (const path of [
+      "../src/features/composer/attachment-controller.ts",
+      "../src/features/composer/capability-controller.ts",
+      "../src/features/delivery/runtime-controller.ts",
+      "../src/features/navigation/runtime-controller.ts",
+      "../src/features/task-session/computer-controller.ts",
+      "../src/features/task-session/runtime-controller.ts",
+    ]) {
+      expect(lines(path), path).toBeLessThan(1_000);
+    }
   });
 
   it("keeps locale catalogs outside the i18n provider", () => {
@@ -58,6 +76,19 @@ describe("UI feature boundaries", () => {
       expect(
         lines(`../src/features/i18n/messages/${locale}.ts`),
       ).toBeGreaterThan(700);
+    }
+  });
+
+  it("routes scoped translations through the shared i18n contract", () => {
+    for (const path of [
+      "../src/automations.tsx",
+      "../src/execution-policy.tsx",
+      "../src/markdown.tsx",
+      "../../../apps/web/src/connection-page.tsx",
+    ]) {
+      const contents = source(path);
+      expect(contents, path).toContain("defineMessageCatalog");
+      expect(contents, path).not.toMatch(/const\s+\w+\s*:\s*Record<Language/);
     }
   });
 

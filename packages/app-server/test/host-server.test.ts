@@ -23,6 +23,7 @@ import {
 } from "@threadlight/host-core";
 import { browserTerminalProtocols, HttpHostClient } from "@threadlight/client";
 import { createRemoteWebSession } from "@threadlight/web-runtime";
+import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
 import type {
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -587,7 +588,7 @@ describe("ThreadlightHostServer", () => {
         audio: Uint8Array.from([10, 11, 12]).buffer,
         mimeType: "audio/webm;codecs=opus",
       }),
-    ).rejects.toThrow("配置 OpenAI API Key");
+    ).rejects.toThrow(VOICE_INPUT_ERROR_CODES.openAiKeyRequired);
 
     const uploadedAttachment = await hostClient.uploadAttachment({
       projectId: "project-1",

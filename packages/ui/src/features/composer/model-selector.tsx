@@ -20,6 +20,7 @@ import {
   modelDescription,
   modelQualifier,
   PROVIDER_OPTIONS,
+  providerDescription,
   providerDetails,
   providerLabel,
   type ModelProviderId,
@@ -159,8 +160,6 @@ export function ModelSelector({
                   {
                     value: modelValue,
                     label: `${modelValue}`,
-                    qualifier: "",
-                    description: "",
                     selected: isCurrentModelSelection(
                       effectiveProvider,
                       effectiveModel,
@@ -241,7 +240,7 @@ export function ModelSelector({
                     <strong>{providerLabel(providerOption.value, t)}</strong>
                     <small>
                       {configured
-                        ? providerOption.description
+                        ? providerDescription(providerOption.value, t)
                         : t("modelProviderNotConfigured")}
                     </small>
                   </span>
@@ -292,15 +291,14 @@ export function ModelSelector({
                     <span className="composer-popover-option-copy model-option-copy">
                       <strong>
                         {option.label}
-                        {option.qualifier ? (
+                        {isKnownModel(level.provider, option.value) ? (
                           <em className="model-qualifier">
                             {modelQualifier(option.value, t)}
                           </em>
                         ) : null}
                       </strong>
                       <small>
-                        {option.description ||
-                          modelDescription(level.provider, option.value, t)}
+                        {modelDescription(level.provider, option.value, t)}
                       </small>
                     </span>
                     {option.selected && (

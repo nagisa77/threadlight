@@ -1,9 +1,14 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type {
   ConversationAccessMode,
   SuggestionLanguage,
   TaskDevelopmentMode,
 } from "@threadlight/protocol";
+import {
+  activeProject,
+  type ProjectsAdapter,
+  type ProjectsSnapshot,
+} from "../../projects.js";
 
 export interface SuggestedQuestionsState {
   key: string;
@@ -71,4 +76,73 @@ export function useTaskSessionController() {
     conversation,
     followOutput,
   };
+}
+
+export function useProjectSessionActions({
+  projects,
+  openThread,
+  setProjectSnapshot,
+  setDevelopmentMode,
+  setDraftAccessMode,
+  setDraftModel,
+  setNewTaskDraftError,
+  setNewTaskDraft,
+}: {
+  projects?: ProjectsAdapter;
+  openThread(threadId: string): Promise<string | undefined>;
+  setProjectSnapshot(snapshot: ProjectsSnapshot): void;
+  setDevelopmentMode(mode: TaskDevelopmentMode): void;
+  setDraftAccessMode(mode: ConversationAccessMode): void;
+  setDraftModel(model: { provider: string; model: string } | undefined): void;
+  setNewTaskDraftError(error: string | undefined): void;
+  setNewTaskDraft(value: boolean): void;
+}) {
+  const beginDraft = useCallback(() => {
+    setDevelopmentMode("local");
+    setDraftAccessMode("approval");
+    setDraftModel(undefined);
+    setNewTaskDraftError(undefined);
+    setNewTaskDraft(true);
+  }, [
+    setDevelopmentMode,
+    setDraftAccessMode,
+    setDraftModel,
+    setNewTaskDraft,
+    setNewTaskDraftError,
+  ]);
+
+  const connectProject = useCallback(
+    async (snapshot: ProjectsSnapshot, preferredThreadId?: string) => {
+      if (!projects) return;
+      const project = activeProject(snapshot);
+      if (!project) return;
+      const requestedThreadId =
+        preferredThreadId ??
+        project.conversations.find((conversation) => !conversation.archivedAt)
+          ?.id;
+      if (!requestedThreadId) {
+        beginDraft();
+        return;
+      }
+      setNewTaskDraft(false);
+      const openedThreadId = await openThread(requestedThreadId);
+      if (
+        openedThreadId &&
+        projects.markConversationRead &&
+        project.conversations.some(
+          (conversation) => conversation.id === openedThreadId,
+        )
+      ) {
+        setProjectSnapshot(
+          await projects.markConversationRead({
+            projectId: project.id,
+            id: openedThreadId,
+          }),
+        );
+      }
+    },
+    [beginDraft, openThread, projects, setNewTaskDraft, setProjectSnapshot],
+  );
+
+  return { beginDraft, connectProject };
 }

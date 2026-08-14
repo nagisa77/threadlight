@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { ConversationAccessMode } from "@threadlight/protocol";
 
-import { useI18n, type Language } from "./i18n.js";
+import { defineMessageCatalog, useMessageCatalog } from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import { activateComposerMenuOnPointerDown } from "./features/composer/controller.js";
 import {
@@ -84,7 +84,7 @@ export interface ExecutionPolicyAdapter {
   ): Promise<ExecutionPolicySnapshot>;
 }
 
-const copy = {
+const copy = defineMessageCatalog({
   "zh-CN": {
     title: "需要写入权限",
     external: "会访问外部服务",
@@ -278,7 +278,7 @@ const copy = {
     respondError:
       "승인을 제출할 수 없습니다. Host 연결을 확인한 후 다시 시도하세요.",
   },
-} satisfies Record<Language, Record<string, string>>;
+});
 
 export function ConversationAccessControl({
   mode,
@@ -291,8 +291,7 @@ export function ConversationAccessControl({
   onOpen?(): void;
   onChange(mode: ConversationAccessMode): void | Promise<void>;
 }) {
-  const { language } = useI18n();
-  const labels = copy[language];
+  const labels = useMessageCatalog(copy);
   const trigger = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState<PopoverPosition>();
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -411,8 +410,7 @@ export function ConversationAccessPopover({
   onClose(): void;
   onSelect(mode: ConversationAccessMode): void;
 }) {
-  const { language } = useI18n();
-  const labels = copy[language];
+  const labels = useMessageCatalog(copy);
   const options: readonly {
     mode: ConversationAccessMode;
     icon: ReactNode;
@@ -487,8 +485,7 @@ export function ExecutionApprovalGate({
   adapter: ExecutionPolicyAdapter;
   initialRequests?: readonly ExecutionApprovalRequest[];
 }) {
-  const { language } = useI18n();
-  const labels = copy[language];
+  const labels = useMessageCatalog(copy);
   const [queue, setQueue] =
     useState<readonly ExecutionApprovalRequest[]>(initialRequests);
   const [busy, setBusy] = useState(false);
@@ -708,8 +705,7 @@ export function ExecutionPolicyPage({
   projectId: string;
   projectName: string;
 }) {
-  const { language } = useI18n();
-  const labels = copy[language];
+  const labels = useMessageCatalog(copy);
   const [snapshot, setSnapshot] = useState<ExecutionPolicySnapshot>();
   const [error, setError] = useState<string>();
 

@@ -17,7 +17,13 @@ import {
   X,
 } from "lucide-react";
 
-import { useI18n, type Language } from "./i18n.js";
+import {
+  defineMessageCatalog,
+  messagesFor,
+  useI18n,
+  useMessageCatalog,
+  type Language,
+} from "./i18n.js";
 import { Dialog } from "./dialog.js";
 import {
   ActionPopover,
@@ -267,7 +273,7 @@ type TemplateText = Record<
   { name: string; description: string }
 >;
 
-const TEMPLATE_TEXT: Record<Language, TemplateText> = {
+const TEMPLATE_TEXT = defineMessageCatalog<TemplateText>({
   "zh-CN": templateText([
     ["完整测试套件", "运行项目约定的全部测试并定位失败"],
     ["变更相关测试", "只检查近期改动影响到的测试范围"],
@@ -393,7 +399,7 @@ const TEMPLATE_TEXT: Record<Language, TemplateText> = {
     ["현지화 무결성", "누락 키, 자리표시자, fallback 확인"],
     ["저장소 상태", "테스트, 의존성, 문서, 유지관리 상태 요약"],
   ]),
-};
+});
 
 function templateText(
   entries: readonly (readonly [string, string])[],
@@ -412,23 +418,23 @@ function templateText(
 export function automationTemplates(
   language: Language,
 ): readonly AutomationTemplate[] {
-  const text = TEMPLATE_TEXT[language];
+  const text = messagesFor(TEMPLATE_TEXT, language);
   return TEMPLATE_SPECS.map((template) => ({
     ...template,
     ...text[template.id],
   }));
 }
 
-const AUTOMATION_UI_COPY: Record<
-  Language,
-  { search: string; suggestions: string }
-> = {
+const AUTOMATION_UI_COPY = defineMessageCatalog<{
+  search: string;
+  suggestions: string;
+}>({
   "zh-CN": { search: "搜索已安排任务", suggestions: "建议" },
   "zh-TW": { search: "搜尋已排程工作", suggestions: "建議" },
   en: { search: "Search scheduled tasks", suggestions: "Suggestions" },
   ja: { search: "スケジュール済みタスクを検索", suggestions: "おすすめ" },
   ko: { search: "예약된 작업 검색", suggestions: "추천" },
-};
+});
 
 type AutomationFilter = "all" | "enabled" | "paused";
 
@@ -463,8 +469,8 @@ export function AutomationsPage({
   onOpenThread?(threadId: string): void;
 }) {
   const { language } = useI18n();
-  const copy = AUTOMATION_COPY[language];
-  const uiCopy = AUTOMATION_UI_COPY[language];
+  const copy = useMessageCatalog(AUTOMATION_COPY);
+  const uiCopy = useMessageCatalog(AUTOMATION_UI_COPY);
   const templates = automationTemplates(language);
   const [snapshot, setSnapshot] = useState<AutomationsSnapshot>();
   const [loading, setLoading] = useState(true);
@@ -1198,7 +1204,7 @@ function defaultDraft(
   kind: AutomationKind,
   language: Language,
 ): AutomationDraft {
-  const copy = AUTOMATION_COPY[language];
+  const copy = messagesFor(AUTOMATION_COPY, language);
   return {
     name: copy.defaultName[kind],
     kind,
@@ -1318,7 +1324,7 @@ interface AutomationCopy {
   weekdays: readonly string[];
 }
 
-const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
+const AUTOMATION_COPY = defineMessageCatalog<AutomationCopy>({
   "zh-CN": {
     title: "已安排的任务",
     subtitle: "让 Threadlight 为 {project} 定时执行任务或监测更新。",
@@ -1775,4 +1781,4 @@ const AUTOMATION_COPY: Record<Language, AutomationCopy> = {
       "토요일",
     ],
   },
-};
+});

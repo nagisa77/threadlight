@@ -1,11 +1,84 @@
 import { useRef, useState } from "react";
-import type { AgentTreeData } from "@threadlight/protocol";
+import type {
+  AgentPlanData,
+  AgentTreeData,
+  ConversationProgressData,
+} from "@threadlight/protocol";
 
 import type {
   AutomaticDeliveryState,
   ConversationChangesSnapshot,
   WorkspaceFileOpenRequest,
 } from "./workspace-types.js";
+
+export const WORKSPACE_CHANGE_REFRESH_TOOL_NAMES = [
+  "exec_command",
+  "process_status",
+  "process_read",
+  "process_wait",
+  "process_kill",
+  "apply_patch",
+  "write_file",
+  "edit_file",
+] as const;
+
+const workspaceChangeRefreshTools = new Set<string>(
+  WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
+);
+
+export function planDocumentOpenRequest(
+  plan: AgentPlanData | undefined,
+  threadId: string | undefined,
+  activeDocumentKey: string | undefined,
+  requestId: number,
+):
+  | {
+      documentKey: string;
+      openPanel: boolean;
+      request: WorkspaceFileOpenRequest;
+    }
+  | undefined {
+  if (!threadId || !plan?.documentPath || !plan.documentVersion) return;
+  const documentKey = `${threadId}\u0000${plan.documentPath}`;
+  const openPanel = activeDocumentKey !== documentKey;
+  return {
+    documentKey,
+    openPanel,
+    request: {
+      id: requestId,
+      path: plan.documentPath,
+      activate: openPanel,
+    },
+  };
+}
+
+export function conversationChangesRefreshKey(
+  progress: readonly ConversationProgressData[],
+): string {
+  return progress
+    .flatMap((step) => step.activities)
+    .filter(
+      (activity) =>
+        workspaceChangeRefreshTools.has(activity.name) &&
+        (activity.status !== "running" || activity.process !== undefined),
+    )
+    .map(
+      (activity) =>
+        `${activity.id}:${activity.status}:${activity.process?.sessionId ?? ""}`,
+    )
+    .join("\u0000");
+}
+
+export function clampWorkspacePanelWidth(
+  requestedWidth: number,
+  workspaceWidth: number,
+): number {
+  const minimumWidth = Math.min(420, workspaceWidth / 2);
+  const maximumWidth = Math.max(minimumWidth, workspaceWidth - 360);
+  return Math.round(
+    Math.min(maximumWidth, Math.max(minimumWidth, requestedWidth)),
+  );
+}
 
 export function useDeliveryController(session?: {
   agentTree?: AgentTreeData;

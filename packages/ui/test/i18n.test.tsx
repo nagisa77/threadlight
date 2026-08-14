@@ -4,11 +4,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
+  defineMessageCatalog,
   I18nProvider,
   LANGUAGE_OPTIONS,
   useI18n,
   type Language,
 } from "../src/i18n.js";
+import { en } from "../src/features/i18n/messages/en.js";
+import { ja } from "../src/features/i18n/messages/ja.js";
+import { ko } from "../src/features/i18n/messages/ko.js";
+import { zh } from "../src/features/i18n/messages/zh-CN.js";
+import { zhTW } from "../src/features/i18n/messages/zh-TW.js";
 
 function Example() {
   const { t } = useI18n();
@@ -40,6 +46,40 @@ function FileMenuLabels() {
 }
 
 describe("i18n", () => {
+  it("ships complete standalone catalogs with matching placeholders", () => {
+    const catalogs = { "zh-CN": zh, "zh-TW": zhTW, en, ja, ko } as const;
+    const canonicalKeys = Object.keys(zh).sort();
+
+    for (const [language, catalog] of Object.entries(catalogs)) {
+      expect(Object.keys(catalog).sort(), language).toEqual(canonicalKeys);
+      for (const key of canonicalKeys) {
+        expect(
+          placeholders(catalog[key as keyof typeof catalog]),
+          `${language}.${key}`,
+        ).toEqual(placeholders(zh[key as keyof typeof zh]));
+      }
+    }
+
+    for (const locale of ["en", "ja", "ko"] as const) {
+      const source = readFileSync(
+        new URL(`../src/features/i18n/messages/${locale}.ts`, import.meta.url),
+        "utf8",
+      );
+      expect(source).not.toMatch(/\.\.\.(?:zh|en)/);
+    }
+  });
+
+  it("validates scoped catalogs through the shared catalog contract", () => {
+    const catalog = defineMessageCatalog<{ label: string }>({
+      "zh-CN": { label: "标签" },
+      "zh-TW": { label: "標籤" },
+      en: { label: "Label" },
+      ja: { label: "ラベル" },
+      ko: { label: "레이블" },
+    });
+    expect(catalog.ja.label).toBe("ラベル");
+  });
+
   it("ships Chinese, English, and Japanese language choices", () => {
     expect(LANGUAGE_OPTIONS).toEqual([
       { value: "zh-CN", label: "简体中文" },
@@ -98,3 +138,7 @@ describe("i18n", () => {
     },
   );
 });
+
+function placeholders(message: string): string[] {
+  return [...message.matchAll(/\{(\w+)\}/g)].map((match) => match[1]!).sort();
+}

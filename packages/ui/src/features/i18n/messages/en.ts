@@ -1,8 +1,6 @@
-import { zh } from "./zh-CN.js";
 import type { Messages } from "./types.js";
 
 export const en: Messages = {
-  ...zh,
   settings: "Settings",
   automations: "Automations",
   commandAutomationsDescription: "Manage scheduled checks and alerts",
@@ -97,6 +95,7 @@ export const en: Messages = {
   providerKimiKeyDescription: "Used for Kimi model requests.",
   providerDoubaoDescription:
     "Uses Doubao Seed models through Volcengine Ark's OpenAI-compatible API.",
+  providerDoubaoLabel: "Doubao",
   providerDoubaoKeyDescription: "Used for Volcengine Ark inference requests.",
   providerGeminiDescription:
     "Uses Gemini through the Google Gemini API's OpenAI-compatible endpoint.",
@@ -369,6 +368,7 @@ export const en: Messages = {
   connectRemoteRuntime: "Manage Threadlight Hosts",
   connect: "Connect",
   remoteRuntime: "Remote Host",
+  agentRuntime: "Agent runtime",
   remoteHost: "Remote Host",
   disconnectRemoteHost: "Disconnect from remote Host",
   localHost: "Local Host",
@@ -514,6 +514,30 @@ export const en: Messages = {
   emptyRecording: "No audio was recorded. Please try again.",
   recordingTooLarge:
     "The recording exceeds 25 MB. Please shorten it and try again.",
+  unsupportedRecordingFormat:
+    "This recording format is not supported for voice input.",
+  voiceTranscriptionUnavailable:
+    "Could not reach the transcription service. Check your connection and try again.",
+  voiceTranscriptionEmpty:
+    "The transcription did not return any text. Please try again.",
+  voiceOpenAIKeyInvalid:
+    "The OpenAI API Key is invalid. Update it in Settings and try again.",
+  voiceTranscriptionRateLimited:
+    "Voice transcription has reached its usage limit. Try again later.",
+  voiceTranscriptionFailed: "Voice transcription failed (status {status}).",
+  attachmentStagingUnavailable:
+    "Attachments cannot be prepared in this environment.",
+  attachmentLocalPathUnavailable: "Could not read the attachment's local path.",
+  attachmentLocalFileRequired: "The attachment must be a local file.",
+  attachmentFileChanged: "The attachment size changed. Select the file again.",
+  attachmentInvalidLocalPath:
+    "The attachment must come from a local file path.",
+  attachmentInvalidSize:
+    "The attachment must be non-empty and smaller than 50 MB.",
+  attachmentProjectRequired: "Open a project before adding attachments.",
+  connectorPopupBlocked:
+    "The browser blocked the OAuth window. Allow pop-ups for this site and try again.",
+  connectorPopupClosed: "The OAuth window was closed. Connect again.",
   appServerConnectionFailed: "Could not connect to app-server",
   microphonePermissionDenied:
     "Microphone access was denied. Allow Threadlight to use the microphone in System Settings.",

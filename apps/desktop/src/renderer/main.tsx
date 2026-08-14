@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { ThreadlightClient } from "@threadlight/client";
+import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
 import { ThreadlightApp } from "@threadlight/ui/app";
 import {
   type AttachmentPreviewAdapter,
@@ -148,7 +149,7 @@ const voiceInput: VoiceInputAdapter = {
   async prepare() {
     const snapshot = await window.threadlightDesktop.getSettings();
     if (!snapshot.openAIApiKeyConfigured) {
-      throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+      throw new Error(VOICE_INPUT_ERROR_CODES.openAiKeyRequired);
     }
   },
   transcribe: (recording) =>

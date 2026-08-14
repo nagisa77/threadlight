@@ -41,7 +41,10 @@ export {
   isKnownModel,
   modelDescription,
   modelQualifier,
+  providerDescription,
   providerDetails,
+  providerKeyDescription,
+  providerKeyLabel,
   providerLabel,
   type ModelOption,
   type ModelProviderId,
@@ -52,7 +55,10 @@ import {
   isKnownModel,
   modelDescription,
   modelQualifier,
+  providerDescription,
   providerDetails,
+  providerKeyDescription,
+  providerKeyLabel,
   providerLabel,
   type ModelProviderId,
 } from "./model-catalog.js";
@@ -725,13 +731,7 @@ export function SettingsPage({
                   <SecretField
                     key={provider}
                     id={`${provider}-api-key`}
-                    label={
-                      provider === "qwen"
-                        ? t("qwenApiKey")
-                        : provider === "custom"
-                          ? t("customApiKey")
-                          : providerOption.keyLabel
-                    }
+                    label={providerKeyLabel(provider, t)}
                     description={providerKeyDescription(provider, t)}
                     configured={providerKeyConfigured(settings, provider)}
                     draft={providerKey}
@@ -1445,31 +1445,6 @@ function providerDiagnosticMessage(
     case "provider_error":
       return t("providerDiagnosticError");
   }
-}
-
-function providerDescription(provider: ModelProviderId, t: Translate): string {
-  if (provider === "deepseek") return t("providerDeepSeekDescription");
-  if (provider === "qwen") return t("providerQwenDescription");
-  if (provider === "kimi") return t("providerKimiDescription");
-  if (provider === "doubao") return t("providerDoubaoDescription");
-  if (provider === "gemini") return t("providerGeminiDescription");
-  if (provider === "grok") return t("providerGrokDescription");
-  if (provider === "custom") return t("providerCustomDescription");
-  return t("providerOpenAIDescription");
-}
-
-function providerKeyDescription(
-  provider: ModelProviderId,
-  t: Translate,
-): string {
-  if (provider === "deepseek") return t("providerDeepSeekKeyDescription");
-  if (provider === "qwen") return t("providerQwenKeyDescription");
-  if (provider === "kimi") return t("providerKimiKeyDescription");
-  if (provider === "doubao") return t("providerDoubaoKeyDescription");
-  if (provider === "gemini") return t("providerGeminiKeyDescription");
-  if (provider === "grok") return t("providerGrokKeyDescription");
-  if (provider === "custom") return t("providerCustomKeyDescription");
-  return t("providerOpenAIKeyDescription");
 }
 
 function secretUpdate<

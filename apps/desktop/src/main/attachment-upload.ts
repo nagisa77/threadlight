@@ -4,7 +4,10 @@ import { statSync } from "node:fs";
 import { basename, isAbsolute } from "node:path";
 
 import type { HostAttachmentUpload } from "@threadlight/client";
-import type { AttachmentData } from "@threadlight/protocol";
+import {
+  ATTACHMENT_ERROR_CODES,
+  type AttachmentData,
+} from "@threadlight/protocol";
 import type { DesktopAttachmentReferenceRequest } from "../shared/desktop-api.js";
 
 export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
@@ -13,12 +16,17 @@ export function createAttachmentReference(
   request: DesktopAttachmentReferenceRequest,
 ): AttachmentData {
   validateAttachmentReference(request);
-  const stats = statSync(request.path);
+  let stats: ReturnType<typeof statSync>;
+  try {
+    stats = statSync(request.path);
+  } catch {
+    throw new Error(ATTACHMENT_ERROR_CODES.localFileRequired);
+  }
   if (!stats.isFile()) {
-    throw new Error("附件必须是本地文件。");
+    throw new Error(ATTACHMENT_ERROR_CODES.localFileRequired);
   }
   if (stats.size !== request.size) {
-    throw new Error("附件大小已变化，请重新选择文件。");
+    throw new Error(ATTACHMENT_ERROR_CODES.fileChanged);
   }
 
   const mimeType = request.mimeType || "application/octet-stream";
@@ -73,13 +81,13 @@ function validateAttachmentReference(
     throw new Error("Attachment MIME type must be a string");
   }
   if (typeof request.path !== "string" || !isAbsolute(request.path)) {
-    throw new Error("附件必须来自本地文件路径。");
+    throw new Error(ATTACHMENT_ERROR_CODES.invalidLocalPath);
   }
   if (
     !Number.isSafeInteger(request.size) ||
     request.size <= 0 ||
     request.size > MAX_ATTACHMENT_BYTES
   ) {
-    throw new Error("附件必须小于 50 MB 且不能为空。");
+    throw new Error(ATTACHMENT_ERROR_CODES.invalidSize);
   }
 }

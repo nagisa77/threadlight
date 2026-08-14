@@ -36,7 +36,10 @@ import {
   type RuntimeSettings,
 } from "@threadlight/host-core";
 import type { TerminalSessionController } from "@threadlight/terminal-core";
-import { THREADLIGHT_HOST_PROTOCOL_VERSION } from "@threadlight/protocol";
+import {
+  THREADLIGHT_HOST_PROTOCOL_VERSION,
+  VOICE_INPUT_ERROR_CODES,
+} from "@threadlight/protocol";
 import type {
   AttachmentData,
   HostAutomation,
@@ -907,7 +910,7 @@ export class ThreadlightHostServer {
   ): Promise<{ text: string }> {
     const apiKey = this.options.settings.runtimeSettings().openAIApiKey;
     if (!apiKey) {
-      throw new Error("请先在设置中配置 OpenAI API Key，再使用语音输入。");
+      throw new Error(VOICE_INPUT_ERROR_CODES.openAiKeyRequired);
     }
     const mimeType = audioMimeType(url.searchParams.get("mimeType"));
     const declaredLength = Number(request.headers["content-length"]);
@@ -915,7 +918,7 @@ export class ThreadlightHostServer {
       Number.isFinite(declaredLength) &&
       declaredLength > MAX_TRANSCRIPTION_BYTES
     ) {
-      throw new Error("录音超过 25 MB，请缩短后重试。");
+      throw new Error(VOICE_INPUT_ERROR_CODES.recordingTooLarge);
     }
     const content = await readBinaryBody(request, MAX_TRANSCRIPTION_BYTES);
     const audio = Uint8Array.from(content).buffer;

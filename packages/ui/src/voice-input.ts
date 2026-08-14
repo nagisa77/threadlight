@@ -1,3 +1,4 @@
+import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
 import type { Translate } from "./i18n.js";
 
 export interface VoiceRecording {
@@ -39,33 +40,90 @@ export function appendVoiceTranscript(
   return current + separator + normalized;
 }
 
-export function voiceInputErrorMessage(
-  error: unknown,
-  t?: Translate,
-): string {
+export function voiceInputErrorMessage(error: unknown, t?: Translate): string {
   if (error instanceof DOMException) {
     if (error.name === "NotAllowedError" || error.name === "SecurityError") {
       return t
         ? t("microphonePermissionDenied")
-        : "未获得麦克风权限，请在系统设置中允许 Threadlight 访问麦克风。";
+        : "Microphone access was denied. Allow Threadlight to use the microphone in System Settings.";
     }
     if (error.name === "NotFoundError") {
-      return t ? t("microphoneNotFound") : "没有找到可用的麦克风。";
+      return t ? t("microphoneNotFound") : "No microphone was found.";
     }
     if (error.name === "NotReadableError") {
       return t
         ? t("microphoneUnavailable")
-        : "麦克风暂时不可用，请检查是否被其他应用占用。";
+        : "The microphone is unavailable. Check whether another app is using it.";
     }
   }
-  if (
-    t &&
-    error instanceof Error &&
-    error.message === "请先在设置中配置 OpenAI API Key，再使用语音输入。"
-  ) {
-    return t("configureOpenAIForVoice");
+  if (error instanceof Error) {
+    const localized = localizedVoiceInputError(error.message, t);
+    if (localized) return localized;
   }
   return error instanceof Error ? error.message : String(error);
+}
+
+function localizedVoiceInputError(
+  code: string,
+  t?: Translate,
+): string | undefined {
+  if (code === VOICE_INPUT_ERROR_CODES.openAiKeyRequired) {
+    return t
+      ? t("configureOpenAIForVoice")
+      : "Configure an OpenAI API Key in Settings before using voice input.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.unsupportedFormat) {
+    return t
+      ? t("unsupportedRecordingFormat")
+      : "This recording format is not supported for voice input.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.emptyRecording) {
+    return t ? t("emptyRecording") : "No audio was recorded. Try again.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.recordingTooLarge) {
+    return t
+      ? t("recordingTooLarge")
+      : "The recording is larger than 25 MB. Shorten it and try again.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.serviceUnavailable) {
+    return t
+      ? t("voiceTranscriptionUnavailable")
+      : "Could not reach the transcription service. Check your connection and try again.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.emptyTranscript) {
+    return t
+      ? t("voiceTranscriptionEmpty")
+      : "The transcription did not return any text. Try again.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.openAiKeyInvalid) {
+    return t
+      ? t("voiceOpenAIKeyInvalid")
+      : "The OpenAI API Key is invalid. Update it in Settings and try again.";
+  }
+  if (code === VOICE_INPUT_ERROR_CODES.rateLimited) {
+    return t
+      ? t("voiceTranscriptionRateLimited")
+      : "Voice transcription has reached its usage limit. Try again later.";
+  }
+  const failurePrefix = `${VOICE_INPUT_ERROR_CODES.transcriptionFailed}:`;
+  if (!code.startsWith(failurePrefix)) return undefined;
+  const [status = "unknown", encodedDetail] = code
+    .slice(failurePrefix.length)
+    .split(":", 2);
+  const message = t
+    ? t("voiceTranscriptionFailed", { status })
+    : `Voice transcription failed (status ${status}).`;
+  const detail = decodeVoiceErrorDetail(encodedDetail);
+  return detail ? `${message} ${detail}` : message;
+}
+
+function decodeVoiceErrorDetail(value: string | undefined): string {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return "";
+  }
 }
 
 function isCjk(value: string): boolean {

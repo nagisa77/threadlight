@@ -719,6 +719,42 @@ export interface HostCodeHostCommitPushResult {
 
 export const THREADLIGHT_HOST_PROTOCOL_VERSION = 3 as const;
 
+/** Stable, locale-neutral errors shared by every voice-input transport. */
+export const VOICE_INPUT_ERROR_CODES = {
+  openAiKeyRequired: "voice_input.openai_key_required",
+  unsupportedFormat: "voice_input.unsupported_format",
+  emptyRecording: "voice_input.empty_recording",
+  recordingTooLarge: "voice_input.recording_too_large",
+  serviceUnavailable: "voice_input.service_unavailable",
+  emptyTranscript: "voice_input.empty_transcript",
+  openAiKeyInvalid: "voice_input.openai_key_invalid",
+  rateLimited: "voice_input.rate_limited",
+  transcriptionFailed: "voice_input.transcription_failed",
+} as const;
+
+export type VoiceInputErrorCode =
+  (typeof VOICE_INPUT_ERROR_CODES)[keyof typeof VOICE_INPUT_ERROR_CODES];
+
+/** Stable attachment errors; presentation layers translate these codes. */
+export const ATTACHMENT_ERROR_CODES = {
+  stagingUnavailable: "attachment.staging_unavailable",
+  localPathUnavailable: "attachment.local_path_unavailable",
+  localFileRequired: "attachment.local_file_required",
+  fileChanged: "attachment.file_changed",
+  invalidLocalPath: "attachment.invalid_local_path",
+  invalidSize: "attachment.invalid_size",
+  projectRequired: "attachment.project_required",
+} as const;
+
+export type AttachmentErrorCode =
+  (typeof ATTACHMENT_ERROR_CODES)[keyof typeof ATTACHMENT_ERROR_CODES];
+
+/** Stable connector authorization errors shared by browser adapters. */
+export const CONNECTOR_AUTH_ERROR_CODES = {
+  popupBlocked: "connector_auth.popup_blocked",
+  popupClosed: "connector_auth.popup_closed",
+} as const;
+
 export interface ThreadlightHostHealth {
   ok: true;
   protocolVersion: typeof THREADLIGHT_HOST_PROTOCOL_VERSION;

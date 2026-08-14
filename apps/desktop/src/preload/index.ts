@@ -1,5 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { JsonRpcOutgoing } from "@threadlight/protocol";
+import {
+  ATTACHMENT_ERROR_CODES,
+  type JsonRpcOutgoing,
+} from "@threadlight/protocol";
 
 import {
   DESKTOP_AUDIO_TRANSCRIBE_CHANNEL,
@@ -268,7 +271,7 @@ const api: DesktopApi = {
   },
   createAttachmentReference(file) {
     const path = webUtils.getPathForFile(file);
-    if (!path) throw new Error("无法读取附件的本地路径。");
+    if (!path) throw new Error(ATTACHMENT_ERROR_CODES.localPathUnavailable);
     return ipcRenderer.invoke(DESKTOP_ATTACHMENT_REFERENCE_CHANNEL, {
       name: file.name,
       mimeType: file.type || "application/octet-stream",

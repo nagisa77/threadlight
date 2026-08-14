@@ -1,6 +1,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ATTACHMENT_ERROR_CODES } from "@threadlight/protocol";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -52,7 +53,7 @@ describe("createAttachmentReference", () => {
         size: 3,
         path: join(basePath, "missing.txt"),
       }),
-    ).toThrow();
+    ).toThrow(ATTACHMENT_ERROR_CODES.localFileRequired);
   });
 
   it("uploads validated bytes and returns the Host attachment reference", async () => {

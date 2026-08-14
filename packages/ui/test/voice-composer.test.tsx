@@ -19,7 +19,7 @@ import {
 } from "../src/features/composer/controller.js";
 
 const appSource = readFileSync(
-  new URL("../src/app.tsx", import.meta.url),
+  new URL("../src/app-root.tsx", import.meta.url),
   "utf8",
 );
 const voiceInputControllerSource = readFileSync(

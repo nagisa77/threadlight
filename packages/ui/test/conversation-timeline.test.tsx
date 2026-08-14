@@ -57,7 +57,7 @@ describe("conversation timeline", () => {
 
   it("wires timeline selection to the existing message anchor jump", () => {
     const appSource = readFileSync(
-      new URL("../src/app.tsx", import.meta.url),
+      new URL("../src/app-root.tsx", import.meta.url),
       "utf8",
     );
 

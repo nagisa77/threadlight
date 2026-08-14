@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
+import type { Translate } from "../src/i18n.js";
 
 import {
   appendVoiceTranscript,
@@ -29,6 +31,26 @@ describe("voice input", () => {
       voiceInputErrorMessage(
         new DOMException("Permission denied", "NotAllowedError"),
       ),
-    ).toContain("系统设置");
+    ).toContain("System Settings");
+  });
+
+  it("localizes stable transport errors instead of matching transport copy", () => {
+    const t = ((key: string, values?: Record<string, string | number>) =>
+      values?.status ? `${key}:${values.status}` : key) as Translate;
+
+    expect(
+      voiceInputErrorMessage(
+        new Error(VOICE_INPUT_ERROR_CODES.openAiKeyRequired),
+        t,
+      ),
+    ).toBe("configureOpenAIForVoice");
+    expect(
+      voiceInputErrorMessage(
+        new Error(
+          `${VOICE_INPUT_ERROR_CODES.transcriptionFailed}:503:${encodeURIComponent("upstream unavailable")}`,
+        ),
+        t,
+      ),
+    ).toBe("voiceTranscriptionFailed:503 upstream unavailable");
   });
 });

@@ -82,6 +82,7 @@ export const zhTW: Messages = {
   providerKimiKeyDescription: "用於 Kimi 模型要求。",
   providerDoubaoDescription:
     "透過 Volcengine Ark OpenAI 相容端點使用豆包 Seed 系列。",
+  providerDoubaoLabel: "豆包",
   providerDoubaoKeyDescription: "用於 Volcengine Ark 線上推理要求。",
   providerGeminiDescription:
     "透過 Google Gemini API 的 OpenAI 相容端點使用 Gemini。",
@@ -333,6 +334,7 @@ export const zhTW: Messages = {
   connectRemoteRuntime: "連接 Remote Runtime",
   connect: "連接",
   remoteRuntime: "遠端執行環境",
+  agentRuntime: "Agent 執行環境",
   remoteRuntimeDescription:
     "連接開發機、容器或 SSH workspace 中的 Threadlight Runtime。",
   remoteRuntimeEndpoint: "Runtime 位址",
@@ -469,6 +471,23 @@ export const zhTW: Messages = {
   recordingInterrupted: "錄音意外中斷，請再試一次。",
   emptyRecording: "未錄到聲音，請再試一次。",
   recordingTooLarge: "錄音超過 25 MB，請縮短後再試一次。",
+  unsupportedRecordingFormat: "目前的錄音格式不支援語音轉寫。",
+  voiceTranscriptionUnavailable:
+    "無法連線至語音轉寫服務，請檢查網路後再試一次。",
+  voiceTranscriptionEmpty: "語音轉寫未傳回文字，請再試一次。",
+  voiceOpenAIKeyInvalid: "OpenAI API Key 無效，請在設定中更新後再試一次。",
+  voiceTranscriptionRateLimited: "語音轉寫暫時達到用量限制，請稍後再試一次。",
+  voiceTranscriptionFailed: "語音轉寫失敗（狀態 {status}）。",
+  attachmentStagingUnavailable: "目前環境無法準備附件。",
+  attachmentLocalPathUnavailable: "無法讀取附件的本機路徑。",
+  attachmentLocalFileRequired: "附件必須是本機檔案。",
+  attachmentFileChanged: "附件大小已變更，請重新選取檔案。",
+  attachmentInvalidLocalPath: "附件必須來自本機檔案路徑。",
+  attachmentInvalidSize: "附件必須小於 50 MB 且不能為空。",
+  attachmentProjectRequired: "請先開啟專案，再新增附件。",
+  connectorPopupBlocked:
+    "瀏覽器封鎖了 OAuth 授權視窗，請允許此網站開啟彈出式視窗後再試一次。",
+  connectorPopupClosed: "OAuth 授權視窗已關閉，請重新連線。",
   appServerConnectionFailed: "無法連線至 app-server",
   microphonePermissionDenied:
     "未取得麥克風權限，請在系統設定中允許 Threadlight 存取麥克風。",

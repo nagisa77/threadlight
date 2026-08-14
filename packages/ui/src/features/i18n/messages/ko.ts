@@ -1,8 +1,6 @@
-import { en } from "./en.js";
 import type { Messages } from "./types.js";
 
 export const ko: Messages = {
-  ...en,
   settings: "설정",
   automations: "자동화",
   commandAutomationsDescription: "예약 검사 및 알림 관리",
@@ -96,6 +94,7 @@ export const ko: Messages = {
   providerKimiKeyDescription: "Kimi 모델 요청에 사용됩니다.",
   providerDoubaoDescription:
     "Volcengine Ark의 OpenAI 호환 API를 통해 Doubao Seed 모델을 사용합니다.",
+  providerDoubaoLabel: "Doubao",
   providerDoubaoKeyDescription: "Volcengine Ark 추론 요청에 사용됩니다.",
   providerGeminiDescription:
     "Google Gemini API의 OpenAI 호환 엔드포인트를 통해 Gemini를 사용합니다.",
@@ -361,7 +360,8 @@ export const ko: Messages = {
   openViaFolder: "폴더 열기",
   connectRemoteRuntime: "Remote Runtime 연결",
   connect: "연결",
-  remoteRuntime: "Remote Runtime",
+  remoteRuntime: "원격 런타임",
+  agentRuntime: "Agent 런타임",
   remoteRuntimeDescription:
     "개발 머신, 컨테이너 또는 SSH workspace의 Threadlight Runtime에 연결합니다.",
   remoteRuntimeEndpoint: "Runtime 엔드포인트",
@@ -507,6 +507,28 @@ export const ko: Messages = {
   emptyRecording: "녹음된 오디오가 없습니다. 다시 시도하세요.",
   recordingTooLarge:
     "녹음이 25MB를 초과했습니다. 더 짧게 녹음한 후 다시 시도하세요.",
+  unsupportedRecordingFormat: "이 녹음 형식은 음성 입력을 지원하지 않습니다.",
+  voiceTranscriptionUnavailable:
+    "음성 변환 서비스에 연결할 수 없습니다. 네트워크를 확인하고 다시 시도하세요.",
+  voiceTranscriptionEmpty:
+    "음성 변환 결과에 텍스트가 없습니다. 다시 시도하세요.",
+  voiceOpenAIKeyInvalid:
+    "OpenAI API Key가 유효하지 않습니다. 설정에서 갱신한 후 다시 시도하세요.",
+  voiceTranscriptionRateLimited:
+    "음성 변환 사용량 한도에 도달했습니다. 잠시 후 다시 시도하세요.",
+  voiceTranscriptionFailed: "음성 변환에 실패했습니다(상태 {status}).",
+  attachmentStagingUnavailable: "이 환경에서는 첨부 파일을 준비할 수 없습니다.",
+  attachmentLocalPathUnavailable: "첨부 파일의 로컬 경로를 읽을 수 없습니다.",
+  attachmentLocalFileRequired: "첨부 파일은 로컬 파일이어야 합니다.",
+  attachmentFileChanged:
+    "첨부 파일 크기가 변경되었습니다. 파일을 다시 선택하세요.",
+  attachmentInvalidLocalPath: "첨부 파일은 로컬 파일 경로에서 가져와야 합니다.",
+  attachmentInvalidSize:
+    "첨부 파일은 비어 있지 않아야 하며 50MB보다 작아야 합니다.",
+  attachmentProjectRequired: "첨부 파일을 추가하기 전에 프로젝트를 여세요.",
+  connectorPopupBlocked:
+    "브라우저가 OAuth 인증 창을 차단했습니다. 이 사이트의 팝업을 허용한 후 다시 시도하세요.",
+  connectorPopupClosed: "OAuth 인증 창이 닫혔습니다. 다시 연결하세요.",
   appServerConnectionFailed: "app-server에 연결할 수 없습니다",
   microphonePermissionDenied:
     "마이크 접근이 거부되었습니다. 시스템 설정에서 Threadlight의 마이크 사용을 허용하세요.",
@@ -929,4 +951,23 @@ export const ko: Messages = {
   steerAgentPlaceholder: "방향 또는 제약 추가…",
   sendDirection: "지시 보내기",
   agentActionUnavailable: "이 Agent는 종료되었거나 지금 변경할 수 없습니다.",
+  taskTools: "작업 도구",
+  copyTaskReference: "작업 참조 복사",
+  taskReferenceCopied: "작업 참조를 복사했습니다",
+  exportConversation: "대화 내보내기",
+  messageBookmarks: "메시지 북마크",
+  messageBookmarksDescription: "이 작업에서 저장한 메시지를 확인합니다.",
+  noMessageBookmarks: "북마크가 없습니다",
+  noMessageBookmarksDescription:
+    "메시지 아래의 북마크 버튼을 눌러 저장할 수 있습니다.",
+  bookmarkMessage: "메시지 북마크",
+  removeBookmark: "북마크 제거",
+  you: "나",
+  threadlight: "Threadlight",
+  noTextContent: "텍스트 내용 없음",
+  draftRestored: "초안을 복원했습니다",
+  draftSaving: "초안 저장 중…",
+  draftSaved: "초안이 저장되었습니다",
+  jumpToLatest: "최신 메시지로 이동",
+  composerHistoryHint: "↑↓ 입력 기록 탐색",
 };

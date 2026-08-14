@@ -1,8 +1,6 @@
-import { en } from "./en.js";
 import type { Messages } from "./types.js";
 
 export const ja: Messages = {
-  ...en,
   settings: "設定",
   automations: "自動化",
   commandAutomationsDescription: "定期チェックと通知を管理",
@@ -98,6 +96,7 @@ export const ja: Messages = {
   providerKimiKeyDescription: "Kimi モデルのリクエストに使用します。",
   providerDoubaoDescription:
     "Volcengine Ark の OpenAI 互換 API で Doubao Seed モデルを使用します。",
+  providerDoubaoLabel: "Doubao",
   providerDoubaoKeyDescription: "Volcengine Ark の推論リクエストに使用します。",
   providerGeminiDescription:
     "Google Gemini API の OpenAI 互換エンドポイントで Gemini を使用します。",
@@ -364,7 +363,8 @@ export const ja: Messages = {
   openViaFolder: "フォルダを開く",
   connectRemoteRuntime: "Remote Runtime に接続",
   connect: "接続",
-  remoteRuntime: "Remote Runtime",
+  remoteRuntime: "リモート実行環境",
+  agentRuntime: "Agent 実行環境",
   remoteRuntimeDescription:
     "開発マシン、コンテナ、または SSH workspace の Threadlight Runtime に接続します。",
   remoteRuntimeEndpoint: "Runtime エンドポイント",
@@ -509,6 +509,34 @@ export const ja: Messages = {
   emptyRecording: "音声が録音されていません。もう一度お試しください。",
   recordingTooLarge:
     "録音が 25 MB を超えています。短くしてから再試行してください。",
+  unsupportedRecordingFormat: "この録音形式は音声入力に対応していません。",
+  voiceTranscriptionUnavailable:
+    "音声文字起こしサービスに接続できません。ネットワークを確認してもう一度お試しください。",
+  voiceTranscriptionEmpty:
+    "音声文字起こしからテキストが返されませんでした。もう一度お試しください。",
+  voiceOpenAIKeyInvalid:
+    "OpenAI API Key が無効です。設定で更新してもう一度お試しください。",
+  voiceTranscriptionRateLimited:
+    "音声文字起こしの利用上限に達しました。しばらくしてからもう一度お試しください。",
+  voiceTranscriptionFailed:
+    "音声文字起こしに失敗しました（ステータス {status}）。",
+  attachmentStagingUnavailable: "この環境では添付ファイルを準備できません。",
+  attachmentLocalPathUnavailable:
+    "添付ファイルのローカルパスを読み取れませんでした。",
+  attachmentLocalFileRequired:
+    "添付ファイルにはローカルファイルを指定してください。",
+  attachmentFileChanged:
+    "添付ファイルのサイズが変わりました。ファイルを選び直してください。",
+  attachmentInvalidLocalPath:
+    "添付ファイルはローカルファイルのパスから選択してください。",
+  attachmentInvalidSize:
+    "添付ファイルは空でない 50 MB 未満のファイルにしてください。",
+  attachmentProjectRequired:
+    "添付ファイルを追加する前にプロジェクトを開いてください。",
+  connectorPopupBlocked:
+    "ブラウザーが OAuth 認証ウィンドウをブロックしました。このサイトのポップアップを許可して、もう一度お試しください。",
+  connectorPopupClosed:
+    "OAuth 認証ウィンドウが閉じられました。もう一度接続してください。",
   appServerConnectionFailed: "app-server に接続できません",
   microphonePermissionDenied:
     "マイクへのアクセスが許可されていません。システム設定で Threadlight のマイク利用を許可してください。",
@@ -933,4 +961,23 @@ export const ja: Messages = {
   steerAgentPlaceholder: "追加の指示や制約…",
   sendDirection: "指示を送信",
   agentActionUnavailable: "この Agent は終了したか、現在変更できません。",
+  taskTools: "タスクツール",
+  copyTaskReference: "タスク参照をコピー",
+  taskReferenceCopied: "タスク参照をコピーしました",
+  exportConversation: "会話を書き出す",
+  messageBookmarks: "メッセージのブックマーク",
+  messageBookmarksDescription: "このタスクで保存したメッセージを確認します。",
+  noMessageBookmarks: "ブックマークはありません",
+  noMessageBookmarksDescription:
+    "メッセージの下にあるブックマークボタンで保存できます。",
+  bookmarkMessage: "メッセージをブックマーク",
+  removeBookmark: "ブックマークを削除",
+  you: "あなた",
+  threadlight: "Threadlight",
+  noTextContent: "テキスト内容なし",
+  draftRestored: "下書きを復元しました",
+  draftSaving: "下書きを保存中…",
+  draftSaved: "下書きを保存しました",
+  jumpToLatest: "最新のメッセージへ移動",
+  composerHistoryHint: "↑↓ で入力履歴を表示",
 };
