@@ -3681,12 +3681,12 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .composer-floating-controls {
-    position: relative;
-    top: auto;
-    right: auto;
-    left: auto;
-    min-height: 36px;
-    margin-bottom: 6px;
+    position: absolute;
+    top: -40px;
+    right: 10px;
+    left: 10px;
+    min-height: 0;
+    margin-bottom: 0;
   }
 
   .project-empty-state {

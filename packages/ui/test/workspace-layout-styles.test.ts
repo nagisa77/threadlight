@@ -66,12 +66,12 @@ describe("mobile overlays and floating controls", () => {
     );
   });
 
-  it("keeps status and jump actions together without covering messages", () => {
+  it("floats status and jump actions without reserving a composer row", () => {
     expect(styles).toMatch(
       /\.composer-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*display:\s*flex;/s,
     );
     expect(styles).toMatch(
-      /@media \(max-width: 720px\)[\s\S]*?\.composer-floating-controls\s*\{[^}]*position:\s*relative;[^}]*top:\s*auto;[^}]*min-height:\s*36px;/s,
+      /@media \(max-width: 720px\)[\s\S]*?\.composer-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*top:\s*-40px;[^}]*min-height:\s*0;[^}]*margin-bottom:\s*0;/s,
     );
     expect(styles).toMatch(
       /@media \(max-width: 720px\)[\s\S]*?\.jump-to-latest\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/s,
