@@ -513,8 +513,14 @@ export interface HostDirectoryEntry {
   path: string;
 }
 
+export interface HostDirectoryListOptions {
+  showHidden?: boolean;
+  strict?: boolean;
+}
+
 export interface HostDirectoryListing {
   path: string;
+  parentPath?: string;
   directories: readonly HostDirectoryEntry[];
 }
 

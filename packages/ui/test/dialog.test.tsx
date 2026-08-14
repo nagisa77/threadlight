@@ -84,6 +84,7 @@ describe("Dialog", () => {
       "../src/features/delivery/delivery-center.tsx",
       "../src/features/delivery/review-view.tsx",
       "../src/features/navigation/project-dialogs.tsx",
+      "../src/features/navigation/remote-project-picker.tsx",
       "../src/features/navigation/project-sidebar.tsx",
     ];
     const modalSources = modalFiles.map((path) =>

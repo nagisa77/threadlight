@@ -28,7 +28,7 @@ describe("dialog action hierarchy", () => {
     );
   });
 
-  it("keeps Host removal separate and gives directory completion a bounded popover", () => {
+  it("keeps Host removal separate and gives remote folder browsing a bounded layout", () => {
     expect(styles).toMatch(
       /\.host-connection-row\s*\{[^}]*display:\s*flex;[^}]*border:/s,
     );
@@ -36,10 +36,25 @@ describe("dialog action hierarchy", () => {
       /\.host-connection-edit,\s*\.host-connection-remove\s*\{[^}]*width:\s*30px;[^}]*background:\s*transparent;/s,
     );
     expect(styles).toMatch(
-      /\.remote-directory-popover\s*\{[^}]*max-height:\s*min\(260px,[^;]*;[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\);[^}]*overflow:\s*hidden;/s,
+      /\.remote-project-dialog\s*\{[^}]*width:\s*min\(780px,[^;]*;[^}]*height:\s*min\(620px,[^;]*;[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;[^}]*overflow:\s*hidden;/s,
     );
     expect(styles).toMatch(
-      /\.remote-directory-list\s*\{[^}]*overflow-y:\s*auto;/s,
+      /\.remote-project-picker-shell\s*\{[^}]*grid-template-columns:\s*174px minmax\(0,\s*1fr\);/s,
+    );
+    expect(styles).toMatch(
+      /\.remote-picker-directory-list\s*\{[^}]*overflow-y:\s*auto;[^}]*overscroll-behavior:\s*contain;/s,
+    );
+    expect(styles).toMatch(
+      /\.remote-project-picker-header\s*\{[^}]*padding:\s*9px 12px;/s,
+    );
+    expect(styles).toMatch(
+      /\.dialog-backdrop\.remote-project-picker-backdrop\s*\{[^}]*z-index:\s*240;/s,
+    );
+    expect(styles).toMatch(
+      /\.dialog-backdrop\.remote-project-picker-backdrop\s*\{[^}]*padding:\s*0;/s,
+    );
+    expect(styles).toMatch(
+      /\.connector-dialog\.remote-project-dialog\s*\{[^}]*width:\s*100vw;[^}]*height:\s*100dvh;[^}]*border-radius:\s*0;/s,
     );
   });
 
@@ -53,9 +68,7 @@ describe("dialog action hierarchy", () => {
     expect(styles).toMatch(
       /\.composer-popover-option-copy small\s*\{[^}]*font-size:\s*10px;[^}]*line-height:\s*1\.4;/s,
     );
-    expect(styles).toMatch(
-      /\.model-selector-popover\s*\{[^}]*gap:\s*2px;/s,
-    );
+    expect(styles).toMatch(/\.model-selector-popover\s*\{[^}]*gap:\s*2px;/s);
   });
 
   it("keeps composer popover arrows and model labels visually stable", () => {

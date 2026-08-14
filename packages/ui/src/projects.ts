@@ -1,5 +1,8 @@
 import type { ConversationAccessMode } from "@threadlight/protocol";
-import type { HostDirectoryListing } from "@threadlight/protocol";
+import type {
+  HostDirectoryListOptions,
+  HostDirectoryListing,
+} from "@threadlight/protocol";
 
 export interface ConversationSummary {
   id: string;
@@ -145,7 +148,10 @@ export interface ProjectsAdapter {
     name?: string;
   }): Promise<HostsSnapshot>;
   deleteRemoteHost?(hostId: string): Promise<HostsSnapshot>;
-  listRemoteDirectories?(path: string): Promise<HostDirectoryListing>;
+  listRemoteDirectories?(
+    path: string,
+    options?: HostDirectoryListOptions,
+  ): Promise<HostDirectoryListing>;
   activate(projectId: string): Promise<ProjectsSnapshot>;
   updateProject?(update: {
     id: string;

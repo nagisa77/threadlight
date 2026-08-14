@@ -1,6 +1,7 @@
 import type {
   AttachmentData,
   ConversationAccessMode,
+  HostDirectoryListOptions,
   HostDirectoryListing,
   HostFileListing,
   HostProjectDiagnosticBundle,
@@ -839,7 +840,10 @@ export interface DesktopApi {
   activateHost(hostId: string): Promise<DesktopHostsSnapshot>;
   updateHost(request: DesktopHostUpdateRequest): Promise<DesktopHostsSnapshot>;
   deleteHost(hostId: string): Promise<DesktopHostsSnapshot>;
-  listRemoteDirectories(path: string): Promise<HostDirectoryListing>;
+  listRemoteDirectories(
+    path: string,
+    options?: HostDirectoryListOptions,
+  ): Promise<HostDirectoryListing>;
   activateProject(projectId: string): Promise<DesktopProjectsSnapshot>;
   updateProject(
     update: DesktopProjectMetadataUpdate,

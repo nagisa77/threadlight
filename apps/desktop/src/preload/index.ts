@@ -150,8 +150,11 @@ const api: DesktopApi = {
   deleteHost(hostId) {
     return ipcRenderer.invoke(DESKTOP_HOST_DELETE_CHANNEL, hostId);
   },
-  listRemoteDirectories(path) {
-    return ipcRenderer.invoke(DESKTOP_HOST_DIRECTORIES_CHANNEL, path);
+  listRemoteDirectories(path, options) {
+    return ipcRenderer.invoke(DESKTOP_HOST_DIRECTORIES_CHANNEL, {
+      path,
+      options,
+    });
   },
   activateProject(projectId) {
     return ipcRenderer.invoke(DESKTOP_PROJECT_ACTIVATE_CHANNEL, projectId);

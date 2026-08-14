@@ -2329,7 +2329,6 @@ function ThreadlightAppContent({
     setTerminalOpen(false);
     setWorkspacePanelOpen(false);
   }
-
   async function openProjectFolder(path?: string) {
     if (!projects || switchingProject || voiceStatus !== "idle") {
       return;
@@ -2338,6 +2337,7 @@ function ThreadlightAppContent({
     setProjectError(undefined);
     try {
       if (currentHost?.kind === "remote" && !path) {
+        closeSidebarForNavigation();
         setRemoteProjectPathOpen(true);
         return;
       }
@@ -4245,9 +4245,18 @@ function ThreadlightAppContent({
       )}
       {remoteProjectPathOpen && (
         <RemoteProjectPathDialog
+          key={currentHost?.id ?? "remote"}
           busy={switchingProject}
           error={projectError}
+          hostId={currentHost?.id ?? "remote"}
           hostName={currentHost?.name ?? t("remoteHost")}
+          recentProjects={(projectSnapshot?.projects ?? [])
+            .filter((project) => project.scope !== "standalone")
+            .map((project) => ({
+              name: project.name,
+              path: project.basePath,
+              lastOpenedAt: project.lastOpenedAt,
+            }))}
           onBrowse={projects?.listRemoteDirectories}
           onCancel={() => {
             if (!switchingProject) setRemoteProjectPathOpen(false);

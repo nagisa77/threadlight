@@ -658,6 +658,7 @@ describe("ThreadlightHostServer", () => {
       ),
     ).toEqual({
       path: root,
+      parentPath: dirname(root),
       directories: [
         {
           name: "first",
@@ -678,12 +679,48 @@ describe("ThreadlightHostServer", () => {
       ),
     ).toEqual({
       path: root,
+      parentPath: dirname(root),
       directories: [
         {
           name: ".hidden",
           path: hiddenWorkspace,
         },
       ],
+    });
+    const strictDirectoriesWithHidden = (await authenticatedJson(
+      `${endpoint}/v1/host/directories?${new URLSearchParams({
+        path: root,
+        showHidden: "true",
+        strict: "true",
+      })}`,
+    )) as {
+      path: string;
+      parentPath?: string;
+      directories: Array<{ name: string; path: string }>;
+    };
+    expect(strictDirectoriesWithHidden).toMatchObject({
+      path: root,
+      parentPath: dirname(root),
+    });
+    expect(strictDirectoriesWithHidden.directories).toContainEqual({
+      name: ".hidden",
+      path: hiddenWorkspace,
+    });
+    expect(strictDirectoriesWithHidden.directories).toContainEqual({
+      name: "first",
+      path: firstWorkspace,
+    });
+    const strictDirectoriesWithoutHidden = (await authenticatedJson(
+      `${endpoint}/v1/host/directories?${new URLSearchParams({
+        path: root,
+        strict: "true",
+      })}`,
+    )) as {
+      directories: Array<{ name: string; path: string }>;
+    };
+    expect(strictDirectoriesWithoutHidden.directories).not.toContainEqual({
+      name: ".hidden",
+      path: hiddenWorkspace,
     });
     expect(
       await authenticatedJson(
@@ -793,6 +830,7 @@ describe("ThreadlightHostServer", () => {
     const listRemoteDirectories = webSession.projects.listRemoteDirectories;
     await expect(listRemoteDirectories?.(join(root, "f"))).resolves.toEqual({
       path: root,
+      parentPath: dirname(root),
       directories: [
         {
           name: "first",

@@ -7,6 +7,7 @@ import type {
   HostCodeHostDeliveryStatus,
   HostConversationChangesRestoreRequest,
   HostConversationChangesSnapshot,
+  HostDirectoryListOptions,
   HostDirectoryListing,
   HostFileListing,
   HostProviderDiagnostic,
@@ -135,10 +136,14 @@ export class HttpHostClient {
     });
   }
 
-  directories(path: string): Promise<HostDirectoryListing> {
-    return this.request(
-      `/v1/host/directories?path=${encodeURIComponent(path)}`,
-    );
+  directories(
+    path: string,
+    options: HostDirectoryListOptions = {},
+  ): Promise<HostDirectoryListing> {
+    const query = new URLSearchParams({ path });
+    if (options.showHidden) query.set("showHidden", "true");
+    if (options.strict) query.set("strict", "true");
+    return this.request(`/v1/host/directories?${query.toString()}`);
   }
 
   files(path: string): Promise<HostFileListing> {

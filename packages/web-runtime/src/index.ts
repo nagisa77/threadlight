@@ -6,6 +6,7 @@ import {
 } from "@threadlight/client";
 import {
   THREADLIGHT_HOST_PROTOCOL_VERSION,
+  type HostDirectoryListOptions,
   type HostProjectsSnapshot,
   type HostProjectSummary,
   type ThreadlightHostHealth,
@@ -452,7 +453,8 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     });
   }
 
-  listRemoteDirectories = (path: string) => this.host.directories(path);
+  listRemoteDirectories = (path: string, options?: HostDirectoryListOptions) =>
+    this.host.directories(path, options);
 
   async activate(projectId: string): Promise<ProjectsSnapshot> {
     const snapshot = await this.host.projects();

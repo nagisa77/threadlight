@@ -52,6 +52,7 @@ import type {
   HostSearchResult,
   HostSettingsUpdate,
   HostDeliverySource,
+  HostDirectoryListOptions,
   JsonRpcId,
   JsonRpcOutgoing,
   JsonRpcRequest,
@@ -533,7 +534,10 @@ export class ThreadlightHostServer {
       this.writeJson(
         response,
         200,
-        await listHostDirectories(url.searchParams.get("path") ?? ""),
+        await listHostDirectories(url.searchParams.get("path") ?? "", {
+          showHidden: url.searchParams.get("showHidden") === "true",
+          strict: url.searchParams.get("strict") === "true",
+        }),
       );
       return true;
     }
@@ -2210,18 +2214,31 @@ function requiredBoolean(value: unknown, name: string): boolean {
 
 async function listHostDirectories(
   value: string,
+  options: HostDirectoryListOptions = {},
 ): Promise<HostDirectoryListing> {
   const requestedPath = value.trim();
   const typedSegment = trailingPathSegment(requestedPath);
-  const showHiddenDirectories = typedSegment.startsWith(".");
+  const showHiddenDirectories =
+    options.showHidden === true ||
+    (options.strict !== true && typedSegment.startsWith("."));
   const input = expandHomeDirectory(requestedPath);
   if (!input || !isAbsolute(input)) {
     throw new Error("An absolute Host directory path is required.");
   }
 
   let directory = typedSegment === "." ? normalize(input) : input;
-  let prefix = typedSegment === "." ? "." : "";
-  if (prefix === "") {
+  let prefix = options.strict ? "" : typedSegment === "." ? "." : "";
+  if (options.strict) {
+    try {
+      if (!(await stat(directory)).isDirectory()) {
+        throw new Error("The remote path is not a folder.");
+      }
+      directory = normalize(directory);
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
+      throw new Error("The remote folder does not exist.");
+    }
+  } else if (prefix === "") {
     try {
       if (!(await stat(directory)).isDirectory()) {
         directory = dirname(input);
@@ -2275,12 +2292,19 @@ async function listHostDirectories(
     )
     .slice(0, 200);
 
-  return { path: directory, directories };
+  const parentPath = dirname(directory);
+  return {
+    path: directory,
+    ...(parentPath !== directory ? { parentPath } : {}),
+    directories,
+  };
 }
 
 function expandHomeDirectory(value: string): string {
   if (value === "~") return homedir();
-  return value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
+  return value.startsWith("~/") || value.startsWith("~\\")
+    ? join(homedir(), value.slice(2))
+    : value;
 }
 
 function trailingPathSegment(value: string): string {

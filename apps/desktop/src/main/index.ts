@@ -1684,10 +1684,34 @@ async function handleHostDirectories(
   if (!isRemoteHost() || !remoteHost) {
     throw new Error("Remote Host is not connected.");
   }
-  if (typeof value !== "string") {
+  const request =
+    typeof value === "string"
+      ? { path: value }
+      : value &&
+          typeof value === "object" &&
+          "path" in value &&
+          typeof value.path === "string"
+        ? {
+            path: value.path,
+            options:
+              "options" in value &&
+              value.options &&
+              typeof value.options === "object"
+                ? {
+                    showHidden:
+                      "showHidden" in value.options &&
+                      value.options.showHidden === true,
+                    strict:
+                      "strict" in value.options &&
+                      value.options.strict === true,
+                  }
+                : undefined,
+          }
+        : undefined;
+  if (!request) {
     throw new Error("A remote directory path is required.");
   }
-  return remoteHost.client.directories(value);
+  return remoteHost.client.directories(request.path, request.options);
 }
 
 async function handleProjectActivate(
