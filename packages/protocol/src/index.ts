@@ -833,7 +833,6 @@ export interface ToolCallData {
   id: string;
   name: string;
   arguments: unknown;
-  visibility?: "hidden";
 }
 
 export interface ToolResultData {
@@ -841,7 +840,6 @@ export interface ToolResultData {
   name: string;
   output: string;
   kind?: "function" | "computer";
-  visibility?: "hidden";
   isError?: boolean;
   error?: {
     code: string;
@@ -939,8 +937,6 @@ export interface ConversationActivityData {
 
 export interface ConversationProgressData {
   text: string;
-  /** Concise, neutral label for this group of execution activities. */
-  activitySummary?: string;
   activities: readonly ConversationActivityData[];
 }
 
@@ -1225,7 +1221,6 @@ export type AgentEventData =
       runId: string;
       step: number;
       text: string;
-      activitySummary?: string;
       toolCalls: readonly ToolCallData[];
       usage?: Partial<TokenUsageData>;
       durationMs?: number;

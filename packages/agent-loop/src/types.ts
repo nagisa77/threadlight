@@ -24,12 +24,6 @@ export interface Tool {
     destructive?: boolean;
     external?: boolean;
   };
-  /** Host presentation metadata; never forwarded in provider wire schemas. */
-  presentation?: {
-    visibility?: "visible" | "hidden";
-    /** String argument projected as the label for this model tool batch. */
-    activitySummaryArgument?: string;
-  };
   execute(arguments_: unknown, context: ToolContext): Promise<unknown>;
 }
 
@@ -51,8 +45,6 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: unknown;
-  /** Hidden calls preserve provider linkage but stay out of user-facing UI. */
-  visibility?: "hidden";
 }
 
 export interface ToolResult {
@@ -60,8 +52,6 @@ export interface ToolResult {
   name: string;
   output: string;
   kind?: "function" | "computer";
-  /** Hidden results preserve provider linkage but stay out of user-facing UI. */
-  visibility?: "hidden";
   isError?: boolean;
   error?: ToolErrorMetadata;
 }
@@ -159,7 +149,6 @@ export type AgentEvent =
       runId: string;
       step: number;
       text: string;
-      activitySummary?: string;
       toolCalls: readonly ToolCall[];
       usage?: Partial<TokenUsage>;
       durationMs?: number;

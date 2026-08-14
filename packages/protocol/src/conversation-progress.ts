@@ -17,22 +17,13 @@ export function projectAgentProgress(
 ): ConversationProgressData[] {
   if (
     event.type === "model.completed" &&
-    event.toolCalls.some(isVisibleExecutionCall)
+    event.toolCalls.some((call) => !isPlanControlTool(call.name))
   ) {
-    return [
-      ...progress,
-      {
-        text: event.text,
-        ...(event.activitySummary
-          ? { activitySummary: event.activitySummary }
-          : {}),
-        activities: [],
-      },
-    ];
+    return [...progress, { text: event.text, activities: [] }];
   }
 
   if (event.type === "tool.started") {
-    if (!isVisibleExecutionCall(event.call)) return [...progress];
+    if (isPlanControlTool(event.call.name)) return [...progress];
     const detail = toolDetail(event.call.name, event.call.arguments);
     const activity: ConversationActivityData = {
       id: event.call.id,
@@ -52,7 +43,6 @@ export function projectAgentProgress(
 
   if (
     event.type !== "tool.completed" ||
-    event.result.visibility === "hidden" ||
     isPlanControlTool(event.result.name)
   ) {
     return [...progress];
@@ -74,13 +64,6 @@ export function projectAgentProgress(
         : activity,
     ),
   }));
-}
-
-function isVisibleExecutionCall(call: {
-  name: string;
-  visibility?: "hidden";
-}): boolean {
-  return call.visibility !== "hidden" && !isPlanControlTool(call.name);
 }
 
 function isPlanControlTool(name: string): boolean {

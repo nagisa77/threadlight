@@ -4,35 +4,6 @@ import { describe, expect, it } from "vitest";
 import { ActivityList, ProgressList } from "../src/app.js";
 
 describe("ActivityList", () => {
-  it("keeps commentary visible and replaces the status label with the neutral summary", () => {
-    const html = renderToStaticMarkup(
-      <ProgressList
-        live
-        progress={[
-          {
-            text: "我先确认当前日期，再查询杭州天气。",
-            activitySummary: "确认当前日期并查询杭州天气",
-            activities: [
-              { id: "date", name: "exec_command", status: "completed" },
-              { id: "weather", name: "web_search", status: "completed" },
-            ],
-          },
-        ]}
-      />,
-    );
-
-    expect(html).toContain("我先确认当前日期，再查询杭州天气。");
-    expect(html).toContain(
-      '<span class="activity-heading-label activity-heading-summary" title="确认当前日期并查询杭州天气">确认当前日期并查询杭州天气</span>',
-    );
-    expect(html).not.toContain("已执行");
-    expect(html).not.toContain("执行记录");
-    expect(html.indexOf("确认当前日期并查询杭州天气")).toBeLessThan(
-      html.indexOf('<span class="activity-count">2</span>'),
-    );
-    expect(html).not.toContain("report_activity_summary");
-  });
-
   it("renders commentary before every tool in the batch", () => {
     const html = renderToStaticMarkup(
       <ProgressList

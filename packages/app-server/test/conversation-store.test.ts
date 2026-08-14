@@ -36,13 +36,6 @@ describe("FileConversationStore", () => {
           id: "message-2",
           role: "assistant" as const,
           text: "Hi",
-          progress: [
-            {
-              text: "I’ll inspect the workspace.",
-              activitySummary: "Inspect the workspace",
-              activities: [],
-            },
-          ],
           plan: {
             source: "user" as const,
             items: [

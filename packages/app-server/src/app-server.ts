@@ -2163,7 +2163,6 @@ class TurnDiagnosticsRecorder {
       return;
     }
     if (event.type === "tool.completed") {
-      if (event.result.visibility === "hidden") return;
       this.toolCalls.push({
         callId: event.result.callId,
         name: event.result.name,

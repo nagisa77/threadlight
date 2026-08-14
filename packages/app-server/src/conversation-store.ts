@@ -649,10 +649,7 @@ function isConversationProgress(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const progress = value as Record<string, unknown>;
   return (
-    typeof progress.text === "string" &&
-    (progress.activitySummary === undefined ||
-      typeof progress.activitySummary === "string") &&
-    Array.isArray(progress.activities)
+    typeof progress.text === "string" && Array.isArray(progress.activities)
   );
 }
 

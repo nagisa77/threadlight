@@ -120,18 +120,12 @@ export class AgentLoop {
         },
       );
 
-      const presentedToolCalls = turn.toolCalls.map((call) =>
-        presentedToolCall(call, tools),
-      );
-      const activitySummary = activitySummaryForBatch(turn.toolCalls, tools);
-
       emit({
         type: "model.completed",
         runId,
         step,
         text: turn.text,
-        ...(activitySummary ? { activitySummary } : {}),
-        toolCalls: presentedToolCalls,
+        toolCalls: turn.toolCalls,
         usage: turn.usage,
         durationMs: elapsed(modelStartedAt, options),
         outputVisibility,
@@ -249,8 +243,6 @@ export class AgentLoop {
     startedCheckpoint: AgentRunCheckpoint,
   ): Promise<ToolResult> {
     const tool = tools.find((candidate) => candidate.name === call.name);
-    const visibility =
-      tool?.presentation?.visibility === "hidden" ? "hidden" : undefined;
     const controllerContext = { runId, step, tools };
     const decision = options.controller?.beforeToolCall
       ? await options.controller.beforeToolCall(
@@ -265,7 +257,6 @@ export class AgentLoop {
         name: call.name,
         output: decision.message ?? `Tool call rejected: ${call.name}`,
         ...(tool?.kind ? { kind: tool.kind } : {}),
-        ...(visibility ? { visibility } : {}),
         isError: true,
       };
     }
@@ -278,11 +269,7 @@ export class AgentLoop {
       };
     }
 
-    emit({
-      type: "tool.started",
-      runId,
-      call: visibility ? { ...call, visibility } : call,
-    });
+    emit({ type: "tool.started", runId, call });
     await options.onCheckpoint?.(startedCheckpoint);
     const toolStartedAt = currentTime(options);
 
@@ -298,7 +285,6 @@ export class AgentLoop {
         name: call.name,
         output: serialize(output),
         ...(tool.kind ? { kind: tool.kind } : {}),
-        ...(visibility ? { visibility } : {}),
       };
     } catch (error) {
       const metadata = toolErrorMetadata(error);
@@ -307,7 +293,6 @@ export class AgentLoop {
         name: call.name,
         output: error instanceof Error ? error.message : String(error),
         ...(tool.kind ? { kind: tool.kind } : {}),
-        ...(visibility ? { visibility } : {}),
         isError: true,
         ...(metadata ? { error: metadata } : {}),
       };
@@ -332,33 +317,6 @@ export class AgentLoop {
 
 function currentTime(options: RunOptions): number {
   return options.now?.() ?? performance.now();
-}
-
-function presentedToolCall(call: ToolCall, tools: readonly Tool[]): ToolCall {
-  const tool = tools.find((candidate) => candidate.name === call.name);
-  return tool?.presentation?.visibility === "hidden"
-    ? { ...call, visibility: "hidden" }
-    : call;
-}
-
-function activitySummaryForBatch(
-  calls: readonly ToolCall[],
-  tools: readonly Tool[],
-): string | undefined {
-  const summaries = calls.flatMap((call) => {
-    const argumentName = tools.find((tool) => tool.name === call.name)
-      ?.presentation?.activitySummaryArgument;
-    if (!argumentName || !isObject(call.arguments)) return [];
-    const value = call.arguments[argumentName];
-    if (typeof value !== "string") return [];
-    const normalized = value.trim().replace(/\s+/g, " ");
-    return normalized && normalized.length <= 80 ? [normalized] : [];
-  });
-  return summaries.length === 1 ? summaries[0] : undefined;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 function elapsed(startedAt: number, options: RunOptions): number {
