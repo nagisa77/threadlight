@@ -25,6 +25,7 @@ export type {
   SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
+  ThreadlightMethod,
   TokenUsageData,
   TurnDiagnosticsData,
   TurnMode,

@@ -81,4 +81,37 @@ describe("UI feature boundaries", () => {
     expect(entry).toContain("./styles/workspace.css");
     expect(lines("../src/styles.css")).toBeLessThan(20);
   });
+
+  it("prevents feature slices from importing sibling feature internals", () => {
+    const featureRoot = new URL("../src/features/", import.meta.url);
+    const violations: string[] = [];
+
+    for (const domain of readdirSync(featureRoot, { withFileTypes: true })) {
+      if (!domain.isDirectory()) continue;
+      for (const file of featureFiles(
+        new URL(`${domain.name}/`, featureRoot),
+      )) {
+        const contents = readFileSync(file, "utf8");
+        for (const match of contents.matchAll(
+          /from\s+["']\.\.\/([a-z-]+)\//g,
+        )) {
+          const target = match[1]!;
+          if (target !== domain.name && target !== "shared") {
+            violations.push(`${domain.name} -> ${target}`);
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
 });
+
+function featureFiles(directory: URL): URL[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const child = new URL(entry.name, directory);
+    if (entry.isDirectory())
+      return featureFiles(new URL(`${entry.name}/`, directory));
+    return /\.[jt]sx?$/.test(entry.name) ? [child] : [];
+  });
+}

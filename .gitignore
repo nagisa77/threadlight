@@ -17,3 +17,5 @@ apps/site/.astro/preview.log
 apps/site/.astro/dev.json
 apps/site/.astro/dev.log
 apps/site/.astro/settings.json
+docs/images/social/
+docs/social/

@@ -1,5 +1,4 @@
 import {
-  lazy,
   Suspense,
   useCallback,
   useEffect,
@@ -27,7 +26,6 @@ import {
   ArrowUp,
   Archive,
   ArchiveRestore,
-  ChevronDown,
   ChevronRight,
   CircleStop,
   Copy,
@@ -43,7 +41,6 @@ import {
   NotebookText,
   Paperclip,
   PanelLeftOpen,
-  PanelRight,
   PencilLine,
   Pin,
   PinOff,
@@ -55,7 +52,6 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
-  Terminal,
   TriangleAlert,
   Trash2,
   X,
@@ -99,7 +95,6 @@ import {
   isTogglePanelShortcut,
 } from "./keyboard-shortcuts.js";
 import type { SettingsAdapter, SettingsSnapshot } from "./settings.js";
-import { providerIsConfigured } from "./settings-readiness.js";
 import {
   ConversationAccessControl,
   ExecutionApprovalGate,
@@ -135,7 +130,6 @@ import {
   shouldShowDeliveryTurnStatus,
 } from "./features/delivery/delivery-turn-status.js";
 import {
-  ProjectOpenControl,
   type ProjectOpenerAdapter,
   type ProjectOpenerId,
   type ProjectOpenerOption,
@@ -163,6 +157,7 @@ import {
   conversationChangesRefreshKey,
   pendingComputerPermissionResume,
   planDocumentOpenRequest,
+  writeClipboardText,
 } from "./features/task-session/turn-status.js";
 import {
   conversationContextChanged,
@@ -257,6 +252,20 @@ import {
 import { useInitialViewReady } from "./features/task-session/initial-view.js";
 import { restoredThreadRoute } from "./features/navigation/startup.js";
 import { useDeliveryController } from "./features/delivery/controller.js";
+import {
+  browserStorage,
+  usePersistedComposerDraft,
+  useTaskProductivity,
+} from "./features/productivity/controller.js";
+import {
+  composerDraftScope,
+  navigateComposerHistory,
+} from "./features/productivity/model.js";
+import { MessageBookmarksDialog } from "./features/productivity/task-actions.js";
+import {
+  ComposerProductivityStatus,
+  JumpToLatestButton,
+} from "./features/productivity/composer-status.js";
 import type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
@@ -276,6 +285,23 @@ import {
   type AppShellState,
   type ThreadlightAppProps,
 } from "./features/app-shell/app-shell.js";
+import {
+  DeferredTerminalPanel,
+  DeferredView,
+  DeferredWorkspacePanel,
+  LazyAutomationsPage,
+  LazyFirstRunGuide,
+  LazySettingsPage,
+  LazyTerminalPanel,
+  LazyWorkspacePanel,
+} from "./features/app-shell/deferred.js";
+import { TaskHeader } from "./features/productivity/task-header.js";
+import { WorkspaceActions } from "./features/app-shell/workspace-actions.js";
+import {
+  composerProviderIsReady,
+  projectSupportsDevelopmentMode,
+} from "./features/app-shell/readiness.js";
+export { composerProviderIsReady, projectSupportsDevelopmentMode };
 export type { ThreadlightAppProps } from "./features/app-shell/app-shell.js";
 export {
   activateComposerMenuOnPointerDown,
@@ -315,79 +341,8 @@ export {
   filterProjectsForPicker,
 } from "./features/navigation/project-dialogs.js";
 
-const LazyFirstRunGuide = lazy(() =>
-  import("./first-run.js").then(({ FirstRunGuide }) => ({
-    default: FirstRunGuide,
-  })),
-);
-const LazySettingsPage = lazy(() =>
-  import("./settings.js").then(({ SettingsPage }) => ({
-    default: SettingsPage,
-  })),
-);
-const LazyAutomationsPage = lazy(() =>
-  import("./automations.js").then(({ AutomationsPage }) => ({
-    default: AutomationsPage,
-  })),
-);
-const LazyWorkspacePanel = lazy(() =>
-  import("./workspace-panel.js").then(({ WorkspacePanel }) => ({
-    default: WorkspacePanel,
-  })),
-);
-const LazyTerminalPanel = lazy(() =>
-  import("./terminal.js").then(({ TerminalPanel }) => ({
-    default: TerminalPanel,
-  })),
-);
-
-function DeferredView({ label }: { label: string }) {
-  return (
-    <div className="deferred-view" role="status">
-      <LoaderCircle className="spin" size={17} aria-hidden="true" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function DeferredWorkspacePanel({
-  hidden,
-  label,
-}: {
-  hidden: boolean;
-  label: string;
-}) {
-  return (
-    <aside className="workspace-panel deferred-panel" hidden={hidden}>
-      <DeferredView label={label} />
-    </aside>
-  );
-}
-
-function DeferredTerminalPanel({ label }: { label: string }) {
-  return (
-    <section className="terminal-panel panel-container deferred-panel">
-      <DeferredView label={label} />
-    </section>
-  );
-}
-
 const COMPUTER_PERMISSION_RESUME_KEY = "threadlight:computer-permission-resume";
 const COMPUTER_PERMISSION_RESUME_TTL_MS = 5 * 60 * 1_000;
-export function composerProviderIsReady(
-  settingsAvailable: boolean,
-  runtimeSettings?: SettingsSnapshot,
-): boolean {
-  return settingsAvailable
-    ? Boolean(runtimeSettings && providerIsConfigured(runtimeSettings))
-    : true;
-}
-
-export function projectSupportsDevelopmentMode(
-  project: Pick<ProjectSummary, "scope"> | undefined,
-): boolean {
-  return Boolean(project && project.scope !== "standalone");
-}
 const MAX_COMPOSER_ATTACHMENTS = 10;
 export function ThreadlightApp(props: ThreadlightAppProps) {
   return (
@@ -575,6 +530,8 @@ function ThreadlightAppContent({
     fileInput,
     dragDepth,
     pendingAttachmentsRef,
+    historyIndex,
+    historyDraft,
   } = useComposerController();
   const {
     status: voiceStatus,
@@ -596,6 +553,7 @@ function ThreadlightAppContent({
     useState<string>();
   const [showingComputerShare, setShowingComputerShare] = useState(false);
   const [stoppingComputerShare, setStoppingComputerShare] = useState(false);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const [initialRestoreComplete, setInitialRestoreComplete] = useState(
     () => !projects,
   );
@@ -630,6 +588,14 @@ function ThreadlightAppContent({
     workspaceAgentPanel,
   } = useDeliveryController(state);
   const currentProject = activeProject(projectSnapshot);
+  const productivityStorage = browserStorage();
+  const draftStatus = usePersistedComposerDraft({
+    scope: composerDraftScope(currentProject?.id, state.threadId, newTaskDraft),
+    value: input,
+    setValue: setInput,
+    valueRef: inputValueRef,
+    storage: productivityStorage,
+  });
   useInitialViewReady({
     onReady: onInitialViewReady,
     restoreComplete: initialRestoreComplete,
@@ -672,6 +638,16 @@ function ThreadlightAppContent({
     currentConversation?.title && currentConversation.title !== t("task")
       ? currentConversation.title
       : state.messages[0]?.text || t("task");
+  const taskProductivity = useTaskProductivity({
+    threadId: state.threadId,
+    title: headerTitle,
+    projectName: currentProject?.name,
+    messages: state.messages,
+    storage: productivityStorage,
+    currentHref:
+      typeof window === "undefined" ? undefined : window.location.href,
+    writeClipboard: (value) => writeClipboardText(value, clipboard?.writeText),
+  });
   const automaticDeliveryScope =
     currentProject && state.threadId
       ? `${currentProject.id}\u0000${state.threadId}`
@@ -1833,8 +1809,10 @@ function ThreadlightAppContent({
 
   useEffect(() => {
     const element = conversation.current;
-    if (element && followOutput.current)
+    if (element && followOutput.current) {
       element.scrollTop = element.scrollHeight;
+      setShowJumpToLatest(false);
+    }
   }, [state.messages.length, state.progress, state.streamingText]);
 
   useEffect(() => {
@@ -1985,6 +1963,8 @@ function ThreadlightAppContent({
     setSubmitting(true);
     // Clear the composer immediately instead of waiting for the server round
     // trip, so the UI reacts instantly and the pending state is visible.
+    historyIndex.current = -1;
+    historyDraft.current = "";
     setInput("");
     setCapabilityQuery(undefined);
     inputValueRef.current = "";
@@ -2108,6 +2088,8 @@ function ThreadlightAppContent({
   }
 
   function rewriteQuestion(value: string) {
+    historyIndex.current = -1;
+    historyDraft.current = "";
     setInput(value);
     setVoiceError(undefined);
     requestAnimationFrame(() => {
@@ -2118,6 +2100,27 @@ function ThreadlightAppContent({
       element.focus();
       element.setSelectionRange(value.length, value.length);
     });
+  }
+
+  function jumpToMessage(messageId: string) {
+    taskProductivity.setBookmarksOpen(false);
+    requestAnimationFrame(() => {
+      const target = document.getElementById(`message-${messageId}`);
+      if (!target) return;
+      followOutput.current = false;
+      setShowJumpToLatest(true);
+      target.scrollIntoView({ block: "center" });
+      target.focus({ preventScroll: true });
+    });
+  }
+
+  function jumpToLatest() {
+    const element = conversation.current;
+    if (!element) return;
+    followOutput.current = true;
+    element.scrollTop = element.scrollHeight;
+    setShowJumpToLatest(false);
+    textarea.current?.focus({ preventScroll: true });
   }
 
   function showSidebar() {
@@ -2949,6 +2952,42 @@ function ThreadlightAppContent({
       }
     }
     if (
+      (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey
+    ) {
+      const element = event.currentTarget;
+      const atBoundary =
+        event.key === "ArrowUp"
+          ? element.selectionStart === 0 && element.selectionEnd === 0
+          : element.selectionStart === input.length &&
+            element.selectionEnd === input.length;
+      if (atBoundary) {
+        const next = navigateComposerHistory({
+          messages: state.messages,
+          current: input,
+          draft: historyDraft.current,
+          index: historyIndex.current,
+          direction: event.key === "ArrowUp" ? "older" : "newer",
+        });
+        if (next) {
+          event.preventDefault();
+          historyIndex.current = next.index;
+          historyDraft.current = next.draft;
+          setInput(next.value);
+          inputValueRef.current = next.value;
+          requestAnimationFrame(() => {
+            element.style.height = "auto";
+            element.style.height = `${Math.min(element.scrollHeight, 160)}px`;
+            element.setSelectionRange(next.value.length, next.value.length);
+          });
+          return;
+        }
+      }
+    }
+    if (
       event.key === "Enter" &&
       !event.shiftKey &&
       !event.nativeEvent.isComposing &&
@@ -3168,45 +3207,21 @@ function ThreadlightAppContent({
   }
 
   const globalActions = currentProject ? (
-    <>
-      {currentProject.scope !== "standalone" &&
-        projectOpener &&
-        projectOpeners.length > 0 && (
-          <ProjectOpenControl
-            adapter={projectOpener}
-            projectId={currentProject.id}
-            threadId={state.threadId}
-            preferred={preferredProjectOpener}
-            openers={projectOpeners}
-          />
-        )}
-      {terminal && (
-        <button
-          type="button"
-          className={`header-terminal-button pressable ${terminalOpen ? "active" : ""}`}
-          aria-label={`${terminalOpen ? t("closeTerminal") : t("openTerminal")} — ${defaultTerminalContext}`}
-          aria-pressed={terminalOpen}
-          title={`${terminalOpen ? t("closeTerminal") : t("openTerminal")} — ${defaultTerminalContext}（⌘J）`}
-          onClick={() => setTerminalOpen((open) => !open)}
-        >
-          <Terminal size={16} />
-        </button>
-      )}
-      {workspace && (
-        <button
-          type="button"
-          className={`header-terminal-button pressable ${workspacePanelOpen ? "active" : ""}`}
-          aria-label={
-            workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")
-          }
-          aria-pressed={workspacePanelOpen}
-          title={`${workspacePanelOpen ? t("closeRightPanel") : t("openRightPanel")}（⇧⌘J）`}
-          onClick={() => setWorkspacePanelOpen((open) => !open)}
-        >
-          <PanelRight size={16} />
-        </button>
-      )}
-    </>
+    <WorkspaceActions
+      projectId={currentProject.id}
+      threadId={state.threadId}
+      standalone={currentProject.scope === "standalone"}
+      projectOpener={projectOpener}
+      projectOpeners={projectOpeners}
+      preferredProjectOpener={preferredProjectOpener}
+      terminalAvailable={Boolean(terminal)}
+      terminalOpen={terminalOpen}
+      terminalContext={defaultTerminalContext}
+      workspaceAvailable={Boolean(workspace)}
+      workspaceOpen={workspacePanelOpen}
+      onToggleTerminal={() => setTerminalOpen((open) => !open)}
+      onToggleWorkspace={() => setWorkspacePanelOpen((open) => !open)}
+    />
   ) : null;
   const globalActionsInPanel = Boolean(
     workspacePanelOpen && workspace && currentProject,
@@ -3403,39 +3418,34 @@ function ThreadlightAppContent({
             />
           ) : (
             <>
-              <header className="workspace-header">
-                <div
-                  className="workspace-header-drag-region"
-                  aria-hidden="true"
-                />
-                <div className="workspace-header-title">
-                  <h1 key={headerTitle} className="header-title">
-                    {headerTitle}
-                  </h1>
-                  <p>
-                    {currentProject?.scope === "standalone"
-                      ? t("notInProject")
-                      : currentProject?.runtime?.kind === "remote"
-                        ? `${t("remoteRuntime")} · ${currentProject.runtime.workspacePath}`
-                        : (currentProject?.basePath ?? "Agent runtime")}{" "}
-                    · {shortId(state.threadId)}
-                  </p>
-                </div>
-                <div className="workspace-header-actions">
-                  {state.isRunning && (
-                    <span className="running-badge">
-                      <LoaderCircle size={13} /> {t("running")}
-                    </span>
-                  )}
-                </div>
-              </header>
+              <TaskHeader
+                title={headerTitle}
+                context={
+                  currentProject?.scope === "standalone"
+                    ? t("notInProject")
+                    : currentProject?.runtime?.kind === "remote"
+                      ? `${t("remoteRuntime")} · ${currentProject.runtime.workspacePath}`
+                      : (currentProject?.basePath ?? "Agent runtime")
+                }
+                taskId={shortId(state.threadId)}
+                running={state.isRunning}
+                connectionReady={
+                  state.connection === "ready" && Boolean(state.threadId)
+                }
+                bookmarkCount={taskProductivity.bookmarkedMessages.length}
+                onCopyReference={taskProductivity.copyReference}
+                onExport={taskProductivity.exportConversation}
+                onOpenBookmarks={() => taskProductivity.setBookmarksOpen(true)}
+              />
 
               <section
                 ref={conversation}
                 className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""}`}
                 aria-live="polite"
                 onScroll={(event) => {
-                  followOutput.current = isNearBottom(event.currentTarget);
+                  const following = isNearBottom(event.currentTarget);
+                  followOutput.current = following;
+                  setShowJumpToLatest(!following);
                 }}
               >
                 <div className="conversation-inner">
@@ -3580,6 +3590,12 @@ function ThreadlightAppContent({
                                   ? () => rewriteQuestion(message.text)
                                   : undefined
                               }
+                              bookmarked={taskProductivity.bookmarkedIds.includes(
+                                message.id,
+                              )}
+                              onToggleBookmark={() =>
+                                taskProductivity.toggleBookmark(message.id)
+                              }
                             />
                           )}
                         </article>
@@ -3653,6 +3669,10 @@ function ThreadlightAppContent({
                   )}
                 </div>
               </section>
+
+              {showJumpToLatest && state.messages.length > 0 && (
+                <JumpToLatestButton onJump={jumpToLatest} />
+              )}
 
               <footer className="composer-wrap">
                 <AgentTreePanel
@@ -3785,6 +3805,8 @@ function ThreadlightAppContent({
                     disabled={state.connection !== "ready" || !providerReady}
                     onChange={(event) => {
                       const value = event.target.value;
+                      historyIndex.current = -1;
+                      historyDraft.current = "";
                       setInput(value);
                       inputValueRef.current = value;
                       if (state.isRunning) {
@@ -4031,6 +4053,12 @@ function ThreadlightAppContent({
                     t,
                   )}
                 </p>
+                <ComposerProductivityStatus
+                  hasHistory={state.messages.some(
+                    (message) => message.role === "user" && message.text.trim(),
+                  )}
+                  draftStatus={draftStatus}
+                />
               </footer>
               {isDraggingFiles && (
                 <div className="attachment-drop-overlay" aria-hidden="true">
@@ -4245,6 +4273,14 @@ function ThreadlightAppContent({
             void connectConnector(clientId, clientSecret)
           }
           onDisconnect={() => void disconnectConnector()}
+        />
+      )}
+      {taskProductivity.bookmarksOpen && (
+        <MessageBookmarksDialog
+          messages={taskProductivity.bookmarkedMessages}
+          onClose={() => taskProductivity.setBookmarksOpen(false)}
+          onJump={jumpToMessage}
+          onRemove={taskProductivity.toggleBookmark}
         />
       )}
       {executionPolicy && <ExecutionApprovalGate adapter={executionPolicy} />}

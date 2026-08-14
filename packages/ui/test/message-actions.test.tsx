@@ -19,15 +19,26 @@ describe("message actions", () => {
 
   it("lets users copy and rewrite their questions", () => {
     const html = renderToStaticMarkup(
-      <MessageActions
-        role="user"
-        text="原始提问"
-        onRewrite={vi.fn()}
-      />,
+      <MessageActions role="user" text="原始提问" onRewrite={vi.fn()} />,
     );
 
     expect(html).toContain('aria-label="复制文字"');
     expect(html).toContain('aria-label="重写提问"');
+  });
+
+  it("lets users bookmark important messages with persistent pressed state", () => {
+    const html = renderToStaticMarkup(
+      <MessageActions
+        role="assistant"
+        text="Important result"
+        bookmarked
+        onToggleBookmark={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="移除书签"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain("message-action bookmark pressable active");
   });
 
   it("writes the complete message text to the system clipboard", async () => {

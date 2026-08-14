@@ -44,7 +44,7 @@ import type {
   HostsSnapshot,
   ProjectSummary,
 } from "../../projects.js";
-import { errorMessage } from "../task-session/conversation-content.js";
+import { errorMessage } from "../shared/format.js";
 
 export function DeleteConversationDialog({
   conversation,

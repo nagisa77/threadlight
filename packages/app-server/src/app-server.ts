@@ -46,6 +46,7 @@ import type {
   SuggestionLanguage,
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
+  ThreadlightMethod,
   TokenUsageData,
   TurnDiagnosticsData,
   TurnMode,
@@ -104,6 +105,7 @@ import {
   suggestionLanguageName,
   type PullRequestChangeInput,
 } from "./generated-content.js";
+import { RpcError, RpcMethodRouter } from "./rpc-router.js";
 
 interface ThreadState {
   agent: Agent;
@@ -250,6 +252,7 @@ export class AppServer {
   private readonly modelName?: string;
   private readonly generateConversationTitles: boolean;
   private readonly multiAgent?: SharedAppServerOptions["multiAgent"];
+  private readonly rpc: RpcMethodRouter<ThreadlightMethod>;
   private readonly threads = new Map<string, ThreadState>();
   private readonly suggestionRequests = new Map<
     SuggestionLanguage,
@@ -295,6 +298,41 @@ export class AppServer {
     this.generateConversationTitles =
       options.generateConversationTitles ?? false;
     this.multiAgent = options.multiAgent;
+    this.rpc = new RpcMethodRouter<ThreadlightMethod>({
+      initialize: (params) => {
+        this.enableClientCapabilities(params);
+        this.initialized = true;
+        return { name: "threadlight", protocolVersion: "0.1" };
+      },
+      "thread/start": () => this.startThread(),
+      "thread/resume": (params) => this.resumeThread(params),
+      "thread/delete": (params) => this.deleteThread(params),
+      "thread/suggestions": (params) => this.suggestQuestions(params),
+      "delivery/pull-request-description": (params) =>
+        this.generatePullRequestDescription(params),
+      "capability/list": (params) => this.listCapabilities(params),
+      "connector/status": (params) => this.connectorStatus(params),
+      "connector/configure": (params) => this.configureConnector(params),
+      "connector/authorize": (params) => this.authorizeConnector(params),
+      "connector/disconnect": (params) => this.disconnectConnector(params),
+      "turn/start": (params) => this.startTurn(params),
+      "turn/interrupt": (params) => this.interruptTurn(params),
+      "agent/cancel": (params) => this.cancelAgent(params),
+      "agent/steer": (params) => this.steerAgent(params),
+      "agent/retry": (params) => this.retryAgent(params),
+      "agent/list": (params) => this.listAgents(params),
+      "agent/read": (params) => this.readAgent(params),
+      "turn/follow-up": (params) => this.addFollowUp(params),
+      "turn/queue/inject": (params) => this.injectQueuedTurn(params),
+      "turn/queue/reorder": (params) => this.reorderQueuedTurn(params),
+      "turn/queue/cancel": (params) => this.cancelQueuedTurn(params),
+      "process/status": (params) => this.processRequest(params, "status"),
+      "process/read": (params) => this.processRequest(params, "read"),
+      "process/wait": (params) => this.processRequest(params, "wait"),
+      "process/kill": (params) => this.processRequest(params, "kill"),
+      "execution/approval/respond": (params) =>
+        this.resolveExecutionApproval(params),
+    });
   }
 
   async receive(message: JsonRpcRequest): Promise<void> {
@@ -305,7 +343,7 @@ export class AppServer {
         throw new RpcError(-32002, "Server is not initialized");
       }
 
-      const result = await this.dispatch(message.method, message.params);
+      const result = await this.rpc.dispatch(message.method, message.params);
       if (id !== undefined) this.reply(id, result);
     } catch (error) {
       if (id === undefined) return;
@@ -319,69 +357,6 @@ export class AppServer {
             );
 
       this.replyError(id, rpcError);
-    }
-  }
-
-  private async dispatch(method: string, params: unknown): Promise<unknown> {
-    switch (method) {
-      case "initialize":
-        this.enableClientCapabilities(params);
-        this.initialized = true;
-        return { name: "threadlight", protocolVersion: "0.1" };
-      case "thread/start":
-        return this.startThread();
-      case "thread/resume":
-        return this.resumeThread(params);
-      case "thread/delete":
-        return this.deleteThread(params);
-      case "thread/suggestions":
-        return this.suggestQuestions(params);
-      case "delivery/pull-request-description":
-        return this.generatePullRequestDescription(params);
-      case "capability/list":
-        return this.listCapabilities(params);
-      case "connector/status":
-        return this.connectorStatus(params);
-      case "connector/configure":
-        return this.configureConnector(params);
-      case "connector/authorize":
-        return this.authorizeConnector(params);
-      case "connector/disconnect":
-        return this.disconnectConnector(params);
-      case "turn/start":
-        return this.startTurn(params);
-      case "turn/interrupt":
-        return this.interruptTurn(params);
-      case "agent/cancel":
-        return this.cancelAgent(params);
-      case "agent/steer":
-        return this.steerAgent(params);
-      case "agent/retry":
-        return this.retryAgent(params);
-      case "agent/list":
-        return this.listAgents(params);
-      case "agent/read":
-        return this.readAgent(params);
-      case "turn/follow-up":
-        return this.addFollowUp(params);
-      case "turn/queue/inject":
-        return this.injectQueuedTurn(params);
-      case "turn/queue/reorder":
-        return this.reorderQueuedTurn(params);
-      case "turn/queue/cancel":
-        return this.cancelQueuedTurn(params);
-      case "process/status":
-        return this.processRequest(params, "status");
-      case "process/read":
-        return this.processRequest(params, "read");
-      case "process/wait":
-        return this.processRequest(params, "wait");
-      case "process/kill":
-        return this.processRequest(params, "kill");
-      case "execution/approval/respond":
-        return this.resolveExecutionApproval(params);
-      default:
-        throw new RpcError(-32601, `Method not found: ${method}`);
     }
   }
 
@@ -2315,15 +2290,6 @@ function normalizedUsage(usage: Partial<TokenUsageData> = {}): TokenUsageData {
     outputTokens: usage.outputTokens ?? 0,
     totalTokens: usage.totalTokens ?? 0,
   };
-}
-
-class RpcError extends Error {
-  constructor(
-    readonly code: number,
-    message: string,
-  ) {
-    super(message);
-  }
 }
 
 function objectParams(params: unknown): Record<string, unknown> {

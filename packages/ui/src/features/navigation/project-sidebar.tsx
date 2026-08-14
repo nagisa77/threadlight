@@ -46,8 +46,8 @@ import type {
   HostSummary,
   ProjectSummary,
 } from "../../projects.js";
-import type { ComputerShareSnapshot } from "../task-session/computer-types.js";
-import { errorMessage } from "../task-session/conversation-content.js";
+import type { ComputerShareSnapshot } from "../shared/adapters.js";
+import { errorMessage } from "../shared/format.js";
 
 export type TaskListFilter =
   "all" | "running" | "pending" | "completed" | "archived";

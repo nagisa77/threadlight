@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentPlanData } from "@threadlight/protocol";
 import {
+  Bookmark,
   Check,
   Copy,
   FileDiff,
@@ -44,11 +45,15 @@ export function MessageActions({
   text,
   copyText,
   onRewrite,
+  bookmarked = false,
+  onToggleBookmark,
 }: {
   role: "user" | "assistant";
   text: string;
   copyText?(text: string): Promise<void>;
   onRewrite?(): void;
+  bookmarked?: boolean;
+  onToggleBookmark?(): void;
 }) {
   const { t } = useI18n();
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
@@ -113,6 +118,22 @@ export function MessageActions({
           title={t("rewriteQuestion")}
         >
           <PencilLine size={14} />
+        </button>
+      )}
+      {onToggleBookmark && (
+        <button
+          type="button"
+          className={`message-action bookmark pressable${bookmarked ? " active" : ""}`}
+          onClick={onToggleBookmark}
+          aria-label={t(bookmarked ? "removeBookmark" : "bookmarkMessage")}
+          aria-pressed={bookmarked}
+          title={t(bookmarked ? "removeBookmark" : "bookmarkMessage")}
+        >
+          <Bookmark
+            size={14}
+            fill={bookmarked ? "currentColor" : "none"}
+            aria-hidden="true"
+          />
         </button>
       )}
     </div>

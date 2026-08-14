@@ -919,4 +919,24 @@ export const en: Messages = {
   sendDirection: "Send direction",
   agentActionUnavailable:
     "This agent has ended or cannot be changed right now.",
+  taskTools: "Task tools",
+  copyTaskReference: "Copy task link",
+  taskReferenceCopied: "Task link copied",
+  exportConversation: "Export as Markdown",
+  messageBookmarks: "Message bookmarks",
+  messageBookmarksDescription:
+    "Review the important messages marked in this task.",
+  noMessageBookmarks: "No message bookmarks yet",
+  noMessageBookmarksDescription:
+    "Use the bookmark action below any message to save it here.",
+  bookmarkMessage: "Bookmark message",
+  removeBookmark: "Remove bookmark",
+  you: "You",
+  threadlight: "Threadlight",
+  noTextContent: "No text content",
+  draftRestored: "Draft restored",
+  draftSaving: "Saving draft…",
+  draftSaved: "Draft saved",
+  jumpToLatest: "Jump to latest message",
+  composerHistoryHint: "↑↓ Input history",
 };

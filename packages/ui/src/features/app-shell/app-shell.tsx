@@ -26,11 +26,9 @@ import type {
   AttachmentStageAdapter,
   ClipboardAdapter,
   ConnectorAuthorizationAdapter,
-} from "../composer/types.js";
-import type {
   ComputerPermissionAdapter,
   ComputerShareAdapter,
-} from "../task-session/computer-types.js";
+} from "../shared/adapters.js";
 
 export interface ThreadlightAppProps {
   client: ThreadlightClient;

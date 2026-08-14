@@ -14,8 +14,8 @@
   --sidebar: #efeee9;
   --panel: #ffffff;
   --ink: #242420;
-  --muted: #77766f;
-  --subtle: #aaa89f;
+  --muted: #66645d;
+  --subtle: #817f76;
   --line: #dfded7;
   --line-strong: #cfcdc4;
   --accent: #d56a3a;
@@ -55,6 +55,12 @@ textarea:focus-visible,
 input:focus-visible,
 select:focus-visible,
 summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
+  outline-offset: 2px;
+}
+
+a:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
   outline-offset: 2px;
 }
@@ -129,11 +135,13 @@ summary:focus-visible {
   backdrop-filter: blur(12px);
 }
 
-.sidebar-collapse-button:hover,
-.sidebar-reveal-button:hover {
-  border-color: var(--line);
-  color: var(--ink);
-  background: color-mix(in srgb, var(--panel) 72%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-collapse-button:hover,
+  .sidebar-reveal-button:hover {
+    border-color: var(--line);
+    color: var(--ink);
+    background: color-mix(in srgb, var(--panel) 72%, transparent);
+  }
 }
 
 .sidebar-backdrop {
@@ -2164,9 +2172,11 @@ html[data-platform="desktop"][data-os="macos"]
   cursor: pointer;
 }
 
-.header-terminal-button:hover {
-  color: var(--ink);
-  background: rgb(255 255 255 / 58%);
+@media (hover: hover) and (pointer: fine) {
+  .header-terminal-button:hover {
+    color: var(--ink);
+    background: rgb(255 255 255 / 58%);
+  }
 }
 
 .header-terminal-button.active {
@@ -2186,7 +2196,7 @@ html[data-platform="desktop"][data-os="macos"]
   max-width: 620px;
   overflow: hidden;
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 620;
   letter-spacing: -0.01em;
   text-overflow: ellipsis;
@@ -2200,7 +2210,7 @@ html[data-platform="desktop"][data-os="macos"]
   margin: 2px 0 0;
   color: var(--subtle);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2224,6 +2234,80 @@ html[data-platform="desktop"][data-os="macos"]
   z-index: 1;
   pointer-events: auto;
   -webkit-app-region: no-drag;
+}
+
+.task-productivity {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.task-productivity-trigger {
+  position: relative;
+}
+
+.task-bookmark-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  color: white;
+  background: var(--accent);
+  font-size: 8px;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.task-action-feedback {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgb(35 33 29 / 12%);
+  font-size: 10px;
+}
+
+.task-action-feedback.failed {
+  color: var(--danger);
+}
+
+.task-productivity-popover {
+  z-index: 230;
+}
+
+.task-productivity-item-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-productivity-item-copy small {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--sidebar);
+  font-size: 10px;
 }
 
 .project-open-control {
@@ -2852,7 +2936,7 @@ html[data-platform="desktop"][data-os="macos"]
 
 .message-body > p {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -2883,7 +2967,7 @@ html[data-platform="desktop"][data-os="macos"]
 
 .message-actions {
   display: flex;
-  min-height: 26px;
+  min-height: 30px;
   align-items: center;
   gap: 2px;
   margin-top: 5px;
@@ -3017,8 +3101,8 @@ html[data-platform="desktop"][data-os="macos"]
 
 .message-action {
   display: grid;
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   place-items: center;
   border: 0;
@@ -3030,6 +3114,11 @@ html[data-platform="desktop"][data-os="macos"]
     color 140ms ease,
     background-color 140ms ease,
     transform 140ms var(--ease-out);
+}
+
+.message-action.bookmark.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
 .message-action.copied {

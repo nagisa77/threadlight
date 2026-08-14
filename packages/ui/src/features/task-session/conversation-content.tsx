@@ -31,11 +31,12 @@ import {
 import { useI18n, type Translate } from "../../i18n.js";
 import { MarkdownContent, type LocalFileReference } from "../../markdown.js";
 import type { ProjectSummary, ProjectsSnapshot } from "../../projects.js";
-import type { AttachmentPreviewAdapter } from "../composer/types.js";
 import type {
   PendingAttachment,
   VoiceInputStatus,
-} from "../composer/controller.js";
+  AttachmentPreviewAdapter,
+} from "../shared/adapters.js";
+import { connectionLabel, errorMessage, shortId } from "../shared/format.js";
 import {
   agentTaskRepresentedByMessage,
   agentThreadTree,
@@ -1003,15 +1004,7 @@ export function ComposerAttachments({
   );
 }
 
-export function shortId(id?: string): string {
-  return id ? id.slice(0, 8) : "—";
-}
-
-export function connectionLabel(connection: string, t: Translate): string {
-  if (connection === "ready") return t("runtimeConnected");
-  if (connection === "error") return t("runtimeOffline");
-  return t("connectionConnecting");
-}
+export { connectionLabel, shortId } from "../shared/format.js";
 
 export function voiceInputHint(
   status: VoiceInputStatus,
@@ -1085,6 +1078,4 @@ export function projectContainingThread(
   );
 }
 
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+export { errorMessage } from "../shared/format.js";

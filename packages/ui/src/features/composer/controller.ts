@@ -6,15 +6,15 @@ import type {
 } from "@threadlight/protocol";
 
 import type { CapabilityQuery } from "../../capabilities.js";
+import type {
+  PendingAttachment,
+  VoiceInputStatus,
+} from "../shared/adapters.js";
 
-export interface PendingAttachment {
-  id: string;
-  file: File;
-  previewUrl?: string;
-}
-
-export type VoiceInputStatus =
-  "idle" | "requesting" | "recording" | "transcribing";
+export type {
+  PendingAttachment,
+  VoiceInputStatus,
+} from "../shared/adapters.js";
 
 export const COMPOSER_ERROR_DISMISS_MS = 5_000;
 
@@ -105,6 +105,8 @@ export function useComposerController() {
   const fileInput = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const pendingAttachmentsRef = useRef<PendingAttachment[]>([]);
+  const historyIndex = useRef(-1);
+  const historyDraft = useRef("");
 
   return {
     input,
@@ -147,5 +149,7 @@ export function useComposerController() {
     fileInput,
     dragDepth,
     pendingAttachmentsRef,
+    historyIndex,
+    historyDraft,
   };
 }

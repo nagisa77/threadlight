@@ -3722,6 +3722,64 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 }
 
+@media (max-width: 720px) {
+  .sidebar-collapse-button,
+  .sidebar-reveal-button,
+  .header-terminal-button,
+  .icon-button,
+  .message-action,
+  .bookmark-remove {
+    width: 44px;
+    height: 44px;
+  }
+
+  .jump-to-latest {
+    min-height: 44px;
+    bottom: 112px;
+    padding-inline: 14px;
+    font-size: 11px;
+  }
+
+  .composer-productivity-status {
+    justify-content: flex-end;
+    padding-inline: 3px;
+    font-size: 10px;
+  }
+
+  .composer-productivity-status > span:first-child:not(.draft-status) {
+    display: none;
+  }
+
+  .dialog-backdrop {
+    padding: 12px;
+  }
+
+  .bookmarks-dialog {
+    max-height: calc(100dvh - 24px);
+    border-radius: 14px;
+  }
+
+  .bookmark-item {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .bookmark-item:hover {
+    background: color-mix(in srgb, var(--sidebar) 72%, transparent);
+  }
+
+  .bookmark-remove:hover {
+    color: var(--danger);
+    background: color-mix(in srgb, var(--danger) 8%, transparent);
+  }
+
+  .jump-to-latest:hover {
+    border-color: color-mix(in srgb, var(--accent) 34%, var(--line-strong));
+    background: var(--panel);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pressable,
   .message-action,
@@ -3746,6 +3804,7 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .dialog-backdrop,
   .delete-dialog,
   .connector-dialog,
+  .bookmarks-dialog,
   .delivery-dialog,
   .thread-delete-button {
     transition-duration: 0ms;

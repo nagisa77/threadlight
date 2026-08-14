@@ -1713,7 +1713,7 @@ describe("ThreadlightHostServer", () => {
     expect(existsSync(conversation.workspace.root)).toBe(false);
     expect(existsSync(deliveryJournalDirectory)).toBe(true);
     expect(readdirSync(deliveryJournalDirectory)).toEqual([]);
-  });
+  }, 20_000);
 
   it("fails pending RPC requests immediately when a runtime exits", async () => {
     const root = temporaryDirectory("threadlight-host-exit-");

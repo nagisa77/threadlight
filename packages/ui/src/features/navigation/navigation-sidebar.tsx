@@ -17,11 +17,11 @@ import type {
   ProjectSummary,
   ProjectsSnapshot,
 } from "../../projects.js";
-import type { SessionState } from "../task-session/session.js";
 import {
   connectionLabel,
   shortId,
-} from "../task-session/conversation-content.js";
+  type ConnectionStatus,
+} from "../shared/format.js";
 import type { AppView } from "./controller.js";
 import {
   ProjectGroup,
@@ -41,7 +41,7 @@ export interface NavigationSidebarProps {
   mobile: boolean;
   closeButtonRef: RefObject<HTMLButtonElement | null>;
   currentProject?: ProjectSummary;
-  connection: SessionState["connection"];
+  connection: ConnectionStatus;
   threadId?: string;
   fallbackTaskTitle?: string;
   disabled: boolean;
