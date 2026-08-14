@@ -7,7 +7,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize } from "node:path";
 import type { Duplex } from "node:stream";
 
 import {
@@ -2211,30 +2211,39 @@ function requiredBoolean(value: unknown, name: string): boolean {
 async function listHostDirectories(
   value: string,
 ): Promise<HostDirectoryListing> {
-  const input = expandHomeDirectory(value.trim());
+  const requestedPath = value.trim();
+  const typedSegment = trailingPathSegment(requestedPath);
+  const showHiddenDirectories = typedSegment.startsWith(".");
+  const input = expandHomeDirectory(requestedPath);
   if (!input || !isAbsolute(input)) {
     throw new Error("An absolute Host directory path is required.");
   }
 
-  let directory = input;
-  let prefix = "";
-  try {
-    if (!(await stat(directory)).isDirectory()) {
+  let directory = typedSegment === "." ? normalize(input) : input;
+  let prefix = typedSegment === "." ? "." : "";
+  if (prefix === "") {
+    try {
+      if (!(await stat(directory)).isDirectory()) {
+        directory = dirname(input);
+        prefix = basename(input);
+      }
+    } catch (error) {
+      if (!isMissingPathError(error)) throw error;
       directory = dirname(input);
       prefix = basename(input);
     }
-  } catch (error) {
-    if (!isMissingPathError(error)) throw error;
-    directory = dirname(input);
-    prefix = basename(input);
   }
 
   const entries = await readdir(directory, { withFileTypes: true });
   const directories = (
     await Promise.all(
       entries
-        .filter((entry) =>
-          entry.name.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase()),
+        .filter(
+          (entry) =>
+            (!entry.name.startsWith(".") || showHiddenDirectories) &&
+            entry.name
+              .toLocaleLowerCase()
+              .startsWith(prefix.toLocaleLowerCase()),
         )
         .map(async (entry) => {
           const path = join(directory, entry.name);
@@ -2272,6 +2281,14 @@ async function listHostDirectories(
 function expandHomeDirectory(value: string): string {
   if (value === "~") return homedir();
   return value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
+}
+
+function trailingPathSegment(value: string): string {
+  const lastSeparator = Math.max(
+    value.lastIndexOf("/"),
+    value.lastIndexOf("\\"),
+  );
+  return value.slice(lastSeparator + 1);
 }
 
 function isMissingPathError(error: unknown): error is NodeJS.ErrnoException {

@@ -559,7 +559,7 @@ export function RemoteProjectPathDialog({
         .then(() => onBrowse(path))
         .then((listing) => {
           if (browseRequest.current !== request) return;
-          setDirectories(listing.directories);
+          setDirectories(visibleRemoteDirectories(path, listing.directories));
         })
         .catch((browseError) => {
           if (browseRequest.current !== request) return;
@@ -717,6 +717,20 @@ export function RemoteProjectPathDialog({
       </form>
     </Dialog>
   );
+}
+
+export function visibleRemoteDirectories(
+  path: string,
+  directories: readonly HostDirectoryEntry[],
+): readonly HostDirectoryEntry[] {
+  const trimmedPath = path.trim();
+  const lastSeparator = Math.max(
+    trimmedPath.lastIndexOf("/"),
+    trimmedPath.lastIndexOf("\\"),
+  );
+  const typedSegment = trimmedPath.slice(lastSeparator + 1);
+  if (typedSegment.startsWith(".")) return directories;
+  return directories.filter((directory) => !directory.name.startsWith("."));
 }
 
 export function EmptyState({

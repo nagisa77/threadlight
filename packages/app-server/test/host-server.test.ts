@@ -335,6 +335,8 @@ describe("ThreadlightHostServer", () => {
     const root = temporaryDirectory("threadlight-host-");
     const firstWorkspace = createWorkspace(root, "first", "first");
     const secondWorkspace = createWorkspace(root, "second", "second");
+    const hiddenWorkspace = join(root, ".hidden");
+    mkdirSync(hiddenWorkspace);
     const systemFiles = join(root, "system-files");
     mkdirSync(join(systemFiles, "nested"), { recursive: true });
     writeFileSync(join(systemFiles, "notes.txt"), "remote notes\n");
@@ -660,6 +662,26 @@ describe("ThreadlightHostServer", () => {
         {
           name: "first",
           path: firstWorkspace,
+        },
+      ],
+    });
+    const rootDirectories = (await authenticatedJson(
+      `${endpoint}/v1/host/directories?path=${encodeURIComponent(root)}`,
+    )) as { directories: Array<{ name: string; path: string }> };
+    expect(rootDirectories.directories).not.toContainEqual({
+      name: ".hidden",
+      path: hiddenWorkspace,
+    });
+    expect(
+      await authenticatedJson(
+        `${endpoint}/v1/host/directories?path=${encodeURIComponent(`${root}/.`)}`,
+      ),
+    ).toEqual({
+      path: root,
+      directories: [
+        {
+          name: ".hidden",
+          path: hiddenWorkspace,
         },
       ],
     });
