@@ -168,6 +168,21 @@ describe("agent panel layout", () => {
 });
 
 describe("expanded composer layout", () => {
+  it("keeps composer guidance and draft feedback on one compact row", () => {
+    expect(styles).toMatch(
+      /\.composer-footer-status\s*\{[^}]*display:\s*flex;[^}]*align-items:\s*center;[^}]*white-space:\s*nowrap;/s,
+    );
+    expect(styles).toMatch(
+      /\.composer-hint\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+    );
+    expect(styles).toMatch(
+      /\.composer-productivity-status\s*\{[^}]*flex:\s*0 0 auto;[^}]*margin:\s*0;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.composer-footer-status:has\([\s\S]*?\.composer-hint\[data-mobile-instruction="true"\][\s\S]*?\):not\(:has\(\.draft-status\)\)\s*\{[^}]*display:\s*none;/s,
+    );
+  });
+
   it("starts with a roomy top-aligned editor above the action toolbar", () => {
     expect(styles).toMatch(
       /\.composer\s*\{[^}]*min-height:\s*102px;[^}]*flex-direction:\s*column;[^}]*border-radius:\s*18px;/s,

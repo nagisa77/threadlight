@@ -63,8 +63,12 @@ describe("voice composer", () => {
     expect(html).toContain('data-mobile-instruction="true"');
     expect(html).toContain('class="composer-toolbar-start"');
     expect(html).toContain('class="composer-toolbar-end"');
+    expect(html).toContain('class="composer-footer-status"');
     expect(html.indexOf("<textarea")).toBeLessThan(
       html.indexOf('class="composer-toolbar"'),
+    );
+    expect(html.indexOf('id="composer-hint"')).toBeLessThan(
+      html.indexOf('class="composer-productivity-status"'),
     );
     client.dispose();
   });

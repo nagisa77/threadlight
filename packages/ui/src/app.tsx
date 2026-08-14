@@ -4021,40 +4021,43 @@ function ThreadlightAppContent({
                     </div>
                   </div>
                 </div>
-                <p
-                  id="composer-hint"
-                  className={`composer-hint ${voiceError || attachmentError || state.submissionError ? "error" : ""}`}
-                  data-mobile-instruction={
-                    voiceStatus === "idle" &&
-                    !voiceError &&
-                    !attachmentError &&
-                    !state.submissionError &&
-                    !submitting &&
-                    !preparingAttachments &&
-                    pendingAttachments.length === 0
-                      ? "true"
-                      : undefined
-                  }
-                  aria-live="polite"
-                >
-                  {attachmentHint(
-                    voiceStatus,
-                    voiceError,
-                    attachmentError,
-                    state.submissionError,
-                    pendingAttachments,
-                    preparingAttachments,
-                    state.isRunning,
-                    submitting,
-                    t,
-                  )}
-                </p>
-                <ComposerProductivityStatus
-                  hasHistory={state.messages.some(
-                    (message) => message.role === "user" && message.text.trim(),
-                  )}
-                  draftStatus={draftStatus}
-                />
+                <div className="composer-footer-status">
+                  <p
+                    id="composer-hint"
+                    className={`composer-hint ${voiceError || attachmentError || state.submissionError ? "error" : ""}`}
+                    data-mobile-instruction={
+                      voiceStatus === "idle" &&
+                      !voiceError &&
+                      !attachmentError &&
+                      !state.submissionError &&
+                      !submitting &&
+                      !preparingAttachments &&
+                      pendingAttachments.length === 0
+                        ? "true"
+                        : undefined
+                    }
+                    aria-live="polite"
+                  >
+                    {attachmentHint(
+                      voiceStatus,
+                      voiceError,
+                      attachmentError,
+                      state.submissionError,
+                      pendingAttachments,
+                      preparingAttachments,
+                      state.isRunning,
+                      submitting,
+                      t,
+                    )}
+                  </p>
+                  <ComposerProductivityStatus
+                    hasHistory={state.messages.some(
+                      (message) =>
+                        message.role === "user" && message.text.trim(),
+                    )}
+                    draftStatus={draftStatus}
+                  />
+                </div>
               </footer>
               {isDraggingFiles && (
                 <div className="attachment-drop-overlay" aria-hidden="true">

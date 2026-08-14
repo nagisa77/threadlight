@@ -3936,8 +3936,19 @@ body.is-resizing-workspace .workspace-split-handle::after {
 
   .composer-productivity-status {
     justify-content: flex-end;
-    padding-inline: 3px;
+    padding: 0;
     font-size: 10px;
+  }
+
+  .composer-footer-status {
+    justify-content: flex-end;
+    padding-inline: 3px;
+  }
+
+  .composer-footer-status:has(
+      .composer-hint[data-mobile-instruction="true"]
+    ):not(:has(.draft-status)) {
+    display: none;
   }
 
   .composer-productivity-status > span:first-child:not(.draft-status) {

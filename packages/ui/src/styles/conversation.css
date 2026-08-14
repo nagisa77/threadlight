@@ -2989,12 +2989,29 @@
   }
 }
 
-.composer-hint {
+.composer-footer-status {
+  display: flex;
+  width: min(100%, 714px);
+  min-width: 0;
   min-height: 14px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   margin: 7px auto 0;
+  white-space: nowrap;
+}
+
+.composer-hint {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
+  margin: 0;
   color: var(--subtle);
   font-size: 10px;
   text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .composer-hint.error {
@@ -3003,11 +3020,12 @@
 
 .composer-productivity-status {
   display: flex;
-  min-height: 14px;
+  min-height: 0;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin: 2px auto 0;
+  margin: 0;
   color: var(--subtle);
   font-size: 9px;
 }
