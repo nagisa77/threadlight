@@ -2766,7 +2766,7 @@ button:disabled {
   justify-content: space-between;
   padding: 7px 18px 6px 20px;
   border-bottom: 1px solid rgb(223 222 215 / 78%);
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
 .workspace-header-drag-region {
@@ -2825,6 +2825,7 @@ html[data-platform="desktop"][data-os="macos"]
   flex: 0 0 auto;
   align-items: center;
   gap: 7px;
+  -webkit-app-region: no-drag;
 }
 
 .workspace-header-title {
@@ -2862,6 +2863,10 @@ html[data-platform="desktop"][data-os="macos"]
 .workspace-header > :not(.workspace-header-drag-region) {
   position: relative;
   z-index: 1;
+}
+
+.workspace-header
+  :is(button, a, input, textarea, select, summary, [role="button"]) {
   -webkit-app-region: no-drag;
 }
 
@@ -3238,6 +3243,7 @@ html[data-platform="desktop"][data-os="macos"]
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+  container: conversation-scroll / inline-size;
 }
 
 .conversation-inner {
@@ -3414,6 +3420,145 @@ html[data-platform="desktop"][data-os="macos"]
   display: flex;
   flex-direction: column;
   gap: 28px;
+}
+
+.conversation-timeline {
+  position: sticky;
+  z-index: 8;
+  top: 50%;
+  left: 18px;
+  width: 48px;
+  height: 0;
+}
+
+.conversation-timeline-list {
+  display: flex;
+  max-height: 42vh;
+  flex-direction: column;
+  transform: translateY(-50%);
+}
+
+.conversation-timeline-item {
+  position: relative;
+  display: flex;
+  width: 48px;
+  min-height: 2px;
+  flex: 1 1 16px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  outline-offset: 3px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.conversation-timeline-tick {
+  width: 8px;
+  height: 2px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 22%, transparent);
+  transition:
+    width 140ms var(--ease-out),
+    background-color 140ms ease;
+}
+
+.conversation-timeline-item[aria-current="location"]
+  .conversation-timeline-tick {
+  width: 14px;
+  background: var(--ink);
+}
+
+.conversation-timeline-card {
+  position: absolute;
+  top: 50%;
+  left: 58px;
+  display: grid;
+  width: clamp(260px, 70cqw, 560px);
+  gap: 5px;
+  padding: 11px 15px 12px;
+  border: 1px solid color-mix(in srgb, var(--line-strong) 76%, transparent);
+  border-radius: 17px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel) 96%, transparent);
+  box-shadow: 0 10px 28px rgb(31 30 27 / 9%);
+  opacity: 0;
+  transform: translate(6px, -50%) scale(0.98);
+  transform-origin: left center;
+  visibility: hidden;
+  pointer-events: auto;
+  transition:
+    opacity 140ms var(--ease-out),
+    transform 140ms var(--ease-out),
+    visibility 0s linear 140ms;
+  backdrop-filter: blur(14px);
+}
+
+.conversation-timeline-card strong {
+  display: block;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-timeline-card small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--subtle);
+  font-size: 12px;
+  font-weight: 460;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.conversation-timeline-item:focus-visible .conversation-timeline-tick {
+  width: 44px;
+  background: var(--ink);
+}
+
+.conversation-timeline-item:focus-visible .conversation-timeline-card {
+  opacity: 1;
+  transform: translate(0, -50%) scale(1);
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .conversation-timeline-item:hover .conversation-timeline-tick {
+    width: 44px;
+    background: var(--ink);
+  }
+
+  .conversation-timeline-item:hover .conversation-timeline-card {
+    opacity: 1;
+    transform: translate(0, -50%) scale(1);
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  .conversation-timeline-item:has(+ .conversation-timeline-item:hover)
+    .conversation-timeline-tick,
+  .conversation-timeline-item:hover
+    + .conversation-timeline-item
+    .conversation-timeline-tick {
+    width: 32px;
+  }
+
+  .conversation-timeline-item:has(
+      + .conversation-timeline-item + .conversation-timeline-item:hover
+    )
+    .conversation-timeline-tick,
+  .conversation-timeline-item:hover
+    + .conversation-timeline-item
+    + .conversation-timeline-item
+    .conversation-timeline-tick {
+    width: 22px;
+  }
 }
 
 .message {
@@ -3828,5 +3973,11 @@ html[data-platform="desktop"][data-os="macos"]
     html[data-platform="web"] :is(input, textarea, select) {
       font-size: max(16px, 1em) !important;
     }
+  }
+}
+
+@media (max-width: 720px) {
+  .conversation-timeline {
+    display: none;
   }
 }

@@ -277,6 +277,8 @@ export const zh = {
   dragQueuedMessage: "拖拽调整排队顺序",
   queuedAttachmentCount: "{count} 个附件",
   attachmentOnlyFollowUp: "仅附件消息",
+  conversationTimeline: "对话时间轴",
+  jumpToQuestion: "跳转到提问：{question}",
   moveQueuedMessageUp: "上移这条消息",
   moveQueuedMessageDown: "下移这条消息",
   moveUp: "上移",

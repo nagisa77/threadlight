@@ -57,10 +57,16 @@ describe("sidebar visibility", () => {
 
   it("keeps sidebar controls outside the draggable titlebar region", () => {
     expect(styles).toMatch(
-      /\.workspace-header\s*\{[^}]*-webkit-app-region:\s*no-drag;/s,
+      /\.workspace-header\s*\{[^}]*-webkit-app-region:\s*drag;/s,
     );
     expect(styles).toMatch(
       /\.workspace-header-drag-region\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*-webkit-app-region:\s*drag;/s,
+    );
+    expect(styles).toMatch(
+      /\.workspace-header-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/s,
+    );
+    expect(styles).toMatch(
+      /\.workspace-header\s+:is\(button, a, input, textarea, select, summary, \[role="button"\]\)\s*\{[^}]*-webkit-app-region:\s*no-drag;/s,
     );
     expect(styles).toMatch(
       /\.app-shell\.sidebar-hidden \.workspace-header-drag-region\s*\{[^}]*left:\s*54px;/s,

@@ -318,6 +318,8 @@ export const en: Messages = {
   dragQueuedMessage: "Drag to reorder",
   queuedAttachmentCount: "{count} attachments",
   attachmentOnlyFollowUp: "Attachment-only message",
+  conversationTimeline: "Conversation timeline",
+  jumpToQuestion: "Jump to question: {question}",
   moveQueuedMessageUp: "Move this message up",
   moveQueuedMessageDown: "Move this message down",
   moveUp: "Move up",

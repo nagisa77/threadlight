@@ -627,6 +627,12 @@ describe("builtin tools", () => {
       }),
     });
 
+    expect(tool.description).toContain(
+      "Prioritize first-party official sources",
+    );
+    expect(tool.description).toContain(
+      "search English and global sources by default",
+    );
     expect(tool.parameters).toMatchObject({
       properties: {
         query: { type: "string" },

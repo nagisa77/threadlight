@@ -182,6 +182,7 @@ import {
   projectContainingThread,
   shortId,
 } from "./features/task-session/conversation-content.js";
+import { ConversationTimeline as Timeline } from "./features/task-session/conversation-timeline.js";
 export {
   ComputerPermissionCard,
   ComputerShareStatus,
@@ -218,7 +219,6 @@ export {
   hasUserInput,
   projectContainingThread,
 } from "./features/task-session/conversation-content.js";
-
 import {
   DeleteConversationDialog,
   DeleteProjectDialog,
@@ -3449,6 +3449,7 @@ function ThreadlightAppContent({
                   setShowJumpToLatest(!following);
                 }}
               >
+                <Timeline messages={state.messages} onJump={jumpToMessage} />
                 <div className="conversation-inner">
                   {state.recovery?.kind === "missing_thread" ? (
                     <MissingThreadRecovery

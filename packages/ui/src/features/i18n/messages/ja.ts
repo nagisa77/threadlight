@@ -314,6 +314,8 @@ export const ja: Messages = {
   dragQueuedMessage: "ドラッグして順序を変更",
   queuedAttachmentCount: "添付 {count} 件",
   attachmentOnlyFollowUp: "添付ファイルのみのメッセージ",
+  conversationTimeline: "会話タイムライン",
+  jumpToQuestion: "質問へ移動: {question}",
   moveQueuedMessageUp: "このメッセージを上へ移動",
   moveQueuedMessageDown: "このメッセージを下へ移動",
   moveUp: "上へ",

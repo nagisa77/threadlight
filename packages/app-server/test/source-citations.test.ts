@@ -80,9 +80,7 @@ describe("source citations", () => {
       tools: [],
     });
     expect(directive.instructions).toContain("[[source:s1]]");
-    expect(directive.instructions).toContain(
-      "https://example.com/threadlight",
-    );
+    expect(directive.instructions).toContain("https://example.com/threadlight");
     expect(directive.instructions).toContain("untrusted reference content");
     expect(controller.finalize("Fact.[[source:s1]]").sources).toHaveLength(1);
   });
@@ -96,6 +94,24 @@ describe("source citations", () => {
       async generate(request) {
         requests.push(request);
         if (requests.length === 1) {
+          expect(request.instructions).toContain(
+            "First-party official sources are the highest priority",
+          );
+          expect(request.instructions).toContain(
+            "Search English and global sources by default",
+          );
+          expect(request.instructions).toContain(
+            "search_lang=en and country=null",
+          );
+          expect(request.instructions).toContain(
+            "Add Chinese-language searches only as a supplement",
+          );
+          expect(request.instructions).toContain(
+            "Do not infer source language from the user's response language",
+          );
+          expect(request.instructions).toContain(
+            "do not use a potentially stale year",
+          );
           return {
             text: "I’ll verify that.",
             toolCalls: [
@@ -111,8 +127,7 @@ describe("source citations", () => {
         expect(request.instructions).toContain("[[source:s1]]");
         expect(request.instructions).toContain("[[source:s1,s2]]");
         return {
-          text:
-            "Threadlight is an agent runtime.[[source:s1]] It supports observable workflows.[[source:s1,s2]]",
+          text: "Threadlight is an agent runtime.[[source:s1]] It supports observable workflows.[[source:s1,s2]]",
           toolCalls: [],
           state: { turn: 2 },
         };
@@ -173,8 +188,7 @@ describe("source citations", () => {
     await completed.promise;
 
     const completion = messages.find(
-      (message) =>
-        "method" in message && message.method === "turn/completed",
+      (message) => "method" in message && message.method === "turn/completed",
     );
     expect(
       completion && "method" in completion ? completion.params : undefined,

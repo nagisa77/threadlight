@@ -283,6 +283,8 @@ export const zhTW: Messages = {
   dragQueuedMessage: "拖曳以調整排隊順序",
   queuedAttachmentCount: "{count} 個附件",
   attachmentOnlyFollowUp: "僅附件訊息",
+  conversationTimeline: "對話時間軸",
+  jumpToQuestion: "跳轉到提問：{question}",
   moveQueuedMessageUp: "上移這則訊息",
   moveQueuedMessageDown: "下移這則訊息",
   moveUp: "上移",

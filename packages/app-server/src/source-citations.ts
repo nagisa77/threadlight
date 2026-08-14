@@ -22,17 +22,35 @@ export interface FinalizedSourceCitations {
 const SOURCE_MARKER =
   /\[\[source:([a-zA-Z0-9_-]+(?:\s*,\s*[a-zA-Z0-9_-]+)*)\]\]/g;
 const MAX_SOURCES = 30;
+const WEB_SOURCE_QUALITY_INSTRUCTIONS = [
+  "WEB SOURCE QUALITY",
+  "Use this source priority order for company, product, model, API, software, research-paper, and public-announcement questions:",
+  "1. First-party official sources are the highest priority: the official website, documentation, blog or changelog, repository and release notes, standards body, or original paper. An official source outranks the language preference; use an official Chinese source when no equivalent official English source exists.",
+  "2. Search English and global sources by default. Start internationally relevant research with an English query using search_lang=en and country=null, then add independent English or global primary and reputable sources.",
+  "3. Add Chinese-language searches only as a supplement when the topic has China-local policy, market, availability, pricing, or community context; when the user explicitly requests Chinese-local coverage; or when first-party and English evidence is insufficient.",
+  "Do not infer source language from the user's response language. Use secondary reporting for context, not as the sole evidence for first-party claims.",
+  "Diversify source domains and avoid using multiple syndicated, scraped, or reposted articles to support the same claim. Prefer recent sources that directly support the statement.",
+  "For latest or current queries, omit a year unless the user specified one or the runtime context confirms it; do not use a potentially stale year as the only latest-search filter.",
+].join("\n");
 
 export class SourceCitationRunController implements RunController {
   private readonly sources: CollectedSource[] = [];
   private readonly sourceByUrl = new Map<string, CollectedSource>();
 
-  beforeModel(
-    _context: RunControllerContext,
-  ): { instructions?: string } {
-    if (this.sources.length === 0) return {};
+  beforeModel(context: RunControllerContext): { instructions?: string } {
+    const sourceQualityInstructions = context.tools.some(
+      (tool) => tool.name === "web_search",
+    )
+      ? WEB_SOURCE_QUALITY_INSTRUCTIONS
+      : "";
+    if (this.sources.length === 0) {
+      return sourceQualityInstructions
+        ? { instructions: sourceQualityInstructions }
+        : {};
+    }
     return {
       instructions: [
+        sourceQualityInstructions,
         "Web search sources are available for citation.",
         "When a factual sentence is supported by a search result, append a marker immediately after that sentence using [[source:s1]]. Cite multiple sources with one marker such as [[source:s1,s2]].",
         "Cite selectively: use markers for externally verifiable claims that rely on search results, not for every sentence or for your own reasoning.",
@@ -42,7 +60,9 @@ export class SourceCitationRunController implements RunController {
           (source) =>
             `${source.id}: ${truncate(source.title, 140)} — ${truncate(source.url, 240)}`,
         ),
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     };
   }
 
@@ -62,7 +82,8 @@ export class SourceCitationRunController implements RunController {
       if (!normalizedUrl || this.sourceByUrl.has(normalizedUrl)) continue;
       const source: CollectedSource = {
         id: `s${this.sources.length + 1}`,
-        title: truncate(resultItem.title.trim(), 240) || domainFor(normalizedUrl),
+        title:
+          truncate(resultItem.title.trim(), 240) || domainFor(normalizedUrl),
         url: normalizedUrl,
         domain: domainFor(normalizedUrl),
         ...(resultItem.description.trim()
@@ -131,10 +152,12 @@ export function finalizeSourceCitations(
   return { text: transformed, sources, citations };
 }
 
-function parseWebSearchResult(output: string): {
-  query: string;
-  results: Array<{ title: string; url: string; description: string }>;
-} | undefined {
+function parseWebSearchResult(output: string):
+  | {
+      query: string;
+      results: Array<{ title: string; url: string; description: string }>;
+    }
+  | undefined {
   try {
     const value = JSON.parse(output) as unknown;
     if (!isObject(value) || typeof value.query !== "string") return;

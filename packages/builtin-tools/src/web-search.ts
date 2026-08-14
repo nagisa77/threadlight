@@ -64,7 +64,7 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
     name: "web_search",
     mutability: "read",
     description:
-      "Search the public internet and return page titles, URLs, and short descriptions.",
+      "Search the public internet and return page titles, URLs, and short descriptions. Prioritize first-party official sources, search English and global sources by default, and add Chinese or other local-language sources only when local context is relevant.",
     parameters: {
       type: "object",
       properties: {
@@ -72,7 +72,8 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
           type: "string",
           minLength: 1,
           maxLength: 400,
-          description: "Natural-language web search query.",
+          description:
+            "Natural-language web search query. Use English for global discovery and official product, documentation, repository, or paper searches unless the target is inherently local-language.",
         },
         count: {
           type: ["integer", "null"],
@@ -84,14 +85,15 @@ export function createWebSearchTool(options: WebSearchToolOptions): Tool {
           type: ["string", "null"],
           minLength: 2,
           maxLength: 2,
-          description: "Optional two-letter country preference.",
+          description:
+            "Optional two-letter country preference. Use null for global discovery and set a country only when local coverage is relevant.",
         },
         search_lang: {
           type: ["string", "null"],
           minLength: 2,
           maxLength: 35,
           description:
-            "Optional BCP-47 search-result language preference, such as en, ja, zh-Hans, or zh-Hant.",
+            "Optional BCP-47 search-result language preference, such as en, ja, zh-Hans, or zh-Hant. Prefer en for global research; use Chinese or another local language as a supplement when local context is relevant.",
         },
         freshness: {
           type: ["string", "null"],

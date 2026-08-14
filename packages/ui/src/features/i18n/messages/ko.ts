@@ -311,6 +311,8 @@ export const ko: Messages = {
   dragQueuedMessage: "드래그하여 순서 변경",
   queuedAttachmentCount: "첨부 파일 {count}개",
   attachmentOnlyFollowUp: "첨부 파일만 있는 메시지",
+  conversationTimeline: "대화 타임라인",
+  jumpToQuestion: "질문으로 이동: {question}",
   moveQueuedMessageUp: "이 메시지를 위로 이동",
   moveQueuedMessageDown: "이 메시지를 아래로 이동",
   moveUp: "위로 이동",
