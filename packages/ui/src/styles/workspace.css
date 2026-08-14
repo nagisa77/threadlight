@@ -9,10 +9,25 @@
   grid-template-rows: 48px minmax(0, 1fr);
   border-left: 1px solid var(--line-strong);
   background: #fff;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 220ms var(--ease-out),
+    display 220ms allow-discrete;
+}
+
+@starting-style {
+  .workspace-panel:not([hidden]) {
+    opacity: 0;
+    transform: translateX(14px);
+  }
 }
 
 .workspace-panel[hidden] {
   display: none;
+  opacity: 0;
+  transform: translateX(14px);
 }
 
 .deferred-view {
@@ -3585,6 +3600,21 @@ body.is-resizing-workspace .workspace-split-handle::after {
     background: rgb(18 18 17 / 28%);
     cursor: default;
     backdrop-filter: blur(1px);
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 180ms var(--ease-out),
+      display 180ms allow-discrete;
+  }
+
+  .sidebar-backdrop[data-open="true"] {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+    transition:
+      opacity 180ms var(--ease-out),
+      display 180ms allow-discrete;
   }
 
   .workspace,
@@ -4085,6 +4115,44 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .delivery-dialog,
   .thread-delete-button {
     transition-duration: 0ms;
+  }
+
+  .empty-state,
+  .message-list,
+  .live-run,
+  .progress-step,
+  .activity-item,
+  .turn-delivery-status,
+  .composer-provider-gate,
+  .turn-status-pill,
+  .task-action-feedback,
+  .source-drawer,
+  .workspace-panel {
+    transform: none;
+    transition: opacity 120ms ease;
+  }
+
+  .source-drawer-backdrop,
+  .sidebar-backdrop {
+    transition: opacity 120ms ease;
+  }
+
+  .workspace-panel {
+    transition:
+      opacity 120ms ease,
+      display 120ms allow-discrete;
+  }
+
+  .sidebar-backdrop {
+    transition:
+      opacity 120ms ease,
+      display 120ms allow-discrete;
+  }
+
+  .sidebar-backdrop[data-open="true"] {
+    transition:
+      opacity 120ms ease,
+      display 120ms allow-discrete;
   }
 
   .connection-error {
