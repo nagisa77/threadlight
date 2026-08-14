@@ -2952,19 +2952,6 @@ html[data-platform="desktop"][data-os="macos"]
   background: var(--panel);
   box-shadow: 0 8px 24px rgb(35 33 29 / 12%);
   font-size: 10px;
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  transform-origin: top right;
-  transition:
-    opacity 140ms var(--ease-out),
-    transform 140ms var(--ease-out);
-}
-
-@starting-style {
-  .task-action-feedback {
-    opacity: 0;
-    transform: translateY(-3px) scale(0.98);
-  }
 }
 
 .task-action-feedback.failed {
@@ -3272,11 +3259,6 @@ html[data-platform="desktop"][data-os="macos"]
   justify-content: center;
   padding: 50px 0;
   text-align: center;
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
 }
 
 .empty-mark {
@@ -3432,19 +3414,6 @@ html[data-platform="desktop"][data-os="macos"]
   display: flex;
   flex-direction: column;
   gap: 28px;
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
-}
-
-@starting-style {
-  .empty-state,
-  .message-list {
-    opacity: 0;
-    transform: translateY(6px);
-  }
 }
 
 .message {
@@ -3688,18 +3657,6 @@ html[data-platform="desktop"][data-os="macos"]
   border-radius: 11px;
   color: color-mix(in srgb, var(--success) 78%, var(--ink));
   background: color-mix(in srgb, var(--success) 6%, var(--panel));
-  opacity: 1;
-  transform: translateY(0);
-  transition:
-    opacity 180ms var(--ease-out),
-    transform 180ms var(--ease-out);
-}
-
-@starting-style {
-  .turn-delivery-status {
-    opacity: 0;
-    transform: translateY(6px);
-  }
 }
 
 .turn-delivery-status.attention {

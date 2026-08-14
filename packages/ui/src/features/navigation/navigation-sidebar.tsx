@@ -137,14 +137,11 @@ export function NavigationSidebar({
 
   return (
     <>
-      {mobile && (
+      {mobile && open && (
         <button
           type="button"
           className="sidebar-backdrop"
-          data-open={open ? "true" : "false"}
-          aria-hidden={!open}
           aria-label={t("hideSidebar")}
-          tabIndex={open ? 0 : -1}
           onClick={onHide}
         />
       )}
