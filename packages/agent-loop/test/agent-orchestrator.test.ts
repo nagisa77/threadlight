@@ -26,6 +26,19 @@ describe("AgentOrchestrator", () => {
         return { content: "export const ready = true;" };
       },
     });
+    const reportSummary = defineTool({
+      name: "report_activity_summary",
+      description: "Report summary",
+      parameters: { type: "object" },
+      mutability: "read",
+      presentation: {
+        visibility: "hidden",
+        activitySummaryArgument: "summary",
+      },
+      async execute() {
+        return { accepted: true };
+      },
+    });
     const provider: ModelProvider = {
       async generate(request, options) {
         if (request.instructions.includes("SUBAGENT ROLE")) {
@@ -39,6 +52,11 @@ describe("AgentOrchestrator", () => {
               text: "Inspecting the entry point.",
               toolCalls: [
                 {
+                  id: "summary-entry",
+                  name: "report_activity_summary",
+                  arguments: { summary: "Inspect the entry point" },
+                },
+                {
                   id: "inspect-entry",
                   name: "workspace_inspect",
                   arguments: { path: "src/index.ts" },
@@ -46,7 +64,11 @@ describe("AgentOrchestrator", () => {
               ],
             };
           }
-          expect(request.toolResults?.[0]?.output).toContain("ready");
+          expect(
+            request.toolResults?.find(
+              ({ name }) => name === "workspace_inspect",
+            )?.output,
+          ).toContain("ready");
           return { text: "The entry point is ready.", toolCalls: [] };
         }
         rootTurns += 1;
@@ -85,7 +107,11 @@ describe("AgentOrchestrator", () => {
     });
 
     await orchestrator.run(
-      defineAgent({ name: "root", instructions: "ROOT", tools: [inspect] }),
+      defineAgent({
+        name: "root",
+        instructions: "ROOT",
+        tools: [reportSummary, inspect],
+      }),
       "Check the workspace",
     );
 
@@ -112,6 +138,9 @@ describe("AgentOrchestrator", () => {
         status: "completed",
         text: "The entry point is ready.",
       }),
+    ]);
+    expect(child?.activities).toEqual([
+      expect.objectContaining({ name: "workspace_inspect" }),
     ]);
   });
 

@@ -34,6 +34,104 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("projects one hidden summary call onto its visible tool batch", async () => {
+    const events: AgentEvent[] = [];
+    const requests: ModelRequest[] = [];
+    const summaryTool = defineTool({
+      name: "report_summary",
+      description: "Report summary",
+      parameters: { type: "object" },
+      mutability: "read",
+      presentation: {
+        visibility: "hidden",
+        activitySummaryArgument: "summary",
+      },
+      async execute() {
+        return { accepted: true };
+      },
+    });
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return requests.length === 1
+          ? {
+              text: "我先检查配置，再运行测试。",
+              toolCalls: [
+                {
+                  id: "summary-1",
+                  name: "report_summary",
+                  arguments: { summary: "检查配置并运行测试" },
+                },
+                { id: "check-1", name: "check", arguments: {} },
+              ],
+            }
+          : { text: "检查完成。", toolCalls: [] };
+      },
+    };
+
+    await new AgentLoop(provider).run(
+      defineAgent({
+        name: "summarized",
+        instructions: "Check",
+        tools: [
+          summaryTool,
+          defineTool({
+            name: "check",
+            description: "Check",
+            parameters: { type: "object" },
+            async execute() {
+              return "ok";
+            },
+          }),
+        ],
+      }),
+      "Run the check",
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "model.completed",
+        text: "我先检查配置，再运行测试。",
+        activitySummary: "检查配置并运行测试",
+        toolCalls: expect.arrayContaining([
+          expect.objectContaining({
+            id: "summary-1",
+            visibility: "hidden",
+          }),
+          expect.objectContaining({ id: "check-1" }),
+        ]),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.started",
+        call: expect.objectContaining({
+          id: "summary-1",
+          visibility: "hidden",
+        }),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.completed",
+        result: expect.objectContaining({
+          callId: "summary-1",
+          visibility: "hidden",
+        }),
+      }),
+    );
+    expect(requests[1]?.toolResults).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          callId: "summary-1",
+          visibility: "hidden",
+        }),
+        expect.objectContaining({ callId: "check-1", output: "ok" }),
+      ]),
+    );
+  });
+
   it("records provider-neutral model, tool, and run durations", async () => {
     let tick = 0;
     const events: AgentEvent[] = [];

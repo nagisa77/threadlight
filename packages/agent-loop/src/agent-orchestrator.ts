@@ -999,6 +999,7 @@ export class AgentOrchestrator {
       return;
     }
     if (event.type === "tool.started") {
+      if (event.call.visibility === "hidden") return;
       const activities = [
         ...record.snapshot.activities,
         {
@@ -1029,6 +1030,7 @@ export class AgentOrchestrator {
       return;
     }
     if (event.type === "tool.completed") {
+      if (event.result.visibility === "hidden") return;
       const activities = record.snapshot.activities.map((activity) =>
         activity.id === event.result.callId
           ? {

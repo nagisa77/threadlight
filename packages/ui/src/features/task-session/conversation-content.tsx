@@ -76,6 +76,7 @@ export function ProgressList({
           {step.activities.length > 0 && (
             <ActivityList
               activities={step.activities}
+              summary={step.activitySummary}
               live={live}
               onTerminateProcess={onTerminateProcess}
             />
@@ -550,10 +551,12 @@ function formatAgentDuration(elapsedMs: number, t: Translate): string {
 
 export function ActivityList({
   activities,
+  summary,
   live = false,
   onTerminateProcess,
 }: {
   activities: readonly ToolActivity[];
+  summary?: string;
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
 }) {
@@ -577,12 +580,20 @@ export function ActivityList({
     >
       <summary className="activity-heading">
         <Terminal size={14} />
-        <span>
-          {live
-            ? hasRunningActivity
-              ? t("executing")
-              : t("executed")
-            : t("executionLog")}
+        <span
+          className={
+            summary
+              ? "activity-heading-label activity-heading-summary"
+              : "activity-heading-label"
+          }
+          title={summary}
+        >
+          {summary ??
+            (live
+              ? hasRunningActivity
+                ? t("executing")
+                : t("executed")
+              : t("executionLog"))}
         </span>
         <span className="activity-count">{activities.length}</span>
         <ChevronRight

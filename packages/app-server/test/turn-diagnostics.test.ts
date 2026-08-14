@@ -26,6 +26,11 @@ describe("turn diagnostics", () => {
           ? {
               text: "checking",
               toolCalls: [
+                {
+                  id: "summary-1",
+                  name: "report_activity_summary",
+                  arguments: { summary: "Run the check" },
+                },
                 { id: "check-1", name: "check", arguments: {} },
               ],
               usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
@@ -44,6 +49,19 @@ describe("turn diagnostics", () => {
         name: "scripted",
         instructions: "Reply",
         tools: [
+          defineTool({
+            name: "report_activity_summary",
+            description: "Report summary",
+            parameters: { type: "object" },
+            mutability: "read",
+            presentation: {
+              visibility: "hidden",
+              activitySummaryArgument: "summary",
+            },
+            async execute() {
+              return { accepted: true };
+            },
+          }),
           defineTool({
             name: "check",
             description: "Check",

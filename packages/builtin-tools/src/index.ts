@@ -5,6 +5,12 @@ export {
 export { createComputerShareTool } from "./computer-share.js";
 export { createExecCommandTool } from "./exec-command.js";
 export {
+  createReportActivitySummaryTool,
+  parseActivitySummary,
+  REPORT_ACTIVITY_SUMMARY_INSTRUCTIONS,
+  REPORT_ACTIVITY_SUMMARY_TOOL_NAME,
+} from "./report-activity-summary.js";
+export {
   createRequestPlanInputTool,
   REQUEST_PLAN_INPUT_TOOL_NAME,
 } from "./request-plan-input.js";

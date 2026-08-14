@@ -147,13 +147,40 @@ describe("conversation progress projection", () => {
         runId: "run-1",
         step: 1,
         text: "I’ll run the tests.",
+        activitySummary: "Run the tests",
         toolCalls: [
+          {
+            id: "summary-1",
+            name: "report_activity_summary",
+            arguments: { summary: "Run the tests" },
+            visibility: "hidden",
+          },
           {
             id: "call-1",
             name: "exec_command",
             arguments: { command: "npm test" },
           },
         ],
+      },
+      {
+        type: "tool.started",
+        runId: "run-1",
+        call: {
+          id: "summary-1",
+          name: "report_activity_summary",
+          arguments: { summary: "Run the tests" },
+          visibility: "hidden",
+        },
+      },
+      {
+        type: "tool.completed",
+        runId: "run-1",
+        result: {
+          callId: "summary-1",
+          name: "report_activity_summary",
+          output: '{"accepted":true}',
+          visibility: "hidden",
+        },
       },
       {
         type: "tool.started",
@@ -183,6 +210,7 @@ describe("conversation progress projection", () => {
     expect(progress).toEqual([
       {
         text: "I’ll run the tests.",
+        activitySummary: "Run the tests",
         activities: [
           {
             id: "call-1",
@@ -230,9 +258,9 @@ describe("conversation progress projection", () => {
       .toMatchObject({ status: "completed", process: { exitCode: 0 } });
     expect(projectMessagesProcess(messages, completed)[0]?.progress?.[0]
       ?.activities[0]).toMatchObject({
-        status: "completed",
-        process: { exitCode: 0 },
-      });
+      status: "completed",
+      process: { exitCode: 0 },
+    });
     expect(runningProcessSessionIds(progress, messages)).toEqual(["session-1"]);
   });
 
