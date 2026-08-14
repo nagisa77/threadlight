@@ -240,6 +240,16 @@ export function DiagnosticsPage({
           <button
             type="button"
             className="diagnostics-export pressable"
+            aria-label={
+              exporting
+                ? t("exportingDiagnosticBundle")
+                : t("exportDiagnosticBundle")
+            }
+            title={
+              exporting
+                ? t("exportingDiagnosticBundle")
+                : t("exportDiagnosticBundle")
+            }
             disabled={exporting}
             onClick={openExportDialog}
           >
@@ -248,9 +258,11 @@ export function DiagnosticsPage({
             ) : (
               <Download size={14} />
             )}
-            {exporting
-              ? t("exportingDiagnosticBundle")
-              : t("exportDiagnosticBundle")}
+            <span>
+              {exporting
+                ? t("exportingDiagnosticBundle")
+                : t("exportDiagnosticBundle")}
+            </span>
           </button>
         </div>
       </header>
@@ -622,9 +634,9 @@ export function DiagnosticsTurnRow({
   const { t } = useI18n();
   const showAgentScope = Boolean(
     turn.metrics &&
-      (turn.metrics.children.modelSteps > 0 ||
-        turn.metrics.children.toolCalls > 0 ||
-        turn.metrics.children.totalTokens > 0),
+    (turn.metrics.children.modelSteps > 0 ||
+      turn.metrics.children.toolCalls > 0 ||
+      turn.metrics.children.totalTokens > 0),
   );
   return (
     <details className={`diagnostics-turn ${turn.status}`}>
@@ -672,25 +684,25 @@ export function DiagnosticsTurnRow({
           </span>
         </div>
         {turn.metrics && showAgentScope && (
-            <div className="diagnostics-scope-summary">
-              {(
-                [
-                  [t("diagnosticRoot"), turn.metrics.root],
-                  [t("diagnosticChildren"), turn.metrics.children],
-                  [t("diagnosticTotal"), turn.metrics.total],
-                ] as const
-              ).map(([label, scope]) => (
-                <span key={label}>
-                  <strong>{label}</strong>
-                  <small>
-                    {formatNumber(scope.totalTokens, language)} {t("tokens")} ·{" "}
-                    {scope.modelSteps} {t("modelSteps")} · {scope.toolCalls}{" "}
-                    {t("toolCalls")}
-                  </small>
-                </span>
-              ))}
-            </div>
-          )}
+          <div className="diagnostics-scope-summary">
+            {(
+              [
+                [t("diagnosticRoot"), turn.metrics.root],
+                [t("diagnosticChildren"), turn.metrics.children],
+                [t("diagnosticTotal"), turn.metrics.total],
+              ] as const
+            ).map(([label, scope]) => (
+              <span key={label}>
+                <strong>{label}</strong>
+                <small>
+                  {formatNumber(scope.totalTokens, language)} {t("tokens")} ·{" "}
+                  {scope.modelSteps} {t("modelSteps")} · {scope.toolCalls}{" "}
+                  {t("toolCalls")}
+                </small>
+              </span>
+            ))}
+          </div>
+        )}
         {turn.modelSteps.length > 0 && (
           <DiagnosticTable
             title={t("modelSteps")}

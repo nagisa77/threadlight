@@ -1836,6 +1836,10 @@ button:disabled {
   cursor: pointer;
 }
 
+.command-palette-close {
+  display: none;
+}
+
 .command-palette-modes {
   display: flex;
   gap: 4px;

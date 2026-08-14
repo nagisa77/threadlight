@@ -75,11 +75,15 @@ export function ProjectMemoryPage({
       <header className="workspace-header memory-header">
         <div>
           <h1>{t("projectMemory")}</h1>
-          <p>{projectName} · {snapshot?.path ?? ".threadlight/MEMORY.md"}</p>
+          <p>
+            {projectName} · {snapshot?.path ?? ".threadlight/MEMORY.md"}
+          </p>
         </div>
         <button
           type="button"
           className="memory-open-button pressable"
+          aria-label={opening ? t("opening") : t("openInEditor")}
+          title={opening ? t("opening") : t("openInEditor")}
           disabled={loading || opening || !snapshot}
           onClick={() => void openFile()}
         >
@@ -88,7 +92,7 @@ export function ProjectMemoryPage({
           ) : (
             <ExternalLink size={13} />
           )}
-          {opening ? t("opening") : t("openInEditor")}
+          <span>{opening ? t("opening") : t("openInEditor")}</span>
         </button>
       </header>
 
@@ -154,7 +158,11 @@ export function MemoryDocument({
           <span>{snapshot.path}</span>
         </div>
         <div className="memory-document-actions">
-          <div className="memory-mode-switch" role="tablist" aria-label={t("viewMode")}>
+          <div
+            className="memory-mode-switch"
+            role="tablist"
+            aria-label={t("viewMode")}
+          >
             <button
               type="button"
               role="tab"

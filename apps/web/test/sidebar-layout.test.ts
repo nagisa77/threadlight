@@ -20,5 +20,11 @@ describe("web sidebar chrome", () => {
     expect(styles).toMatch(
       /@media \(max-width: 720px\)[\s\S]*?\.web-session-indicator\s*\{[^}]*z-index:\s*90;[^}]*safe-area-inset-top[^}]*safe-area-inset-left/s,
     );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.web-session-indicator\s*\{[^}]*height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.web-session-disconnect\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
   });
 });

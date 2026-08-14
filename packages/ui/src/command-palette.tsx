@@ -218,6 +218,15 @@ export function CommandPalette({
             <X size={14} />
           </button>
         )}
+        <button
+          type="button"
+          className="command-palette-close pressable"
+          aria-label={t("close")}
+          title={t("close")}
+          onClick={onClose}
+        >
+          <X size={16} />
+        </button>
         <kbd>esc</kbd>
       </div>
       <div className="command-palette-modes" role="tablist">

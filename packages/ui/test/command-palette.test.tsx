@@ -34,6 +34,8 @@ describe("CommandPalette", () => {
     expect(html).toContain("⌘K");
     expect(html).toContain("⌘P");
     expect(html).toContain('role="listbox"');
+    expect(html).toContain('class="command-palette-close pressable"');
+    expect(html).toContain('aria-label="关闭"');
   });
 
   it("matches local commands by title, subtitle, and keywords", () => {

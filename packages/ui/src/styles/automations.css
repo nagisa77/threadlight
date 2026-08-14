@@ -1016,6 +1016,23 @@
 }
 
 @media (max-width: 620px) {
+  .automations-primary,
+  .automation-secondary,
+  .automation-danger,
+  .automations-filter button,
+  .automation-cadence-picker button,
+  .automation-editor-state {
+    min-height: 44px;
+  }
+
+  .automations-search {
+    height: 44px;
+  }
+
+  .automation-editor-field :is(input, select, textarea) {
+    min-height: 44px;
+  }
+
   .automations-page {
     padding: 22px 14px 48px;
   }

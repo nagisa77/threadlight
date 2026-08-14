@@ -415,6 +415,18 @@ html[data-theme="dark"] .turn-status-pill {
   box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
 }
 
+html[data-theme="dark"] .jump-to-latest {
+  border-color: transparent;
+  color: var(--ink);
+  background:
+    linear-gradient(
+      135deg,
+      rgb(47 48 52 / 92%),
+      rgb(31 32 35 / 88%)
+    );
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+}
+
 html[data-theme="dark"] .turn-status-pill::before {
   background:
     linear-gradient(
@@ -585,14 +597,6 @@ html[data-theme="dark"] :is(
 ) {
   border-color: var(--line);
   background: color-mix(in srgb, var(--panel) 94%, white 3%);
-}
-
-@media (hover: none) {
-  .project-row-actions {
-    width: 56px;
-    padding-right: 3px;
-    opacity: 1;
-  }
 }
 
 html[data-theme="dark"] .thread-rename-form input {

@@ -30,6 +30,7 @@ import {
   TurnStatusPill,
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
 } from "../src/app.js";
+import { ComposerFloatingControls } from "../src/features/task-session/turn-status.js";
 import { I18nProvider } from "../src/i18n.js";
 import type { SettingsSnapshot } from "../src/settings.js";
 
@@ -453,6 +454,32 @@ describe("ConversationChangesButton", () => {
     expect(html).toContain("+134");
     expect(html).toContain("-0");
     expect(html).toContain('class="turn-status-separator">·</span>');
+  });
+
+  it("keeps file changes and the icon-only jump action in one ordered rail", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ComposerFloatingControls
+          jumpVisible
+          changes={{
+            threadId: "thread-1",
+            revision: "revision-1",
+            additions: 12,
+            deletions: 3,
+            files: [],
+          }}
+          onJump={vi.fn()}
+          onOpenChanges={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('class="composer-floating-controls"');
+    expect(html.indexOf("turn-status-pill")).toBeLessThan(
+      html.indexOf("jump-to-latest"),
+    );
+    expect(html).toContain('aria-label="跳到最新消息"');
+    expect(html).not.toContain(">跳到最新消息</span>");
   });
 });
 

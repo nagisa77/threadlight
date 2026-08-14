@@ -3,6 +3,7 @@ import type { AgentPlanData } from "@threadlight/protocol";
 import {
   Bookmark,
   Check,
+  ChevronDown,
   Copy,
   FileDiff,
   LoaderCircle,
@@ -207,6 +208,21 @@ export function ConversationChangesButton({
   );
 }
 
+export function JumpToLatestButton({ onJump }: { onJump(): void }) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      className="jump-to-latest pressable"
+      onClick={onJump}
+      aria-label={t("jumpToLatest")}
+      title={t("jumpToLatest")}
+    >
+      <ChevronDown size={16} strokeWidth={2.2} aria-hidden="true" />
+    </button>
+  );
+}
+
 export function TurnStatusPill({
   plan,
   changes,
@@ -223,78 +239,104 @@ export function TurnStatusPill({
     plan.items.every((item) => item.status === "completed");
 
   return (
-    <div className="turn-status-float">
-      <div className="turn-status-pill">
-        {plan && (
-          <div className="plan-status">
-            <button
-              type="button"
-              className="plan-status-trigger"
-              aria-label={
-                plan.items.length
-                  ? t("planStep", {
-                      current: step ?? 1,
-                      total: plan.items.length,
-                    })
-                  : t("planning")
-              }
-            >
-              {completed ? (
-                <span className="plan-status-icon completed">
-                  <Check size={11} strokeWidth={2.5} />
-                </span>
-              ) : (
-                <LoaderCircle
-                  className="plan-status-icon spin"
-                  size={15}
-                  strokeWidth={2.2}
-                />
-              )}
-              <strong>
-                {plan.items.length
-                  ? t("planStep", {
-                      current: step ?? 1,
-                      total: plan.items.length,
-                    })
-                  : t("planning")}
-              </strong>
-            </button>
-            {plan.items.length > 0 && (
-              <div
-                className="plan-status-popover"
-                role="list"
-                aria-label={t("plan")}
-              >
-                {plan.items.map((item, index) => (
-                  <div
-                    className={`plan-status-item ${item.status}`}
-                    role="listitem"
-                    data-current={index + 1 === step || undefined}
-                    key={`${index}:${item.step}`}
-                  >
-                    {item.status === "completed" ? (
-                      <span className="plan-item-icon completed">
-                        <Check size={11} strokeWidth={2.5} />
-                      </span>
-                    ) : (
-                      <LoaderCircle
-                        className={`plan-item-icon ${item.status === "in_progress" ? "spin" : ""}`}
-                        size={15}
-                        strokeWidth={2}
-                      />
-                    )}
-                    <span title={item.step}>{item.step}</span>
-                  </div>
-                ))}
-              </div>
+    <div className="turn-status-pill">
+      {plan && (
+        <div className="plan-status">
+          <button
+            type="button"
+            className="plan-status-trigger"
+            aria-label={
+              plan.items.length
+                ? t("planStep", {
+                    current: step ?? 1,
+                    total: plan.items.length,
+                  })
+                : t("planning")
+            }
+          >
+            {completed ? (
+              <span className="plan-status-icon completed">
+                <Check size={11} strokeWidth={2.5} />
+              </span>
+            ) : (
+              <LoaderCircle
+                className="plan-status-icon spin"
+                size={15}
+                strokeWidth={2.2}
+              />
             )}
-          </div>
-        )}
-        {plan && changes && <span className="turn-status-separator">·</span>}
-        {changes && (
-          <ConversationChangesButton changes={changes} onOpen={onOpenChanges} />
-        )}
-      </div>
+            <strong>
+              {plan.items.length
+                ? t("planStep", {
+                    current: step ?? 1,
+                    total: plan.items.length,
+                  })
+                : t("planning")}
+            </strong>
+          </button>
+          {plan.items.length > 0 && (
+            <div
+              className="plan-status-popover"
+              role="list"
+              aria-label={t("plan")}
+            >
+              {plan.items.map((item, index) => (
+                <div
+                  className={`plan-status-item ${item.status}`}
+                  role="listitem"
+                  data-current={index + 1 === step || undefined}
+                  key={`${index}:${item.step}`}
+                >
+                  {item.status === "completed" ? (
+                    <span className="plan-item-icon completed">
+                      <Check size={11} strokeWidth={2.5} />
+                    </span>
+                  ) : (
+                    <LoaderCircle
+                      className={`plan-item-icon ${item.status === "in_progress" ? "spin" : ""}`}
+                      size={15}
+                      strokeWidth={2}
+                    />
+                  )}
+                  <span title={item.step}>{item.step}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {plan && changes && <span className="turn-status-separator">·</span>}
+      {changes && (
+        <ConversationChangesButton changes={changes} onOpen={onOpenChanges} />
+      )}
+    </div>
+  );
+}
+
+export function ComposerFloatingControls({
+  jumpVisible,
+  plan,
+  changes,
+  onJump,
+  onOpenChanges,
+}: {
+  jumpVisible: boolean;
+  plan?: AgentPlanData;
+  changes?: ConversationChangesSnapshot;
+  onJump(): void;
+  onOpenChanges(): void;
+}) {
+  if (!jumpVisible && !plan && !changes) return null;
+  return (
+    <div className="composer-floating-controls">
+      {(plan || changes) && (
+        <TurnStatusPill
+          plan={plan}
+          changes={changes}
+          onOpenChanges={onOpenChanges}
+        />
+      )}
+      {jumpVisible && <JumpToLatestButton onJump={onJump} />}
     </div>
   );
 }

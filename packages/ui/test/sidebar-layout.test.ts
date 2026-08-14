@@ -5,6 +5,10 @@ import { sidebarStartsOpen } from "../src/app.js";
 import { readUiStyles } from "./style-source.js";
 
 const styles = readUiStyles();
+const appSource = readFileSync(
+  new URL("../src/app.tsx", import.meta.url),
+  "utf8",
+);
 const desktopRenderer = readFileSync(
   new URL("../../../apps/desktop/src/renderer/main.tsx", import.meta.url),
   "utf8",
@@ -38,12 +42,8 @@ describe("sidebar visibility", () => {
     expect(desktopRenderer).toContain(
       'document.documentElement.dataset.os = "macos"',
     );
-    expect(desktopRenderer).toContain(
-      "if (window.threadlightDesktop.isMacOS)",
-    );
-    expect(desktopPreload).toContain(
-      'isMacOS: process.platform === "darwin"',
-    );
+    expect(desktopRenderer).toContain("if (window.threadlightDesktop.isMacOS)");
+    expect(desktopPreload).toContain('isMacOS: process.platform === "darwin"');
     expect(styles).toMatch(
       /html\[data-platform="desktop"\]\[data-os="macos"\][\s\S]*?\.app-shell\.sidebar-hidden[\s\S]*?\.sidebar-reveal-button\s*\{[^}]*left:\s*74px;/s,
     );
@@ -79,6 +79,15 @@ describe("sidebar visibility", () => {
     );
     expect(styles).toMatch(
       /@media \(max-width: 720px\)[\s\S]*?\.composer-wrap\s*\{[^}]*padding:\s*8px 10px max\(10px, env\(safe-area-inset-bottom, 0px\)\);/s,
+    );
+  });
+
+  it("closes the phone drawer before opening destructive confirmations", () => {
+    expect(appSource).toMatch(
+      /onDeleteProject=\{\(project\) => \{\s*closeSidebarForNavigation\(\);[\s\S]*?setPendingDeleteProject\(project\);/s,
+    );
+    expect(appSource).toMatch(
+      /onDeleteConversation=\{\(projectId, conversation\) => \{\s*closeSidebarForNavigation\(\);[\s\S]*?setPendingDelete\(\{ projectId, conversation \}\);/s,
     );
   });
 });

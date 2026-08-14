@@ -610,11 +610,19 @@
 @media (max-width: 720px) {
   .web-session-indicator {
     z-index: 90;
-    top: calc(11px + env(safe-area-inset-top, 0px));
+    top: calc(3px + env(safe-area-inset-top, 0px));
     left: max(18px, env(safe-area-inset-left, 0px));
+    height: 44px;
+    padding-right: 0;
     max-width: calc(
       min(86vw, 320px) - max(18px, env(safe-area-inset-left, 0px)) - 52px
     );
+  }
+
+  .web-session-disconnect {
+    width: 44px;
+    height: 44px;
+    border-radius: 9px;
   }
 }
 

@@ -150,8 +150,8 @@ import {
 import {
   ComputerPermissionCard,
   ComputerShareStatus,
+  ComposerFloatingControls,
   MessageActions,
-  TurnStatusPill,
   WORKSPACE_CHANGE_REFRESH_TOOL_NAMES,
   clampWorkspacePanelWidth,
   conversationChangesRefreshKey,
@@ -262,10 +262,7 @@ import {
   navigateComposerHistory,
 } from "./features/productivity/model.js";
 import { MessageBookmarksDialog } from "./features/productivity/task-actions.js";
-import {
-  ComposerProductivityStatus,
-  JumpToLatestButton,
-} from "./features/productivity/composer-status.js";
+import { ComposerProductivityStatus } from "./features/productivity/composer-status.js";
 import type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
@@ -2261,6 +2258,7 @@ function ThreadlightAppContent({
     ) {
       return;
     }
+    closeSidebarForNavigation();
     setCommandPaletteMode(mode);
     setCommandPaletteOpen(true);
   }
@@ -3284,6 +3282,7 @@ function ThreadlightAppContent({
         onRevealProject={revealProjectInFinder}
         onToggleProjectPinned={toggleProjectPinned}
         onDeleteProject={(project) => {
+          closeSidebarForNavigation();
           setDeleteProjectError(undefined);
           setPendingDeleteProject(project);
         }}
@@ -3292,10 +3291,12 @@ function ThreadlightAppContent({
         }
         onUpdateConversation={updateConversationMetadata}
         onDeleteConversation={(projectId, conversation) => {
+          closeSidebarForNavigation();
           setDeleteError(undefined);
           setPendingDelete({ projectId, conversation });
         }}
         onOpenRemoteRuntime={() => {
+          closeSidebarForNavigation();
           setRemoteRuntimeError(undefined);
           setRemoteRuntimeOpen(true);
         }}
@@ -3440,7 +3441,7 @@ function ThreadlightAppContent({
 
               <section
                 ref={conversation}
-                className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""}`}
+                className={`conversation ${hasConversationChanges ? "has-conversation-changes" : ""} ${showJumpToLatest || state.plan || hasConversationChanges ? "has-composer-floats" : ""}`}
                 aria-live="polite"
                 onScroll={(event) => {
                   const following = isNearBottom(event.currentTarget);
@@ -3670,27 +3671,22 @@ function ThreadlightAppContent({
                 </div>
               </section>
 
-              {showJumpToLatest && state.messages.length > 0 && (
-                <JumpToLatestButton onJump={jumpToLatest} />
-              )}
-
               <footer className="composer-wrap">
+                <ComposerFloatingControls
+                  jumpVisible={showJumpToLatest && state.messages.length > 0}
+                  plan={state.plan}
+                  changes={
+                    hasConversationChanges ? conversationChanges : undefined
+                  }
+                  onJump={jumpToLatest}
+                  onOpenChanges={openReviewPanel}
+                />
                 <AgentTreePanel
                   tree={state.agentTree}
                   live
                   controls={{ client, threadId: state.threadId }}
                   onOpenInPanel={workspaceAgentPanel.open}
                 />
-                {(state.plan ||
-                  (hasConversationChanges && conversationChanges)) && (
-                  <TurnStatusPill
-                    plan={state.plan}
-                    changes={
-                      hasConversationChanges ? conversationChanges : undefined
-                    }
-                    onOpenChanges={openReviewPanel}
-                  />
-                )}
                 {!providerReady && (
                   <button
                     type="button"

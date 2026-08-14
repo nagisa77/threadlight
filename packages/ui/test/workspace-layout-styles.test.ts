@@ -36,6 +36,73 @@ describe("workspace titlebar hit regions", () => {
       /@media \(max-width: 1100px\)[\s\S]*?\.workspace\.has-workspace-panel > \.sidebar-reveal-button\s*\{[^}]*display:\s*none;/s,
     );
   });
+
+  it("aligns phone navigation and global actions on one 44px row", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.sidebar-collapse-button,\s*\.sidebar-reveal-button\s*\{[^}]*top:\s*calc\(3px \+ env\(safe-area-inset-top, 0px\)\);[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-header,\s*\.app-shell\.sidebar-hidden \.workspace-header\s*\{[^}]*height:\s*calc\(50px \+ env\(safe-area-inset-top, 0px\)\);[^}]*padding-left:\s*56px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-global-actions\s*\{[^}]*top:\s*calc\(3px \+ env\(safe-area-inset-top, 0px\)\);[^}]*height:\s*44px;[^}]*gap:\s*0;/s,
+    );
+  });
+});
+
+describe("mobile overlays and floating controls", () => {
+  it("uses a full-screen command palette above the mobile drawer", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.dialog-backdrop\s*\{[^}]*z-index:\s*230;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.command-palette-backdrop\s*\{[^}]*align-items:\s*stretch;[^}]*padding:\s*0;[^}]*backdrop-filter:\s*none;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.command-palette\s*\{[^}]*width:\s*100%;[^}]*height:\s*100dvh;[^}]*border-radius:\s*0;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.command-palette-clear,\s*\.command-palette-close\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+  });
+
+  it("keeps status and jump actions together without covering messages", () => {
+    expect(styles).toMatch(
+      /\.composer-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*display:\s*flex;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.composer-floating-controls\s*\{[^}]*position:\s*relative;[^}]*top:\s*auto;[^}]*min-height:\s*36px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.jump-to-latest\s*\{[^}]*width:\s*36px;[^}]*height:\s*36px;/s,
+    );
+  });
+});
+
+describe("mobile touch surfaces", () => {
+  it("uses full-size controls in supporting pages and the workspace tree", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.model-select-wrap,\s*\.secret-input-wrap\s*\{[^}]*height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.diagnostics-refresh,\s*\.diagnostics-export\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tree-search input\s*\{[^}]*height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.workspace-tree-row\s*\{[^}]*height:\s*44px;/s,
+    );
+  });
+
+  it("uses 44px controls throughout the phone automation editor", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 620px\)[\s\S]*?\.automations-primary,[\s\S]*?\.automation-editor-state\s*\{[^}]*min-height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 620px\)[\s\S]*?\.automation-editor-field :is\(input, select, textarea\)\s*\{[^}]*min-height:\s*44px;/s,
+    );
+  });
 });
 
 describe("agent panel layout", () => {

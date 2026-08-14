@@ -36,4 +36,19 @@ describe("project row activity layout", () => {
       /@media \(max-width: 720px\)[\s\S]*?\.sidebar\s*\{[^}]*z-index:\s*80;/s,
     );
   });
+
+  it("keeps project and task actions visible and touchable on phones", () => {
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.project-row\s*\{[^}]*height:\s*44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.project-group \.project-row-actions,[\s\S]*?width:\s*88px;[^}]*overflow:\s*visible;[^}]*opacity:\s*1;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.project-row-action\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*flex:\s*0 0 44px;/s,
+    );
+    expect(styles).toMatch(
+      /@media \(max-width: 720px\)[\s\S]*?\.thread-action-button\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;[^}]*pointer-events:\s*auto;[^}]*opacity:\s*1;/s,
+    );
+  });
 });

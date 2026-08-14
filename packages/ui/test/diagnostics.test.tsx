@@ -31,6 +31,7 @@ describe("diagnostics center", () => {
     expect(html).toContain("Threadlight");
     expect(html).toContain("正在读取诊断数据");
     expect(html).toContain("导出诊断包");
+    expect(html).toContain('aria-label="导出诊断包"');
     expect(html).toContain('type="button"');
   });
 

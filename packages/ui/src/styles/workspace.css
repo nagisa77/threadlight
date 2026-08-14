@@ -3467,13 +3467,36 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .workspace-tab-close {
-    width: 28px;
-    height: 28px;
+    width: 40px;
+    height: 40px;
   }
 
   .panel-add-trigger,
   .workspace-panel-actions .header-terminal-button {
     width: 44px;
+    height: 44px;
+  }
+
+  .panel-icon-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .panel-add-option,
+  .panel-empty-action {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  .workspace-tree {
+    grid-template-rows: 58px minmax(0, 1fr);
+  }
+
+  .workspace-tree-search input {
+    height: 44px;
+  }
+
+  .workspace-tree-row {
     height: 44px;
   }
 
@@ -3530,13 +3553,14 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .sidebar-collapse-button {
-    top: calc(10px + env(safe-area-inset-top, 0px));
+    right: max(4px, env(safe-area-inset-right, 0px));
   }
 
   .sidebar-collapse-button,
   .sidebar-reveal-button {
-    width: 36px;
-    height: 34px;
+    top: calc(3px + env(safe-area-inset-top, 0px));
+    width: 44px;
+    height: 44px;
   }
 
   .sidebar-mobile-close-icon {
@@ -3544,8 +3568,11 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .sidebar-reveal-button {
-    top: calc(8px + env(safe-area-inset-top, 0px));
-    left: max(8px, env(safe-area-inset-left, 0px));
+    left: max(4px, env(safe-area-inset-left, 0px));
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
   .sidebar-backdrop {
@@ -3568,12 +3595,35 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .workspace-header,
   .app-shell.sidebar-hidden .workspace-header {
     height: calc(50px + env(safe-area-inset-top, 0px));
-    padding-top: calc(7px + env(safe-area-inset-top, 0px));
-    padding-left: 52px;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: 0;
+    padding-left: 56px;
+  }
+
+  .workspace:not(.has-workspace-panel) .workspace-header {
+    padding-right: calc(96px + env(safe-area-inset-right, 0px));
+  }
+
+  .workspace:not(.has-workspace-panel) .workspace-header-drag-region {
+    right: calc(96px + env(safe-area-inset-right, 0px));
+  }
+
+  .workspace:not(.has-workspace-panel):has(.project-open-control)
+    .workspace-header {
+    padding-right: calc(150px + env(safe-area-inset-right, 0px));
+  }
+
+  .workspace:not(.has-workspace-panel):has(.project-open-control)
+    .workspace-header-drag-region {
+    right: calc(150px + env(safe-area-inset-right, 0px));
   }
 
   .workspace-header-title {
     min-width: 0;
+  }
+
+  .workspace-header-actions {
+    gap: 0;
   }
 
   .workspace-header h1,
@@ -3582,16 +3632,18 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .workspace-global-actions {
-    top: calc(8px + env(safe-area-inset-top, 0px));
-    right: max(8px, env(safe-area-inset-right, 0px));
+    top: calc(3px + env(safe-area-inset-top, 0px));
+    right: max(4px, env(safe-area-inset-right, 0px));
+    height: 44px;
+    gap: 0;
   }
 
   .conversation-inner {
     padding: 28px 14px 20px;
   }
 
-  .conversation.has-conversation-changes .conversation-inner {
-    padding-bottom: 68px;
+  .conversation.has-composer-floats .conversation-inner {
+    padding-bottom: 20px;
   }
 
   .empty-state {
@@ -3628,9 +3680,13 @@ body.is-resizing-workspace .workspace-split-handle::after {
     border-radius: 16px;
   }
 
-  .turn-status-float {
-    right: 10px;
-    left: 10px;
+  .composer-floating-controls {
+    position: relative;
+    top: auto;
+    right: auto;
+    left: auto;
+    min-height: 36px;
+    margin-bottom: 6px;
   }
 
   .project-empty-state {
@@ -3723,6 +3779,146 @@ body.is-resizing-workspace .workspace-split-handle::after {
 }
 
 @media (max-width: 720px) {
+  .composer {
+    --composer-control-size: 44px;
+  }
+
+  .project-row {
+    height: 44px;
+  }
+
+  .project-group .project-row-actions,
+  .project-group:hover .project-row-actions,
+  .project-row-actions:focus-within,
+  .project-row-actions.open {
+    width: 88px;
+    padding-right: 0;
+    overflow: visible;
+    opacity: 1;
+  }
+
+  .project-row-action {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    border-radius: 8px;
+  }
+
+  .project-conversations .thread-item,
+  .recent-task-list .thread-item,
+  .thread-item-select {
+    min-height: 44px;
+  }
+
+  .thread-item:has(> .thread-actions) > .thread-item-select {
+    padding-right: 50px;
+  }
+
+  .thread-actions {
+    top: 0;
+    right: 0;
+  }
+
+  .thread-action-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    pointer-events: auto;
+    opacity: 1;
+  }
+
+  .settings-nav-button {
+    height: 44px;
+  }
+
+  .memory-open-button {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    justify-content: center;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .memory-header > div {
+    min-width: 0;
+  }
+
+  .diagnostics-header > div:first-child {
+    min-width: 0;
+  }
+
+  .diagnostics-header-actions {
+    flex: 0 0 88px;
+    gap: 0;
+  }
+
+  .diagnostics-refresh,
+  .diagnostics-export {
+    width: 44px;
+    height: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .diagnostics-export > span {
+    display: none;
+  }
+
+  .diagnostics-export-close {
+    width: 44px;
+    height: 44px;
+  }
+
+  .diagnostics-export-cancel,
+  .diagnostics-export-confirm,
+  .diagnostics-conversation-toolbar > button,
+  .diagnostics-conversation-list label {
+    min-height: 44px;
+  }
+
+  .memory-open-button > span {
+    display: none;
+  }
+
+  .memory-retry-button,
+  .memory-mode-switch button {
+    min-height: 44px;
+  }
+
+  .memory-refresh-button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .model-select-wrap,
+  .secret-input-wrap {
+    height: 44px;
+  }
+
+  .settings-select-option,
+  .provider-test-button,
+  .settings-save-button {
+    min-height: 44px;
+  }
+
+  .secret-action {
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+  }
+
+  .secret-clear {
+    height: 44px;
+  }
+
+  .action-popover button,
+  .thread-action-menu button {
+    min-height: 44px;
+  }
+
   .sidebar-collapse-button,
   .sidebar-reveal-button,
   .header-terminal-button,
@@ -3734,10 +3930,8 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .jump-to-latest {
-    min-height: 44px;
-    bottom: 112px;
-    padding-inline: 14px;
-    font-size: 11px;
+    width: 36px;
+    height: 36px;
   }
 
   .composer-productivity-status {
@@ -3751,7 +3945,71 @@ body.is-resizing-workspace .workspace-split-handle::after {
   }
 
   .dialog-backdrop {
+    z-index: 230;
     padding: 12px;
+  }
+
+  .command-palette-backdrop {
+    align-items: stretch;
+    justify-items: stretch;
+    padding: 0;
+    background: var(--panel);
+    backdrop-filter: none;
+  }
+
+  .command-palette {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .command-palette-input {
+    height: calc(54px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: max(6px, env(safe-area-inset-right, 0px));
+    padding-left: max(14px, env(safe-area-inset-left, 0px));
+  }
+
+  .command-palette-input > kbd {
+    display: none;
+  }
+
+  .command-palette-clear,
+  .command-palette-close {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 auto;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 9px;
+    color: var(--muted);
+    background: transparent;
+  }
+
+  .command-palette-modes {
+    padding-right: max(10px, env(safe-area-inset-right, 0px));
+    padding-left: max(10px, env(safe-area-inset-left, 0px));
+  }
+
+  .command-palette-results {
+    padding-right: max(6px, env(safe-area-inset-right, 0px));
+    padding-left: max(6px, env(safe-area-inset-left, 0px));
+  }
+
+  .command-palette-result {
+    min-height: 54px;
+  }
+
+  .command-palette-footer {
+    min-height: calc(38px + env(safe-area-inset-bottom, 0px));
+    padding-right: max(10px, env(safe-area-inset-right, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(10px, env(safe-area-inset-left, 0px));
   }
 
   .bookmarks-dialog {
@@ -3777,6 +4035,14 @@ body.is-resizing-workspace .workspace-split-handle::after {
   .jump-to-latest:hover {
     border-color: color-mix(in srgb, var(--accent) 34%, var(--line-strong));
     background: var(--panel);
+  }
+}
+
+@media (hover: none) and (min-width: 721px) {
+  .project-row-actions {
+    width: 56px;
+    padding-right: 3px;
+    opacity: 1;
   }
 }
 

@@ -1,22 +1,5 @@
-import { ChevronDown } from "lucide-react";
-
 import { useI18n } from "../../i18n.js";
 import type { DraftPersistenceStatus } from "./controller.js";
-
-export function JumpToLatestButton({ onJump }: { onJump(): void }) {
-  const { t } = useI18n();
-  return (
-    <button
-      type="button"
-      className="jump-to-latest pressable"
-      onClick={onJump}
-      aria-label={t("jumpToLatest")}
-    >
-      <ChevronDown size={14} aria-hidden="true" />
-      <span>{t("jumpToLatest")}</span>
-    </button>
-  );
-}
 
 export function ComposerProductivityStatus({
   hasHistory,
