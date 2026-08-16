@@ -130,6 +130,7 @@ export function ComposerSurface({ model }: { model: AppViewModel }) {
       conversationChanges,
       workspaceAgentPanel,
       hasConversationChanges,
+      openLocalFile,
       openReviewPanel,
     },
     productivity: _productivity,
@@ -252,6 +253,11 @@ export function ComposerSurface({ model }: { model: AppViewModel }) {
             capabilities={selected}
             disabled={state.isRunning}
             onManage={manageConnector}
+            onPreview={(capability) => {
+              if (capability.localPath) {
+                openLocalFile({ path: capability.localPath });
+              }
+            }}
             onRemove={(capability) =>
               setSelected((current) => {
                 if (capability.id === "tool:plan") setComposerMode("default");

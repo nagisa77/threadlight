@@ -45,6 +45,8 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: unknown;
+  /** Provider parsing error that must be returned to the model without executing the tool. */
+  argumentError?: string;
 }
 
 export interface ToolResult {

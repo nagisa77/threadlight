@@ -34,6 +34,8 @@ describe("CapabilityMenu", () => {
               kind: "skill",
               name: "Documents",
               description: "Create documents",
+              localPath:
+                "/Users/tim/.agents/skills/documents/SKILL.md",
               icon: "documents",
               visibility: "featured",
               status: "ready",
@@ -47,6 +49,10 @@ describe("CapabilityMenu", () => {
     expect(html).toContain("技能");
     expect(html).toContain("lucide-mail");
     expect(html).toContain("lucide-file-text");
+    expect(html).toContain(
+      'title="/Users/tim/.agents/skills/documents"',
+    );
+    expect(html).toContain("/Users/tim/.agents/skills/documents");
   });
 
   it("uses one menu surface for files, tools, and skills", () => {
@@ -220,6 +226,31 @@ describe("CapabilityMenu", () => {
     expect(html).toContain('aria-label="管理 Gmail 连接"');
     expect(html).toContain('aria-label="移除能力 Gmail"');
     expect(html).toContain("lucide-settings");
+  });
+
+  it("offers file preview from a selected local skill chip", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <CapabilityChips
+          capabilities={[
+            {
+              id: "skill:pdf",
+              kind: "skill",
+              name: "pdf",
+              description: "Work with PDF files",
+              localPath: "/Users/tim/.agents/skills/pdf/SKILL.md",
+            },
+          ]}
+          disabled={false}
+          onPreview={() => undefined}
+          onRemove={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('aria-label="预览 pdf"');
+    expect(html).toContain('title="预览"');
+    expect(html).toContain("lucide-eye");
   });
 
   it("renders connected Gmail management with a disconnect action", () => {

@@ -135,6 +135,9 @@ describe("capability registry", () => {
         expect.objectContaining({
           name: "personal-helper",
           source: "user",
+          localPath: realpathSync(
+            join(userSkills, "personal-helper", "SKILL.md"),
+          ),
           visibility: "search",
         }),
       ]),

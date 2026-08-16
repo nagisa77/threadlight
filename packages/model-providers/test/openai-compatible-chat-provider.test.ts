@@ -124,6 +124,80 @@ describe("OpenAICompatibleChatProvider", () => {
     expect(second.text).toBe("The answer is 42");
   });
 
+  it("returns malformed tool arguments as a recoverable tool call", async () => {
+    const create = vi.fn().mockResolvedValue(
+      chunks([
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call-invalid",
+                    function: {
+                      name: "exec_command",
+                      arguments: '{"command":"printf "unterminated"',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ]),
+    );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "deepseek",
+      baseURL: "https://api.deepseek.test",
+      defaultModel: "deepseek-v4-flash",
+      client,
+    });
+
+    const turn = await provider.generate({
+      instructions: "Use tools",
+      input: "Create a presentation",
+      tools: [
+        {
+          name: "exec_command",
+          description: "Execute a command",
+          parameters: { type: "object" },
+        },
+      ],
+    });
+
+    expect(turn.toolCalls).toEqual([
+      {
+        id: "call-invalid",
+        name: "exec_command",
+        arguments: {},
+        argumentError:
+          "Model returned invalid JSON arguments for tool exec_command. Retry the tool call with one valid JSON object matching its schema.",
+      },
+    ]);
+    expect(turn.state).toMatchObject({
+      messages: [
+        { role: "system" },
+        { role: "user" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call-invalid",
+              function: {
+                name: "exec_command",
+                arguments: '{"command":"printf "unterminated"',
+              },
+            },
+          ],
+        },
+      ],
+    });
+  });
+
   it("closes pending tool calls before appending injected user input", async () => {
     const create = vi
       .fn()

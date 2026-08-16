@@ -987,16 +987,37 @@
   gap: 2px;
 }
 
-.capability-option-copy strong,
+.capability-option-title {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.capability-option-copy > strong,
+.capability-option-title strong,
+.capability-option-location,
 .capability-option-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.capability-option-copy strong {
+.capability-option-copy > strong,
+.capability-option-title strong {
+  flex: 0 1 auto;
+  min-width: 0;
   font-size: 12px;
   font-weight: 650;
+}
+
+.capability-option-location {
+  min-width: 0;
+  flex: 1 1 auto;
+  color: color-mix(in srgb, var(--subtle) 72%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-weight: 450;
 }
 
 .capability-option-copy small {

@@ -427,6 +427,8 @@ export interface CapabilityDescriptor {
   name: string;
   description: string;
   source?: string;
+  /** Absolute host-local path to a skill's entry file. */
+  localPath?: string;
   /** Stable icon name rendered by the client; never an arbitrary URL. */
   icon?: string;
   /** Featured entries appear before the user types. Search entries require a query. */

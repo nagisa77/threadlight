@@ -66,6 +66,7 @@
   white-space: nowrap;
 }
 
+.capability-chip-preview,
 .capability-chip-manage,
 .capability-chip-remove {
   display: grid;
@@ -106,10 +107,8 @@
     background: color-mix(in srgb, var(--ink) 7%, transparent);
   }
 
-  .capability-chip-remove:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-  }
-
+  .capability-chip-preview:hover:not(:disabled),
+  .capability-chip-remove:hover:not(:disabled),
   .capability-chip-manage:hover:not(:disabled) {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
   }

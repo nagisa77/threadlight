@@ -7,6 +7,7 @@ import {
   Check,
   FileText,
   FileType2,
+  Eye,
   ListTodo,
   LoaderCircle,
   Mail,
@@ -86,6 +87,7 @@ export function filterCapabilities(
         capability.name,
         capability.description,
         capability.source,
+        capability.localPath,
         ...(capability.keywords ?? []),
       ]
         .filter(Boolean)
@@ -95,6 +97,10 @@ export function filterCapabilities(
       if (left.kind === right.kind) return 0;
       return left.kind === "tool" ? -1 : 1;
     });
+}
+
+export function skillLocalDirectory(localPath: string): string {
+  return localPath.replace(/[\\/]SKILL\.md$/iu, "");
 }
 
 export function filterComposerAddActions(
@@ -163,11 +169,13 @@ export function CapabilityChips({
   capabilities,
   disabled,
   onManage,
+  onPreview,
   onRemove,
 }: {
   capabilities: readonly CapabilityDescriptor[];
   disabled: boolean;
   onManage?(capability: CapabilityDescriptor): void;
+  onPreview?(capability: CapabilityDescriptor): void;
   onRemove(capability: CapabilityDescriptor): void;
 }) {
   const { t } = useI18n();
@@ -178,6 +186,20 @@ export function CapabilityChips({
         <span className="capability-chip" key={capability.id}>
           <CapabilityIcon icon={capability.icon} kind={capability.kind} />
           <span>{capability.name}</span>
+          {onPreview &&
+            capability.kind === "skill" &&
+            capability.localPath && (
+              <button
+                type="button"
+                className="capability-chip-preview pressable"
+                disabled={disabled}
+                aria-label={`${t("preview")} ${capability.name}`}
+                title={t("preview")}
+                onClick={() => onPreview(capability)}
+              >
+                <Eye size={12} />
+              </button>
+            )}
           {onManage &&
             (capability.id.startsWith("mcp:") ||
               capability.connectorRef !== undefined) && (
@@ -361,7 +383,18 @@ export function CapabilityMenu({
                     />
                   </span>
                   <span className="capability-option-copy">
-                    <strong>{capability.name}</strong>
+                    <span className="capability-option-title">
+                      <strong>{capability.name}</strong>
+                      {capability.kind === "skill" &&
+                        capability.localPath && (
+                          <span
+                            className="capability-option-location"
+                            title={skillLocalDirectory(capability.localPath)}
+                          >
+                            {skillLocalDirectory(capability.localPath)}
+                          </span>
+                        )}
+                    </span>
                     <small>{capability.description}</small>
                   </span>
                   <span className="capability-option-kind">

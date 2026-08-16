@@ -7,6 +7,7 @@ import {
   filterComposerAddActions,
   nextCapabilityIndex,
   removeCapabilityQuery,
+  skillLocalDirectory,
 } from "../src/capabilities.js";
 
 const capabilities = [
@@ -32,6 +33,7 @@ const capabilities = [
     name: "internal-review",
     description: "Review an implementation",
     source: "user",
+    localPath: "/Users/tim/.agents/skills/internal-review/SKILL.md",
     visibility: "search" as const,
     keywords: ["audit"],
   },
@@ -79,6 +81,18 @@ describe("composer capabilities", () => {
     expect(
       filterCapabilities(capabilities, "audit", new Set()),
     ).toEqual([capabilities[2]]);
+    expect(
+      filterCapabilities(capabilities, "internal-review/skill", new Set()),
+    ).toEqual([capabilities[2]]);
+  });
+
+  it("derives a display directory from local skill entry paths", () => {
+    expect(
+      skillLocalDirectory("/Users/tim/.agents/skills/pdf/SKILL.md"),
+    ).toBe("/Users/tim/.agents/skills/pdf");
+    expect(
+      skillLocalDirectory("C:\\Users\\tim\\.agents\\skills\\pdf\\SKILL.md"),
+    ).toBe("C:\\Users\\tim\\.agents\\skills\\pdf");
   });
 
   it("uses the same searchable file action for both composer entry points", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AgentLoop } from "../src/agent-loop.js";
 import { defineAgent, defineTool } from "../src/types.js";
@@ -56,6 +56,75 @@ describe("AgentLoop", () => {
       state: { step: 1 },
       input: expect.stringContaining("neither visible content nor a tool call"),
     });
+  });
+
+  it("returns invalid tool arguments to the model without approval or execution", async () => {
+    const requests: ModelRequest[] = [];
+    const execute = vi.fn();
+    const beforeToolCall = vi.fn();
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "I’ll create the file.",
+            toolCalls: [
+              {
+                id: "call-invalid",
+                name: "exec_command",
+                arguments: {},
+                argumentError:
+                  "Model returned invalid JSON arguments for tool exec_command. Retry the tool call with one valid JSON object matching its schema.",
+              },
+            ],
+          } as ModelTurn;
+        }
+        expect(request.toolResults).toEqual([
+          {
+            callId: "call-invalid",
+            name: "exec_command",
+            output:
+              "Model returned invalid JSON arguments for tool exec_command. Retry the tool call with one valid JSON object matching its schema.",
+            isError: true,
+          },
+        ]);
+        return { text: "Recovered after retrying safely.", toolCalls: [] };
+      },
+    };
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "invalid-arguments",
+        instructions: "Use tools",
+        tools: [
+          defineTool({
+            name: "exec_command",
+            description: "Execute a command",
+            parameters: { type: "object" },
+            execute,
+          }),
+        ],
+      }),
+      "Create a presentation",
+      {
+        controller: { beforeToolCall },
+        onEvent: (event) => events.push(event),
+      },
+    );
+
+    expect(result.output).toBe("Recovered after retrying safely.");
+    expect(execute).not.toHaveBeenCalled();
+    expect(beforeToolCall).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.completed",
+        result: expect.objectContaining({
+          callId: "call-invalid",
+          isError: true,
+        }),
+      }),
+    );
   });
 
   it("records provider-neutral model, tool, and run durations", async () => {

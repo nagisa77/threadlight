@@ -199,7 +199,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       .map(([, call]) => ({
         id: call.id,
         name: call.name,
-        arguments: parseToolArguments(call.arguments, call.name),
+        ...parseToolArguments(call.arguments, call.name),
       }));
     const assistantMessage: ChatMessage = {
       role: "assistant",
@@ -287,11 +287,17 @@ function isChatMessage(value: unknown): value is ChatMessage {
   return ["system", "user", "assistant", "tool"].includes(String(role));
 }
 
-function parseToolArguments(source: string, name: string): unknown {
+function parseToolArguments(
+  source: string,
+  name: string,
+): { arguments: unknown; argumentError?: string } {
   try {
-    return JSON.parse(source || "{}") as unknown;
+    return { arguments: JSON.parse(source || "{}") as unknown };
   } catch {
-    throw new Error(`Model returned invalid JSON arguments for tool ${name}`);
+    return {
+      arguments: {},
+      argumentError: `Model returned invalid JSON arguments for tool ${name}. Retry the tool call with one valid JSON object matching its schema.`,
+    };
   }
 }
 

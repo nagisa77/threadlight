@@ -129,6 +129,7 @@ export function skillCapabilitySources(
             : skill.invocationName,
         description: skill.description,
         source: skill.plugin?.name ?? skill.scope,
+        localPath: skill.path,
         icon:
           presentation?.icon ??
           (skill.scope === "builtin" && skill.name === "skill-creator"
@@ -195,6 +196,10 @@ function validateDescriptor(descriptor: CapabilityDescriptor): void {
         !descriptor.keywords.every(
           (keyword) => typeof keyword === "string" && keyword.trim(),
         ))) ||
+    (descriptor.localPath !== undefined &&
+      (typeof descriptor.localPath !== "string" ||
+        !descriptor.localPath.trim() ||
+        descriptor.localPath.length > 4_096)) ||
     (descriptor.connectorRef !== undefined &&
       (!descriptor.connectorRef.startsWith("mcp:") ||
         descriptor.connectorRef.length > 256))

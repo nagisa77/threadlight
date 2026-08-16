@@ -232,6 +232,25 @@ export class AgentLoop {
     startedCheckpoint: AgentRunCheckpoint,
   ): Promise<ToolResult> {
     const tool = tools.find((candidate) => candidate.name === call.name);
+    if (call.argumentError) {
+      emit({ type: "tool.started", runId, call });
+      await options.onCheckpoint?.(startedCheckpoint);
+      const toolStartedAt = currentTime(options);
+      const result: ToolResult = {
+        callId: call.id,
+        name: call.name,
+        output: call.argumentError,
+        ...(tool?.kind ? { kind: tool.kind } : {}),
+        isError: true,
+      };
+      emit({
+        type: "tool.completed",
+        runId,
+        result,
+        durationMs: elapsed(toolStartedAt, options),
+      });
+      return result;
+    }
     const controllerContext = { runId, step, tools };
     const decision = options.controller?.beforeToolCall
       ? await options.controller.beforeToolCall(call, tool, controllerContext)
