@@ -19,6 +19,8 @@ const EMPTY_USAGE: TokenUsage = {
   outputTokens: 0,
   totalTokens: 0,
 };
+const EMPTY_RESPONSE_RETRY_INSTRUCTION =
+  "Your previous response contained neither visible content nor a tool call. Continue by returning a non-empty response or calling an available tool.";
 
 export class AgentLoop {
   constructor(private readonly provider: ModelProvider) {}
@@ -163,6 +165,11 @@ export class AgentLoop {
             )
           : undefined;
         const output = controlledOutput ?? turn.text;
+        if (!output.trim()) {
+          continuationInput = EMPTY_RESPONSE_RETRY_INSTRUCTION;
+          toolResults = [];
+          continue;
+        }
         emit({ type: "message.completed", runId, text: output });
         const durationMs = elapsed(startedAt, options);
         emit({ type: "run.completed", runId, steps: step, durationMs });

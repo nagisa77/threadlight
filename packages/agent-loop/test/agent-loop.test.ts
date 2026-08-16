@@ -34,6 +34,30 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("retries a model turn that has neither content nor tool calls", async () => {
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return requests.length === 1
+          ? { text: "", toolCalls: [], state: { step: 1 } }
+          : { text: "Recovered response", toolCalls: [], state: { step: 2 } };
+      },
+    };
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({ name: "empty-retry", instructions: "Respond" }),
+      "Install globally",
+    );
+
+    expect(result.output).toBe("Recovered response");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      state: { step: 1 },
+      input: expect.stringContaining("neither visible content nor a tool call"),
+    });
+  });
+
   it("records provider-neutral model, tool, and run durations", async () => {
     let tick = 0;
     const events: AgentEvent[] = [];

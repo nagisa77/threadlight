@@ -253,6 +253,69 @@ describe("OpenAICompatibleChatProvider", () => {
     ]);
   });
 
+  it("omits empty assistant messages when restoring or recording chat state", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(
+        chunks([{ choices: [{ delta: { content: "Recovered" } }] }]),
+      )
+      .mockResolvedValueOnce(
+        chunks([
+          {
+            choices: [{ delta: { reasoning_content: "internal only" } }],
+          },
+        ]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "deepseek",
+      baseURL: "https://api.deepseek.test",
+      defaultModel: "deepseek-v4-flash",
+      client,
+    });
+
+    await provider.generate({
+      instructions: "Updated instructions",
+      input: "Try again",
+      state: {
+        protocol: "openai-compatible-chat",
+        provider: "deepseek",
+        messages: [
+          { role: "system", content: "Old instructions" },
+          { role: "user", content: "Install globally" },
+          {
+            role: "assistant",
+            content: null,
+            reasoning_content: "internal only",
+          },
+        ],
+      },
+      tools: [],
+    });
+    const empty = await provider.generate({
+      instructions: "Respond",
+      input: "Install globally",
+      tools: [],
+    });
+
+    expect(create.mock.calls[0]?.[0].messages).toEqual([
+      { role: "system", content: "Updated instructions" },
+      { role: "user", content: "Install globally" },
+      { role: "user", content: "Try again" },
+    ]);
+    expect(empty).toMatchObject({ text: "", toolCalls: [] });
+    expect(empty.state).toEqual({
+      protocol: "openai-compatible-chat",
+      provider: "deepseek",
+      messages: [
+        { role: "system", content: "Respond" },
+        { role: "user", content: "Install globally" },
+      ],
+    });
+  });
+
   it("drops complete old chat turns before persistence when state exceeds the limit", () => {
     const provider = new OpenAICompatibleChatProvider({
       provider: "deepseek",

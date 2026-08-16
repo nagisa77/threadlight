@@ -73,7 +73,9 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     if (!isChatProviderState(state) || state.provider !== this.stateProvider) {
       return state;
     }
-    let messages = state.messages.map((message) => ({ ...message }));
+    let messages = state.messages
+      .filter(hasAssistantPayload)
+      .map((message) => ({ ...message }));
     let prepared: ChatProviderState = { ...state, messages };
     while (serializedBytes(prepared) > options.maxBytes) {
       const userIndexes = messages.flatMap((message, index) =>
@@ -216,13 +218,17 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
         : {}),
     };
 
+    const stateMessages = hasAssistantPayload(assistantMessage)
+      ? [...messages, assistantMessage]
+      : messages;
+
     return {
       text,
       toolCalls,
       state: {
         protocol: "openai-compatible-chat",
         provider: this.stateProvider,
-        messages: [...messages, assistantMessage],
+        messages: stateMessages,
       } satisfies ChatProviderState,
       usage,
     };
@@ -234,7 +240,9 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     history: ModelRequest["history"],
   ): ChatMessage[] {
     if (isChatProviderState(state) && state.provider === this.stateProvider) {
-      const messages = state.messages.map((message) => ({ ...message }));
+      const messages = state.messages
+        .filter(hasAssistantPayload)
+        .map((message) => ({ ...message }));
       const system = messages.find((message) => message.role === "system");
       if (system) system.content = instructions;
       else messages.unshift({ role: "system", content: instructions });
@@ -243,9 +251,23 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
 
     return [
       { role: "system", content: instructions },
-      ...(history ?? []).map(({ role, text }) => ({ role, content: text })),
+      ...(history ?? []).flatMap(({ role, text }) =>
+        role === "assistant" && !text.trim()
+          ? []
+          : [{ role, content: text }],
+      ),
     ];
   }
+}
+
+function hasAssistantPayload(message: ChatMessage): boolean {
+  if (message.role !== "assistant") return true;
+  const content = message.content;
+  const hasContent =
+    (typeof content === "string" && content.length > 0) ||
+    (Array.isArray(content) && content.length > 0);
+  const toolCalls = message.tool_calls;
+  return hasContent || (Array.isArray(toolCalls) && toolCalls.length > 0);
 }
 
 function isChatProviderState(value: unknown): value is ChatProviderState {
