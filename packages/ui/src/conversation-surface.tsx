@@ -337,6 +337,8 @@ function LiveRun({ model }: { model: AppViewModel }) {
                 ? revealLocalFile
                 : undefined
             }
+            sources={state.streamingSources}
+            citations={state.streamingCitations}
           >
             {state.streamingText}
           </MarkdownContent>

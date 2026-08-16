@@ -141,6 +141,104 @@ describe("capability registry", () => {
     );
   });
 
+  it("refreshes skills installed after an existing task was created", async () => {
+    const root = temporaryDirectory("threadlight-capability-refresh-");
+    const userSkills = join(root, "home", ".agents", "skills");
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          expect(request.instructions).toContain("Required skill read");
+          expect(request.instructions).toContain("$h3-prompt-writing");
+          return {
+            text: "I’ll load the newly installed skill.",
+            toolCalls: [
+              {
+                id: "read-refreshed-skill",
+                name: "skill_read",
+                arguments: { skill: "h3-prompt-writing" },
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]?.output).toContain(
+          "H3_PROMPT_WORKFLOW",
+        );
+        return { text: "Done.", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "capability-refresh", instructions: "Base." }),
+      threadRuntimeFactory: (snapshot) =>
+        createSkillPluginThreadRuntime(
+          {
+            workspaceRoot: root,
+            userHome: join(root, "home"),
+            builtinSkillRoots: [],
+            repoSkillRoots: [],
+            userSkillRoots: [userSkills],
+            pluginRoots: [],
+          },
+          snapshot,
+        ),
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "capability/list",
+      params: { threadId },
+    });
+    expect(
+      result<{ capabilities: Array<{ name: string }> }>(messages, 3)
+        .capabilities,
+    ).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "h3-prompt-writing" }),
+      ]),
+    );
+
+    writeSkill(
+      userSkills,
+      "h3-prompt-writing",
+      "Create H3 video prompts.",
+      "H3_PROMPT_WORKFLOW: structure the requested video prompt.",
+    );
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "capability/list",
+      params: { threadId, refresh: true },
+    });
+    const refreshed = result<{
+      capabilities: Array<{ id: string; name: string }>;
+    }>(messages, 4).capabilities;
+    const h3 = refreshed.find(({ name }) => name === "h3-prompt-writing");
+    expect(h3).toBeDefined();
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "turn/start",
+      params: {
+        threadId,
+        input: "Write an H3 video prompt.",
+        capabilityRefs: [h3!.id],
+      },
+    });
+    await waitFor(messages, "turn/completed");
+
+    expect(requests).toHaveLength(2);
+    await server.dispose();
+  });
+
   it("reads only bundled resources from skills active in the current turn", async () => {
     const root = temporaryDirectory("threadlight-skill-resources-");
     const workspace = join(root, "workspace");

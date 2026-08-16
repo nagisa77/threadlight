@@ -4,7 +4,7 @@ export const ko: Messages = {
   settings: "설정",
   automations: "자동화",
   commandAutomationsDescription: "예약 검사 및 알림 관리",
-  settingsSubtitle: "모델, 검색, 언어 및 테마",
+  settingsSubtitle: "모델, 작업 권한, 검색, 언어 및 테마",
   preferences: "환경설정",
   secretsNoticeSystem:
     "키는 이 기기의 시스템 보안 저장소로 암호화되며 프로젝트 파일이나 로그에 기록되지 않습니다.",
@@ -16,6 +16,11 @@ export const ko: Messages = {
   interface: "인터페이스",
   interfaceDescription:
     "테마와 언어 변경 사항은 즉시 적용되고 자동으로 저장됩니다.",
+  taskDefaults: "작업 기본값",
+  taskDefaultsDescription: "새 작업이 시작될 때의 기본 동작을 설정합니다.",
+  defaultAccessMode: "기본 접근 모드",
+  defaultAccessModeDescription:
+    "새 작업에만 적용되며 기존 작업은 선택한 접근 모드를 유지합니다.",
   appearanceSaveFailed: "모양 설정을 저장하지 못했습니다",
   theme: "테마",
   themeDescription: "시스템 모양을 따르거나 밝은/어두운 테마를 고정합니다.",

@@ -51,9 +51,11 @@ function createStore() {
 describe("SettingsStore", () => {
   it("encrypts every provider key and exposes only configuration status", () => {
     const { path, store } = createStore();
+    expect(store.snapshot({}).defaultAccessMode).toBe("approval");
 
     const snapshot = store.update(
       {
+        defaultAccessMode: "full",
         provider: "deepseek",
         openAIApiKey: "openai-secret",
         deepSeekApiKey: "  deepseek-secret  ",
@@ -77,6 +79,7 @@ describe("SettingsStore", () => {
       language: "zh-CN",
       theme: "system",
       preferredProjectOpener: "",
+      defaultAccessMode: "full",
       provider: "deepseek",
       openAIApiKeyConfigured: true,
       deepSeekApiKeyConfigured: true,

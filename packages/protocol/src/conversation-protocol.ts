@@ -407,6 +407,10 @@ export interface ActiveTurnData {
   mode: TurnMode;
   isThinking: boolean;
   streamingText: string;
+  /** Sources already cited by the currently streaming assistant output. */
+  sources?: readonly MessageSourceData[];
+  /** Inline citations anchored in `streamingText`. */
+  citations?: readonly MessageCitationData[];
   progress: readonly ConversationProgressData[];
   plan?: AgentPlanData;
   agentTree?: AgentTreeData;
@@ -623,7 +627,7 @@ export interface ThreadlightMethodMap {
   };
   "capability/list": {
     /** Omit threadId to list capabilities for a new-task draft. */
-    params: { threadId?: string };
+    params: { threadId?: string; refresh?: boolean };
     result: { capabilities: readonly CapabilityDescriptor[] };
   };
   "connector/status": {

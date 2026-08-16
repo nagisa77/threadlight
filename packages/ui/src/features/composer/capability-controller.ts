@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useRef,
   useState,
   type Dispatch,
   type RefObject,
@@ -72,8 +73,12 @@ export function useCapabilityController({
   }>();
   const [connectorBusy, setConnectorBusy] = useState(false);
   const [connectorError, setConnectorError] = useState<string>();
+  const capabilityRequest = useRef(0);
+  const refreshedForOpenMenu = useRef(false);
 
   useEffect(() => {
+    const request = ++capabilityRequest.current;
+    refreshedForOpenMenu.current = false;
     setSelected([]);
     setQuery(undefined);
     setAddMenuOpen(false);
@@ -91,18 +96,46 @@ export function useCapabilityController({
     void client
       .listCapabilities(threadId)
       .then(({ capabilities: next }) => {
-        if (active) setCapabilities(next);
+        if (active && request === capabilityRequest.current) {
+          setCapabilities(next);
+        }
       })
       .catch(() => {
-        if (active) setCapabilities([]);
+        if (active && request === capabilityRequest.current) {
+          setCapabilities([]);
+        }
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active && request === capabilityRequest.current) {
+          setLoading(false);
+        }
       });
     return () => {
       active = false;
     };
   }, [client, connection, threadId]);
+
+  useEffect(() => {
+    if (!query && !addMenuOpen) {
+      refreshedForOpenMenu.current = false;
+      return;
+    }
+    if (refreshedForOpenMenu.current || connection !== "ready" || running) {
+      return;
+    }
+    refreshedForOpenMenu.current = true;
+    const request = ++capabilityRequest.current;
+    setLoading(true);
+    void client
+      .listCapabilities(threadId, true)
+      .then(({ capabilities: next }) => {
+        if (request === capabilityRequest.current) setCapabilities(next);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (request === capabilityRequest.current) setLoading(false);
+      });
+  }, [addMenuOpen, client, connection, query, running, threadId]);
 
   useEffect(() => {
     if (!query && !addMenuOpen) return;

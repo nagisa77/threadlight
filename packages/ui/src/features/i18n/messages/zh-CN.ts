@@ -2,7 +2,7 @@ export const zh = {
   settings: "设置",
   automations: "自动化",
   commandAutomationsDescription: "管理定时检查和异常通知",
-  settingsSubtitle: "模型服务、搜索、语言与主题",
+  settingsSubtitle: "模型服务、任务权限、搜索、语言与主题",
   preferences: "偏好设置",
   secretsNoticeSystem:
     "密钥由当前设备的系统安全存储加密，不会写入项目文件或日志。",
@@ -13,6 +13,11 @@ export const zh = {
   languageDescription: "选择 Threadlight 界面的显示语言。",
   interface: "界面",
   interfaceDescription: "主题与显示语言会立即生效并自动保存。",
+  taskDefaults: "任务默认值",
+  taskDefaultsDescription: "设置新任务开始时采用的默认行为。",
+  defaultAccessMode: "默认权限模式",
+  defaultAccessModeDescription:
+    "仅应用于新任务；已有任务会继续保留各自选择的权限模式。",
   appearanceSaveFailed: "外观偏好保存失败",
   theme: "主题",
   themeDescription: "选择系统外观，或固定使用浅色或深色主题。",

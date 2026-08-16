@@ -4,7 +4,7 @@ export const en: Messages = {
   settings: "Settings",
   automations: "Automations",
   commandAutomationsDescription: "Manage scheduled checks and alerts",
-  settingsSubtitle: "Models, search, language, and theme",
+  settingsSubtitle: "Models, task permissions, search, language, and theme",
   preferences: "Preferences",
   secretsNoticeSystem:
     "Keys are encrypted by this device's secure system storage and are never written to project files or logs.",
@@ -16,6 +16,11 @@ export const en: Messages = {
   interface: "Interface",
   interfaceDescription:
     "Theme and language changes apply immediately and save automatically.",
+  taskDefaults: "Task defaults",
+  taskDefaultsDescription: "Choose how each new task starts.",
+  defaultAccessMode: "Default access mode",
+  defaultAccessModeDescription:
+    "Applies only to new tasks; existing tasks keep their selected access mode.",
   appearanceSaveFailed: "Could not save appearance preferences",
   theme: "Theme",
   themeDescription:

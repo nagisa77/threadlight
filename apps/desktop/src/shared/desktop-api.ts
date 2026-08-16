@@ -155,6 +155,7 @@ export interface DesktopSettingsSnapshot {
   language: DesktopLanguage;
   theme: DesktopTheme;
   preferredProjectOpener: DesktopProjectOpener;
+  defaultAccessMode: ConversationAccessMode;
   provider: DesktopModelProvider;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -181,6 +182,7 @@ export interface DesktopSettingsUpdate {
   language?: DesktopLanguage;
   theme?: DesktopTheme;
   preferredProjectOpener?: DesktopProjectOpener;
+  defaultAccessMode?: ConversationAccessMode;
   provider: DesktopModelProvider;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;

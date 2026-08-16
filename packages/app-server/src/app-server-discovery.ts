@@ -131,6 +131,7 @@ export interface AppServerDiscoveryHost {
   suggestionRefreshIntervalMs: number;
   threadRuntimeFactory?: ThreadRuntimeFactory;
   requireThread(threadId: string): Promise<ThreadState>;
+  refreshThreadCapabilities?(thread: ThreadState): Promise<void>;
 }
 
 export class AppServerDiscovery {
@@ -258,10 +259,14 @@ export class AppServerDiscovery {
   async listCapabilities(
     params: unknown,
   ): Promise<{ capabilities: readonly CapabilityDescriptor[] }> {
-    const { threadId } = objectParams(params);
+    const { threadId, refresh } = objectParams(params);
+    if (refresh !== undefined && typeof refresh !== "boolean") {
+      throw new RpcError(-32602, "refresh must be a boolean");
+    }
     if (threadId !== undefined) {
       requireString(threadId, "threadId");
       const thread = await this.host.requireThread(threadId);
+      if (refresh) await this.host.refreshThreadCapabilities?.(thread);
       return {
         capabilities: cloneCapabilities(thread.runtime?.capabilities),
       };

@@ -16,8 +16,10 @@ import {
   LoaderCircle,
   Palette,
   Search,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import type { ConversationAccessMode } from "@threadlight/protocol";
 
 import {
   LANGUAGE_OPTIONS,
@@ -78,6 +80,7 @@ export interface SettingsSnapshot {
   language: Language;
   theme: ThemePreference;
   preferredProjectOpener: ProjectOpenerId;
+  defaultAccessMode: ConversationAccessMode;
   provider: ModelProviderId;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -104,6 +107,7 @@ export interface SettingsUpdate {
   language: Language;
   theme: ThemePreference;
   preferredProjectOpener: ProjectOpenerId;
+  defaultAccessMode: ConversationAccessMode;
   provider: ModelProviderId;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;
@@ -231,6 +235,8 @@ export function SettingsPage({
   const [theme, setTheme] = useState<ThemePreference>("system");
   const [preferredProjectOpener, setPreferredProjectOpener] =
     useState<ProjectOpenerId>("");
+  const [defaultAccessMode, setDefaultAccessMode] =
+    useState<ConversationAccessMode>("approval");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savedWithRestart, setSavedWithRestart] = useState(false);
@@ -271,6 +277,7 @@ export function SettingsPage({
         onThemeChange?.(snapshot.theme);
         setPreferredProjectOpener(snapshot.preferredProjectOpener);
         onPreferredProjectOpenerChange?.(snapshot.preferredProjectOpener);
+        setDefaultAccessMode(snapshot.defaultAccessMode);
         setProvider(snapshot.provider);
         setSearchProvider(snapshot.searchProvider);
         setQwenBaseUrl(snapshot.qwenBaseUrl);
@@ -323,7 +330,8 @@ export function SettingsPage({
       customBaseUrl.trim() !== settings.customBaseUrl ||
       customModel.trim() !== settings.customModel ||
       model !== settings.model ||
-      preferredProjectOpener !== settings.preferredProjectOpener
+      preferredProjectOpener !== settings.preferredProjectOpener ||
+      defaultAccessMode !== settings.defaultAccessMode
     : false;
   const runtimeDirty = settings
     ? Object.values(providerKeys).some(
@@ -470,6 +478,7 @@ export function SettingsPage({
           language,
           theme,
           preferredProjectOpener,
+          defaultAccessMode,
         ),
       );
       settingsRef.current = snapshot;
@@ -479,6 +488,7 @@ export function SettingsPage({
       setProviderKeys(EMPTY_PROVIDER_SECRETS);
       setSearchKeys(EMPTY_SEARCH_SECRETS);
       setSearchProvider(snapshot.searchProvider);
+      setDefaultAccessMode(snapshot.defaultAccessMode);
       setSaved(true);
       setSavedWithRestart(shouldRestart);
       setPreferredProjectOpener(snapshot.preferredProjectOpener);
@@ -634,6 +644,37 @@ export function SettingsPage({
                       }))}
                     />
                   )}
+                </div>
+              </section>
+
+              <section
+                className="settings-section"
+                aria-labelledby="task-defaults-title"
+              >
+                <div className="settings-section-heading">
+                  <span className="settings-section-icon">
+                    <ShieldCheck size={16} />
+                  </span>
+                  <div>
+                    <h3 id="task-defaults-title">{t("taskDefaults")}</h3>
+                    <p>{t("taskDefaultsDescription")}</p>
+                  </div>
+                </div>
+                <div className="settings-fields">
+                  <SettingsSelectField
+                    id="default-access-mode-select"
+                    label={t("defaultAccessMode")}
+                    description={t("defaultAccessModeDescription")}
+                    value={defaultAccessMode}
+                    onChange={(value) => {
+                      setDefaultAccessMode(value as ConversationAccessMode);
+                      markEdited();
+                    }}
+                    options={[
+                      { value: "approval", label: t("approvalMode") },
+                      { value: "full", label: t("fullAccessMode") },
+                    ]}
+                  />
                 </div>
               </section>
 
@@ -992,11 +1033,13 @@ export function createSettingsUpdate(
   language: Language = "zh-CN",
   theme: ThemePreference = "system",
   preferredProjectOpener: ProjectOpenerId = "",
+  defaultAccessMode: ConversationAccessMode = "approval",
 ): SettingsUpdate {
   return {
     language,
     theme,
     preferredProjectOpener,
+    defaultAccessMode,
     provider,
     searchProvider,
     qwenBaseUrl: qwenBaseUrl.trim(),
@@ -1039,6 +1082,7 @@ export function createAppearanceSettingsUpdate(
     settings.language,
     settings.theme,
     settings.preferredProjectOpener,
+    settings.defaultAccessMode,
   );
 }
 

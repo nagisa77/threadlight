@@ -426,7 +426,8 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     terminateProcess,
     runningThreadIds,
   } = sessionApi;
-  const taskSession = useTaskSessionController();
+  const defaultAccessMode = runtimeSettings?.defaultAccessMode ?? "approval";
+  const taskSession = useTaskSessionController(defaultAccessMode);
   const {
     newTaskDraft,
     setNewTaskDraft,
@@ -436,6 +437,7 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     setDevelopmentMode,
     draftAccessMode,
     setDraftAccessMode,
+    resetDraftAccessMode,
     draftModel,
     setDraftModel,
     conversationRecoveryBusy,
@@ -454,7 +456,8 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     openThread,
     setProjectSnapshot,
     setDevelopmentMode,
-    setDraftAccessMode,
+    resetDraftAccessMode,
+    defaultAccessMode,
     setDraftModel,
     setNewTaskDraftError,
     setNewTaskDraft,

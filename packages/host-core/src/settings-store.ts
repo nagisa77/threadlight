@@ -8,6 +8,7 @@ import {
 import { dirname } from "node:path";
 
 import type {
+  ConversationAccessMode,
   HostLanguage,
   HostModelProvider,
   HostSearchProvider,
@@ -30,6 +31,7 @@ interface StoredSettings {
   language?: DesktopLanguage;
   theme?: DesktopTheme;
   preferredProjectOpener?: DesktopProjectOpener;
+  defaultAccessMode?: ConversationAccessMode;
   provider?: DesktopModelProvider;
   searchProvider?: DesktopSearchProvider;
   encryptedOpenAIApiKey?: string;
@@ -116,6 +118,7 @@ export class SettingsStore {
       language: parseLanguage(stored.language),
       theme: parseTheme(stored.theme),
       preferredProjectOpener: parseProjectOpener(stored.preferredProjectOpener),
+      defaultAccessMode: parseAccessMode(stored.defaultAccessMode),
       provider: settings.provider,
       openAIApiKeyConfigured: Boolean(settings.openAIApiKey),
       deepSeekApiKeyConfigured: Boolean(settings.deepSeekApiKey),
@@ -150,6 +153,10 @@ export class SettingsStore {
       theme: update.theme ?? current.theme,
       preferredProjectOpener:
         update.preferredProjectOpener ?? current.preferredProjectOpener,
+      defaultAccessMode: updatedAccessMode(
+        update.defaultAccessMode,
+        current.defaultAccessMode,
+      ),
       provider: update.provider,
       searchProvider: updatedSearchProvider(
         update.searchProvider,
@@ -433,7 +440,8 @@ function isStoredSettings(value: unknown): value is StoredSettings {
     optionalString(settings.model) &&
     optionalLanguage(settings.language) &&
     optionalTheme(settings.theme) &&
-    optionalProjectOpener(settings.preferredProjectOpener)
+    optionalProjectOpener(settings.preferredProjectOpener) &&
+    optionalAccessMode(settings.defaultAccessMode)
   );
 }
 
@@ -492,6 +500,25 @@ function isProjectOpener(value: unknown): value is DesktopProjectOpener {
 
 function parseProjectOpener(value: unknown): DesktopProjectOpener {
   return isProjectOpener(value) ? value : "";
+}
+
+function optionalAccessMode(value: unknown): boolean {
+  return value === undefined || value === "approval" || value === "full";
+}
+
+function parseAccessMode(value: unknown): ConversationAccessMode {
+  return value === "full" ? "full" : "approval";
+}
+
+function updatedAccessMode(
+  value: unknown,
+  current: ConversationAccessMode | undefined,
+): ConversationAccessMode | undefined {
+  if (value === undefined) return current;
+  if (value !== "approval" && value !== "full") {
+    throw new Error("Default access mode must be approval or full");
+  }
+  return value;
 }
 
 function isTheme(value: unknown): value is DesktopTheme {

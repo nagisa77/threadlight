@@ -20,7 +20,9 @@ export interface FinalizedSourceCitations {
 }
 
 const SOURCE_MARKER =
-  /\[\[source:([a-zA-Z0-9_-]+(?:\s*,\s*[a-zA-Z0-9_-]+)*)\]\]/g;
+  /\[\[(?:source:([a-zA-Z0-9_-]+(?:\s*,\s*[a-zA-Z0-9_-]+)*)|(s\d+(?:\s*,\s*s\d+)*))\]\]/g;
+const PARTIAL_SOURCE_MARKER =
+  /\[\[(?:source:[a-zA-Z0-9_,\s-]*|s\d*(?:\s*,\s*s\d*)*)?$/;
 const MAX_SOURCES = 30;
 const WEB_SOURCE_QUALITY_INSTRUCTIONS = [
   "WEB SOURCE QUALITY",
@@ -99,6 +101,16 @@ export class SourceCitationRunController implements RunController {
   finalize(text: string): FinalizedSourceCitations {
     return finalizeSourceCitations(text, this.sources);
   }
+
+  preview(text: string): FinalizedSourceCitations {
+    const finalized = this.finalize(text);
+    return {
+      ...finalized,
+      // A marker can span several streaming deltas. Keep the incomplete tail
+      // invisible until it can become the same citation control used at rest.
+      text: finalized.text.replace(PARTIAL_SOURCE_MARKER, ""),
+    };
+  }
 }
 
 export function finalizeSourceCitations(
@@ -114,9 +126,15 @@ export function finalizeSourceCitations(
   let previousEnd = 0;
   const transformed = text.replace(
     SOURCE_MARKER,
-    (marker, sourceList: string, offset: number) => {
+    (
+      marker,
+      explicitSourceList: string | undefined,
+      compactSourceList: string | undefined,
+      offset: number,
+    ) => {
       cleanPrefix += text.slice(previousEnd, offset);
       previousEnd = offset + marker.length;
+      const sourceList = explicitSourceList ?? compactSourceList ?? "";
       const sourceIds = [
         ...new Set(
           sourceList

@@ -254,12 +254,21 @@ export class AppServerState {
     // Do not expose the same turn as both completed history and live output in
     // the small interval between those two operations.
     if (thread.conversation.messages.at(-1)?.role === "assistant") return;
+    const sourcedStreamingOutput = activeTurn.sourceCitations?.preview(
+      activeTurn.streamingText,
+    );
     return {
       turnId: activeTurn.id,
       revision: thread.revision,
       mode: activeTurn.mode,
       isThinking: activeTurn.isThinking,
-      streamingText: activeTurn.streamingText,
+      streamingText: sourcedStreamingOutput?.text ?? activeTurn.streamingText,
+      ...(sourcedStreamingOutput?.sources.length
+        ? {
+            sources: sourcedStreamingOutput.sources,
+            citations: sourcedStreamingOutput.citations,
+          }
+        : {}),
       progress: thread.progress,
       ...(thread.plan ? { plan: thread.plan } : {}),
       ...(options.includeAgentTree !== false &&

@@ -4,7 +4,7 @@ export const zhTW: Messages = {
   settings: "設定",
   automations: "自動化",
   commandAutomationsDescription: "管理定時檢查與異常通知",
-  settingsSubtitle: "模型服務、搜尋、語言與主題",
+  settingsSubtitle: "模型服務、任務權限、搜尋、語言與主題",
   preferences: "偏好設定",
   secretsNoticeSystem:
     "金鑰由此裝置的系統安全儲存空間加密，且不會寫入專案檔案或記錄。",
@@ -15,6 +15,11 @@ export const zhTW: Messages = {
   languageDescription: "選擇 Threadlight 介面的顯示語言。",
   interface: "介面",
   interfaceDescription: "主題與顯示語言會立即生效並自動儲存。",
+  taskDefaults: "任務預設值",
+  taskDefaultsDescription: "設定新任務開始時採用的預設行為。",
+  defaultAccessMode: "預設權限模式",
+  defaultAccessModeDescription:
+    "僅套用於新任務；現有任務會繼續保留各自選擇的權限模式。",
   appearanceSaveFailed: "外觀偏好儲存失敗",
   theme: "主題",
   themeDescription: "跟隨系統外觀，或固定使用淺色或深色主題。",

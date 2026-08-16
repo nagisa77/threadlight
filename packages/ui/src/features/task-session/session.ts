@@ -81,6 +81,8 @@ export interface SessionState {
   agentTree?: AgentTreeData;
   plan?: AgentPlanData;
   streamingText: string;
+  streamingSources?: readonly MessageSourceData[];
+  streamingCitations?: readonly MessageCitationData[];
   submissionError?: string;
 }
 
@@ -209,6 +211,8 @@ export function sessionReducer(
         agentTree: action.activeTurn?.agentTree,
         plan: action.activeTurn?.plan,
         streamingText: action.activeTurn?.streamingText ?? "",
+        streamingSources: action.activeTurn?.sources,
+        streamingCitations: action.activeTurn?.citations,
       };
     }
     case "connection.failed":
@@ -240,6 +244,8 @@ export function sessionReducer(
         plan:
           action.mode === "plan" ? { source: "user", items: [] } : undefined,
         streamingText: "",
+        streamingSources: undefined,
+        streamingCitations: undefined,
         submissionError: undefined,
         messages: [
           ...state.messages,
@@ -268,6 +274,8 @@ export function sessionReducer(
         progress: [],
         plan: undefined,
         streamingText: "",
+        streamingSources: undefined,
+        streamingCitations: undefined,
         submissionError: action.error,
         messages: state.messages.filter((message) => message.id !== action.id),
       };
@@ -357,7 +365,12 @@ export function sessionReducer(
         ...state,
         queuedTurns: state.queuedTurns.filter(({ id }) => id !== action.itemId),
         ...(action.precedingAssistantMessage
-          ? { progress: [], streamingText: "" }
+          ? {
+              progress: [],
+              streamingText: "",
+              streamingSources: undefined,
+              streamingCitations: undefined,
+            }
           : {}),
         messages:
           appended.length === 0
@@ -417,13 +430,21 @@ function reduceAgentEvent(
 ): SessionState {
   switch (event.type) {
     case "model.started":
-      return { ...state, isThinking: true, streamingText: "" };
+      return {
+        ...state,
+        isThinking: true,
+        streamingText: "",
+        streamingSources: undefined,
+        streamingCitations: undefined,
+      };
     case "model.output_text.delta":
       if (event.outputVisibility === "provisional") {
         return {
           ...state,
           isThinking: true,
           streamingText: "",
+          streamingSources: undefined,
+          streamingCitations: undefined,
         };
       }
       return {
@@ -497,6 +518,8 @@ function completeTurn(
     agentTree: undefined,
     plan: undefined,
     streamingText: "",
+    streamingSources: undefined,
+    streamingCitations: undefined,
     messages: mergeMessages(state.messages, [assistantMessage]),
   };
 }
@@ -514,6 +537,8 @@ function hydrateActiveTurn(
     agentTree: activeTurn.agentTree ?? state.agentTree,
     plan: activeTurn.plan,
     streamingText: activeTurn.streamingText,
+    streamingSources: activeTurn.sources,
+    streamingCitations: activeTurn.citations,
   };
 }
 

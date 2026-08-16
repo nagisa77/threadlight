@@ -98,18 +98,30 @@ interface LoadedSkill extends SkillSnapshotEntry {
 }
 
 export class SkillRegistry {
-  private readonly byInvocationName: ReadonlyMap<string, LoadedSkill>;
-  private readonly byId: ReadonlyMap<string, LoadedSkill>;
+  private byInvocationName: ReadonlyMap<string, LoadedSkill>;
+  private byId: ReadonlyMap<string, LoadedSkill>;
 
   private constructor(
-    private readonly loadedSkills: readonly LoadedSkill[],
-    readonly warnings: readonly string[],
+    private loadedSkills: readonly LoadedSkill[],
+    warnings: readonly string[],
     private readonly maxCatalogChars: number,
   ) {
+    this.warnings = warnings;
     this.byInvocationName = new Map(
       loadedSkills.map((skill) => [skill.invocationName, skill]),
     );
     this.byId = new Map(loadedSkills.map((skill) => [skill.id, skill]));
+  }
+
+  warnings: readonly string[];
+
+  replaceWith(next: SkillRegistry): void {
+    this.loadedSkills = [...next.loadedSkills];
+    this.warnings = [...next.warnings];
+    this.byInvocationName = new Map(
+      this.loadedSkills.map((skill) => [skill.invocationName, skill]),
+    );
+    this.byId = new Map(this.loadedSkills.map((skill) => [skill.id, skill]));
   }
 
   static async discover(

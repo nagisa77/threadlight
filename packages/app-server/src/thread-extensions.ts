@@ -125,6 +125,7 @@ export interface SkillPluginThreadRuntime {
   disconnectConnector(
     capabilityId: string,
   ): Promise<ConnectorStatusData>;
+  refreshCapabilities(): Promise<void>;
   snapshot: SkillPluginRuntimeSnapshot;
 }
 
@@ -137,7 +138,7 @@ export async function createSkillPluginThreadRuntime(
     options.projectStateRoot ?? workspaceRoot,
   );
   const userHome = resolve(options.userHome ?? homedir());
-  let registry: SkillRegistry;
+  let registry: SkillRegistry | undefined;
   let plugins: PluginRegistry;
 
   if (restoredSnapshot !== undefined) {
@@ -156,23 +157,25 @@ export async function createSkillPluginThreadRuntime(
           join(userHome, ".threadlight", "plugins"),
         ],
     });
-    const sources: SkillSource[] = [
-      ...(options.builtinSkillRoots ?? [defaultBuiltinSkillRoot()]).map(
-        (root) => ({ scope: "builtin" as const, root }),
-      ),
-      ...(options.repoSkillRoots ?? [
-        join(workspaceRoot, ".agents", "skills"),
-        join(workspaceRoot, ".codex", "skills"),
-      ]).map((root) => ({ scope: "repo" as const, root })),
-      ...(options.userSkillRoots ?? [
-        join(userHome, ".agents", "skills"),
-        join(userHome, ".codex", "skills"),
-      ]).map((root) => ({ scope: "user" as const, root })),
-      ...plugins.skillSources(),
-    ];
-    registry = await SkillRegistry.discover({ sources });
   }
 
+  const sources: SkillSource[] = [
+    ...(options.builtinSkillRoots ?? [defaultBuiltinSkillRoot()]).map(
+      (root) => ({ scope: "builtin" as const, root }),
+    ),
+    ...(options.repoSkillRoots ?? [
+      join(workspaceRoot, ".agents", "skills"),
+      join(workspaceRoot, ".codex", "skills"),
+    ]).map((root) => ({ scope: "repo" as const, root })),
+    ...(options.userSkillRoots ?? [
+      join(userHome, ".agents", "skills"),
+      join(userHome, ".codex", "skills"),
+    ]).map((root) => ({ scope: "user" as const, root })),
+    ...plugins.skillSources(),
+  ];
+  if (!registry) {
+    registry = await SkillRegistry.discover({ sources });
+  }
   const snapshot: SkillPluginRuntimeSnapshot = {
     version: 1,
     skills: registry.snapshot(),
@@ -214,31 +217,34 @@ export async function createSkillPluginThreadRuntime(
     plugins,
     options.mcpRuntime,
   );
-  const skillSources = skillCapabilitySources(registry, (pluginName) => {
-    const plugin = plugins.plugins.find(({ name }) => name === pluginName);
-    if (!plugin) return;
-    const connectorRef =
-      plugin.mcpServers.length === 1
-        ? `mcp:${plugin.mcpServers[0]!.id}`
-        : undefined;
-    if (!plugin.presentation && !connectorRef) return;
-    return {
-      ...(plugin.presentation ?? {}),
-      ...(plugin.mcpServers.length > 0
-        ? { visibility: "search" as const }
-        : {}),
-      ...(connectorRef ? { connectorRef } : {}),
-    };
-  });
-  const capabilityRegistry = new CapabilityRegistry([
-    ...linkPluginSkillConnectors(skillSources, connectorSources),
-    ...connectorSources,
-    ...mcpCapabilitySources(
-      options.fixedMcpServers ?? [],
-      options.mcpRuntime,
-    ),
-    ...mentionableToolCapabilitySources(options.mentionableTools ?? []),
-  ]);
+  const buildCapabilityRegistry = () => {
+    const skillSources = skillCapabilitySources(registry, (pluginName) => {
+      const plugin = plugins.plugins.find(({ name }) => name === pluginName);
+      if (!plugin) return;
+      const connectorRef =
+        plugin.mcpServers.length === 1
+          ? `mcp:${plugin.mcpServers[0]!.id}`
+          : undefined;
+      if (!plugin.presentation && !connectorRef) return;
+      return {
+        ...(plugin.presentation ?? {}),
+        ...(plugin.mcpServers.length > 0
+          ? { visibility: "search" as const }
+          : {}),
+        ...(connectorRef ? { connectorRef } : {}),
+      };
+    });
+    return new CapabilityRegistry([
+      ...linkPluginSkillConnectors(skillSources, connectorSources),
+      ...connectorSources,
+      ...mcpCapabilitySources(
+        options.fixedMcpServers ?? [],
+        options.mcpRuntime,
+      ),
+      ...mentionableToolCapabilitySources(options.mentionableTools ?? []),
+    ]);
+  };
+  let capabilityRegistry = buildCapabilityRegistry();
   const connectors = new PluginConnectorController({
     plugins,
     sources: connectorSources,
@@ -284,6 +290,11 @@ export async function createSkillPluginThreadRuntime(
     },
     disconnectConnector(capabilityId) {
       return connectors.disconnect(capabilityId);
+    },
+    async refreshCapabilities() {
+      registry.replaceWith(await SkillRegistry.discover({ sources }));
+      capabilityRegistry = buildCapabilityRegistry();
+      snapshot.skills = registry.snapshot();
     },
     snapshot,
   };

@@ -4,7 +4,7 @@ export const ja: Messages = {
   settings: "設定",
   automations: "自動化",
   commandAutomationsDescription: "定期チェックと通知を管理",
-  settingsSubtitle: "モデル、検索、言語、テーマ",
+  settingsSubtitle: "モデル、タスク権限、検索、言語、テーマ",
   preferences: "環境設定",
   secretsNoticeSystem:
     "キーはこのデバイスのシステムセキュアストレージで暗号化され、プロジェクトファイルやログには保存されません。",
@@ -16,6 +16,11 @@ export const ja: Messages = {
   interface: "インターフェース",
   interfaceDescription:
     "テーマと言語の変更はすぐに反映され、自動的に保存されます。",
+  taskDefaults: "タスクのデフォルト",
+  taskDefaultsDescription: "新しいタスクの開始時の動作を設定します。",
+  defaultAccessMode: "デフォルトのアクセスモード",
+  defaultAccessModeDescription:
+    "新しいタスクだけに適用され、既存のタスクは選択済みのアクセスモードを保持します。",
   appearanceSaveFailed: "外観設定を保存できませんでした",
   theme: "テーマ",
   themeDescription:

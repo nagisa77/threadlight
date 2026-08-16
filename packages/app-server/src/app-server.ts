@@ -226,6 +226,7 @@ export interface ThreadRuntime {
   disconnectConnector?(
     capabilityId: string,
   ): ConnectorStatusData | Promise<ConnectorStatusData>;
+  refreshCapabilities?(): void | Promise<void>;
   snapshot?: unknown;
   dispose?(): void | Promise<void>;
 }
@@ -473,6 +474,29 @@ export class AppServer {
       suggestionRefreshIntervalMs: this.suggestionRefreshIntervalMs,
       threadRuntimeFactory: this.threadRuntimeFactory,
       requireThread: (threadId) => this.requireThread(threadId),
+      refreshThreadCapabilities: (thread) =>
+        this.refreshThreadCapabilities(thread),
+    });
+  }
+
+  private async refreshThreadCapabilities(thread: ThreadState): Promise<void> {
+    if (thread.activeTurn || !thread.runtime?.refreshCapabilities) return;
+    await thread.runtime.refreshCapabilities();
+    if (
+      thread.runtime.snapshot === undefined ||
+      thread.conversation.agentSnapshot === undefined
+    ) {
+      return;
+    }
+    await this.state().mutateConversation(thread, (conversation) => {
+      if (!conversation.agentSnapshot) return conversation;
+      return {
+        ...conversation,
+        agentSnapshot: {
+          ...conversation.agentSnapshot,
+          runtime: thread.runtime!.snapshot,
+        },
+      };
     });
   }
 

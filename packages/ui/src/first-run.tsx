@@ -63,6 +63,7 @@ export function firstRunSettingsUpdate(
     language,
     theme,
     preferredProjectOpener: settings.preferredProjectOpener,
+    defaultAccessMode: settings.defaultAccessMode,
     provider,
     searchProvider: settings.searchProvider,
     qwenBaseUrl: settings.qwenBaseUrl,

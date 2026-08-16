@@ -44,6 +44,32 @@ describe("source citations", () => {
     ]);
   });
 
+  it("accepts adjacent compact source markers emitted by compatible providers", () => {
+    const result = finalizeSourceCitations("Verified.[[s1]][[s2]]", [
+      {
+        id: "s1",
+        title: "First",
+        url: "https://first.example",
+        domain: "first.example",
+      },
+      {
+        id: "s2",
+        title: "Second",
+        url: "https://second.example",
+        domain: "second.example",
+      },
+    ]);
+
+    expect(result.text).toBe(
+      "Verified.[1](threadlight-source:citation-1)[2](threadlight-source:citation-2)",
+    );
+    expect(result.sources.map(({ id }) => id)).toEqual(["s1", "s2"]);
+    expect(result.citations).toEqual([
+      expect.objectContaining({ sourceIds: ["s1"] }),
+      expect.objectContaining({ sourceIds: ["s2"] }),
+    ]);
+  });
+
   it("collects unique valid web results and injects citation instructions", () => {
     const controller = new SourceCitationRunController();
     controller.afterToolCall(
@@ -83,6 +109,12 @@ describe("source citations", () => {
     expect(directive.instructions).toContain("https://example.com/threadlight");
     expect(directive.instructions).toContain("untrusted reference content");
     expect(controller.finalize("Fact.[[source:s1]]").sources).toHaveLength(1);
+    expect(controller.preview("Fact.[[source:s").text).toBe("Fact.");
+    expect(controller.preview("Fact.[[source:s1]]")).toMatchObject({
+      text: "Fact.[1](threadlight-source:citation-1)",
+      sources: [{ id: "s1" }],
+      citations: [{ id: "citation-1", sourceIds: ["s1"] }],
+    });
   });
 
   it("persists citations from an offline scripted web-search turn", async () => {
@@ -127,7 +159,7 @@ describe("source citations", () => {
         expect(request.instructions).toContain("[[source:s1]]");
         expect(request.instructions).toContain("[[source:s1,s2]]");
         return {
-          text: "Threadlight is an agent runtime.[[source:s1]] It supports observable workflows.[[source:s1,s2]]",
+          text: "Threadlight is an agent runtime.[[s1]] It supports observable workflows.[[s1,s2]]",
           toolCalls: [],
           state: { turn: 2 },
         };
@@ -190,6 +222,32 @@ describe("source citations", () => {
     const completion = messages.find(
       (message) => "method" in message && message.method === "turn/completed",
     );
+    const liveCitationIndex = messages.findIndex(
+      (message) =>
+        "method" in message &&
+        message.method === "agent/event" &&
+        message.params.activeTurn.sources?.length,
+    );
+    const completionIndex = messages.findIndex(
+      (message) => "method" in message && message.method === "turn/completed",
+    );
+    expect(liveCitationIndex).toBeGreaterThanOrEqual(0);
+    expect(liveCitationIndex).toBeLessThan(completionIndex);
+    expect(messages[liveCitationIndex]).toMatchObject({
+      method: "agent/event",
+      params: {
+        activeTurn: {
+          streamingText: expect.stringContaining(
+            "threadlight-source:citation-1",
+          ),
+          sources: [{ id: "s1" }, { id: "s2" }],
+          citations: [
+            { id: "citation-1", sourceIds: ["s1"] },
+            { id: "citation-2", sourceIds: ["s1", "s2"] },
+          ],
+        },
+      },
+    });
     expect(
       completion && "method" in completion ? completion.params : undefined,
     ).toMatchObject({

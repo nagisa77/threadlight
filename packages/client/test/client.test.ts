@@ -158,10 +158,10 @@ describe("ThreadlightClient", () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);
 
-    const listed = client.listCapabilities("thread-1");
+    const listed = client.listCapabilities("thread-1", true);
     expect(transport.sent[0]).toMatchObject({
       method: "capability/list",
-      params: { threadId: "thread-1" },
+      params: { threadId: "thread-1", refresh: true },
     });
     transport.emit({
       jsonrpc: "2.0",

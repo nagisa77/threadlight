@@ -1,4 +1,7 @@
-import type { AgentTaskStatusData } from "./conversation-protocol.js";
+import type {
+  AgentTaskStatusData,
+  ConversationAccessMode,
+} from "./conversation-protocol.js";
 
 export type JsonRpcId = string | number | null;
 
@@ -103,6 +106,8 @@ export interface HostSettingsSnapshot {
   language: HostLanguage;
   theme: HostTheme;
   preferredProjectOpener: string;
+  /** Default access mode for newly created tasks. */
+  defaultAccessMode: ConversationAccessMode;
   provider: HostModelProvider;
   openAIApiKeyConfigured: boolean;
   deepSeekApiKeyConfigured: boolean;
@@ -131,6 +136,7 @@ export interface HostSettingsUpdate {
   language?: HostLanguage;
   theme?: HostTheme;
   preferredProjectOpener?: string;
+  defaultAccessMode?: ConversationAccessMode;
   provider: HostModelProvider;
   openAIApiKey?: string | null;
   deepSeekApiKey?: string | null;

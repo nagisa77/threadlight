@@ -332,6 +332,13 @@ export function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
   ) {
     throw new Error("preferredProjectOpener is invalid");
   }
+  if (
+    update.defaultAccessMode !== undefined &&
+    update.defaultAccessMode !== "approval" &&
+    update.defaultAccessMode !== "full"
+  ) {
+    throw new Error("defaultAccessMode must be approval or full");
+  }
   if (!isOptionalSecret(update.openAIApiKey)) {
     throw new Error("openAIApiKey must be a string or null");
   }
@@ -400,6 +407,9 @@ export function parseSettingsUpdate(value: unknown): DesktopSettingsUpdate {
     ...(update.theme !== undefined ? { theme: update.theme } : {}),
     ...(update.preferredProjectOpener !== undefined
       ? { preferredProjectOpener: update.preferredProjectOpener }
+      : {}),
+    ...(update.defaultAccessMode !== undefined
+      ? { defaultAccessMode: update.defaultAccessMode }
       : {}),
     provider: update.provider,
     searchProvider: update.searchProvider,
