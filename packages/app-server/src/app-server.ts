@@ -929,11 +929,12 @@ export class AppServer {
           ? { attachments: consumed.attachments }
           : {}),
       };
-      if (pendingAssistantOutput) {
+      if (pendingAssistantOutput || thread.progress.length > 0) {
         precedingAssistantMessage = {
           id: randomUUID(),
           role: "assistant",
-          text: finalizedPendingOutput?.text ?? pendingAssistantOutput.text,
+          text:
+            finalizedPendingOutput?.text ?? pendingAssistantOutput?.text ?? "",
           ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
           ...(finalizedPendingOutput?.sources.length
             ? {

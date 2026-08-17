@@ -186,6 +186,16 @@ describe("running turn follow-ups", () => {
       messages: [
         { role: "user", text: "Edit the file" },
         {
+          role: "assistant",
+          text: "",
+          progress: [
+            {
+              text: "I will edit it.",
+              activities: [],
+            },
+          ],
+        },
+        {
           role: "user",
           text: "Do not edit it; explain the change",
           followUpDelivery: "inject",
@@ -195,9 +205,26 @@ describe("running turn follow-ups", () => {
       ],
       queuedTurns: [],
     });
-    expect(
-      notifications(messages, "turn/follow-up/consumed"),
-    ).toHaveLength(1);
+    expect(notifications(messages, "turn/follow-up/consumed")).toMatchObject([
+      {
+        params: {
+          precedingAssistantMessage: {
+            role: "assistant",
+            text: "",
+            progress: [
+              {
+                text: "I will edit it.",
+                activities: [],
+              },
+            ],
+          },
+          message: {
+            role: "user",
+            text: "Do not edit it; explain the change",
+          },
+        },
+      },
+    ]);
   });
 
   it("preserves completed model output before consuming an injected instruction", async () => {
