@@ -1003,9 +1003,16 @@
   white-space: nowrap;
 }
 
-.capability-option-copy > strong,
-.capability-option-title strong {
+.capability-option-copy > strong {
   flex: 0 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.capability-option-title strong {
+  max-width: 100%;
+  flex: 0 0 auto;
   min-width: 0;
   font-size: 12px;
   font-weight: 650;

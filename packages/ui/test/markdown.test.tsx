@@ -101,24 +101,54 @@ const ready = true;
             url: "https://threadlight.xyz/docs",
             domain: "threadlight.xyz",
           },
+          {
+            id: "s3",
+            title: "Threadlight guide",
+            url: "https://example.com/threadlight-guide",
+            domain: "example.com",
+          },
+          {
+            id: "s4",
+            title: "Threadlight patterns",
+            url: "https://docs.example.org/threadlight-patterns",
+            domain: "docs.example.org",
+          },
         ]}
         citations={[
           {
             id: "citation-1",
-            sourceIds: ["s1", "s2"],
+            sourceIds: ["s1"],
+            excerpt: "Threadlight has a provider-neutral agent loop.",
+          },
+          {
+            id: "citation-2",
+            sourceIds: ["s2"],
+            excerpt: "Threadlight has a provider-neutral agent loop.",
+          },
+          {
+            id: "citation-3",
+            sourceIds: ["s3"],
+            excerpt: "Threadlight has a provider-neutral agent loop.",
+          },
+          {
+            id: "citation-4",
+            sourceIds: ["s4"],
             excerpt: "Threadlight has a provider-neutral agent loop.",
           },
         ]}
       >
         {
-          "Threadlight has a provider-neutral agent loop.[1](threadlight-source:citation-1)"
+          "Threadlight has a provider-neutral agent loop.[1](threadlight-source:citation-1)[2](threadlight-source:citation-2)[3](threadlight-source:citation-3)[4](threadlight-source:citation-4)"
         }
       </MarkdownContent>,
     );
 
     expect(html).toContain("GitHub");
     expect(html).toContain('class="source-citation-more"');
-    expect(html).toContain("+1");
+    expect(html).toContain("+3");
+    expect(
+      html.match(/class="source-citation-marker pressable"/g),
+    ).toHaveLength(1);
     expect(html).not.toContain(">1</button>");
   });
 

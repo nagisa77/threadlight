@@ -19,8 +19,12 @@ export interface FinalizedSourceCitations {
   citations: readonly MessageCitationData[];
 }
 
-const SOURCE_MARKER =
-  /\[\[(?:source:([a-zA-Z0-9_-]+(?:\s*,\s*[a-zA-Z0-9_-]+)*)|(s\d+(?:\s*,\s*s\d+)*))\]\]/g;
+const SOURCE_MARKER_PATTERN = String.raw`\[\[(?:source:[a-zA-Z0-9_-]+(?:\s*,\s*[a-zA-Z0-9_-]+)*|s\d+(?:\s*,\s*s\d+)*)\]\]`;
+const SOURCE_MARKER = new RegExp(SOURCE_MARKER_PATTERN, "g");
+const SOURCE_MARKER_GROUP = new RegExp(
+  `${SOURCE_MARKER_PATTERN}(?:[\t ]*${SOURCE_MARKER_PATTERN})*`,
+  "g",
+);
 const PARTIAL_SOURCE_MARKER =
   /\[\[(?:source:[a-zA-Z0-9_,\s-]*|s\d*(?:\s*,\s*s\d*)*)?$/;
 const MAX_SOURCES = 30;
@@ -125,20 +129,19 @@ export function finalizeSourceCitations(
   let cleanPrefix = "";
   let previousEnd = 0;
   const transformed = text.replace(
-    SOURCE_MARKER,
-    (
-      marker,
-      explicitSourceList: string | undefined,
-      compactSourceList: string | undefined,
-      offset: number,
-    ) => {
+    SOURCE_MARKER_GROUP,
+    (markerGroup, offset: number) => {
       cleanPrefix += text.slice(previousEnd, offset);
-      previousEnd = offset + marker.length;
-      const sourceList = explicitSourceList ?? compactSourceList ?? "";
+      previousEnd = offset + markerGroup.length;
       const sourceIds = [
         ...new Set(
-          sourceList
-            .split(",")
+          (markerGroup.match(SOURCE_MARKER) ?? [])
+            .flatMap((marker) =>
+              marker
+                .slice(2, -2)
+                .replace(/^source:/, "")
+                .split(","),
+            )
             .map((id) => id.trim())
             .filter((id) => sourceById.has(id)),
         ),

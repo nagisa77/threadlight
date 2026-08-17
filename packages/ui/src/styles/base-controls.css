@@ -394,6 +394,7 @@
 }
 
 .message.user .message-body {
+  width: fit-content;
   padding: 9px 13px;
   border: 1px solid #dedee1;
   border-radius: 13px 13px 4px 13px;

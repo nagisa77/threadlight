@@ -5,6 +5,13 @@ import type {
 
 import { defineMessageCatalog, messagesFor, type Language } from "./i18n.js";
 
+const INLINE_CITATION_PATTERN = String.raw`\[([0-9]+(?:,[0-9]+)*)\]\(threadlight-source:(citation-\d+)\)`;
+const INLINE_CITATION = new RegExp(INLINE_CITATION_PATTERN, "g");
+const INLINE_CITATION_GROUP = new RegExp(
+  `${INLINE_CITATION_PATTERN}(?:[\t ]*${INLINE_CITATION_PATTERN})*`,
+  "g",
+);
+
 export function sourcePresentationKind(
   citationId: string | undefined,
   viewportWidth: number,
@@ -21,6 +28,53 @@ export function sourcesForCitation(
     const source = sourceById.get(id);
     return source ? [source] : [];
   });
+}
+
+export function coalesceAdjacentCitationLinks(
+  text: string,
+  citations: readonly MessageCitationData[],
+): { text: string; citations: readonly MessageCitationData[] } {
+  const citationById = new Map(
+    citations.map((citation) => [citation.id, citation]),
+  );
+  const replacements = new Map<string, MessageCitationData>();
+  const removedIds = new Set<string>();
+  let changed = false;
+  const normalizedText = text.replace(INLINE_CITATION_GROUP, (group) => {
+    const links = [...group.matchAll(INLINE_CITATION)];
+    if (links.length < 2) return group;
+    const groupedCitations = links.flatMap((link) => {
+      const citation = citationById.get(link[2] ?? "");
+      return citation ? [citation] : [];
+    });
+    if (groupedCitations.length !== links.length) return group;
+
+    const primaryCitation = groupedCitations[0];
+    if (!primaryCitation) return group;
+    replacements.set(primaryCitation.id, {
+      ...primaryCitation,
+      sourceIds: [
+        ...new Set(groupedCitations.flatMap((citation) => citation.sourceIds)),
+      ],
+    });
+    groupedCitations
+      .slice(1)
+      .forEach((citation) => removedIds.add(citation.id));
+    changed = true;
+    const labels = [
+      ...new Set(links.flatMap((link) => (link[1] ?? "").split(","))),
+    ];
+    return `[${labels.join(",")}](threadlight-source:${primaryCitation.id})`;
+  });
+
+  if (!changed) return { text, citations };
+  return {
+    text: normalizedText,
+    citations: citations.flatMap((citation) => {
+      if (removedIds.has(citation.id)) return [];
+      return [replacements.get(citation.id) ?? citation];
+    }),
+  };
 }
 
 export function sourceDisplayName(source: MessageSourceData): string {

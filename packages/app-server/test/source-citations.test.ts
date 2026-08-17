@@ -44,8 +44,8 @@ describe("source citations", () => {
     ]);
   });
 
-  it("accepts adjacent compact source markers emitted by compatible providers", () => {
-    const result = finalizeSourceCitations("Verified.[[s1]][[s2]]", [
+  it("coalesces adjacent source markers emitted by compatible providers", () => {
+    const result = finalizeSourceCitations("Verified.[[s1]] [[source:s2,s1]]", [
       {
         id: "s1",
         title: "First",
@@ -60,13 +60,50 @@ describe("source citations", () => {
       },
     ]);
 
-    expect(result.text).toBe(
-      "Verified.[1](threadlight-source:citation-1)[2](threadlight-source:citation-2)",
-    );
+    expect(result.text).toBe("Verified.[1,2](threadlight-source:citation-1)");
     expect(result.sources.map(({ id }) => id)).toEqual(["s1", "s2"]);
     expect(result.citations).toEqual([
-      expect.objectContaining({ sourceIds: ["s1"] }),
-      expect.objectContaining({ sourceIds: ["s2"] }),
+      {
+        id: "citation-1",
+        sourceIds: ["s1", "s2"],
+        excerpt: "Verified.",
+      },
+    ]);
+  });
+
+  it("keeps source markers separate when prose appears between them", () => {
+    const result = finalizeSourceCitations(
+      "First fact.[[s1]] Second fact.[[s2]]",
+      [
+        {
+          id: "s1",
+          title: "First",
+          url: "https://first.example",
+          domain: "first.example",
+        },
+        {
+          id: "s2",
+          title: "Second",
+          url: "https://second.example",
+          domain: "second.example",
+        },
+      ],
+    );
+
+    expect(result.text).toBe(
+      "First fact.[1](threadlight-source:citation-1) Second fact.[2](threadlight-source:citation-2)",
+    );
+    expect(result.citations).toEqual([
+      {
+        id: "citation-1",
+        sourceIds: ["s1"],
+        excerpt: "First fact.",
+      },
+      {
+        id: "citation-2",
+        sourceIds: ["s2"],
+        excerpt: "Second fact.",
+      },
     ]);
   });
 
@@ -159,7 +196,7 @@ describe("source citations", () => {
         expect(request.instructions).toContain("[[source:s1]]");
         expect(request.instructions).toContain("[[source:s1,s2]]");
         return {
-          text: "Threadlight is an agent runtime.[[s1]] It supports observable workflows.[[s1,s2]]",
+          text: "Threadlight is an agent runtime.[[s1]][[s2]] It supports observable workflows.[[s1,s2]]",
           toolCalls: [],
           state: { turn: 2 },
         };
@@ -242,7 +279,7 @@ describe("source citations", () => {
           ),
           sources: [{ id: "s1" }, { id: "s2" }],
           citations: [
-            { id: "citation-1", sourceIds: ["s1"] },
+            { id: "citation-1", sourceIds: ["s1", "s2"] },
             { id: "citation-2", sourceIds: ["s1", "s2"] },
           ],
         },
@@ -251,13 +288,13 @@ describe("source citations", () => {
     expect(
       completion && "method" in completion ? completion.params : undefined,
     ).toMatchObject({
-      output: expect.stringContaining("threadlight-source:citation-1"),
+      output: expect.stringContaining("[1,2](threadlight-source:citation-1)"),
       sources: [
         { id: "s1", domain: "example.com" },
         { id: "s2", domain: "docs.example.org" },
       ],
       citations: [
-        { id: "citation-1", sourceIds: ["s1"] },
+        { id: "citation-1", sourceIds: ["s1", "s2"] },
         { id: "citation-2", sourceIds: ["s1", "s2"] },
       ],
     });

@@ -33,6 +33,7 @@ import type {
 
 import { useI18n } from "./i18n.js";
 import {
+  coalesceAdjacentCitationLinks,
   sourceCopy,
   sourceDisplayName,
   sourceFaviconUrl,
@@ -40,6 +41,7 @@ import {
   sourcesForCitation,
 } from "./markdown-source-model.js";
 export {
+  coalesceAdjacentCitationLinks,
   sourceDisplayName,
   sourceFaviconUrl,
   sourcePresentationKind,
@@ -116,6 +118,7 @@ export function MarkdownContent({
 }: MarkdownContentProps) {
   const { language } = useI18n();
   const labels = sourceCopy(language);
+  const citationContent = coalesceAdjacentCitationLinks(children, citations);
   const citationNamespace = useId().replaceAll(":", "");
   const lastSourceOpener = useRef<{
     element: HTMLElement;
@@ -124,7 +127,7 @@ export function MarkdownContent({
   const previewCloseTimer = useRef<number | undefined>(undefined);
   const [sourceSurface, setSourceSurface] = useState<SourceSurface>();
   const citationById = new Map(
-    citations.map((citation) => [citation.id, citation]),
+    citationContent.citations.map((citation) => [citation.id, citation]),
   );
 
   useEffect(() => {
@@ -271,10 +274,10 @@ export function MarkdownContent({
               : defaultUrlTransform(url)
           }
         >
-          {children}
+          {citationContent.text}
         </Markdown>
       </MarkdownLinkContext.Provider>
-      {sources.length > 0 && citations.length > 0 ? (
+      {sources.length > 0 && citationContent.citations.length > 0 ? (
         <button
           type="button"
           className="message-sources-trigger pressable"
@@ -298,7 +301,7 @@ export function MarkdownContent({
         ? createPortal(
             <SourceCollection
               sources={sources}
-              citations={citations}
+              citations={citationContent.citations}
               activeCitationId={sourceSurface.activeCitationId}
               onClose={closeSources}
               onLocate={locateCitation}
