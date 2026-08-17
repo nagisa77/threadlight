@@ -826,6 +826,18 @@
   flex: 0 0 auto;
 }
 
+.activity-detail-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--subtle);
+  font-size: 9px;
+}
+
+.activity-detail-state.failed {
+  color: var(--danger);
+}
+
 .activity-item .completed {
   color: var(--success);
 }

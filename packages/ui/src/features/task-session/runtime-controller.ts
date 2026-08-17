@@ -162,14 +162,34 @@ export function useTaskSessionRuntime({
     ) {
       return;
     }
-    const frame = requestAnimationFrame(() => {
-      const target =
-        (pendingSearchJump.activityId
-          ? document.getElementById(`activity-${pendingSearchJump.activityId}`)
-          : undefined) ??
-        (pendingSearchJump.messageId
-          ? document.getElementById(`message-${pendingSearchJump.messageId}`)
-          : undefined);
+    let frame = 0;
+    let attempts = 0;
+    const locateTarget = () => {
+      frame = 0;
+      let target = pendingSearchJump.activityId
+        ? document.getElementById(`activity-${pendingSearchJump.activityId}`)
+        : undefined;
+      if (!target && pendingSearchJump.activityId && attempts < 3) {
+        const activityList = [...document.querySelectorAll(".activity-list")]
+          .filter(
+            (element): element is HTMLDetailsElement =>
+              element instanceof HTMLDetailsElement,
+          )
+          .find((element) =>
+            (element.dataset.activityIds ?? "")
+              .split(" ")
+              .includes(pendingSearchJump.activityId as string),
+          );
+        if (activityList) {
+          activityList.open = true;
+          attempts += 1;
+          frame = requestAnimationFrame(locateTarget);
+          return;
+        }
+      }
+      target ??= pendingSearchJump.messageId
+        ? document.getElementById(`message-${pendingSearchJump.messageId}`)
+        : undefined;
       if (!target) return;
       followOutput.current = false;
       const details = target.closest("details");
@@ -177,8 +197,11 @@ export function useTaskSessionRuntime({
       target.scrollIntoView({ block: "center" });
       target.focus({ preventScroll: true });
       setPendingSearchJump(undefined);
-    });
-    return () => cancelAnimationFrame(frame);
+    };
+    frame = requestAnimationFrame(locateTarget);
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, [
     followOutput,
     pendingSearchJump,

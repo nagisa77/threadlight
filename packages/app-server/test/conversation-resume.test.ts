@@ -14,7 +14,11 @@ import {
 import { AppServer } from "../src/app-server.js";
 import { FileConversationStore } from "../src/conversation-store.js";
 import { ModelStatePersistence } from "../src/model-state-persistence.js";
-import type { JsonRpcOutgoing } from "../src/protocol.js";
+import type {
+  ConversationActivityData,
+  ConversationMessageData,
+  JsonRpcOutgoing,
+} from "../src/protocol.js";
 
 interface StatefulModelProvider extends ModelProvider {
   prepareStateForPersistence?(
@@ -102,6 +106,50 @@ describe("persistent conversations", () => {
         },
       ],
     });
+    expect(store.load(threadId)?.messages.at(-1)?.diagnostics).toBeDefined();
+
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+    const resumed = result<{ messages: ConversationMessageData[] }>(
+      messages,
+      4,
+    ).messages.at(-1);
+    expect(resumed).not.toHaveProperty("diagnostics");
+    expect(resumed?.progress?.[0]?.activities).toEqual([
+      {
+        id: "call-1",
+        name: "inspect",
+        status: "completed",
+        detailAvailable: true,
+      },
+      {
+        id: "call-2",
+        name: "inspect",
+        status: "completed",
+        detailAvailable: true,
+      },
+    ]);
+
+    await appServer.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "activity/read",
+      params: { threadId, activityId: "call-1" },
+    });
+    expect(result<{ activity: ConversationActivityData }>(messages, 5)).toEqual(
+      {
+        activity: {
+          id: "call-1",
+          name: "inspect",
+          status: "completed",
+          detail: "inspected a",
+        },
+      },
+    );
   });
 
   it("persists managed command output and a user-terminated state", async () => {

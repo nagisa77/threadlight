@@ -1,9 +1,14 @@
+import { memo, useRef } from "react";
+import type {
+  CapabilityDescriptor,
+  ConversationActivityData,
+} from "@threadlight/protocol";
 import { LoaderCircle } from "lucide-react";
 
 import type { AppViewModel } from "./app-view-model.js";
 import { useI18n } from "./i18n.js";
 import { isNearBottom } from "./scroll.js";
-import { MarkdownContent } from "./markdown.js";
+import { MarkdownContent, type LocalFileReference } from "./markdown.js";
 import { MessageCapabilityReceipts } from "./capabilities.js";
 import { TaskHeader } from "./features/productivity/task-header.js";
 import { EmptyState } from "./features/navigation/project-dialogs.js";
@@ -23,12 +28,14 @@ import {
   DeliveryTurnStatus,
   shouldShowDeliveryTurnStatus,
 } from "./features/delivery/delivery-turn-status.js";
+import type { AttachmentPreviewAdapter } from "./features/shared/adapters.js";
+import type { ConversationMessage } from "./features/task-session/session.js";
 
 export function ConversationSurface({ model }: { model: AppViewModel }) {
   const { t } = useI18n();
   const {
     app: {
-      client: _client,
+      client,
       taskLinksEnabled,
       clipboard,
       settings,
@@ -80,6 +87,53 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
     },
   } = model;
   const isEmpty = state.messages.length === 0 && state.connection !== "error";
+  const messageHandlers = useRef({
+    client,
+    threadId: state.threadId,
+    terminateProcess,
+    openLocalFile,
+    revealLocalFile,
+    rewriteQuestion,
+    jumpToMessage,
+    toggleBookmark: productivity.toggleBookmark,
+    copyText: clipboard?.writeText,
+  });
+  messageHandlers.current = {
+    client,
+    threadId: state.threadId,
+    terminateProcess,
+    openLocalFile,
+    revealLocalFile,
+    rewriteQuestion,
+    jumpToMessage,
+    toggleBookmark: productivity.toggleBookmark,
+    copyText: clipboard?.writeText,
+  };
+  const stableMessageHandlers = useRef({
+    onTerminateProcess: (sessionId: string) =>
+      messageHandlers.current.terminateProcess(sessionId),
+    onOpenLocalFile: (reference: LocalFileReference) =>
+      messageHandlers.current.openLocalFile(reference),
+    onRevealLocalFile: (reference: LocalFileReference) =>
+      messageHandlers.current.revealLocalFile(reference),
+    onRewriteQuestion: (text: string) =>
+      messageHandlers.current.rewriteQuestion(text),
+    onJumpToMessage: (messageId: string) =>
+      messageHandlers.current.jumpToMessage(messageId),
+    onToggleBookmark: (messageId: string) =>
+      messageHandlers.current.toggleBookmark(messageId),
+    onCopyText: (text: string) =>
+      messageHandlers.current.copyText?.(text) ?? Promise.resolve(),
+    onReadActivity: async (activityId: string) => {
+      const { threadId, client: currentClient } = messageHandlers.current;
+      if (!threadId) throw new Error("Cannot read activity without a thread");
+      const { activity } = await currentClient.readActivity(
+        threadId,
+        activityId,
+      );
+      return activity;
+    },
+  }).current;
 
   return (
     <>
@@ -114,7 +168,10 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
           setShowJumpToLatest(!following);
         }}
       >
-        <Timeline messages={state.messages} onJump={jumpToMessage} />
+        <Timeline
+          messages={state.messages}
+          onJump={stableMessageHandlers.onJumpToMessage}
+        />
         <div className="conversation-inner">
           {state.recovery?.kind === "missing_thread" ? (
             <MissingThreadRecovery
@@ -138,95 +195,38 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
           ) : (
             <div className="message-list">
               {state.messages.map((message) => (
-                <article
-                  id={`message-${message.id}`}
-                  className={`message ${message.role} ${message.error ? "error" : ""}`}
+                <ConversationMessageItem
                   key={message.id}
-                  tabIndex={-1}
-                >
-                  {message.role === "user" &&
-                    message.followUpDelivery === "inject" && (
-                      <GuidedMessageReceipt />
-                    )}
-                  {message.role === "user" &&
-                    message.attachments &&
-                    message.attachments.length > 0 && (
-                      <MessageAttachments
-                        attachments={message.attachments}
-                        attachmentPreview={attachmentPreview}
-                      />
-                    )}
-                  <MessageCapabilityReceipts
-                    role={message.role}
-                    capabilities={message.capabilities}
-                    capabilityRefs={message.capabilityRefs}
-                    catalog={capabilities}
-                  />
-                  {(message.text || message.role === "assistant") && (
-                    <div className="message-body">
-                      {message.progress && message.progress.length > 0 && (
-                        <ProgressList
-                          progress={message.progress}
-                          onTerminateProcess={terminateProcess}
-                          onOpenLocalFile={openLocalFile}
-                          onRevealLocalFile={
-                            workspace?.reveal || workspace?.revealSystemFile
-                              ? revealLocalFile
-                              : undefined
-                          }
-                        />
-                      )}
-                      {(!message.progress || message.progress.length === 0) &&
-                        message.activities &&
-                        message.activities.length > 0 && (
-                          <ActivityList
-                            activities={message.activities}
-                            onTerminateProcess={terminateProcess}
-                          />
-                        )}
-                      {message.role === "assistant" && (
-                        <AgentTreePanel tree={message.agentTree} />
-                      )}
-                      {message.role === "assistant" ? (
-                        <MarkdownContent
-                          onOpenLocalFile={openLocalFile}
-                          sources={message.sources}
-                          citations={message.citations}
-                          onRevealLocalFile={
-                            workspace?.reveal || workspace?.revealSystemFile
-                              ? revealLocalFile
-                              : undefined
-                          }
-                        >
-                          {message.text}
-                        </MarkdownContent>
-                      ) : (
-                        <p>{message.text}</p>
-                      )}
-                    </div>
+                  message={message}
+                  capabilities={capabilities}
+                  attachmentPreview={attachmentPreview}
+                  bookmarked={productivity.bookmarkedIds.includes(message.id)}
+                  canCopyText={Boolean(clipboard?.writeText)}
+                  canRevealLocalFile={Boolean(
+                    workspace?.reveal || workspace?.revealSystemFile,
                   )}
-                  {message.text && (
-                    <MessageActions
-                      role={message.role}
-                      text={message.text}
-                      copyText={clipboard?.writeText}
-                      onRewrite={
-                        message.role === "user"
-                          ? () => rewriteQuestion(message.text)
-                          : undefined
-                      }
-                      bookmarked={productivity.bookmarkedIds.includes(
-                        message.id,
-                      )}
-                      onToggleBookmark={() =>
-                        productivity.toggleBookmark(message.id)
-                      }
-                    />
-                  )}
-                </article>
+                  onTerminateProcess={stableMessageHandlers.onTerminateProcess}
+                  onReadActivity={
+                    state.threadId
+                      ? stableMessageHandlers.onReadActivity
+                      : undefined
+                  }
+                  onOpenLocalFile={stableMessageHandlers.onOpenLocalFile}
+                  onRevealLocalFile={stableMessageHandlers.onRevealLocalFile}
+                  onRewriteQuestion={stableMessageHandlers.onRewriteQuestion}
+                  onToggleBookmark={stableMessageHandlers.onToggleBookmark}
+                  onCopyText={stableMessageHandlers.onCopyText}
+                />
               ))}
 
-              <LiveRun model={model} />
+              <LiveRun
+                model={model}
+                onReadActivity={
+                  state.threadId
+                    ? stableMessageHandlers.onReadActivity
+                    : undefined
+                }
+              />
               {shouldShowDeliveryTurnStatus(
                 currentConversation?.workspace?.mode,
                 state.isRunning,
@@ -257,6 +257,119 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
     </>
   );
 }
+
+interface ConversationMessageItemProps {
+  message: ConversationMessage;
+  capabilities: readonly CapabilityDescriptor[];
+  attachmentPreview?: AttachmentPreviewAdapter;
+  bookmarked: boolean;
+  canCopyText: boolean;
+  canRevealLocalFile: boolean;
+  onTerminateProcess(sessionId: string): Promise<unknown>;
+  onReadActivity?(activityId: string): Promise<ConversationActivityData>;
+  onOpenLocalFile(reference: LocalFileReference): void;
+  onRevealLocalFile(reference: LocalFileReference): void | Promise<void>;
+  onRewriteQuestion(text: string): void;
+  onToggleBookmark(messageId: string): void;
+  onCopyText(text: string): Promise<void>;
+}
+
+export const ConversationMessageItem = memo(function ConversationMessageItem({
+  message,
+  capabilities,
+  attachmentPreview,
+  bookmarked,
+  canCopyText,
+  canRevealLocalFile,
+  onTerminateProcess,
+  onReadActivity,
+  onOpenLocalFile,
+  onRevealLocalFile,
+  onRewriteQuestion,
+  onToggleBookmark,
+  onCopyText,
+}: ConversationMessageItemProps) {
+  return (
+    <article
+      id={`message-${message.id}`}
+      className={`message ${message.role} ${message.error ? "error" : ""}`}
+      tabIndex={-1}
+    >
+      {message.role === "user" && message.followUpDelivery === "inject" && (
+        <GuidedMessageReceipt />
+      )}
+      {message.role === "user" &&
+        message.attachments &&
+        message.attachments.length > 0 && (
+          <MessageAttachments
+            attachments={message.attachments}
+            attachmentPreview={attachmentPreview}
+          />
+        )}
+      <MessageCapabilityReceipts
+        role={message.role}
+        capabilities={message.capabilities}
+        capabilityRefs={message.capabilityRefs}
+        catalog={capabilities}
+      />
+      {(message.text || message.role === "assistant") && (
+        <div className="message-body">
+          {message.progress && message.progress.length > 0 && (
+            <ProgressList
+              progress={message.progress}
+              onTerminateProcess={onTerminateProcess}
+              onReadActivity={onReadActivity}
+              onOpenLocalFile={onOpenLocalFile}
+              onRevealLocalFile={
+                canRevealLocalFile ? onRevealLocalFile : undefined
+              }
+            />
+          )}
+          {(!message.progress || message.progress.length === 0) &&
+            message.activities &&
+            message.activities.length > 0 && (
+              <ActivityList
+                activities={message.activities}
+                onTerminateProcess={onTerminateProcess}
+                onReadActivity={onReadActivity}
+              />
+            )}
+          {message.role === "assistant" && (
+            <AgentTreePanel tree={message.agentTree} />
+          )}
+          {message.role === "assistant" ? (
+            <MarkdownContent
+              onOpenLocalFile={onOpenLocalFile}
+              sources={message.sources}
+              citations={message.citations}
+              onRevealLocalFile={
+                canRevealLocalFile ? onRevealLocalFile : undefined
+              }
+            >
+              {message.text}
+            </MarkdownContent>
+          ) : (
+            <p>{message.text}</p>
+          )}
+        </div>
+      )}
+      {message.text && (
+        <MessageActions
+          role={message.role}
+          text={message.text}
+          copyText={canCopyText ? onCopyText : undefined}
+          onRewrite={
+            message.role === "user"
+              ? () => onRewriteQuestion(message.text)
+              : undefined
+          }
+          bookmarked={bookmarked}
+          onToggleBookmark={() => onToggleBookmark(message.id)}
+        />
+      )}
+    </article>
+  );
+});
 
 function EmptyConversation({ model }: { model: AppViewModel }) {
   const {
@@ -298,7 +411,13 @@ function EmptyConversation({ model }: { model: AppViewModel }) {
   );
 }
 
-function LiveRun({ model }: { model: AppViewModel }) {
+function LiveRun({
+  model,
+  onReadActivity,
+}: {
+  model: AppViewModel;
+  onReadActivity?(activityId: string): Promise<ConversationActivityData>;
+}) {
   const { t } = useI18n();
   const {
     app: { workspace },
@@ -320,6 +439,7 @@ function LiveRun({ model }: { model: AppViewModel }) {
           progress={state.progress}
           live
           onTerminateProcess={terminateProcess}
+          onReadActivity={onReadActivity}
           onOpenLocalFile={openLocalFile}
           onRevealLocalFile={
             workspace?.reveal || workspace?.revealSystemFile

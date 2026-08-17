@@ -402,6 +402,7 @@ export const zhTW: Messages = {
   executing: "執行中",
   executed: "已執行",
   executionLog: "執行記錄",
+  activityDetailsUnavailable: "詳情載入失敗，收起後可重試",
   computerPermissionTitle: "使用電腦需要系統授權",
   computerPermissionDescription:
     "完成兩項系統授權後，Threadlight 才能查看並操作所選視窗。",

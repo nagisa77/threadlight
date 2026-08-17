@@ -34,6 +34,8 @@ import type {
   CapabilityDescriptor,
   ConnectorStatusData,
   ConversationAccessMode,
+  ConversationActivityData,
+  ConversationDisplayMessageData,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,
@@ -111,6 +113,11 @@ import { AppServerDiscovery } from "./app-server-discovery.js";
 import { AppServerState } from "./app-server-state.js";
 import { AppServerThreadFactory } from "./app-server-thread-factory.js";
 import { ExecutionApprovalCoordinator } from "./execution-approval-coordinator.js";
+import {
+  activeTurnForDisplay,
+  conversationMessagesForDisplay,
+  findConversationActivity,
+} from "./conversation-display.js";
 
 export interface ThreadState {
   agent: Agent;
@@ -303,6 +310,7 @@ export class AppServer {
       },
       "thread/start": () => this.startThread(),
       "thread/resume": (params) => this.resumeThread(params),
+      "activity/read": (params) => this.readActivity(params),
       "thread/delete": (params) => this.deleteThread(params),
       "thread/suggestions": (params) =>
         this.discovery().suggestQuestions(params),
@@ -389,7 +397,7 @@ export class AppServer {
 
   private async resumeThread(params: unknown): Promise<{
     threadId: string;
-    messages: readonly ConversationMessageData[];
+    messages: readonly ConversationDisplayMessageData[];
     queuedTurns: readonly QueuedTurnData[];
     revision: number;
     activeTurn?: ActiveTurnData;
@@ -413,10 +421,10 @@ export class AppServer {
     const activeTurn = this.state().activeTurnSnapshot(thread);
     return {
       threadId,
-      messages: thread.conversation.messages,
+      messages: conversationMessagesForDisplay(thread.conversation.messages),
       queuedTurns: thread.conversation.queuedTurns ?? [],
       revision: thread.revision,
-      ...(activeTurn ? { activeTurn } : {}),
+      ...(activeTurn ? { activeTurn: activeTurnForDisplay(activeTurn) } : {}),
       ...(thread.conversation.provider
         ? { provider: thread.conversation.provider }
         : {}),
@@ -424,6 +432,24 @@ export class AppServer {
         ? { model: thread.conversation.model }
         : {}),
     };
+  }
+
+  private async readActivity(
+    params: unknown,
+  ): Promise<{ activity: ConversationActivityData }> {
+    const { threadId, activityId } = objectParams(params);
+    requireString(threadId, "threadId");
+    requireString(activityId, "activityId");
+    const thread = await this.requireThread(threadId);
+    const activity = findConversationActivity(
+      thread.conversation.messages,
+      thread.progress,
+      activityId,
+    );
+    if (!activity) {
+      throw new RpcError(-32005, `Unknown activity: ${activityId}`);
+    }
+    return { activity };
   }
 
   /**

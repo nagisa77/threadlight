@@ -11,6 +11,7 @@ export type {
   ConnectorStatusData,
   ConversationAccessMode,
   ConversationActivityData,
+  ConversationDisplayMessageData,
   ConversationMessageData,
   ConversationProgressData,
   JsonRpcId,

@@ -431,6 +431,8 @@ export const ko: Messages = {
   executing: "실행 중",
   executed: "실행됨",
   executionLog: "실행 기록",
+  activityDetailsUnavailable:
+    "세부 정보를 불러오지 못했습니다. 접은 뒤 다시 시도하세요",
   computerPermissionTitle: "컴퓨터 사용 권한이 필요합니다",
   computerPermissionDescription:
     "선택한 창을 보고 조작하려면 두 권한을 모두 허용하세요.",

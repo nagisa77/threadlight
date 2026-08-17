@@ -395,6 +395,7 @@ export const zh = {
   executing: "执行中",
   executed: "已执行",
   executionLog: "执行记录",
+  activityDetailsUnavailable: "详情读取失败，收起后可重试",
   computerPermissionTitle: "需要授权才能使用电脑",
   computerPermissionDescription:
     "完成两项系统授权后，Threadlight 才能看见并操作所选窗口。",

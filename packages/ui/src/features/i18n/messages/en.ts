@@ -438,6 +438,7 @@ export const en: Messages = {
   executing: "Running",
   executed: "Executed",
   executionLog: "Execution log",
+  activityDetailsUnavailable: "Details unavailable; collapse to retry",
   computerPermissionTitle: "Computer access needs permission",
   computerPermissionDescription:
     "Grant both permissions so Threadlight can see and operate selected windows.",

@@ -55,6 +55,33 @@ describe("ThreadlightClient", () => {
     client.dispose();
   });
 
+  it("reads deferred activity details by thread and activity id", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const read = client.readActivity("thread-1", "call-1");
+    expect(transport.sent[0]).toMatchObject({
+      method: "activity/read",
+      params: { threadId: "thread-1", activityId: "call-1" },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: {
+        activity: {
+          id: "call-1",
+          name: "exec_command",
+          status: "completed",
+          detail: "$ npm test",
+        },
+      },
+    });
+    await expect(read).resolves.toMatchObject({
+      activity: { id: "call-1", detail: "$ npm test" },
+    });
+    client.dispose();
+  });
+
   it("sends follow-up queue mutations", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);

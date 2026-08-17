@@ -36,14 +36,17 @@ describe("ActivityList", () => {
             id: "completed-call",
             name: "exec_command",
             status: "completed",
+            detail: "large hidden detail",
           },
         ]}
       />,
     );
 
-    expect(html).toContain('<details class="activity-list">');
-    expect(html).not.toContain('<details class="activity-list" open="">');
+    expect(html).toContain('<details class="activity-list"');
+    expect(html).not.toContain('data-activity-ids="completed-call" open=""');
     expect(html).toContain('<summary class="activity-heading">');
+    expect(html).not.toContain('class="activity-content"');
+    expect(html).not.toContain("large hidden detail");
   });
 
   it("starts failed execution records expanded so diagnostics are visible", () => {
@@ -60,7 +63,7 @@ describe("ActivityList", () => {
       />,
     );
 
-    expect(html).toContain('<details class="activity-list" open="">');
+    expect(html).toContain('data-activity-ids="failed-call" open=""');
     expect(html).toContain("focused={role=AXWindow}");
   });
 
@@ -90,10 +93,11 @@ describe("ActivityList", () => {
       />,
     );
 
-    expect(html).toContain('<details class="activity-list" open="">');
+    expect(html).toContain('data-activity-ids="warning-call" open=""');
     expect(html).toContain("lucide-triangle-alert warning");
     expect(html).not.toContain("lucide-check completed");
-    expect(html).toContain("stderr\ncommand not found");
+    expect(html).toContain('<details class="command-output">');
+    expect(html).not.toContain("stderr\ncommand not found");
   });
 
   it("keeps a live execution record expanded until the final answer arrives", () => {
@@ -110,7 +114,7 @@ describe("ActivityList", () => {
       />,
     );
 
-    expect(html).toContain('<details class="activity-list live" open="">');
+    expect(html).toContain('data-activity-ids="running-call" open=""');
   });
 
   it("keeps completed and failed status icons in the tool-name summary row", () => {
@@ -139,9 +143,10 @@ describe("ActivityList", () => {
     expect(html).toContain("</svg><code>web_search</code></div><pre>");
   });
 
-  it("renders command output collapsed with a termination action", () => {
+  it("mounts the command summary but defers output text until it expands", () => {
     const html = renderToStaticMarkup(
       <ActivityList
+        live
         activities={[
           {
             id: "managed-command",
@@ -169,8 +174,8 @@ describe("ActivityList", () => {
     expect(html).toContain('<details class="command-output">');
     expect(html).not.toContain('<details class="command-output" open="">');
     expect(html).toContain("命令行输出");
-    expect(html).toContain("test output");
-    expect(html).toContain("stderr\nwarning");
+    expect(html).not.toContain("test output");
+    expect(html).not.toContain("stderr\nwarning");
     expect(html).toContain("结束该命令");
   });
 });

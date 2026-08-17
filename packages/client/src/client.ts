@@ -120,6 +120,10 @@ export class ThreadlightClient {
     return this.request("thread/resume", { threadId });
   }
 
+  readActivity(threadId: string, activityId: string) {
+    return this.request("activity/read", { threadId, activityId });
+  }
+
   deleteThread(threadId: string) {
     return this.request("thread/delete", { threadId });
   }

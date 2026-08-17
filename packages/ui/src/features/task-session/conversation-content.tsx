@@ -50,12 +50,14 @@ export function ProgressList({
   progress,
   live = false,
   onTerminateProcess,
+  onReadActivity,
   onOpenLocalFile,
   onRevealLocalFile,
 }: {
   progress: readonly ConversationProgress[];
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
+  onReadActivity?(activityId: string): Promise<ToolActivity>;
   onOpenLocalFile?(reference: LocalFileReference): void;
   onRevealLocalFile?(reference: LocalFileReference): void | Promise<void>;
 }) {
@@ -78,6 +80,7 @@ export function ProgressList({
               activities={step.activities}
               live={live}
               onTerminateProcess={onTerminateProcess}
+              onReadActivity={onReadActivity}
             />
           )}
         </div>
@@ -552,10 +555,12 @@ export function ActivityList({
   activities,
   live = false,
   onTerminateProcess,
+  onReadActivity,
 }: {
   activities: readonly ToolActivity[];
   live?: boolean;
   onTerminateProcess?(sessionId: string): Promise<unknown>;
+  onReadActivity?(activityId: string): Promise<ToolActivity>;
 }) {
   const { t } = useI18n();
   const hasAttentionActivity = activities.some(
@@ -565,13 +570,62 @@ export function ActivityList({
       activity.status === "completed_with_warnings",
   );
   const [expanded, setExpanded] = useState(live || hasAttentionActivity);
+  const [details, setDetails] = useState<ReadonlyMap<string, ToolActivity>>(
+    () => new Map(),
+  );
+  const [loadingIds, setLoadingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [failedIds, setFailedIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const requestedIds = useRef(new Set<string>());
   const hasRunningActivity = activities.some(
     (activity) => activity.status === "running",
   );
 
+  useEffect(() => {
+    if (!expanded || !onReadActivity) return;
+    for (const activity of activities) {
+      if (
+        !activity.detailAvailable ||
+        activity.detail !== undefined ||
+        activity.process !== undefined ||
+        details.has(activity.id) ||
+        requestedIds.current.has(activity.id)
+      ) {
+        continue;
+      }
+      requestedIds.current.add(activity.id);
+      setLoadingIds((current) => new Set(current).add(activity.id));
+      setFailedIds((current) => {
+        if (!current.has(activity.id)) return current;
+        const next = new Set(current);
+        next.delete(activity.id);
+        return next;
+      });
+      void onReadActivity(activity.id)
+        .then((detail) => {
+          setDetails((current) => new Map(current).set(activity.id, detail));
+        })
+        .catch(() => {
+          requestedIds.current.delete(activity.id);
+          setFailedIds((current) => new Set(current).add(activity.id));
+        })
+        .finally(() => {
+          setLoadingIds((current) => {
+            const next = new Set(current);
+            next.delete(activity.id);
+            return next;
+          });
+        });
+    }
+  }, [activities, details, expanded, onReadActivity]);
+
   return (
     <details
       className={live ? "activity-list live" : "activity-list"}
+      data-activity-ids={activities.map(({ id }) => id).join(" ")}
       open={expanded}
       onToggle={(event) => setExpanded(event.currentTarget.open)}
     >
@@ -591,33 +645,52 @@ export function ActivityList({
           aria-hidden="true"
         />
       </summary>
-      <div className="activity-content">
-        {activities.map((activity) => (
-          <div
-            id={`activity-${activity.id}`}
-            className="activity-item"
-            key={activity.id}
-            tabIndex={-1}
-          >
-            <div className="activity-summary">
-              <ActivityStatus status={activity.status} />
-              <code>{activity.name}</code>
-              {activity.name === "exec_command" &&
-                activity.process?.status === "running" &&
-                onTerminateProcess && (
-                  <TerminateProcessButton
-                    sessionId={activity.process.sessionId}
-                    onTerminate={onTerminateProcess}
-                  />
+      {expanded && (
+        <div className="activity-content">
+          {activities.map((activity) => {
+            const resolved =
+              activity.detail !== undefined || activity.process !== undefined
+                ? activity
+                : (details.get(activity.id) ?? activity);
+            return (
+              <div
+                id={`activity-${activity.id}`}
+                className="activity-item"
+                key={activity.id}
+                tabIndex={-1}
+              >
+                <div className="activity-summary">
+                  <ActivityStatus status={activity.status} />
+                  <code>{activity.name}</code>
+                  {loadingIds.has(activity.id) && (
+                    <span className="activity-detail-state">
+                      <LoaderCircle className="spin" size={12} />
+                      {t("loading")}
+                    </span>
+                  )}
+                  {failedIds.has(activity.id) && (
+                    <span className="activity-detail-state failed">
+                      {t("activityDetailsUnavailable")}
+                    </span>
+                  )}
+                  {resolved.name === "exec_command" &&
+                    resolved.process?.status === "running" &&
+                    onTerminateProcess && (
+                      <TerminateProcessButton
+                        sessionId={resolved.process.sessionId}
+                        onTerminate={onTerminateProcess}
+                      />
+                    )}
+                </div>
+                {resolved.detail && <pre>{resolved.detail}</pre>}
+                {resolved.name === "exec_command" && resolved.process && (
+                  <CommandOutput process={resolved.process} />
                 )}
-            </div>
-            {activity.detail && <pre>{activity.detail}</pre>}
-            {activity.name === "exec_command" && activity.process && (
-              <CommandOutput process={activity.process} />
-            )}
-          </div>
-        ))}
-      </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </details>
   );
 }
@@ -636,15 +709,19 @@ function ActivityStatus({ status }: Pick<ToolActivity, "status">) {
 
 function CommandOutput({ process }: Pick<ToolActivity, "process">) {
   const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
   if (!process) return null;
-  const output = [
-    process.stdout,
-    process.stderr ? `stderr\n${process.stderr}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const output = expanded
+    ? [process.stdout, process.stderr ? `stderr\n${process.stderr}` : ""]
+        .filter(Boolean)
+        .join("\n")
+    : "";
   return (
-    <details className="command-output">
+    <details
+      className="command-output"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
       <summary>
         <ChevronRight size={12} aria-hidden="true" />
         <span>{t("commandOutput")}</span>
@@ -652,7 +729,7 @@ function CommandOutput({ process }: Pick<ToolActivity, "process">) {
           <span className="output-note">{t("truncated")}</span>
         )}
       </summary>
-      <pre>{output || t("noOutput")}</pre>
+      {expanded && <pre>{output || t("noOutput")}</pre>}
     </details>
   );
 }

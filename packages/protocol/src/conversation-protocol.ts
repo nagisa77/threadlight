@@ -262,6 +262,11 @@ export interface ConversationActivityData {
     | "completed_with_warnings"
     | "failed"
     | "terminated";
+  /**
+   * The Host retained detail/process output that was omitted from a lightweight
+   * conversation projection. Clients can retrieve it with `activity/read`.
+   */
+  detailAvailable?: boolean;
   detail?: string;
   process?: ProcessSnapshotData;
 }
@@ -517,6 +522,12 @@ export interface ConversationMessageData {
   activities?: readonly ConversationActivityData[];
 }
 
+/** Conversation payload used by the interactive thread surface. */
+export type ConversationDisplayMessageData = Omit<
+  ConversationMessageData,
+  "diagnostics"
+>;
+
 export interface MessageSourceData {
   id: string;
   title: string;
@@ -603,7 +614,7 @@ export interface ThreadlightMethodMap {
     params: { threadId: string };
     result: {
       threadId: string;
-      messages: readonly ConversationMessageData[];
+      messages: readonly ConversationDisplayMessageData[];
       queuedTurns: readonly QueuedTurnData[];
       revision: number;
       activeTurn?: ActiveTurnData;
@@ -611,6 +622,10 @@ export interface ThreadlightMethodMap {
       provider?: string;
       model?: string;
     };
+  };
+  "activity/read": {
+    params: { threadId: string; activityId: string };
+    result: { activity: ConversationActivityData };
   };
   "thread/delete": {
     params: { threadId: string };
@@ -751,6 +766,7 @@ export const THREADLIGHT_METHODS = [
   "initialize",
   "thread/start",
   "thread/resume",
+  "activity/read",
   "thread/delete",
   "thread/suggestions",
   "delivery/pull-request-description",

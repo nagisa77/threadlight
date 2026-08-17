@@ -62,7 +62,7 @@ describe("conversation timeline", () => {
     );
 
     expect(appSource).toMatch(
-      /<Timeline messages=\{state\.messages\} onJump=\{jumpToMessage\}/,
+      /<Timeline\s+messages=\{state\.messages\}\s+onJump=\{stableMessageHandlers\.onJumpToMessage\}/,
     );
     expect(appSource).toContain("id={`message-${message.id}`}");
   });

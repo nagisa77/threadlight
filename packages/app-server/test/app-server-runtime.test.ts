@@ -572,15 +572,34 @@ describe("AppServer runtime", () => {
         messages?: Array<{
           role?: string;
           progress?: Array<{
-            activities?: Array<{ detail?: string }>;
+            activities?: Array<{
+              id?: string;
+              detailAvailable?: boolean;
+              detail?: string;
+            }>;
           }>;
         }>;
       }
     )?.messages;
     const computerDetail = storedMessages?.findLast(
       (message) => message.role === "assistant",
-    )?.progress?.[0]?.activities?.[0]?.detail;
-    expect(computerDetail).toBe(
+    )?.progress?.[0]?.activities?.[0];
+    expect(computerDetail).toMatchObject({
+      id: "computer-call-1",
+      detailAvailable: true,
+    });
+    expect(computerDetail).not.toHaveProperty("detail");
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "activity/read",
+      params: { threadId, activityId: "computer-call-1" },
+    });
+    const activityDetail = messages.find(
+      (message) => "id" in message && message.id === 5,
+    )?.result as { activity?: { detail?: string } } | undefined;
+    expect(activityDetail?.activity?.detail).toBe(
       ["操作 1 · screenshot", "结果 · 已捕获更新后的屏幕截图"].join("\n"),
     );
   });
@@ -668,11 +687,30 @@ describe("AppServer runtime", () => {
       (message) => "id" in message && message.id === 4,
     );
     const serialized = JSON.stringify(resumed);
-    expect(serialized).toContain("操作 2 · type · 15 个字符（内容未记录）");
-    expect(serialized).toContain(
+    expect(serialized).toContain('"detailAvailable":true');
+    expect(serialized).not.toContain("操作 2 · type · 15 个字符（内容未记录）");
+    expect(serialized).not.toContain(
       "错误 · action 2/2 type input=virtual pid=42 failed",
     );
     expect(serialized).not.toContain("private message");
+
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "activity/read",
+      params: { threadId, activityId: "computer-call-1" },
+    });
+    const detailResponse = messages.find(
+      (message) => "id" in message && message.id === 5,
+    );
+    const detailSerialized = JSON.stringify(detailResponse);
+    expect(detailSerialized).toContain(
+      "操作 2 · type · 15 个字符（内容未记录）",
+    );
+    expect(detailSerialized).toContain(
+      "错误 · action 2/2 type input=virtual pid=42 failed",
+    );
+    expect(detailSerialized).not.toContain("private message");
   });
 
   it("executes tools directly in the active turn", async () => {

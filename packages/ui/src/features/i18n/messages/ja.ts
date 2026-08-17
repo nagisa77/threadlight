@@ -434,6 +434,7 @@ export const ja: Messages = {
   executing: "実行中",
   executed: "実行済み",
   executionLog: "実行履歴",
+  activityDetailsUnavailable: "詳細を読み込めません。閉じて再試行してください",
   computerPermissionTitle: "コンピュータ操作には権限が必要です",
   computerPermissionDescription:
     "選択したウインドウを表示・操作するには、2つの権限を許可してください。",

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "../../i18n.js";
 import type { ConversationMessage } from "./session.js";
@@ -31,7 +31,7 @@ export function conversationTimelineEntries(
   return entries;
 }
 
-export function ConversationTimeline({
+export const ConversationTimeline = memo(function ConversationTimeline({
   messages,
   onJump,
 }: {
@@ -126,7 +126,7 @@ export function ConversationTimeline({
       </div>
     </nav>
   );
-}
+});
 
 function timelinePreview(value: string): string {
   return value.replace(/\s+/gu, " ").trim();

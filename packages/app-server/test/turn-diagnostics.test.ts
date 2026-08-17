@@ -104,22 +104,12 @@ describe("turn diagnostics", () => {
     );
     expect(resumed).toMatchObject({
       result: {
-        messages: [
-          { role: "user" },
-          {
-            role: "assistant",
-            diagnostics: {
-              durationMs: expect.any(Number),
-              modelSteps: [
-                { durationMs: expect.any(Number) },
-                { durationMs: expect.any(Number) },
-              ],
-              toolCalls: [{ durationMs: expect.any(Number) }],
-            },
-          },
-        ],
+        messages: [{ role: "user" }, { role: "assistant" }],
       },
     });
+    expect(
+      (resumed as { result?: { messages?: unknown[] } }).result?.messages?.[1],
+    ).not.toHaveProperty("diagnostics");
   });
 
   it("separates root, child, and total metrics for a scripted multi-agent turn", async () => {
