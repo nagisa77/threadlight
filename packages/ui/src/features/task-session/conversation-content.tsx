@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type {
-  AgentTaskActivityData,
   AgentTaskData,
   AgentTreeData,
   AttachmentData,
 } from "@threadlight/protocol";
-import type { ThreadlightClient } from "@threadlight/client";
 import {
   Bot,
   Check,
@@ -17,10 +15,6 @@ import {
   GitBranch,
   Link2,
   LoaderCircle,
-  PanelRightOpen,
-  RotateCcw,
-  SendHorizontal,
-  Square,
   Terminal,
   Trash2,
   TriangleAlert,
@@ -37,13 +31,7 @@ import type {
   AttachmentPreviewAdapter,
 } from "../shared/adapters.js";
 import { connectionLabel, errorMessage, shortId } from "../shared/format.js";
-import {
-  agentTaskRepresentedByMessage,
-  agentThreadTree,
-  totalAgentSteps,
-  totalAgentTokens,
-  type AgentThreadView,
-} from "./agent-threads.js";
+import { agentThreadTree } from "./agent-threads.js";
 import type { ConversationProgress, ToolActivity } from "./session.js";
 
 export function ProgressList({
@@ -91,15 +79,7 @@ export function ProgressList({
 
 type AgentTreePanelProps = {
   tree?: AgentTreeData;
-  live?: boolean;
-  controls?: {
-    client: Pick<
-      ThreadlightClient,
-      "cancelAgent" | "retryAgent" | "steerAgent"
-    >;
-    threadId?: string;
-  };
-  onOpenInPanel?(tree: AgentTreeData): void;
+  onOpenInPanel(tree: AgentTreeData, agentThreadId: string): void;
 };
 
 export function AgentTreePanel(props: AgentTreePanelProps) {
@@ -108,8 +88,6 @@ export function AgentTreePanel(props: AgentTreePanelProps) {
 
 function AgentTreeContent({
   tree,
-  live = false,
-  controls,
   onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
@@ -119,363 +97,74 @@ function AgentTreeContent({
   const activeCount = agentThreads.filter(
     ({ latest }) => latest.status === "queued" || latest.status === "running",
   ).length;
-  const attentionCount = agentThreads.filter(
-    ({ latest }) =>
-      !latest.closedAt &&
-      (latest.status === "failed" ||
-        latest.status === "cancelled" ||
-        latest.status === "interrupted"),
-  ).length;
-  const [expanded, setExpanded] = useState(live || attentionCount > 0);
-  const [selectedId, setSelectedId] = useState<string>();
-  const selected = agentThreads.find(({ id }) => id === selectedId);
-  const threadId = controls?.threadId;
-  const onCancel =
-    controls && threadId
-      ? async (agentId: string) => {
-          const { cancelled } = await controls.client.cancelAgent(
-            threadId,
-            agentId,
-          );
-          if (!cancelled) throw new Error(t("agentActionUnavailable"));
-        }
-      : undefined;
-  const onRetry =
-    controls && threadId
-      ? async (agentId: string) => {
-          const { agent } = await controls.client.retryAgent(threadId, agentId);
-          if (!agent) throw new Error(t("agentActionUnavailable"));
-        }
-      : undefined;
-  const onSteer =
-    controls && threadId
-      ? async (agentId: string, input: string) => {
-          const { accepted } = await controls.client.steerAgent(
-            threadId,
-            agentId,
-            input,
-          );
-          if (!accepted) throw new Error(t("agentActionUnavailable"));
-        }
-      : undefined;
 
   if (agentThreads.length === 0) return null;
 
   return (
-    <details
-      className={`agent-tree${live ? " live" : ""}`}
-      open={expanded}
-      onToggle={(event) => setExpanded(event.currentTarget.open)}
-    >
-      <summary className="agent-tree-heading">
+    <section className="agent-tree" aria-label={t("agents")}>
+      <header className="agent-tree-heading">
         <GitBranch size={14} aria-hidden="true" />
-        <span>{t("agents")}</span>
-        {onOpenInPanel && (
-          <button
-            type="button"
-            className="agent-tree-open-panel pressable"
-            aria-label={t("openAgentsPanel")}
-            title={t("openAgentsPanel")}
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              onOpenInPanel(tree);
-            }}
-          >
-            <PanelRightOpen size={14} />
-          </button>
-        )}
+        <h3>{t("agents")}</h3>
         <span className="agent-tree-count">
           {activeCount > 0
             ? t("agentActiveCount", { count: activeCount })
             : t("agentDoneCount", { count: agentThreads.length })}
         </span>
-        <ChevronRight
-          className="agent-tree-chevron"
-          size={13}
-          aria-hidden="true"
-        />
-      </summary>
+      </header>
       <div className="agent-tree-content">
-        <div className="agent-tree-list" role="list">
+        <ul className="agent-tree-list">
           {agentThreads.map((thread) => {
             const agent = thread.latest;
             return (
-              <button
-                type="button"
-                className={`agent-row pressable${selectedId === thread.id ? " selected" : ""}`}
-                data-depth={thread.depth}
-                style={{
-                  paddingInlineStart: `${12 + thread.depth * 14}px`,
-                }}
-                key={thread.id}
-                role="listitem"
-                aria-expanded={selectedId === thread.id}
-                onClick={() =>
-                  setSelectedId((current) =>
-                    current === thread.id ? undefined : thread.id,
-                  )
-                }
-              >
-                <AgentStatusIcon agent={agent} />
-                <span className="agent-row-copy">
-                  <span className="agent-row-title">
-                    <strong>
-                      {agent.id === tree.rootId ? t("mainAgent") : agent.name}
-                    </strong>
-                    <small>{agent.task}</small>
+              <li key={thread.id}>
+                <button
+                  type="button"
+                  className="agent-row pressable"
+                  data-depth={thread.depth}
+                  style={{
+                    paddingInlineStart: `${12 + thread.depth * 14}px`,
+                  }}
+                  onClick={() => onOpenInPanel(tree, thread.id)}
+                >
+                  <AgentStatusIcon agent={agent} />
+                  <span className="agent-row-copy">
+                    <span className="agent-row-title">
+                      <strong>
+                        {agent.id === tree.rootId ? t("mainAgent") : agent.name}
+                      </strong>
+                      <small>{agent.task}</small>
+                    </span>
+                    <span className="agent-row-meta">
+                      <span>{agentStatusLabel(agent, t)}</span>
+                      {thread.turns.length > 1 && (
+                        <span>
+                          {t("agentTurnCount", { count: thread.turns.length })}
+                        </span>
+                      )}
+                      {agent.latestActivity && (
+                        <span className="agent-row-activity">
+                          {agent.latestActivity}
+                        </span>
+                      )}
+                    </span>
                   </span>
-                  <span className="agent-row-meta">
-                    <span>{agentStatusLabel(agent, t)}</span>
-                    {thread.turns.length > 1 && (
-                      <span>
-                        {t("agentTurnCount", { count: thread.turns.length })}
-                      </span>
-                    )}
-                    {agent.latestActivity && (
-                      <span className="agent-row-activity">
-                        {agent.latestActivity}
-                      </span>
-                    )}
+                  <span className="agent-row-time">
+                    <Clock3 size={11} aria-hidden="true" />
+                    {formatAgentDuration(agent.elapsedMs, t)}
                   </span>
-                </span>
-                <span className="agent-row-time">
-                  <Clock3 size={11} aria-hidden="true" />
-                  {formatAgentDuration(agent.elapsedMs, t)}
-                </span>
-                <ChevronRight
-                  className="agent-row-chevron"
-                  size={13}
-                  aria-hidden="true"
-                />
-              </button>
+                  <ChevronRight
+                    className="agent-row-chevron"
+                    size={13}
+                    aria-hidden="true"
+                  />
+                </button>
+              </li>
             );
           })}
-        </div>
-        {selected && (
-          <AgentInspector
-            key={selected.id}
-            thread={selected}
-            live={live}
-            onCancel={onCancel}
-            onRetry={onRetry}
-            onSteer={onSteer}
-          />
-        )}
+        </ul>
       </div>
-    </details>
-  );
-}
-
-function AgentInspector({
-  thread,
-  live,
-  onCancel,
-  onRetry,
-  onSteer,
-}: {
-  thread: AgentThreadView;
-  live: boolean;
-  onCancel?(agentId: string): Promise<unknown>;
-  onRetry?(agentId: string): Promise<unknown>;
-  onSteer?(agentId: string, input: string): Promise<unknown>;
-}) {
-  const { t } = useI18n();
-  const agent = thread.latest;
-  const [direction, setDirection] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState<string>();
-  const active = agent.status === "queued" || agent.status === "running";
-  const retryable =
-    !agent.closedAt &&
-    (agent.status === "failed" ||
-      agent.status === "cancelled" ||
-      agent.status === "interrupted");
-  const steps = totalAgentSteps(thread);
-  const tokens = totalAgentTokens(thread);
-
-  const act = async (action: () => Promise<unknown>): Promise<boolean> => {
-    if (busy) return false;
-    setBusy(true);
-    setActionError(undefined);
-    try {
-      await action();
-      return true;
-    } catch (error) {
-      setActionError(errorMessage(error));
-      return false;
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <section className="agent-inspector" aria-label={t("agentDetails")}>
-      <div className="agent-inspector-header">
-        <span>
-          <strong>{thread.initial.name}</strong>
-          <small>{agent.task}</small>
-        </span>
-        {live && active && onCancel && (
-          <button
-            type="button"
-            className="agent-action danger pressable"
-            disabled={busy}
-            onClick={() => void act(() => onCancel(agent.id))}
-          >
-            <Square size={11} fill="currentColor" />
-            {t("stopAgent")}
-          </button>
-        )}
-        {live && retryable && onRetry && (
-          <button
-            type="button"
-            className="agent-action pressable"
-            disabled={busy}
-            onClick={() => void act(() => onRetry(agent.id))}
-          >
-            <RotateCcw size={12} />
-            {t("retryAgent")}
-          </button>
-        )}
-      </div>
-      {(thread.turns.length > 1 || steps !== undefined || tokens > 0) && (
-        <div className="agent-inspector-stats">
-          {thread.turns.length > 1 && (
-            <span>{t("agentTurnCount", { count: thread.turns.length })}</span>
-          )}
-          {steps !== undefined && (
-            <span>
-              {steps} {t("step")}
-            </span>
-          )}
-          {tokens > 0 && (
-            <span>
-              {tokens.toLocaleString()} {t("tokens")}
-            </span>
-          )}
-        </div>
-      )}
-      <div className="agent-inspector-turns">
-        {thread.turns.map((turn, index) => {
-          const activityGroups = groupAdjacentAgentActivities(turn.activities);
-          return (
-            <details
-              className="agent-inspector-turn"
-              key={turn.id}
-              open={index === thread.turns.length - 1}
-            >
-              <summary>
-                <span>{t("agentTurn", { count: index + 1 })}</span>
-                <small>{agentStatusLabel(turn, t)}</small>
-                <ChevronRight size={12} aria-hidden="true" />
-              </summary>
-              <div>
-                {!agentTaskRepresentedByMessage(turn) && <p>{turn.task}</p>}
-                {(turn.messages ?? []).map((message) => (
-                  <div className="agent-peer-message" key={message.id}>
-                    <span>
-                      <SendHorizontal size={11} />
-                      {message.fromAgentName}
-                    </span>
-                    <p>{message.text}</p>
-                  </div>
-                ))}
-                {turn.activities.length > 0 && (
-                  <div
-                    className="agent-activities"
-                    aria-label={t("agentActivity")}
-                  >
-                    {activityGroups.map((activity) => (
-                      <span key={activity.id} data-status={activity.status}>
-                        {activity.status === "running" ? (
-                          <LoaderCircle className="spin" size={12} />
-                        ) : activity.status === "failed" ? (
-                          <X size={12} />
-                        ) : (
-                          <Check size={12} />
-                        )}
-                        <code>{activity.name}</code>
-                        {activity.count > 1 && (
-                          <span className="agent-activity-count">
-                            × {activity.count}
-                          </span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {(turn.output || turn.error) && (
-                  <div className={`agent-output${turn.error ? " error" : ""}`}>
-                    <MarkdownContent>
-                      {turn.output ?? turn.error ?? ""}
-                    </MarkdownContent>
-                  </div>
-                )}
-              </div>
-            </details>
-          );
-        })}
-      </div>
-      {live && active && onSteer && (
-        <form
-          className="agent-steer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const input = direction.trim();
-            if (!input) return;
-            void act(() => onSteer(agent.id, input)).then((sent) => {
-              if (sent) setDirection("");
-            });
-          }}
-        >
-          <input
-            value={direction}
-            disabled={busy}
-            aria-label={t("steerAgent")}
-            placeholder={t("steerAgentPlaceholder")}
-            onChange={(event) => setDirection(event.currentTarget.value)}
-          />
-          <button
-            type="submit"
-            className="agent-steer-send pressable"
-            disabled={busy || !direction.trim()}
-            aria-label={t("sendDirection")}
-          >
-            <SendHorizontal size={13} />
-          </button>
-        </form>
-      )}
-      {actionError && (
-        <p className="agent-action-error" role="alert">
-          {actionError}
-        </p>
-      )}
     </section>
   );
-}
-
-export function groupAdjacentAgentActivities(
-  activities: readonly AgentTaskActivityData[],
-): Array<AgentTaskActivityData & { count: number }> {
-  const groups: Array<AgentTaskActivityData & { count: number }> = [];
-
-  for (const activity of activities) {
-    const previous = groups.at(-1);
-    if (!previous || previous.name !== activity.name) {
-      groups.push({ ...activity, count: 1 });
-      continue;
-    }
-
-    previous.count += 1;
-    if (activity.status === "failed") {
-      previous.status = "failed";
-    } else if (activity.status === "running" && previous.status !== "failed") {
-      previous.status = "running";
-    }
-  }
-
-  return groups;
 }
 
 function AgentStatusIcon({ agent }: { agent: AgentTaskData }) {

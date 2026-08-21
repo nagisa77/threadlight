@@ -1,5 +1,6 @@
 import { memo, useRef } from "react";
 import type {
+  AgentTreeData,
   CapabilityDescriptor,
   ConversationActivityData,
 } from "@threadlight/protocol";
@@ -61,6 +62,7 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
       openDeliveryCenter,
       openLocalFile,
       revealLocalFile,
+      workspaceAgentPanel,
     },
     taskRuntime: {
       suggestions,
@@ -95,6 +97,7 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
     revealLocalFile,
     rewriteQuestion,
     jumpToMessage,
+    openAgentPanel: workspaceAgentPanel.open,
     toggleBookmark: productivity.toggleBookmark,
     copyText: clipboard?.writeText,
   });
@@ -106,6 +109,7 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
     revealLocalFile,
     rewriteQuestion,
     jumpToMessage,
+    openAgentPanel: workspaceAgentPanel.open,
     toggleBookmark: productivity.toggleBookmark,
     copyText: clipboard?.writeText,
   };
@@ -120,6 +124,8 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
       messageHandlers.current.rewriteQuestion(text),
     onJumpToMessage: (messageId: string) =>
       messageHandlers.current.jumpToMessage(messageId),
+    onOpenAgent: (tree: AgentTreeData, agentThreadId: string) =>
+      messageHandlers.current.openAgentPanel(tree, agentThreadId),
     onToggleBookmark: (messageId: string) =>
       messageHandlers.current.toggleBookmark(messageId),
     onCopyText: (text: string) =>
@@ -214,6 +220,7 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
                   onOpenLocalFile={stableMessageHandlers.onOpenLocalFile}
                   onRevealLocalFile={stableMessageHandlers.onRevealLocalFile}
                   onRewriteQuestion={stableMessageHandlers.onRewriteQuestion}
+                  onOpenAgent={stableMessageHandlers.onOpenAgent}
                   onToggleBookmark={stableMessageHandlers.onToggleBookmark}
                   onCopyText={stableMessageHandlers.onCopyText}
                 />
@@ -270,6 +277,7 @@ interface ConversationMessageItemProps {
   onOpenLocalFile(reference: LocalFileReference): void;
   onRevealLocalFile(reference: LocalFileReference): void | Promise<void>;
   onRewriteQuestion(text: string): void;
+  onOpenAgent(tree: AgentTreeData, agentThreadId: string): void;
   onToggleBookmark(messageId: string): void;
   onCopyText(text: string): Promise<void>;
 }
@@ -286,6 +294,7 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
   onOpenLocalFile,
   onRevealLocalFile,
   onRewriteQuestion,
+  onOpenAgent,
   onToggleBookmark,
   onCopyText,
 }: ConversationMessageItemProps) {
@@ -335,7 +344,10 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
               />
             )}
           {message.role === "assistant" && (
-            <AgentTreePanel tree={message.agentTree} />
+            <AgentTreePanel
+              tree={message.agentTree}
+              onOpenInPanel={onOpenAgent}
+            />
           )}
           {message.role === "assistant" ? (
             <MarkdownContent

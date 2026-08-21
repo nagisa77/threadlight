@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type {
   AgentPlanData,
   AgentTreeData,
@@ -80,6 +80,27 @@ export function clampWorkspacePanelWidth(
   );
 }
 
+export function resolveAgentPanelTree(
+  session:
+    | {
+        agentTree?: AgentTreeData;
+        messages: readonly { agentTree?: AgentTreeData }[];
+      }
+    | undefined,
+  rootId?: string,
+): AgentTreeData | undefined {
+  const trees = [
+    session?.agentTree,
+    ...[...(session?.messages ?? [])]
+      .reverse()
+      .map(({ agentTree }) => agentTree),
+  ].filter((tree): tree is AgentTreeData => Boolean(tree));
+  return (
+    (rootId ? trees.find((tree) => tree.rootId === rootId) : undefined) ??
+    trees[0]
+  );
+}
+
 export function useDeliveryController(session?: {
   agentTree?: AgentTreeData;
   messages: readonly { agentTree?: AgentTreeData }[];
@@ -92,6 +113,10 @@ export function useDeliveryController(session?: {
   const [workspaceReviewRequest, setWorkspaceReviewRequest] = useState(0);
   const [workspaceDeliveryRequest, setWorkspaceDeliveryRequest] = useState(0);
   const [workspaceAgentRequest, setWorkspaceAgentRequest] = useState(0);
+  const [workspaceAgentTarget, setWorkspaceAgentTarget] = useState<{
+    rootId: string;
+    agentThreadId: string;
+  }>();
   const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] =
     useState<WorkspaceFileOpenRequest>();
   const [conversationChanges, setConversationChanges] =
@@ -108,19 +133,31 @@ export function useDeliveryController(session?: {
   const activePlanDocument = useRef<string | undefined>(undefined);
   const deliveryAwaitingScopes = useRef(new Set<string>());
   const workspaceRoot = useRef<HTMLElement>(null);
-  const latestAgentTree = [...(session?.messages ?? [])]
-    .reverse()
-    .find(({ agentTree }) => agentTree)?.agentTree;
-  const currentAgentTree = session?.agentTree ?? latestAgentTree;
-  const workspaceAgentPanel = {
-    tree: currentAgentTree,
-    live: Boolean(session?.agentTree),
-    request: workspaceAgentRequest,
-    open(tree: AgentTreeData = currentAgentTree!) {
-      if (!tree) return;
+  const currentAgentTree = resolveAgentPanelTree(
+    session,
+    workspaceAgentTarget?.rootId,
+  );
+  const openWorkspaceAgent = useCallback(
+    (tree: AgentTreeData, agentThreadId: string) => {
+      setWorkspaceAgentTarget({ rootId: tree.rootId, agentThreadId });
       setWorkspacePanelOpen(true);
       setWorkspaceAgentRequest((request) => request + 1);
     },
+    [],
+  );
+  const workspaceAgentPanel = {
+    tree: currentAgentTree,
+    live: Boolean(
+      session?.agentTree &&
+      session.agentTree.rootId === currentAgentTree?.rootId,
+    ),
+    request: workspaceAgentRequest,
+    selectedAgentId:
+      workspaceAgentTarget &&
+      currentAgentTree?.rootId === workspaceAgentTarget.rootId
+        ? workspaceAgentTarget.agentThreadId
+        : undefined,
+    open: openWorkspaceAgent,
   };
 
   return {

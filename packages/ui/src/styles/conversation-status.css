@@ -1,37 +1,3 @@
-.agent-inspector-turn > div > p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.agent-peer-message {
-  display: grid;
-  gap: 5px;
-  margin-top: 8px;
-  padding: 7px 8px;
-  border-left: 2px solid color-mix(in srgb, var(--accent) 42%, var(--line));
-  color: var(--muted);
-  background: color-mix(in srgb, var(--accent) 5%, transparent);
-}
-
-.agent-peer-message > span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--subtle);
-  font-size: 8px;
-  font-weight: 650;
-}
-
-.agent-peer-message > p {
-  margin: 0;
-  font-size: 9px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
 .agent-action {
   display: inline-flex;
   min-height: 25px;
@@ -57,62 +23,6 @@
 .agent-steer-send:disabled {
   cursor: default;
   opacity: 0.5;
-}
-
-.agent-activities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 9px;
-}
-
-.agent-activities > span {
-  display: inline-flex;
-  height: 22px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--subtle);
-  background: color-mix(in srgb, var(--surface) 62%, transparent);
-}
-
-.agent-activities > span[data-status="failed"] {
-  color: var(--danger);
-}
-
-.agent-activities code {
-  color: inherit;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 9px;
-}
-
-.agent-activity-count {
-  color: var(--muted);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 620;
-  white-space: nowrap;
-}
-
-.agent-output {
-  max-height: 220px;
-  margin-top: 9px;
-  overflow: auto;
-  padding: 9px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface) 74%, transparent);
-}
-
-.agent-output.error {
-  border-color: color-mix(in srgb, var(--danger) 22%, var(--line));
-}
-
-.agent-output .markdown-content {
-  font-size: 11px;
-  line-height: 1.58;
 }
 
 .agent-steer {
@@ -163,18 +73,11 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .agent-tree-heading:hover,
   .agent-row:hover {
     background: color-mix(in srgb, var(--ink) 4%, transparent);
   }
 
   .agent-action:hover:not(:disabled) {
-    color: var(--ink);
-    background: color-mix(in srgb, var(--ink) 4%, var(--panel));
-  }
-
-  .agent-tree-open-panel:hover {
-    border-color: var(--line);
     color: var(--ink);
     background: color-mix(in srgb, var(--ink) 4%, var(--panel));
   }

@@ -1,11 +1,9 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  AgentTreePanel,
-  groupAdjacentAgentActivities,
-} from "../src/features/task-session/conversation-content.js";
+import { AgentTreePanel } from "../src/features/task-session/conversation-content.js";
 import { AgentPanel } from "../src/features/task-session/agent-panel.js";
+import { resolveAgentPanelTree } from "../src/features/delivery/controller.js";
 import {
   agentTaskRepresentedByMessage,
   agentThreadTree,
@@ -13,6 +11,7 @@ import {
 } from "../src/features/task-session/agent-threads.js";
 
 describe("AgentTreePanel", () => {
+  const openAgent = vi.fn();
   const tree = {
     rootId: "root",
     maxConcurrent: 3,
@@ -52,23 +51,22 @@ describe("AgentTreePanel", () => {
     ],
   };
 
-  it("keeps the root implicit and starts a live child-agent tree expanded", () => {
+  it("keeps the root implicit and renders child agents as panel navigation", () => {
     const html = renderToStaticMarkup(
-      <AgentTreePanel tree={tree} live onOpenInPanel={vi.fn()} />,
+      <AgentTreePanel tree={tree} onOpenInPanel={openAgent} />,
     );
 
-    expect(html).toContain('<details class="agent-tree live" open="">');
+    expect(html).toContain('<section class="agent-tree" aria-label="Agents">');
     expect(html).toContain("1 个运行中");
     expect(html).toContain("explorer");
     expect(html).toContain("Trace the protocol");
     expect(html).not.toContain("Implement multi-agent support");
-    expect(html).toContain('aria-label="在右侧面板查看"');
-    expect(html.indexOf('class="agent-tree-open-panel')).toBeLessThan(
-      html.indexOf('class="agent-tree-count"'),
-    );
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("aria-expanded");
+    expect(html).not.toContain("agent-inspector");
   });
 
-  it("starts a completed historical tree collapsed", () => {
+  it("keeps completed historical agents visible", () => {
     const completed = {
       ...tree,
       agents: tree.agents.map((agent) => ({
@@ -77,11 +75,35 @@ describe("AgentTreePanel", () => {
         phase: "done" as const,
       })),
     };
-    const html = renderToStaticMarkup(<AgentTreePanel tree={completed} />);
+    const html = renderToStaticMarkup(
+      <AgentTreePanel tree={completed} onOpenInPanel={openAgent} />,
+    );
 
-    expect(html).toContain('<details class="agent-tree">');
-    expect(html).not.toContain('<details class="agent-tree" open="">');
+    expect(html).toContain('<section class="agent-tree"');
+    expect(html).toContain("explorer");
     expect(html).toContain("1 个已完成");
+  });
+
+  it("resolves the agent tree that owns a clicked historical row", () => {
+    const historical = {
+      ...tree,
+      rootId: "historical-root",
+      agents: tree.agents.map((agent) =>
+        agent.id === tree.rootId
+          ? { ...agent, id: "historical-root" }
+          : { ...agent, parentId: "historical-root" },
+      ),
+    };
+
+    expect(
+      resolveAgentPanelTree(
+        {
+          agentTree: tree,
+          messages: [{ agentTree: historical }],
+        },
+        historical.rootId,
+      ),
+    ).toBe(historical);
   });
 
   it("keeps a recovered interruption visible as a distinct terminal state", () => {
@@ -93,9 +115,10 @@ describe("AgentTreePanel", () => {
         phase: "done" as const,
       })),
     };
-    const html = renderToStaticMarkup(<AgentTreePanel tree={interrupted} />);
+    const html = renderToStaticMarkup(
+      <AgentTreePanel tree={interrupted} onOpenInPanel={openAgent} />,
+    );
 
-    expect(html).toContain('<details class="agent-tree" open="">');
     expect(html).toContain('class="agent-status interrupted"');
     expect(html).toContain("已中断");
   });
@@ -112,7 +135,9 @@ describe("AgentTreePanel", () => {
         },
       ],
     };
-    const html = renderToStaticMarkup(<AgentTreePanel tree={rootOnly} live />);
+    const html = renderToStaticMarkup(
+      <AgentTreePanel tree={rootOnly} onOpenInPanel={openAgent} />,
+    );
 
     expect(html).toBe("");
   });
@@ -127,31 +152,13 @@ describe("AgentTreePanel", () => {
         closedAt: "2026-08-08T08:05:00.000Z",
       })),
     };
-    const html = renderToStaticMarkup(<AgentTreePanel tree={closed} live />);
+    const html = renderToStaticMarkup(
+      <AgentTreePanel tree={closed} onOpenInPanel={openAgent} />,
+    );
 
     expect(html).toContain('class="agent-status closed"');
     expect(html).toContain("已关闭");
     expect(html).not.toContain(">重试<");
-  });
-
-  it("groups only adjacent repeated agent activities", () => {
-    expect(
-      groupAdjacentAgentActivities([
-        { id: "search-1", name: "web_search", status: "completed" },
-        { id: "search-2", name: "web_search", status: "completed" },
-        { id: "read-1", name: "read_file", status: "completed" },
-        { id: "search-3", name: "web_search", status: "running" },
-      ]),
-    ).toEqual([
-      {
-        id: "search-1",
-        name: "web_search",
-        status: "completed",
-        count: 2,
-      },
-      { id: "read-1", name: "read_file", status: "completed", count: 1 },
-      { id: "search-3", name: "web_search", status: "running", count: 1 },
-    ]);
   });
 
   it("keeps follow-up turns inside one stable logical agent", () => {
@@ -206,7 +213,9 @@ describe("AgentTreePanel", () => {
     });
     expect(childThreads[0]?.turns).toHaveLength(2);
 
-    const treeHtml = renderToStaticMarkup(<AgentTreePanel tree={followedUp} />);
+    const treeHtml = renderToStaticMarkup(
+      <AgentTreePanel tree={followedUp} onOpenInPanel={openAgent} />,
+    );
     expect(treeHtml).toContain("1 个已完成");
     expect(treeHtml).toContain("2 轮");
     expect(treeHtml.match(/class="agent-row pressable/g)).toHaveLength(1);
@@ -342,7 +351,7 @@ describe("AgentTreePanel", () => {
     ]);
 
     const treeHtml = renderToStaticMarkup(
-      <AgentTreePanel tree={nested} live />,
+      <AgentTreePanel tree={nested} onOpenInPanel={openAgent} />,
     );
     expect(treeHtml).toContain('data-depth="0"');
     expect(treeHtml).toContain('data-depth="1"');
@@ -350,6 +359,12 @@ describe("AgentTreePanel", () => {
       treeHtml.indexOf("evidence"),
     );
 
+    const selectedPanelHtml = renderToStaticMarkup(
+      <AgentPanel tree={nested} live initialAgentId="evidence-thread" />,
+    );
+    expect(selectedPanelHtml).toMatch(
+      /class="agent-panel-agent pressable selected"[^>]*aria-current="true"[^>]*>[\s\S]*?<strong>evidence<\/strong>/,
+    );
     const panelHtml = renderToStaticMarkup(<AgentPanel tree={nested} live />);
     expect(panelHtml).toContain("The nested evidence is ready.");
     expect(panelHtml).toContain(

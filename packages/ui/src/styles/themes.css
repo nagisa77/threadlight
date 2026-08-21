@@ -239,9 +239,8 @@ html[data-theme="dark"]
   :is(
     .activity-list[open] .activity-heading,
     .activity-item + .activity-item,
-    .agent-tree[open] .agent-tree-heading,
-    .agent-row + .agent-row,
-    .agent-inspector,
+    .agent-tree-heading,
+    .agent-tree-list > li + li,
     .settings-section-heading,
     .settings-field + .settings-field,
     .theme-picker + .settings-field,

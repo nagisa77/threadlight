@@ -45,11 +45,13 @@ export function AgentPanel({
   tree,
   live = false,
   controls,
+  initialAgentId,
   hidden = false,
 }: {
   tree?: AgentTreeData;
   live?: boolean;
   controls?: AgentPanelControls;
+  initialAgentId?: string;
   hidden?: boolean;
 }) {
   const { t } = useI18n();
@@ -60,6 +62,7 @@ export function AgentPanel({
   );
   const preferredId = useMemo(
     () =>
+      agentThreads.find(({ id }) => id === initialAgentId)?.id ??
       agentThreads.find(
         ({ latest }) =>
           latest.parentId === tree?.rootId &&
@@ -71,7 +74,7 @@ export function AgentPanel({
       )?.id ??
       agentThreads.find(({ latest }) => latest.parentId === tree?.rootId)?.id ??
       tree?.rootId,
-    [agentThreads, tree?.rootId],
+    [agentThreads, initialAgentId, tree?.rootId],
   );
   const [selectedId, setSelectedId] = useState(preferredId);
   const [listCollapsed, setListCollapsed] = useState(false);

@@ -235,6 +235,7 @@ export function WorkspacePanel({
     tree?: AgentTreeData;
     live: boolean;
     request: number;
+    selectedAgentId?: string;
   };
   agentControls?: AgentPanelControls;
   hidden: boolean;
@@ -738,9 +739,11 @@ export function WorkspacePanel({
             />
           ) : activeTab?.kind === "agents" ? (
             <AgentPanel
+              key={agentPanel?.request}
               tree={agentPanel?.tree}
               live={agentPanel?.live}
               controls={agentControls}
+              initialAgentId={agentPanel?.selectedAgentId}
             />
           ) : activeTab?.kind === "delivery" ? (
             <DeliveryCenterView
