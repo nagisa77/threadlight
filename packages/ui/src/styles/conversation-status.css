@@ -73,6 +73,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .agent-tree-heading:hover,
   .agent-row:hover {
     background: color-mix(in srgb, var(--ink) 4%, transparent);
   }

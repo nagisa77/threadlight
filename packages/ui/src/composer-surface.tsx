@@ -179,6 +179,7 @@ export function ComposerSurface({ model }: { model: AppViewModel }) {
         />
         <AgentTreePanel
           tree={state.agentTree}
+          live
           onOpenInPanel={workspaceAgentPanel.open}
         />
         {!providerReady && (

@@ -239,7 +239,7 @@ html[data-theme="dark"]
   :is(
     .activity-list[open] .activity-heading,
     .activity-item + .activity-item,
-    .agent-tree-heading,
+    .agent-tree[open] .agent-tree-heading,
     .agent-tree-list > li + li,
     .settings-section-heading,
     .settings-field + .settings-field,

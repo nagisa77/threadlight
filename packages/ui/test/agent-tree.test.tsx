@@ -51,17 +51,16 @@ describe("AgentTreePanel", () => {
     ],
   };
 
-  it("keeps the root implicit and renders child agents as panel navigation", () => {
+  it("supports collapsing while child agents remain panel navigation", () => {
     const html = renderToStaticMarkup(
-      <AgentTreePanel tree={tree} onOpenInPanel={openAgent} />,
+      <AgentTreePanel tree={tree} live onOpenInPanel={openAgent} />,
     );
 
-    expect(html).toContain('<section class="agent-tree" aria-label="Agents">');
+    expect(html).toContain('<details class="agent-tree" open="">');
     expect(html).toContain("1 个运行中");
     expect(html).toContain("explorer");
     expect(html).toContain("Trace the protocol");
     expect(html).not.toContain("Implement multi-agent support");
-    expect(html).not.toContain("<details");
     expect(html).not.toContain("aria-expanded");
     expect(html).not.toContain("agent-inspector");
   });
@@ -79,7 +78,8 @@ describe("AgentTreePanel", () => {
       <AgentTreePanel tree={completed} onOpenInPanel={openAgent} />,
     );
 
-    expect(html).toContain('<section class="agent-tree"');
+    expect(html).toContain('<details class="agent-tree">');
+    expect(html).not.toContain('<details class="agent-tree" open="">');
     expect(html).toContain("explorer");
     expect(html).toContain("1 个已完成");
   });
@@ -119,6 +119,7 @@ describe("AgentTreePanel", () => {
       <AgentTreePanel tree={interrupted} onOpenInPanel={openAgent} />,
     );
 
+    expect(html).toContain('<details class="agent-tree" open="">');
     expect(html).toContain('class="agent-status interrupted"');
     expect(html).toContain("已中断");
   });

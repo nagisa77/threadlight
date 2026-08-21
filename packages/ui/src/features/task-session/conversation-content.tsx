@@ -79,6 +79,7 @@ export function ProgressList({
 
 type AgentTreePanelProps = {
   tree?: AgentTreeData;
+  live?: boolean;
   onOpenInPanel(tree: AgentTreeData, agentThreadId: string): void;
 };
 
@@ -88,6 +89,7 @@ export function AgentTreePanel(props: AgentTreePanelProps) {
 
 function AgentTreeContent({
   tree,
+  live = false,
   onOpenInPanel,
 }: AgentTreePanelProps & { tree: AgentTreeData }) {
   const { t } = useI18n();
@@ -97,12 +99,24 @@ function AgentTreeContent({
   const activeCount = agentThreads.filter(
     ({ latest }) => latest.status === "queued" || latest.status === "running",
   ).length;
+  const attentionCount = agentThreads.filter(
+    ({ latest }) =>
+      !latest.closedAt &&
+      (latest.status === "failed" ||
+        latest.status === "cancelled" ||
+        latest.status === "interrupted"),
+  ).length;
+  const [expanded, setExpanded] = useState(live || attentionCount > 0);
 
   if (agentThreads.length === 0) return null;
 
   return (
-    <section className="agent-tree" aria-label={t("agents")}>
-      <header className="agent-tree-heading">
+    <details
+      className="agent-tree"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary className="agent-tree-heading">
         <GitBranch size={14} aria-hidden="true" />
         <h3>{t("agents")}</h3>
         <span className="agent-tree-count">
@@ -110,7 +124,12 @@ function AgentTreeContent({
             ? t("agentActiveCount", { count: activeCount })
             : t("agentDoneCount", { count: agentThreads.length })}
         </span>
-      </header>
+        <ChevronRight
+          className="agent-tree-chevron"
+          size={13}
+          aria-hidden="true"
+        />
+      </summary>
       <div className="agent-tree-content">
         <ul className="agent-tree-list">
           {agentThreads.map((thread) => {
@@ -163,7 +182,7 @@ function AgentTreeContent({
           })}
         </ul>
       </div>
-    </section>
+    </details>
   );
 }
 

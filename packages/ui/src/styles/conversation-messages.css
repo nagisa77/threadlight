@@ -886,7 +886,14 @@
   font-size: 10px;
   font-weight: 640;
   letter-spacing: 0.02em;
-  border-bottom: 1px solid var(--line);
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 160ms ease;
+}
+
+.agent-tree-heading::-webkit-details-marker {
+  display: none;
 }
 
 .agent-tree-heading h3 {
@@ -895,15 +902,29 @@
 }
 
 .agent-tree-count {
+  margin-left: auto;
   color: var(--subtle);
   font-size: 9px;
   font-weight: 560;
   letter-spacing: 0;
 }
 
+.agent-tree-chevron,
 .agent-row-chevron {
   flex: 0 0 auto;
   color: var(--subtle);
+}
+
+.agent-tree-chevron {
+  transition: transform 160ms var(--ease-out);
+}
+
+.agent-tree[open] .agent-tree-chevron {
+  transform: rotate(90deg);
+}
+
+.agent-tree[open] .agent-tree-heading {
+  border-bottom: 1px solid var(--line);
 }
 
 .agent-tree-content {
