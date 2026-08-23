@@ -11,9 +11,5 @@
       "preview_database_id": "TELEMETRY_DB",
       "migrations_dir": "./apps/site/migrations"
     }
-  ],
-  "observability": {
-    "enabled": true,
-    "logs": { "head_sampling_rate": 1 }
-  }
+  ]
 }
