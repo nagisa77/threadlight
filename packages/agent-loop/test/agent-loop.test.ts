@@ -32,6 +32,24 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("defaults the agent step limit to 5000", async () => {
+    let requests = 0;
+    const provider: ModelProvider = {
+      async generate() {
+        requests += 1;
+        return { text: "", toolCalls: [] };
+      },
+    };
+
+    await expect(
+      new AgentLoop(provider).run(
+        defineAgent({ name: "default-step-limit", instructions: "Continue" }),
+        "Run until the default step limit",
+      ),
+    ).rejects.toThrow("Agent exceeded maxSteps (5000)");
+    expect(requests).toBe(5_000);
+  });
+
   it("forwards provider-neutral retry progress from a scripted provider", async () => {
     const events: AgentEvent[] = [];
     const provider: ModelProvider = {

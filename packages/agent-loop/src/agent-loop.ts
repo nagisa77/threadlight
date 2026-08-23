@@ -59,7 +59,7 @@ export class AgentLoop {
     emit: (event: AgentEvent) => void,
   ): Promise<RunResult> {
     const tools = agent.tools ?? [];
-    const maxSteps = agent.maxSteps ?? 100;
+    const maxSteps = agent.maxSteps ?? 5_000;
     const usage = { ...EMPTY_USAGE };
     let state = options.modelState;
     let toolResults: ToolResult[] = [];
