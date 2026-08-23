@@ -74,8 +74,8 @@ npm run host:dev -- \
 npm run host:package
 ```
 
-产物位于 `artifacts/threadlight-host-1.1.0.tgz`，包含两个已经打包的 Node.js
-入口和内置 skills/plugins。复制到远端后：
+产物位于 `artifacts/threadlight-host-1.1.0.tgz`，包含 Host、app-server、命令行客户端
+三个已经打包的 Node.js 入口和内置 skills/plugins。复制到远端后：
 
 ```bash
 npm install -g ./threadlight-host-1.1.0.tgz
@@ -93,6 +93,46 @@ sudo apt install -y python3 make build-essential
 ```
 
 `artifacts/` 是可重复生成的本地构建目录，已加入 `.gitignore`，不应提交到 Git。
+
+## 从命令行发送任务
+
+Host npm 包会同时安装 `threadlight` 命令。先用同一个 Host Token 查看远端已经登记的
+项目；优先把 Token 放在环境变量中，避免写入 shell history：
+
+```bash
+export THREADLIGHT_HOST_URL=https://tim-france-vps.threadlight.xyz
+export THREADLIGHT_HOST_TOKEN='你的-token'
+
+threadlight projects
+```
+
+在项目中创建任务时，`--project` 可以使用 `threadlight projects` 输出的精确 id、项目
+名或远端绝对路径：
+
+```bash
+threadlight run \
+  --project /srv/my-project \
+  --worktree \
+  '修复失败的测试并说明改动'
+```
+
+不属于任何项目的任务使用 Host 管理的 standalone 工作区：
+
+```bash
+threadlight run --standalone '调研这个问题并给出结论'
+```
+
+继续已有任务时只需传 task/thread id；如果这个 id 在 Host 上不唯一，再同时传
+`--project`：
+
+```bash
+threadlight run --thread 7a5b… '继续处理，并运行测试'
+```
+
+默认情况下，CLI 会在终端逐次确认非破坏性写操作；stdin 不是交互终端时会拒绝这些
+写操作。`--yes` 自动批准非破坏性写操作，但仍保留破坏性操作拦截；只有显式的
+`--full-access` 会绕过执行安全策略。`--json` 输出适合脚本解析的 Host、project、
+thread、turn、状态和最终结果。Prompt 也可以通过 stdin 管道传入。
 
 ## SSH 连接
 
@@ -113,7 +153,7 @@ VPN 或 HTTPS 反向代理。Host 不会打印令牌，也不会把 API Key 写�
 
 ## HTTP 协议
 
-Host 协议版本为 2：
+Host 协议版本为 4：
 
 - `GET /v1/health`：Host 身份和协议协商。
 - `/v1/host/projects/*`：Host 级项目与任务索引。

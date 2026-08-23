@@ -3,10 +3,7 @@ export {
   RpcResponseError,
   ThreadlightClient,
 } from "./client.js";
-export type {
-  ClientTransport,
-  ThreadlightClientOptions,
-} from "./client.js";
+export type { ClientTransport, ThreadlightClientOptions } from "./client.js";
 export {
   HttpRuntimeTransport,
   type HttpRuntimeTransportOptions,
@@ -33,3 +30,20 @@ export {
   type BrowserTerminalClientOptions,
 } from "./browser-terminal-client.js";
 export { createBrowserUuid } from "./browser-uuid.js";
+export {
+  parseThreadlightCli,
+  threadlightCliUsage,
+  ThreadlightCliUsageError,
+} from "./command-cli-options.js";
+export type {
+  ThreadlightCommand,
+  ThreadlightProjectsCommand,
+  ThreadlightRunCommand,
+} from "./command-cli-options.js";
+export { runRemoteTask, selectHostProject } from "./remote-task.js";
+export type {
+  RemoteTaskApproval,
+  RemoteTaskResult,
+  RemoteTaskStatus,
+  RunRemoteTaskOptions,
+} from "./remote-task.js";

@@ -62,7 +62,7 @@ Build a standalone npm package without UI or Electron on the development machine
 npm run host:package
 ```
 
-The output is `artifacts/threadlight-host-1.1.0.tgz`. It contains two bundled Node.js entrypoints plus the built-in skills and plugins. Copy it to the remote machine, then run:
+The output is `artifacts/threadlight-host-1.1.0.tgz`. It contains bundled Host, app-server, and command-client entrypoints plus the built-in skills and plugins. Copy it to the remote machine, then run:
 
 ```bash
 npm install -g ./threadlight-host-1.1.0.tgz
@@ -78,6 +78,40 @@ sudo apt install -y python3 make build-essential
 ```
 
 `artifacts/` is a reproducible local build directory. It is listed in `.gitignore` and must not be committed.
+
+## Send tasks from the command line
+
+The Host npm package also installs the `threadlight` command. Use the same Host token to list registered projects. Prefer environment variables so the token does not enter shell history:
+
+```bash
+export THREADLIGHT_HOST_URL=https://tim-france-vps.threadlight.xyz
+export THREADLIGHT_HOST_TOKEN='your-token'
+
+threadlight projects
+```
+
+For a project task, `--project` accepts an exact id, project name, or remote absolute path from `threadlight projects`:
+
+```bash
+threadlight run \
+  --project /srv/my-project \
+  --worktree \
+  'Fix the failing tests and explain the changes'
+```
+
+Use Host-managed standalone storage for a task that does not belong to a project:
+
+```bash
+threadlight run --standalone 'Research this issue and report the conclusion'
+```
+
+Continue an existing task with its task/thread id. Add `--project` only if that id is ambiguous on the Host:
+
+```bash
+threadlight run --thread 7a5b… 'Continue and run the tests'
+```
+
+By default, the CLI confirms each non-destructive write in an interactive terminal and denies writes when stdin is not interactive. `--yes` approves non-destructive writes while retaining the destructive-operation block. Only explicit `--full-access` bypasses the execution safety policy. `--json` prints script-friendly Host, project, thread, turn, status, and result data. The prompt can also be piped on stdin.
 
 ## SSH connection
 
@@ -95,7 +129,7 @@ The Bearer token authenticates requests; it does not encrypt HTTP content. Acros
 
 ## HTTP protocol
 
-The Host protocol version is 2:
+The Host protocol version is 4:
 
 - `GET /v1/health`: Host identity and protocol negotiation.
 - `/v1/host/projects/*`: Host-level project and task index.

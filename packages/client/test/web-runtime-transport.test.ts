@@ -51,10 +51,13 @@ describe("HttpRuntimeTransport", () => {
     });
     const messages: unknown[] = [];
     const received = Promise.withResolvers<void>();
+    const connected = transport.waitUntilConnected();
     transport.onMessage((message) => {
       messages.push(message);
       if (messages.length === 2) received.resolve();
     });
+
+    await expect(connected).resolves.toBeUndefined();
 
     streamController.enqueue(
       encoder.encode(

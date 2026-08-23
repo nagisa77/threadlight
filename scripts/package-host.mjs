@@ -63,6 +63,11 @@ await Promise.all([
     entryPoints: [resolve(repositoryRoot, "packages/app-server/src/bin.ts")],
     outfile: resolve(packageRoot, "bin.js"),
   }),
+  build({
+    ...common,
+    entryPoints: [resolve(repositoryRoot, "packages/client/src/cli-bin.ts")],
+    outfile: resolve(packageRoot, "cli.mjs"),
+  }),
   ...["builtin-skills", "builtin-plugins"].map((directory) =>
     cp(
       resolve(repositoryRoot, `packages/app-server/src/${directory}`),
@@ -87,6 +92,7 @@ await writeFile(
       type: "module",
       bin: {
         "threadlight-host": "./host.mjs",
+        threadlight: "./cli.mjs",
       },
       engines: {
         node: ">=22",
@@ -97,6 +103,7 @@ await writeFile(
       },
       files: [
         "host.mjs",
+        "cli.mjs",
         "bin.js",
         "builtin-skills",
         "builtin-plugins",
@@ -131,6 +138,18 @@ curl -fsSL https://threadlight.xyz/install.sh | sh
 \`\`\`
 
 The managed Host starts empty; add projects from the Web UI after connecting.
+
+The package also installs a command client:
+
+\`\`\`bash
+export THREADLIGHT_HOST_URL=http://127.0.0.1:7432
+export THREADLIGHT_HOST_TOKEN='the-same-token'
+threadlight projects
+threadlight run --project /srv/my-project 'Run the tests'
+threadlight run --standalone 'Research this topic'
+\`\`\`
+
+Run \`threadlight --help\` for approval, worktree, model, JSON, and existing-task options.
 
 Use an SSH tunnel, VPN, or HTTPS reverse proxy when connecting across an
 untrusted network. Interactive remote terminals use node-pty. Linux hosts may

@@ -18,6 +18,11 @@ export class HttpRuntimeTransport implements ClientTransport {
   private eventAbort?: AbortController;
   private closed = false;
   private connected = false;
+  private readonly connectionWaiters = new Set<{
+    resolve(): void;
+    reject(error: Error): void;
+    timeout: ReturnType<typeof setTimeout>;
+  }>();
 
   constructor(private readonly options: HttpRuntimeTransportOptions) {
     this.endpoint = normalizeEndpoint(options.endpoint);
@@ -49,8 +54,36 @@ export class HttpRuntimeTransport implements ClientTransport {
     this.ensureEventStream();
     return () => {
       this.listeners.delete(listener);
-      if (this.listeners.size === 0) this.stopEventStream();
+      if (this.listeners.size === 0 && this.connectionWaiters.size === 0) {
+        this.stopEventStream();
+      }
     };
+  }
+
+  waitUntilConnected(timeoutMs = 10_000): Promise<void> {
+    if (this.connected) return Promise.resolve();
+    if (this.closed) {
+      return Promise.reject(new Error("Remote runtime transport is closed."));
+    }
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      return Promise.reject(
+        new Error("Remote runtime connection timeout must be positive."),
+      );
+    }
+    return new Promise<void>((resolve, reject) => {
+      const waiter = {
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          this.connectionWaiters.delete(waiter);
+          reject(
+            new Error("Remote runtime event stream connection timed out."),
+          );
+        }, timeoutMs),
+      };
+      this.connectionWaiters.add(waiter);
+      this.ensureEventStream();
+    });
   }
 
   async workspaceList(path = ""): Promise<RemoteRuntimeWorkspaceEntry[]> {
@@ -89,10 +122,19 @@ export class HttpRuntimeTransport implements ClientTransport {
     this.closed = true;
     this.stopEventStream();
     this.listeners.clear();
+    this.rejectConnectionWaiters(
+      new Error("Remote runtime transport was closed before connecting."),
+    );
   }
 
   private ensureEventStream(): void {
-    if (this.closed || this.eventAbort || this.listeners.size === 0) return;
+    if (
+      this.closed ||
+      this.eventAbort ||
+      (this.listeners.size === 0 && this.connectionWaiters.size === 0)
+    ) {
+      return;
+    }
     const abort = new AbortController();
     this.eventAbort = abort;
     void this.consumeEvents(abort);
@@ -144,7 +186,11 @@ export class HttpRuntimeTransport implements ClientTransport {
       if (!abort.signal.aborted) this.setConnected(false);
     } finally {
       if (this.eventAbort === abort) this.eventAbort = undefined;
-      if (!this.closed && !abort.signal.aborted && this.listeners.size > 0) {
+      if (
+        !this.closed &&
+        !abort.signal.aborted &&
+        (this.listeners.size > 0 || this.connectionWaiters.size > 0)
+      ) {
         setTimeout(
           () => this.ensureEventStream(),
           this.options.reconnectDelayMs ?? 1_000,
@@ -162,7 +208,22 @@ export class HttpRuntimeTransport implements ClientTransport {
   private setConnected(connected: boolean): void {
     if (this.connected === connected) return;
     this.connected = connected;
+    if (connected) {
+      for (const waiter of this.connectionWaiters) {
+        clearTimeout(waiter.timeout);
+        waiter.resolve();
+      }
+      this.connectionWaiters.clear();
+    }
     this.options.onConnectionChange?.(connected);
+  }
+
+  private rejectConnectionWaiters(error: Error): void {
+    for (const waiter of this.connectionWaiters) {
+      clearTimeout(waiter.timeout);
+      waiter.reject(error);
+    }
+    this.connectionWaiters.clear();
   }
 
   private emit(message: JsonRpcOutgoing): void {
