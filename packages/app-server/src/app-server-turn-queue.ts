@@ -247,6 +247,13 @@ export class AppServerTurnQueue {
       mode,
       isThinking: true,
       streamingText: "",
+      metrics: {
+        startedAt: this.host.now().toISOString(),
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        modelDurationMs: 0,
+        completedModelSteps: 0,
+        streamedBytes: 0,
+      },
       controller,
     };
     thread.progress = [];

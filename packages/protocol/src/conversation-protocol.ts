@@ -188,6 +188,15 @@ export interface TokenUsageData {
   totalTokens: number;
 }
 
+/** Provider-confirmed usage and observed stream volume for a running turn. */
+export interface ActiveTurnMetricsData {
+  startedAt: string;
+  usage: TokenUsageData;
+  modelDurationMs: number;
+  completedModelSteps: number;
+  streamedBytes: number;
+}
+
 export interface ModelStepDiagnosticsData {
   step: number;
   durationMs: number;
@@ -412,6 +421,7 @@ export interface ActiveTurnData {
   mode: TurnMode;
   isThinking: boolean;
   streamingText: string;
+  metrics?: ActiveTurnMetricsData;
   /** Sources already cited by the currently streaming assistant output. */
   sources?: readonly MessageSourceData[];
   /** Inline citations anchored in `streamingText`. */

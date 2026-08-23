@@ -154,6 +154,7 @@ export function ConversationSurface({ model }: { model: AppViewModel }) {
         }
         taskId={shortId(state.threadId)}
         running={state.isRunning}
+        runMetrics={state.runMetrics}
         connectionReady={
           state.connection === "ready" && Boolean(state.threadId)
         }

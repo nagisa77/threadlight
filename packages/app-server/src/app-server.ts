@@ -133,6 +133,13 @@ export interface ThreadState {
     mode: TurnMode;
     isThinking: boolean;
     streamingText: string;
+    metrics: {
+      startedAt: string;
+      usage: TokenUsageData;
+      modelDurationMs: number;
+      completedModelSteps: number;
+      streamedBytes: number;
+    };
     controller: AbortController;
     sourceCitations?: SourceCitationRunController;
     orchestrator?: AgentOrchestrator;

@@ -942,26 +942,6 @@ html[data-platform="desktop"][data-os="macos"]
   margin-top: 1px;
 }
 
-.running-badge {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  color: var(--ink);
-  background: var(--accent-soft);
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.running-badge svg {
-  flex: 0 0 auto;
-}
-
 .running-badge svg,
 .thinking-row svg,
 .spin {

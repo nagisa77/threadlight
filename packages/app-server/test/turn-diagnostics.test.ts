@@ -9,12 +9,101 @@ import {
 } from "@threadlight/agent-loop";
 
 import { AppServer } from "../src/app-server.js";
-import type {
-  JsonRpcOutgoing,
-  TurnDiagnosticsData,
-} from "../src/protocol.js";
+import type { JsonRpcOutgoing, TurnDiagnosticsData } from "../src/protocol.js";
 
 describe("turn diagnostics", () => {
+  it("exposes provider-confirmed live metrics from a scripted running turn", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const toolStarted = Promise.withResolvers<void>();
+    const releaseTool = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    let generation = 0;
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        generation += 1;
+        if (generation === 1) {
+          options?.onEvent?.({ type: "output_text.delta", delta: "检查" });
+          return {
+            text: "检查",
+            toolCalls: [{ id: "hold-1", name: "hold", arguments: {} }],
+            usage: { inputTokens: 120, outputTokens: 24, totalTokens: 144 },
+          };
+        }
+        return {
+          text: "done",
+          toolCalls: [],
+          usage: { inputTokens: 20, outputTokens: 4, totalTokens: 24 },
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "scripted-live-metrics",
+        instructions: "Reply",
+        tools: [
+          defineTool({
+            name: "hold",
+            description: "Keep the turn running",
+            parameters: { type: "object" },
+            async execute() {
+              toolStarted.resolve();
+              await releaseTool.promise;
+              return "ok";
+            },
+          }),
+        ],
+      }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Check" },
+    });
+    await toolStarted.promise;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "thread/resume",
+      params: { threadId },
+    });
+
+    const resumed = messages.find(
+      (message) => "id" in message && message.id === 4,
+    );
+    releaseTool.resolve();
+    await completed.promise;
+
+    expect(resumed).toMatchObject({
+      result: {
+        activeTurn: {
+          metrics: {
+            usage: {
+              inputTokens: 120,
+              outputTokens: 24,
+              totalTokens: 144,
+            },
+            completedModelSteps: 1,
+            streamedBytes: new TextEncoder().encode("检查").byteLength,
+          },
+        },
+      },
+    });
+  });
+
   it("persists scripted token, model-step, and tool timing snapshots", async () => {
     const messages: JsonRpcOutgoing[] = [];
     const completed = Promise.withResolvers<void>();
@@ -25,9 +114,7 @@ describe("turn diagnostics", () => {
         return generation === 1
           ? {
               text: "checking",
-              toolCalls: [
-                { id: "check-1", name: "check", arguments: {} },
-              ],
+              toolCalls: [{ id: "check-1", name: "check", arguments: {} }],
               usage: { inputTokens: 5, outputTokens: 2, totalTokens: 7 },
             }
           : {
@@ -82,8 +169,7 @@ describe("turn diagnostics", () => {
     });
 
     const completedNotification = messages.find(
-      (message) =>
-        "method" in message && message.method === "turn/completed",
+      (message) => "method" in message && message.method === "turn/completed",
     );
     expect(completedNotification).toMatchObject({
       params: {
@@ -217,8 +303,7 @@ describe("turn diagnostics", () => {
     await completed.promise;
 
     const notification = messages.find(
-      (message) =>
-        "method" in message && message.method === "turn/completed",
+      (message) => "method" in message && message.method === "turn/completed",
     );
     expect(notification).toMatchObject({
       params: {
@@ -247,9 +332,7 @@ describe("turn diagnostics", () => {
                 { agentRole: "explorer", usage: { totalTokens: 3 } },
                 { agentRole: "explorer", usage: { totalTokens: 3 } },
               ],
-              toolCalls: [
-                { callId: "child-check", agentRole: "explorer" },
-              ],
+              toolCalls: [{ callId: "child-check", agentRole: "explorer" }],
             },
             total: {
               usage: { inputTokens: 16, outputTokens: 6, totalTokens: 22 },
@@ -291,9 +374,7 @@ describe("turn diagnostics", () => {
         return generation === 1
           ? {
               text: "checking",
-              toolCalls: [
-                { id: "check-1", name: "check", arguments: {} },
-              ],
+              toolCalls: [{ id: "check-1", name: "check", arguments: {} }],
             }
           : { text: "handled", toolCalls: [] };
       },
@@ -339,8 +420,7 @@ describe("turn diagnostics", () => {
     await completed.promise;
 
     const notification = messages.find(
-      (message) =>
-        "method" in message && message.method === "turn/completed",
+      (message) => "method" in message && message.method === "turn/completed",
     );
     expect(notification).toMatchObject({
       params: {

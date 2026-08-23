@@ -6,6 +6,7 @@ import {
   projectMessagesProcess,
   projectProgressProcess,
   runningProcessSessionIds,
+  type ActiveTurnMetricsData,
   type ActiveTurnData,
   type AttachmentData,
   type AgentPlanData,
@@ -75,6 +76,7 @@ export interface SessionState {
   model?: string;
   isRunning: boolean;
   isThinking: boolean;
+  runMetrics?: ActiveTurnMetricsData;
   messages: readonly ConversationMessage[];
   queuedTurns: readonly QueuedTurnData[];
   progress: readonly ConversationProgress[];
@@ -210,6 +212,7 @@ export function sessionReducer(
         progress: action.activeTurn?.progress ?? [],
         agentTree: action.activeTurn?.agentTree,
         plan: action.activeTurn?.plan,
+        runMetrics: action.activeTurn?.metrics,
         streamingText: action.activeTurn?.streamingText ?? "",
         streamingSources: action.activeTurn?.sources,
         streamingCitations: action.activeTurn?.citations,
@@ -223,6 +226,7 @@ export function sessionReducer(
         recovery: undefined,
         isRunning: false,
         isThinking: false,
+        runMetrics: undefined,
       };
     case "connection.missing_thread":
       return {
@@ -233,6 +237,7 @@ export function sessionReducer(
         recovery: { kind: "missing_thread", threadId: action.threadId },
         isRunning: false,
         isThinking: false,
+        runMetrics: undefined,
       };
     case "message.sent":
       return {
@@ -241,6 +246,7 @@ export function sessionReducer(
         isThinking: true,
         progress: [],
         agentTree: undefined,
+        runMetrics: undefined,
         plan:
           action.mode === "plan" ? { source: "user", items: [] } : undefined,
         streamingText: "",
@@ -273,6 +279,7 @@ export function sessionReducer(
         isThinking: false,
         progress: [],
         plan: undefined,
+        runMetrics: undefined,
         streamingText: "",
         streamingSources: undefined,
         streamingCitations: undefined,
@@ -516,6 +523,7 @@ function completeTurn(
     isThinking: false,
     progress: [],
     agentTree: undefined,
+    runMetrics: undefined,
     plan: undefined,
     streamingText: "",
     streamingSources: undefined,
@@ -535,6 +543,7 @@ function hydrateActiveTurn(
     isThinking: activeTurn.isThinking,
     progress: activeTurn.progress,
     agentTree: activeTurn.agentTree ?? state.agentTree,
+    runMetrics: activeTurn.metrics ?? state.runMetrics,
     plan: activeTurn.plan,
     streamingText: activeTurn.streamingText,
     streamingSources: activeTurn.sources,

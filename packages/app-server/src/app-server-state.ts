@@ -1,7 +1,10 @@
+import { Buffer } from "node:buffer";
+
 import type {
   AgentEvent,
   AgentRuntimeSnapshot,
   AgentTreeEvent,
+  AgentTreeSnapshot,
 } from "@threadlight/agent-loop";
 import { projectAgentProgress, projectAgentPlan } from "@threadlight/protocol";
 import type {
@@ -33,6 +36,57 @@ export interface AppServerStateHost {
   now(): Date;
   turnCleanup?: (context: TurnCleanupContext) => void | Promise<void>;
   send: SendMessage;
+}
+
+type ActiveMetrics = NonNullable<ThreadState["activeTurn"]>["metrics"];
+
+function addCompletedModelMetrics(
+  metrics: ActiveMetrics,
+  event: Extract<AgentEvent, { type: "model.completed" }>,
+): ActiveMetrics {
+  const inputTokens = event.usage?.inputTokens ?? 0;
+  const outputTokens = event.usage?.outputTokens ?? 0;
+  return {
+    ...metrics,
+    usage: {
+      inputTokens: metrics.usage.inputTokens + inputTokens,
+      outputTokens: metrics.usage.outputTokens + outputTokens,
+      totalTokens:
+        metrics.usage.totalTokens +
+        (event.usage?.totalTokens ?? inputTokens + outputTokens),
+    },
+    modelDurationMs: metrics.modelDurationMs + (event.durationMs ?? 0),
+    completedModelSteps: metrics.completedModelSteps + 1,
+  };
+}
+
+function metricsFromAgentTree(
+  current: ActiveMetrics,
+  tree: AgentTreeSnapshot,
+): ActiveMetrics {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let totalTokens = 0;
+  let modelDurationMs = 0;
+  let completedModelSteps = 0;
+
+  for (const agent of tree.agents) {
+    for (const entry of agent.transcript) {
+      if (entry.kind !== "model" || entry.status !== "completed") continue;
+      inputTokens += entry.usage?.inputTokens ?? 0;
+      outputTokens += entry.usage?.outputTokens ?? 0;
+      totalTokens += entry.usage?.totalTokens ?? 0;
+      modelDurationMs += entry.durationMs ?? 0;
+      completedModelSteps += 1;
+    }
+  }
+
+  return {
+    ...current,
+    usage: { inputTokens, outputTokens, totalTokens },
+    modelDurationMs,
+    completedModelSteps,
+  };
 }
 
 export class AppServerState {
@@ -170,6 +224,10 @@ export class AppServerState {
       }
     } else if (event.type === "model.output_text.delta") {
       if (activeTurn) {
+        activeTurn.metrics.streamedBytes += Buffer.byteLength(
+          event.delta,
+          "utf8",
+        );
         if (event.outputVisibility === "provisional") {
           activeTurn.isThinking = true;
           activeTurn.streamingText = "";
@@ -181,6 +239,12 @@ export class AppServerState {
     } else if (event.type === "model.completed") {
       thread.injectedInputPendingModelResponse = false;
       if (activeTurn) {
+        if (!activeTurn.agentTree) {
+          activeTurn.metrics = addCompletedModelMetrics(
+            activeTurn.metrics,
+            event,
+          );
+        }
         activeTurn.isThinking = false;
         activeTurn.streamingText =
           event.toolCalls.length > 0 || event.outputVisibility === "provisional"
@@ -230,6 +294,7 @@ export class AppServerState {
     if (!activeTurn) return;
     const tree = clientSafeAgentTree(event.tree);
     activeTurn.agentTree = tree;
+    activeTurn.metrics = metricsFromAgentTree(activeTurn.metrics, tree);
     thread.revision += 1;
     this.notify("agent/tree-updated", {
       threadId,
@@ -263,6 +328,10 @@ export class AppServerState {
       mode: activeTurn.mode,
       isThinking: activeTurn.isThinking,
       streamingText: sourcedStreamingOutput?.text ?? activeTurn.streamingText,
+      metrics: {
+        ...activeTurn.metrics,
+        usage: { ...activeTurn.metrics.usage },
+      },
       ...(sourcedStreamingOutput?.sources.length
         ? {
             sources: sourcedStreamingOutput.sources,

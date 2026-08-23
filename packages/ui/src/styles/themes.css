@@ -114,6 +114,13 @@ html[data-theme="dark"] .running-badge {
   background: var(--accent-soft);
 }
 
+html[data-theme="dark"] .run-metrics-popover {
+  background: color-mix(in srgb, var(--panel) 98%, #17181b);
+  box-shadow:
+    0 20px 50px rgb(0 0 0 / 34%),
+    0 3px 10px rgb(0 0 0 / 20%);
+}
+
 html[data-theme="dark"] .markdown-content {
   color: #dedee1;
 }

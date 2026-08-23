@@ -1,0 +1,207 @@
+.running-status {
+  position: relative;
+  display: inline-flex;
+  -webkit-app-region: no-drag;
+}
+
+.running-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--accent-soft);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms var(--ease-out);
+}
+
+.running-badge svg {
+  flex: 0 0 auto;
+}
+
+.running-badge:active {
+  transform: scale(0.97);
+}
+
+.running-badge:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 48%, transparent);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .running-status:hover .running-badge {
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--line-strong));
+    background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+    box-shadow: 0 2px 8px rgb(31 31 35 / 7%);
+  }
+}
+
+.run-metrics-popover {
+  position: absolute;
+  z-index: 240;
+  top: calc(100% + 12px);
+  right: 0;
+  display: grid;
+  width: 272px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel) 97%, white);
+  box-shadow:
+    0 20px 50px rgb(31 31 35 / 16%),
+    0 3px 10px rgb(31 31 35 / 8%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px) scale(0.97);
+  transform-origin: top right;
+  visibility: hidden;
+  transition:
+    opacity 150ms var(--ease-out),
+    transform 150ms var(--ease-out),
+    visibility 0s linear 150ms;
+}
+
+.running-status:focus-within .run-metrics-popover {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .running-status:hover .run-metrics-popover {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    visibility: visible;
+    transition-delay: 0s;
+  }
+}
+
+.run-metrics-heading {
+  display: flex;
+  min-height: 37px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.run-metrics-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.run-metrics-heading i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.run-metrics-heading time {
+  color: var(--subtle);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-metrics-rate {
+  display: grid;
+  gap: 3px;
+  padding: 13px 13px 11px;
+}
+
+.run-metrics-rate small,
+.run-metrics-rate span,
+.run-metrics-usage small {
+  color: var(--subtle);
+  font-size: 9px;
+  font-weight: 560;
+}
+
+.run-metrics-rate strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-metrics-usage {
+  display: grid;
+  margin: 0 8px 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ink) 2.5%, transparent);
+  grid-template-columns: 1fr 1fr;
+}
+
+.run-metrics-usage > span {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 15px 1fr;
+  gap: 1px 5px;
+  padding: 9px 10px;
+}
+
+.run-metrics-usage > span + span {
+  border-left: 1px solid var(--line);
+}
+
+.run-metrics-usage > span > :first-child {
+  grid-row: 1 / span 2;
+  margin-top: 1px;
+  color: var(--muted);
+}
+
+.run-metrics-usage strong {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-metrics-stream {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.run-metrics-stream svg {
+  color: var(--accent);
+}
+
+.run-metrics-stream strong {
+  margin-left: auto;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
