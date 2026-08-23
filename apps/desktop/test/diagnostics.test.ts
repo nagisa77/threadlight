@@ -77,6 +77,8 @@ describe("project diagnostics", () => {
       totalTokens: 16,
       durationMs: 1_200,
       modelSteps: 2,
+      totalTtftMs: 400,
+      ttftSamples: 2,
       toolCalls: 2,
       toolDurationMs: 120,
     });
@@ -890,6 +892,7 @@ function diagnostic(
       {
         step: 1,
         durationMs,
+        ttftMs: 200,
         usage: {
           inputTokens: totalTokens - 3,
           outputTokens: 3,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ActiveTurnMetricsData } from "@threadlight/protocol";
-import { ArrowDown, ArrowUp, LoaderCircle, Radio } from "lucide-react";
+import { ArrowDown, ArrowUp, LoaderCircle, Radio, Timer } from "lucide-react";
 
 import { useI18n } from "../../i18n.js";
 import { TaskProductivityMenu } from "./task-actions.js";
@@ -43,6 +43,7 @@ export function TaskHeader({
         </p>
       </div>
       <div className="workspace-header-actions">
+        {running && <RunningStatus metrics={runMetrics} />}
         <TaskProductivityMenu
           disabled={!connectionReady}
           bookmarkCount={bookmarkCount}
@@ -51,7 +52,6 @@ export function TaskHeader({
           onExport={onExport}
           onOpenBookmarks={onOpenBookmarks}
         />
-        {running && <RunningStatus metrics={runMetrics} />}
       </div>
     </header>
   );
@@ -114,6 +114,18 @@ function RunningStatus({ metrics }: { metrics?: ActiveTurnMetricsData }) {
   const elapsedMs = Number.isFinite(startedAt)
     ? Math.max(0, now - startedAt)
     : 0;
+  const currentModelStartedAt = metrics?.currentModelStartedAt
+    ? Date.parse(metrics.currentModelStartedAt)
+    : Number.NaN;
+  const pendingTtftMs = Number.isFinite(currentModelStartedAt)
+    ? Math.max(0, now - currentModelStartedAt)
+    : undefined;
+  const currentTtftMs = metrics?.currentTtftMs ?? pendingTtftMs;
+  const averageTtftMs = metrics?.ttftSamples
+    ? metrics.totalTtftMs / metrics.ttftSamples
+    : undefined;
+  const waitingForFirstText =
+    metrics?.currentTtftMs === undefined && pendingTtftMs !== undefined;
   const confirmed = Boolean(metrics?.completedModelSteps);
 
   return (
@@ -124,7 +136,10 @@ function RunningStatus({ metrics }: { metrics?: ActiveTurnMetricsData }) {
         aria-label={t("runMetricsLabel")}
         aria-describedby={tooltipId}
       >
-        <LoaderCircle size={13} aria-hidden="true" /> {t("running")}
+        <span className="running-badge-state">
+          <LoaderCircle size={12} aria-hidden="true" />
+          <span>{t("running")}</span>
+        </span>
       </button>
       <div id={tooltipId} className="run-metrics-popover" role="tooltip">
         <div className="run-metrics-heading">
@@ -134,34 +149,61 @@ function RunningStatus({ metrics }: { metrics?: ActiveTurnMetricsData }) {
           </span>
           <time>{formatElapsed(elapsedMs)}</time>
         </div>
-        <div className="run-metrics-rate">
-          <small>{t("tokenRate")}</small>
-          <strong>
-            {tokenRate === undefined
-              ? "—"
-              : `${formatRate(tokenRate, language)} tok/s`}
-          </strong>
+        <div className="run-metrics-ttft">
           <span>
-            {confirmed
-              ? `${metrics?.completedModelSteps ?? 0} ${t("modelSteps")} · ${t("providerConfirmed")}`
-              : t("waitingForUsage")}
+            <small>
+              <Timer size={12} aria-hidden="true" />
+              {t("currentTtft")}
+            </small>
+            <strong
+              title={waitingForFirstText ? t("waitingForFirstText") : undefined}
+            >
+              {currentTtftMs === undefined
+                ? "—"
+                : `${formatLatency(currentTtftMs, language)}${waitingForFirstText ? "…" : ""}`}
+            </strong>
+          </span>
+          <span>
+            <small>{t("averageTtft")}</small>
+            <strong>
+              {averageTtftMs === undefined
+                ? "—"
+                : formatLatency(averageTtftMs, language)}
+            </strong>
           </span>
         </div>
-        <div className="run-metrics-usage">
+        <div className="run-metrics-secondary">
           <span>
-            <ArrowUp size={13} aria-hidden="true" />
-            <small>{t("inputTokens")}</small>
+            <small>{t("tokenRate")}</small>
+            <strong>
+              {tokenRate === undefined
+                ? "—"
+                : `${formatRate(tokenRate, language)} tok/s`}
+            </strong>
+          </span>
+          <span>
+            <small>
+              <ArrowUp size={11} aria-hidden="true" />
+              {t("inputTokens")}
+            </small>
             <strong>
               {formatCount(metrics?.usage.inputTokens ?? 0, language)}
             </strong>
           </span>
           <span>
-            <ArrowDown size={13} aria-hidden="true" />
-            <small>{t("outputTokens")}</small>
+            <small>
+              <ArrowDown size={11} aria-hidden="true" />
+              {t("outputTokens")}
+            </small>
             <strong>
               {formatCount(metrics?.usage.outputTokens ?? 0, language)}
             </strong>
           </span>
+        </div>
+        <div className="run-metrics-model">
+          {confirmed
+            ? `${metrics?.completedModelSteps ?? 0} ${t("modelSteps")} · ${t("providerConfirmed")}`
+            : t("waitingForUsage")}
         </div>
         <div className="run-metrics-stream">
           <Radio size={12} aria-hidden="true" />
@@ -190,6 +232,13 @@ function formatByteRate(bytes: number, language: string): string {
   if (bytes < 1_000) return `${formatCount(bytes, language)} B/s`;
   if (bytes < 1_000_000) return `${formatRate(bytes / 1_000, language)} KB/s`;
   return `${formatRate(bytes / 1_000_000, language)} MB/s`;
+}
+
+function formatLatency(milliseconds: number, language: string): string {
+  if (milliseconds < 1_000) {
+    return `${formatCount(Math.round(milliseconds), language)} ms`;
+  }
+  return `${formatRate(milliseconds / 1_000, language)} s`;
 }
 
 function formatElapsed(elapsedMs: number): string {

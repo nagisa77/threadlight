@@ -75,6 +75,7 @@ interface StoredDiagnostics {
   modelSteps: readonly {
     step: number;
     durationMs: number;
+    ttftMs?: number;
   }[];
   toolCalls: readonly {
     callId: string;
@@ -680,7 +681,15 @@ function storedDiagnostics(value: unknown): StoredDiagnostics | undefined {
     isRecord(step) &&
     Number.isInteger(step.step) &&
     isNonNegativeNumber(step.durationMs)
-      ? [{ step: Number(step.step), durationMs: step.durationMs }]
+      ? [
+          {
+            step: Number(step.step),
+            durationMs: step.durationMs,
+            ...(isNonNegativeNumber(step.ttftMs)
+              ? { ttftMs: step.ttftMs }
+              : {}),
+          },
+        ]
       : [],
   );
   const toolCalls = diagnostics.toolCalls.flatMap((tool) =>

@@ -519,6 +519,40 @@ describe("AgentLoop", () => {
     ]);
   });
 
+  it("measures TTFT from model start to the first non-empty text delta", async () => {
+    let clock = 0;
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        clock = 325;
+        options?.onEvent?.({ type: "output_text.delta", delta: "Hello" });
+        clock = 500;
+        options?.onEvent?.({ type: "output_text.delta", delta: " world" });
+        return { text: "Hello world", toolCalls: [] };
+      },
+    };
+
+    await new AgentLoop(provider).run(
+      defineAgent({ name: "ttft", instructions: "Reply" }),
+      "Hello",
+      { now: () => clock, onEvent: (event) => events.push(event) },
+    );
+
+    expect(
+      events.filter((event) => event.type === "model.output_text.delta"),
+    ).toEqual([
+      expect.objectContaining({ delta: "Hello", ttftMs: 325 }),
+      expect.not.objectContaining({ ttftMs: expect.anything() }),
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "model.completed",
+        step: 1,
+        ttftMs: 325,
+      }),
+    );
+  });
+
   it("executes a tool and feeds its result back to the model", async () => {
     const provider = new ScriptedProvider();
     const loop = new AgentLoop(provider);

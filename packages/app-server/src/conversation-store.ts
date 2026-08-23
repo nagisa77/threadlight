@@ -441,7 +441,8 @@ function isAgentTranscriptEntry(value: unknown): boolean {
     typeof entry.startedAt === "string" &&
     (entry.completedAt === undefined ||
       typeof entry.completedAt === "string") &&
-    (entry.durationMs === undefined || isNonNegativeNumber(entry.durationMs));
+    (entry.durationMs === undefined || isNonNegativeNumber(entry.durationMs)) &&
+    (entry.ttftMs === undefined || isNonNegativeNumber(entry.ttftMs));
   if (!common) return false;
   if (entry.kind === "model") {
     return (
@@ -512,7 +513,9 @@ function isTurnDiagnostics(value: unknown): boolean {
   );
 }
 
-function isDiagnosticsScopeSet(value: unknown): value is Record<string, unknown> {
+function isDiagnosticsScopeSet(
+  value: unknown,
+): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -535,8 +538,10 @@ function isModelStepDiagnostics(step: unknown): boolean {
     Number.isInteger(candidate.step) &&
     Number(candidate.step) > 0 &&
     isNonNegativeNumber(candidate.durationMs) &&
+    (candidate.ttftMs === undefined || isNonNegativeNumber(candidate.ttftMs)) &&
     isTokenUsage(candidate.usage) &&
-    (candidate.agentId === undefined || typeof candidate.agentId === "string") &&
+    (candidate.agentId === undefined ||
+      typeof candidate.agentId === "string") &&
     (candidate.agentRole === undefined ||
       typeof candidate.agentRole === "string")
   );

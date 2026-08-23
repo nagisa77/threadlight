@@ -23,6 +23,7 @@ import { Dialog } from "./dialog.js";
 export interface ModelStepDiagnostic {
   step: number;
   durationMs: number;
+  ttftMs?: number;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -45,6 +46,8 @@ export interface TurnDiagnosticScope {
   outputTokens: number;
   totalTokens: number;
   modelSteps: number;
+  totalTtftMs?: number;
+  ttftSamples?: number;
   toolCalls: number;
   toolDurationMs: number;
 }
@@ -81,6 +84,8 @@ export interface ProjectDiagnosticsSnapshot {
     totalTokens: number;
     durationMs: number;
     modelSteps: number;
+    totalTtftMs?: number;
+    ttftSamples?: number;
     toolCalls: number;
     toolDurationMs: number;
   };
@@ -169,6 +174,9 @@ export function DiagnosticsPage({
 
   const totals = snapshot?.totals;
   const averageDuration = totals?.turns ? totals.durationMs / totals.turns : 0;
+  const averageTtft = totals?.ttftSamples
+    ? (totals.totalTtftMs ?? 0) / totals.ttftSamples
+    : undefined;
 
   function openExportDialog() {
     setExportScope("project");
@@ -312,7 +320,7 @@ export function DiagnosticsPage({
                 icon={<Cpu size={15} />}
                 label={t("modelSteps")}
                 value={formatNumber(totals?.modelSteps ?? 0, language)}
-                detail={`${formatNumber(totals?.turns ?? 0, language)} ${t("turns")} · ${formatNumber(totals?.failedTurns ?? 0, language)} ${t("failed")}`}
+                detail={`${t("averageTtft")} ${averageTtft === undefined ? "—" : formatDuration(averageTtft)} · ${formatNumber(totals?.turns ?? 0, language)} ${t("turns")}`}
               />
               <Metric
                 icon={<Wrench size={15} />}
@@ -638,6 +646,7 @@ export function DiagnosticsTurnRow({
       turn.metrics.children.toolCalls > 0 ||
       turn.metrics.children.totalTokens > 0),
   );
+  const averageTtft = averageStepTtft(turn.modelSteps);
   return (
     <details className={`diagnostics-turn ${turn.status}`}>
       <summary>
@@ -682,6 +691,12 @@ export function DiagnosticsTurnRow({
               {turn.status === "completed" ? t("completed") : t("failed")}
             </strong>
           </span>
+          <span>
+            {t("averageTtft")}{" "}
+            <strong>
+              {averageTtft === undefined ? "—" : formatDuration(averageTtft)}
+            </strong>
+          </span>
         </div>
         {turn.metrics && showAgentScope && (
           <div className="diagnostics-scope-summary">
@@ -698,6 +713,9 @@ export function DiagnosticsTurnRow({
                   {formatNumber(scope.totalTokens, language)} {t("tokens")} ·{" "}
                   {scope.modelSteps} {t("modelSteps")} · {scope.toolCalls}{" "}
                   {t("toolCalls")}
+                  {scope.ttftSamples
+                    ? ` · ${t("averageTtft")} ${formatDuration((scope.totalTtftMs ?? 0) / scope.ttftSamples)}`
+                    : ""}
                 </small>
               </span>
             ))}
@@ -710,7 +728,7 @@ export function DiagnosticsTurnRow({
               id: `${step.agentId ?? step.agentRole ?? "root"}:${step.step}`,
               name: `${showAgentScope ? `${diagnosticAgentLabel(step.agentRole, t("diagnosticRoot"))} · ` : ""}${t("step")} ${step.step}`,
               duration: formatDuration(step.durationMs),
-              detail: `${formatNumber(step.totalTokens, language)} ${t("tokens")}`,
+              detail: `${step.ttftMs === undefined ? "TTFT —" : `TTFT ${formatDuration(step.ttftMs)}`} · ${formatNumber(step.totalTokens, language)} ${t("tokens")}`,
               error: false,
             }))}
           />
@@ -739,6 +757,16 @@ function diagnosticAgentLabel(
   rootLabel: string,
 ): string {
   return !agentRole || agentRole === "root" ? rootLabel : agentRole;
+}
+
+function averageStepTtft(
+  steps: readonly ModelStepDiagnostic[],
+): number | undefined {
+  const samples = steps.flatMap(({ ttftMs }) =>
+    ttftMs === undefined ? [] : [ttftMs],
+  );
+  if (samples.length === 0) return;
+  return samples.reduce((total, value) => total + value, 0) / samples.length;
 }
 
 export function downloadDiagnosticBundle(

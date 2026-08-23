@@ -4,9 +4,9 @@ import { readUiStyles } from "./style-source.js";
 const styles = readUiStyles();
 
 describe("workspace titlebar hit regions", () => {
-  it("reserves room for the floating controls when the panel is closed", () => {
+  it("reserves room only when floating controls are present", () => {
     expect(styles).toMatch(
-      /\.workspace:not\(\.has-workspace-panel\) \.workspace-header\s*\{[^}]*padding-right:\s*83px;/s,
+      /\.workspace:not\(\.has-workspace-panel\):has\(> \.workspace-global-actions\)\s*\.workspace-header\s*\{[^}]*padding-right:\s*83px;/s,
     );
   });
 

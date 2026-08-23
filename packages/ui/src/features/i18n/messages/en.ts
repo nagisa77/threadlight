@@ -254,6 +254,9 @@ export const en: Messages = {
   runMetricsLabel: "View live run metrics",
   runMetrics: "Live run metrics",
   tokenRate: "Token rate",
+  currentTtft: "Current TTFT",
+  averageTtft: "Average TTFT",
+  waitingForFirstText: "Waiting for the first streamed text",
   providerConfirmed: "Provider-confirmed",
   waitingForUsage: "Waiting for provider usage",
   liveStreamRate: "Live stream",
@@ -831,7 +834,7 @@ export const en: Messages = {
   completed: "Completed",
   recentTurns: "Recent turns",
   recentTurnsDescription:
-    "Expand a turn to inspect model steps and tool timing.",
+    "Expand a turn to inspect TTFT, model steps, and tool timing.",
   noUsageData: "Usage and diagnostics appear after a task turn completes.",
   unknownModel: "Unknown model",
   tokens: "tokens",

@@ -38,6 +38,10 @@ export interface ThreadState {
       modelDurationMs: number;
       completedModelSteps: number;
       streamedBytes: number;
+      currentModelStartedAt?: string;
+      currentTtftMs?: number;
+      totalTtftMs: number;
+      ttftSamples: number;
     };
     controller: AbortController;
     sourceCitations?: SourceCitationRunController;

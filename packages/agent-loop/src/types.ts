@@ -157,6 +157,8 @@ export type AgentEvent =
       runId: string;
       step: number;
       delta: string;
+      /** Observed latency to the first non-empty text delta for this model step. */
+      ttftMs?: number;
       outputVisibility?: ModelOutputVisibility;
     }
   | {
@@ -167,6 +169,8 @@ export type AgentEvent =
       toolCalls: readonly ToolCall[];
       usage?: Partial<TokenUsage>;
       durationMs?: number;
+      /** Observed latency to the first non-empty text delta, when streamed. */
+      ttftMs?: number;
       outputVisibility?: ModelOutputVisibility;
     }
   | { type: "tool.started"; runId: string; call: ToolCall }
@@ -344,6 +348,7 @@ export type AgentTaskTranscriptEntry =
       startedAt: string;
       completedAt?: string;
       durationMs?: number;
+      ttftMs?: number;
       usage?: TokenUsage;
     }
   | {

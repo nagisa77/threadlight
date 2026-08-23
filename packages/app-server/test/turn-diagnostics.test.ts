@@ -98,6 +98,9 @@ describe("turn diagnostics", () => {
             },
             completedModelSteps: 1,
             streamedBytes: new TextEncoder().encode("检查").byteLength,
+            currentTtftMs: expect.any(Number),
+            totalTtftMs: expect.any(Number),
+            ttftSamples: 1,
           },
         },
       },
@@ -109,8 +112,12 @@ describe("turn diagnostics", () => {
     const completed = Promise.withResolvers<void>();
     let generation = 0;
     const provider: ModelProvider = {
-      async generate() {
+      async generate(_request, options) {
         generation += 1;
+        options?.onEvent?.({
+          type: "output_text.delta",
+          delta: generation === 1 ? "checking" : "done",
+        });
         return generation === 1
           ? {
               text: "checking",
@@ -178,8 +185,8 @@ describe("turn diagnostics", () => {
           model: "scripted-model",
           usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 },
           modelSteps: [
-            { step: 1, usage: { totalTokens: 7 } },
-            { step: 2, usage: { totalTokens: 5 } },
+            { step: 1, ttftMs: expect.any(Number), usage: { totalTokens: 7 } },
+            { step: 2, ttftMs: expect.any(Number), usage: { totalTokens: 5 } },
           ],
           toolCalls: [{ callId: "check-1", name: "check", isError: false }],
         },

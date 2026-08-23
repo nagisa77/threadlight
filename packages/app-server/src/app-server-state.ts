@@ -69,10 +69,29 @@ function metricsFromAgentTree(
   let totalTokens = 0;
   let modelDurationMs = 0;
   let completedModelSteps = 0;
+  let totalTtftMs = 0;
+  let ttftSamples = 0;
+  let currentModel:
+    | Extract<
+        AgentTreeSnapshot["agents"][number]["transcript"][number],
+        { kind: "model" }
+      >
+    | undefined;
 
   for (const agent of tree.agents) {
     for (const entry of agent.transcript) {
-      if (entry.kind !== "model" || entry.status !== "completed") continue;
+      if (entry.kind !== "model") continue;
+      if (entry.ttftMs !== undefined) {
+        totalTtftMs += entry.ttftMs;
+        ttftSamples += 1;
+      }
+      if (
+        entry.status === "running" &&
+        (!currentModel || entry.startedAt > currentModel.startedAt)
+      ) {
+        currentModel = entry;
+      }
+      if (entry.status !== "completed") continue;
       inputTokens += entry.usage?.inputTokens ?? 0;
       outputTokens += entry.usage?.outputTokens ?? 0;
       totalTokens += entry.usage?.totalTokens ?? 0;
@@ -86,6 +105,14 @@ function metricsFromAgentTree(
     usage: { inputTokens, outputTokens, totalTokens },
     modelDurationMs,
     completedModelSteps,
+    totalTtftMs,
+    ttftSamples,
+    ...(currentModel
+      ? {
+          currentModelStartedAt: currentModel.startedAt,
+          currentTtftMs: currentModel.ttftMs,
+        }
+      : {}),
   };
 }
 
@@ -222,6 +249,10 @@ export class AppServerState {
         activeTurn.isThinking = true;
         activeTurn.modelRetry = undefined;
         activeTurn.streamingText = "";
+        activeTurn.metrics.currentModelStartedAt = this.host
+          .now()
+          .toISOString();
+        delete activeTurn.metrics.currentTtftMs;
       }
     } else if (event.type === "model.retrying") {
       if (activeTurn) {
@@ -235,6 +266,11 @@ export class AppServerState {
     } else if (event.type === "model.output_text.delta") {
       if (activeTurn) {
         activeTurn.modelRetry = undefined;
+        if (event.ttftMs !== undefined) {
+          activeTurn.metrics.currentTtftMs = event.ttftMs;
+          activeTurn.metrics.totalTtftMs += event.ttftMs;
+          activeTurn.metrics.ttftSamples += 1;
+        }
         activeTurn.metrics.streamedBytes += Buffer.byteLength(
           event.delta,
           "utf8",

@@ -41,6 +41,14 @@ export function projectDiagnostics(
       totalTokens: sum(turns, ({ totalTokens }) => totalTokens),
       durationMs: sum(turns, ({ durationMs }) => durationMs),
       modelSteps: sum(turns, ({ modelSteps }) => modelSteps.length),
+      totalTtftMs: sum(turns, ({ modelSteps }) =>
+        sum(modelSteps, ({ ttftMs }) => ttftMs ?? 0),
+      ),
+      ttftSamples: sum(
+        turns,
+        ({ modelSteps }) =>
+          modelSteps.filter(({ ttftMs }) => ttftMs !== undefined).length,
+      ),
       toolCalls: sum(turns, ({ toolCalls }) => toolCalls.length),
       toolDurationMs: sum(turns, ({ toolCalls }) =>
         sum(toolCalls, ({ durationMs }) => durationMs),
@@ -97,6 +105,7 @@ function readConversationDiagnostics(
         modelSteps: total.modelSteps.map((step) => ({
           step: step.step,
           durationMs: step.durationMs,
+          ...(step.ttftMs === undefined ? {} : { ttftMs: step.ttftMs }),
           inputTokens: step.usage.inputTokens,
           outputTokens: step.usage.outputTokens,
           totalTokens: step.usage.totalTokens,
@@ -178,6 +187,9 @@ function interruptedAgentRunDiagnostic(
           durationMs: isNonNegativeNumber(entry.durationMs)
             ? entry.durationMs
             : 0,
+          ...(isNonNegativeNumber(entry.ttftMs)
+            ? { ttftMs: entry.ttftMs }
+            : {}),
           usage,
           agentId: agent.id,
           agentRole: agent.role,
@@ -220,6 +232,7 @@ function interruptedAgentRunDiagnostic(
     modelSteps: total.modelSteps.map((step) => ({
       step: step.step,
       durationMs: step.durationMs,
+      ...(step.ttftMs === undefined ? {} : { ttftMs: step.ttftMs }),
       inputTokens: step.usage.inputTokens,
       outputTokens: step.usage.outputTokens,
       totalTokens: step.usage.totalTokens,
@@ -260,6 +273,7 @@ interface DiagnosticScope {
 interface ModelStep {
   step: number;
   durationMs: number;
+  ttftMs?: number;
   usage: Usage;
   agentId?: string;
   agentRole?: string;
@@ -322,6 +336,7 @@ function isModelSteps(value: unknown): value is ModelStep[] {
         isRecord(step) &&
         Number.isInteger(step.step) &&
         isNonNegativeNumber(step.durationMs) &&
+        (step.ttftMs === undefined || isNonNegativeNumber(step.ttftMs)) &&
         isUsage(step.usage) &&
         (step.agentId === undefined || typeof step.agentId === "string") &&
         (step.agentRole === undefined || typeof step.agentRole === "string"),
@@ -352,6 +367,9 @@ function hostScope(scope: DiagnosticScope) {
     outputTokens: scope.usage.outputTokens,
     totalTokens: scope.usage.totalTokens,
     modelSteps: scope.modelSteps.length,
+    totalTtftMs: sum(scope.modelSteps, ({ ttftMs }) => ttftMs ?? 0),
+    ttftSamples: scope.modelSteps.filter(({ ttftMs }) => ttftMs !== undefined)
+      .length,
     toolCalls: scope.toolCalls.length,
     toolDurationMs: sum(scope.toolCalls, ({ durationMs }) => durationMs),
   };

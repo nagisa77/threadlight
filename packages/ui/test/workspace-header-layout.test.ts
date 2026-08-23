@@ -14,8 +14,13 @@ describe("workspace header layout", () => {
     expect(styles).toMatch(
       /\.running-badge\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*0 0 auto;[^}]*line-height:\s*1;[^}]*white-space:\s*nowrap;/s,
     );
+    expect(styles).toMatch(/\.running-badge svg\s*\{[^}]*flex:\s*0 0 auto;/s);
+    expect(styles).not.toContain(".running-badge-metrics");
+  });
+
+  it("keeps user messages inside the conversation edge", () => {
     expect(styles).toMatch(
-      /\.running-badge svg\s*\{[^}]*flex:\s*0 0 auto;/s,
+      /\.message\.user \.message-body\s*\{[^}]*max-width:\s*min\(100%, 640px\);[^}]*box-sizing:\s*border-box;/s,
     );
   });
 });

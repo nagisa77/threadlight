@@ -6,17 +6,16 @@
 
 .running-badge {
   display: inline-flex;
+  height: 29px;
   flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  padding: 5px 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+  border-radius: 8px;
   color: var(--ink);
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
   font: inherit;
-  font-size: 10px;
-  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   cursor: default;
@@ -31,6 +30,14 @@
   flex: 0 0 auto;
 }
 
+.running-badge-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 640;
+}
+
 .running-badge:active {
   transform: scale(0.97);
 }
@@ -43,21 +50,21 @@
 @media (hover: hover) and (pointer: fine) {
   .running-status:hover .running-badge {
     border-color: color-mix(in srgb, var(--accent) 38%, var(--line-strong));
-    background: color-mix(in srgb, var(--accent) 11%, var(--surface));
-    box-shadow: 0 2px 8px rgb(31 31 35 / 7%);
+    background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+    box-shadow: 0 1px 4px rgb(31 31 35 / 6%);
   }
 }
 
 .run-metrics-popover {
   position: absolute;
   z-index: 240;
-  top: calc(100% + 12px);
+  top: calc(100% + 8px);
   right: 0;
   display: grid;
-  width: 272px;
+  width: 284px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 12px;
   color: var(--ink);
   background: color-mix(in srgb, var(--panel) 97%, white);
   box-shadow:
@@ -122,65 +129,90 @@
   font-variant-numeric: tabular-nums;
 }
 
-.run-metrics-rate {
+.run-metrics-ttft {
   display: grid;
-  gap: 3px;
-  padding: 13px 13px 11px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  grid-template-columns: 1fr 1fr;
 }
 
-.run-metrics-rate small,
-.run-metrics-rate span,
-.run-metrics-usage small {
+.run-metrics-ttft > span {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  padding: 14px 13px 13px;
+}
+
+.run-metrics-ttft > span + span {
+  border-left: 1px solid var(--line);
+}
+
+.run-metrics-ttft small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: var(--subtle);
   font-size: 9px;
   font-weight: 560;
 }
 
-.run-metrics-rate strong {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 23px;
-  font-weight: 650;
-  letter-spacing: -0.045em;
-  line-height: 1.15;
-  font-variant-numeric: tabular-nums;
-}
-
-.run-metrics-usage {
-  display: grid;
-  margin: 0 8px 8px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--ink) 2.5%, transparent);
-  grid-template-columns: 1fr 1fr;
-}
-
-.run-metrics-usage > span {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 15px 1fr;
-  gap: 1px 5px;
-  padding: 9px 10px;
-}
-
-.run-metrics-usage > span + span {
-  border-left: 1px solid var(--line);
-}
-
-.run-metrics-usage > span > :first-child {
-  grid-row: 1 / span 2;
-  margin-top: 1px;
+.run-metrics-ttft small svg {
   color: var(--muted);
 }
 
-.run-metrics-usage strong {
+.run-metrics-ttft strong {
   overflow: hidden;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-metrics-secondary {
+  display: grid;
+  border-top: 1px solid var(--line);
+  grid-template-columns: 1.25fr 1fr 1fr;
+}
+
+.run-metrics-secondary > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 10px 11px 11px;
+}
+
+.run-metrics-secondary > span + span {
+  border-left: 1px solid var(--line);
+}
+
+.run-metrics-secondary small {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--subtle);
+  font-size: 8px;
+  font-weight: 560;
+}
+
+.run-metrics-secondary strong {
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+
+.run-metrics-model {
+  min-height: 28px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--subtle);
+  font-size: 9px;
+  line-height: 1.45;
 }
 
 .run-metrics-stream {

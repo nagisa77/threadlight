@@ -251,6 +251,9 @@ export const ja: Messages = {
   runMetricsLabel: "リアルタイム実行指標を表示",
   runMetrics: "リアルタイム実行指標",
   tokenRate: "トークン速度",
+  currentTtft: "現在の TTFT",
+  averageTtft: "平均 TTFT",
+  waitingForFirstText: "最初のストリームテキストを待機中",
   providerConfirmed: "Provider 確認済み",
   waitingForUsage: "Provider の使用量を待機中",
   liveStreamRate: "ライブストリーム",
@@ -821,7 +824,7 @@ export const ja: Messages = {
   completed: "完了",
   recentTurns: "最近の実行",
   recentTurnsDescription:
-    "展開するとモデルステップとツール時間を確認できます。",
+    "展開すると TTFT、モデルステップ、ツール時間を確認できます。",
   noUsageData: "タスクが完了すると使用量と診断が表示されます。",
   unknownModel: "不明なモデル",
   tokens: "トークン",

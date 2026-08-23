@@ -87,6 +87,7 @@ export class AgentLoop {
       continuationInput = undefined;
 
       const modelStartedAt = currentTime(options);
+      let ttftMs: number | undefined;
       const turn = await this.provider.generate(
         {
           model: agent.model,
@@ -103,11 +104,15 @@ export class AgentLoop {
         {
           onEvent: (event) => {
             if (event.type === "output_text.delta") {
+              const firstTextDelta =
+                ttftMs === undefined && event.delta.length > 0;
+              if (firstTextDelta) ttftMs = elapsed(modelStartedAt, options);
               emit({
                 type: "model.output_text.delta",
                 runId,
                 step,
                 delta: event.delta,
+                ...(firstTextDelta ? { ttftMs } : {}),
                 outputVisibility,
               });
               return;
@@ -132,6 +137,7 @@ export class AgentLoop {
         toolCalls: turn.toolCalls,
         usage: turn.usage,
         durationMs: elapsed(modelStartedAt, options),
+        ...(ttftMs === undefined ? {} : { ttftMs }),
         outputVisibility,
       });
 

@@ -954,6 +954,7 @@ export class AgentOrchestrator {
             ? {
                 ...entry,
                 text: transcriptField(`${entry.text}${event.delta}`),
+                ...(event.ttftMs === undefined ? {} : { ttftMs: event.ttftMs }),
                 ...(event.outputVisibility
                   ? { outputVisibility: event.outputVisibility }
                   : {}),
@@ -987,6 +988,7 @@ export class AgentOrchestrator {
                 ...(event.durationMs === undefined
                   ? {}
                   : { durationMs: event.durationMs }),
+                ...(event.ttftMs === undefined ? {} : { ttftMs: event.ttftMs }),
                 ...(event.usage
                   ? { usage: normalizedTokenUsage(event.usage) }
                   : {}),

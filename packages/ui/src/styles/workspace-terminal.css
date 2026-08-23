@@ -512,11 +512,13 @@
     padding-left: 56px;
   }
 
-  .workspace:not(.has-workspace-panel) .workspace-header {
+  .workspace:not(.has-workspace-panel):has(> .workspace-global-actions)
+    .workspace-header {
     padding-right: calc(96px + env(safe-area-inset-right, 0px));
   }
 
-  .workspace:not(.has-workspace-panel) .workspace-header-drag-region {
+  .workspace:not(.has-workspace-panel):has(> .workspace-global-actions)
+    .workspace-header-drag-region {
     right: calc(96px + env(safe-area-inset-right, 0px));
   }
 

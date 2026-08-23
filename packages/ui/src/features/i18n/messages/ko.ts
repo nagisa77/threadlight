@@ -247,6 +247,9 @@ export const ko: Messages = {
   runMetricsLabel: "실시간 실행 지표 보기",
   runMetrics: "실시간 실행 지표",
   tokenRate: "토큰 속도",
+  currentTtft: "현재 TTFT",
+  averageTtft: "평균 TTFT",
+  waitingForFirstText: "첫 스트리밍 텍스트 대기 중",
   providerConfirmed: "Provider 확인됨",
   waitingForUsage: "Provider 사용량 대기 중",
   liveStreamRate: "라이브 스트림",
@@ -814,7 +817,7 @@ export const ko: Messages = {
   completed: "완료",
   recentTurns: "최근 실행",
   recentTurnsDescription:
-    "턴을 펼쳐 모델 단계와 도구 시간을 확인할 수 있습니다.",
+    "턴을 펼쳐 TTFT, 모델 단계와 도구 시간을 확인할 수 있습니다.",
   noUsageData: "작업 턴이 완료되면 사용량과 진단이 표시됩니다.",
   unknownModel: "알 수 없는 모델",
   tokens: "토큰",

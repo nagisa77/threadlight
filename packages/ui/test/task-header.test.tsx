@@ -23,6 +23,10 @@ describe("TaskHeader running metrics", () => {
             modelDurationMs: 2_000,
             completedModelSteps: 1,
             streamedBytes: 512,
+            currentModelStartedAt: new Date().toISOString(),
+            currentTtftMs: 640,
+            totalTtftMs: 1_500,
+            ttftSamples: 2,
           }}
           connectionReady
           bookmarkCount={0}
@@ -36,6 +40,12 @@ describe("TaskHeader running metrics", () => {
     expect(markup).toContain('role="tooltip"');
     expect(markup).toContain("20.0 tok/s");
     expect(markup).toContain("1,200");
+    expect(markup).toContain("640 ms");
+    expect(markup).toContain("750 ms");
     expect(markup).toContain("Provider 已确认");
+    expect(markup).not.toContain('class="running-badge-metrics"');
+    expect(markup.indexOf("running-status")).toBeLessThan(
+      markup.indexOf("task-productivity"),
+    );
   });
 });

@@ -200,6 +200,8 @@ export interface HostDiagnosticsTotals {
   totalTokens: number;
   durationMs: number;
   modelSteps: number;
+  totalTtftMs?: number;
+  ttftSamples?: number;
   toolCalls: number;
   toolDurationMs: number;
 }
@@ -207,6 +209,7 @@ export interface HostDiagnosticsTotals {
 export interface HostModelStepDiagnostic {
   step: number;
   durationMs: number;
+  ttftMs?: number;
   inputTokens: number;
   outputTokens: number;
   totalTokens: number;
@@ -229,6 +232,8 @@ export interface HostTurnDiagnosticScope {
   outputTokens: number;
   totalTokens: number;
   modelSteps: number;
+  totalTtftMs?: number;
+  ttftSamples?: number;
   toolCalls: number;
   toolDurationMs: number;
 }

@@ -253,6 +253,8 @@ export class AppServerTurnQueue {
         modelDurationMs: 0,
         completedModelSteps: 0,
         streamedBytes: 0,
+        totalTtftMs: 0,
+        ttftSamples: 0,
       },
       controller,
     };

@@ -195,11 +195,20 @@ export interface ActiveTurnMetricsData {
   modelDurationMs: number;
   completedModelSteps: number;
   streamedBytes: number;
+  /** Wall-clock start of the most recently observed model step. */
+  currentModelStartedAt?: string;
+  /** TTFT for the most recently observed model step once its first text arrives. */
+  currentTtftMs?: number;
+  /** Sum of observed TTFT samples for this turn. */
+  totalTtftMs: number;
+  /** Model steps in this turn that produced a streamed text sample. */
+  ttftSamples: number;
 }
 
 export interface ModelStepDiagnosticsData {
   step: number;
   durationMs: number;
+  ttftMs?: number;
   usage: TokenUsageData;
   agentId?: string;
   agentRole?: string;
@@ -320,6 +329,7 @@ export type AgentTaskTranscriptEntryData =
       startedAt: string;
       completedAt?: string;
       durationMs?: number;
+      ttftMs?: number;
       usage?: TokenUsageData;
     }
   | {
@@ -584,6 +594,7 @@ export type AgentEventData =
       runId: string;
       step: number;
       delta: string;
+      ttftMs?: number;
       outputVisibility?: "user" | "provisional";
     }
   | {
@@ -594,6 +605,7 @@ export type AgentEventData =
       toolCalls: readonly ToolCallData[];
       usage?: Partial<TokenUsageData>;
       durationMs?: number;
+      ttftMs?: number;
       outputVisibility?: "user" | "provisional";
     }
   | { type: "tool.started"; runId: string; call: ToolCallData }

@@ -98,6 +98,7 @@ describe("diagnostics center", () => {
             {
               step: 1,
               durationMs: 100,
+              ttftMs: 40,
               inputTokens: 4,
               outputTokens: 1,
               totalTokens: 5,
@@ -127,6 +128,8 @@ describe("diagnostics center", () => {
     expect(html).toContain("子 Agent");
     expect(html).toContain("合计");
     expect(html).toContain("explorer · 步骤 1");
+    expect(html).toContain("平均 TTFT");
+    expect(html).toContain("TTFT 40 ms");
   });
 
   it("exports only the selected standalone conversation", async () => {

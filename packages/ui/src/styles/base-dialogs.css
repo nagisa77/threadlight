@@ -534,11 +534,13 @@
   -webkit-app-region: drag;
 }
 
-.workspace:not(.has-workspace-panel) .workspace-header {
+.workspace:not(.has-workspace-panel):has(> .workspace-global-actions)
+  .workspace-header {
   padding-right: 83px;
 }
 
-.workspace:not(.has-workspace-panel) .workspace-header-drag-region {
+.workspace:not(.has-workspace-panel):has(> .workspace-global-actions)
+  .workspace-header-drag-region {
   right: 83px;
 }
 

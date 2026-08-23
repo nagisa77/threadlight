@@ -129,6 +129,7 @@ export class TurnDiagnosticsRecorder {
       this.modelSteps.push({
         step: event.step,
         durationMs: event.durationMs ?? 0,
+        ...(event.ttftMs === undefined ? {} : { ttftMs: event.ttftMs }),
         usage: normalizedUsage(event.usage),
       });
       return;
@@ -209,6 +210,7 @@ export function childDiagnosticsScope(
         modelSteps.push({
           step: entry.step,
           durationMs: entry.durationMs ?? 0,
+          ...(entry.ttftMs === undefined ? {} : { ttftMs: entry.ttftMs }),
           usage: normalizedUsage(entry.usage),
           agentId: child.id,
           agentRole: child.role,
