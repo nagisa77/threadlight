@@ -4,6 +4,10 @@ All notable changes to Threadlight are documented here. The project follows [Sem
 
 ## Unreleased
 
+### Changed
+
+- Restored website self-host commands to the mutable `main` source-build channel for rapid iteration; desktop downloads remain pinned to the 1.1.0 release artifact.
+
 ## 1.1.0 - 2026-08-23
 
 ### Highlights
@@ -16,7 +20,7 @@ All notable changes to Threadlight are documented here. The project follows [Sem
 
 - Split collaboration contracts, orchestration transcript bookkeeping, generated-content parsing, application shell state, and voice input lifecycle out of the largest runtime and UI orchestrators.
 - Reworked the project website and bilingual READMEs around the runtime architecture, complete Showcase results, clearer launch paths, and explicit production boundaries.
-- Pinned website self-host commands and release downloads to 1.1.0 so installs are reproducible instead of following the latest source checkout.
+- Pinned desktop release downloads to the 1.1.0 artifact.
 
 ### Added
 

@@ -21,10 +21,10 @@ describe("homepage launch choices", () => {
     expect(pageSource).toContain("Deploy Host + Web");
     expect(pageSource).toContain("一键部署 Host + Web");
     expect(pageSource).toContain(
-      "installs the verified v1.1 Host + Web release",
+      "builds the latest main Host + Web snapshot",
     );
-    expect(pageSource).toContain("安装经过验证的 v1.1 Host + Web 正式包");
-    expect(pageSource).toContain(
+    expect(pageSource).toContain("从最新 main 源码构建 Host + Web");
+    expect(pageSource).not.toContain(
       "THREADLIGHT_SELF_HOST_VERSION=${releaseVersion}",
     );
     expect(pageSource).toContain(
