@@ -24,6 +24,10 @@
   margin-top: 18px;
 }
 
+.streaming-copy + :is(.thinking-row, .model-retry-row) {
+  margin-top: 12px;
+}
+
 .markdown-content {
   color: #36363a;
   font-size: 14px;
