@@ -25,6 +25,7 @@ import {
   projectMessagesProcess,
   projectProgressProcess,
 } from "@threadlight/protocol";
+import type { ProductTelemetry } from "@threadlight/host-core";
 
 import type {
   ActiveTurnData,
@@ -42,6 +43,7 @@ import type {
   JsonRpcOutgoing,
   JsonRpcRequest,
   MessageCapabilityData,
+  ModelRetryData,
   ProcessSnapshotData,
   QueuedTurnData,
   SendMessage,
@@ -118,43 +120,8 @@ import {
   conversationMessagesForDisplay,
   findConversationActivity,
 } from "./conversation-display.js";
-
-export interface ThreadState {
-  agent: Agent;
-  accessMode: ConversationAccessMode;
-  promptSnapshot: PromptSnapshot;
-  conversation: StoredConversation;
-  revision: number;
-  progress: readonly ConversationProgressData[];
-  plan?: AgentPlanData;
-  runtime?: ThreadRuntime;
-  activeTurn?: {
-    id: string;
-    mode: TurnMode;
-    isThinking: boolean;
-    streamingText: string;
-    metrics: {
-      startedAt: string;
-      usage: TokenUsageData;
-      modelDurationMs: number;
-      completedModelSteps: number;
-      streamedBytes: number;
-    };
-    controller: AbortController;
-    sourceCitations?: SourceCitationRunController;
-    orchestrator?: AgentOrchestrator;
-    agentTree?: AgentTreeSnapshot;
-  };
-  pendingAssistantOutput?: {
-    text: string;
-  };
-  injectedInputPendingModelResponse?: boolean;
-  titleRequest?: {
-    controller: AbortController;
-    promise: Promise<void>;
-  };
-  conversationMutation: Promise<void>;
-}
+import type { ThreadState } from "./thread-state.js";
+export type { ThreadState } from "./thread-state.js";
 
 export interface ProcessController {
   status(sessionId: string): ProcessSnapshotData | Promise<ProcessSnapshotData>;
@@ -181,6 +148,7 @@ interface SharedAppServerOptions {
   turnCleanup?(context: TurnCleanupContext): void | Promise<void>;
   modelName?: string;
   generateConversationTitles?: boolean;
+  productTelemetry?: Pick<ProductTelemetry, "reportOnce">;
   multiAgent?: {
     profiles: readonly SubagentProfile[];
     maxConcurrent?: number;
@@ -271,6 +239,7 @@ export class AppServer {
   private readonly turnCleanup?: SharedAppServerOptions["turnCleanup"];
   private readonly modelName?: string;
   private readonly generateConversationTitles: boolean;
+  private readonly productTelemetry?: Pick<ProductTelemetry, "reportOnce">;
   private readonly multiAgent?: SharedAppServerOptions["multiAgent"];
   private readonly rpc: RpcMethodRouter<ThreadlightMethod>;
   private readonly threads = new Map<string, ThreadState>();
@@ -308,6 +277,7 @@ export class AppServer {
     this.modelName = options.modelName;
     this.generateConversationTitles =
       options.generateConversationTitles ?? false;
+    this.productTelemetry = options.productTelemetry;
     this.multiAgent = options.multiAgent;
     this.rpc = new RpcMethodRouter<ThreadlightMethod>({
       initialize: (params) => {
@@ -873,6 +843,7 @@ export class AppServer {
             }
           : {}),
       });
+      void this.productTelemetry?.reportOnce("first_task_completed");
       // Fallback retry: if early generation failed at beginTurn, try once
       // more after the turn so the conversation still gets a title.
       this.requestConversationTitle(threadId, thread);

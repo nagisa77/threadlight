@@ -3,8 +3,9 @@ import type {
   AgentTreeData,
   CapabilityDescriptor,
   ConversationActivityData,
+  ModelRetryData,
 } from "@threadlight/protocol";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, RefreshCw } from "lucide-react";
 
 import type { AppViewModel } from "./app-view-model.js";
 import { useI18n } from "./i18n.js";
@@ -477,12 +478,29 @@ function LiveRun({
           </MarkdownContent>
         </div>
       )}
-      {state.isThinking && (
+      {state.modelRetry ? (
+        <ModelRetryStatus retry={state.modelRetry} />
+      ) : state.isThinking ? (
         <div className="thinking-row">
           <LoaderCircle size={15} />
           {t("thinking")}
         </div>
-      )}
+      ) : null}
+    </div>
+  );
+}
+
+export function ModelRetryStatus({ retry }: { retry: ModelRetryData }) {
+  const { t } = useI18n();
+  return (
+    <div className="model-retry-row" role="status" aria-busy="true">
+      <RefreshCw className="spin" size={14} aria-hidden="true" />
+      <span>
+        {t("modelConnectionRetrying", {
+          attempt: retry.retryAttempt,
+          maxRetries: retry.maxRetries,
+        })}
+      </span>
     </div>
   );
 }

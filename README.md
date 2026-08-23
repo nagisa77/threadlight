@@ -73,12 +73,12 @@ curl -fsSL https://threadlight.xyz/install.sh | sh
 
 ### macOS 桌面端
 
-[下载 Apple Silicon 未签名测试版 DMG](https://github.com/nagisa77/threadlight/releases/download/v1.0.0/Threadlight-1.0.0-macOS-arm64-unsigned-test.dmg)
+[下载 Apple Silicon 未签名测试版 DMG](https://github.com/nagisa77/threadlight/releases/download/v1.1.0/Threadlight-1.1.0-macOS-arm64-unsigned-test.dmg)
 
 这是**未签名测试版**。安装后请在 Finder 中按住 Control 点击 Threadlight 并选择“打开”；如果仍被阻止，前往“系统设置 → 隐私与安全性 → 仍要打开”。
 
 ```text
-SHA-256: 838f0a26e9f575cdb33e694b4fa923d865bde060581ab45104ae2f2266d74e0a
+SHA-256: fc8f0a3ee32e8c2610053158060d90cb998e4e54a60f3611b526e9e4f32a072f
 ```
 
 ### Web 客户端
@@ -154,5 +154,6 @@ npm run check
 - Web 客户端只是交互界面，必须连接你自己的 Host；不要把未加密的 Host 端口暴露到公网。
 - 审批模式控制工具写入与外部访问，但不等于操作系统级 sandbox。
 - Threadlight 适合可信工作区内的本地/自托管工程流程；生产使用前仍需评估权限、网络暴露与隔离方案。
+- 1.1 版使用最小化的第一方匿名统计区分访问、安装与首次任务；不发送 Prompt、代码、项目名或凭据，并支持彻底关闭。详见[统计说明](./docs/TELEMETRY.zh-CN.md)。
 
-Apache-2.0 · [源码](https://github.com/nagisa77/threadlight) · [参与贡献](./CONTRIBUTING.md)
+Apache-2.0 · [源码](https://github.com/nagisa77/threadlight) · [讨论](https://github.com/nagisa77/threadlight/discussions) · [参与贡献](./CONTRIBUTING.md)

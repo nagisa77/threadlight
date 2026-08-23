@@ -223,6 +223,8 @@ export const zh = {
   waitingForUsage: "等待 Provider 返回用量",
   liveStreamRate: "实时流",
   thinking: "正在思考…",
+  modelConnectionRetrying:
+    "模型连接中断，正在自动重试（{attempt}/{maxRetries}）…",
   add: "添加",
   addAttachment: "添加图片或文件",
   addAttachmentDescription: "从本地选择图片、文档或其他文件",

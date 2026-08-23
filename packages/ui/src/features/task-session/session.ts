@@ -20,6 +20,7 @@ import {
   type FollowUpDelivery,
   type MessageCapabilityData,
   type MessageCitationData,
+  type ModelRetryData,
   type MessageSourceData,
   type ProcessSnapshotData,
   type QueuedTurnData,
@@ -32,6 +33,7 @@ import {
   requestThreadOpen,
   requestTurnStart,
 } from "./session-requests.js";
+import { hydrateActiveTurn } from "./session-state.js";
 export {
   requestNewThreadTurnStart,
   requestThreadOpen,
@@ -76,6 +78,7 @@ export interface SessionState {
   model?: string;
   isRunning: boolean;
   isThinking: boolean;
+  modelRetry?: ModelRetryData;
   runMetrics?: ActiveTurnMetricsData;
   messages: readonly ConversationMessage[];
   queuedTurns: readonly QueuedTurnData[];
@@ -209,6 +212,7 @@ export function sessionReducer(
         queuedTurns: action.queuedTurns ?? [],
         isRunning: action.activeTurn !== undefined,
         isThinking: action.activeTurn?.isThinking ?? false,
+        modelRetry: action.activeTurn?.modelRetry,
         progress: action.activeTurn?.progress ?? [],
         agentTree: action.activeTurn?.agentTree,
         plan: action.activeTurn?.plan,
@@ -226,6 +230,7 @@ export function sessionReducer(
         recovery: undefined,
         isRunning: false,
         isThinking: false,
+        modelRetry: undefined,
         runMetrics: undefined,
       };
     case "connection.missing_thread":
@@ -237,6 +242,7 @@ export function sessionReducer(
         recovery: { kind: "missing_thread", threadId: action.threadId },
         isRunning: false,
         isThinking: false,
+        modelRetry: undefined,
         runMetrics: undefined,
       };
     case "message.sent":
@@ -244,6 +250,7 @@ export function sessionReducer(
         ...state,
         isRunning: true,
         isThinking: true,
+        modelRetry: undefined,
         progress: [],
         agentTree: undefined,
         runMetrics: undefined,
@@ -277,6 +284,7 @@ export function sessionReducer(
         ...state,
         isRunning: false,
         isThinking: false,
+        modelRetry: undefined,
         progress: [],
         plan: undefined,
         runMetrics: undefined,
@@ -298,6 +306,7 @@ export function sessionReducer(
         revision: action.revision ?? state.revision,
         isRunning: true,
         isThinking: true,
+        modelRetry: undefined,
         ...(action.mode === "plan" && !state.plan
           ? { plan: { source: "user", items: [] } }
           : {}),
@@ -440,15 +449,27 @@ function reduceAgentEvent(
       return {
         ...state,
         isThinking: true,
+        modelRetry: undefined,
         streamingText: "",
         streamingSources: undefined,
         streamingCitations: undefined,
+      };
+    case "model.retrying":
+      return {
+        ...state,
+        isThinking: true,
+        modelRetry: {
+          retryAttempt: event.retryAttempt,
+          maxRetries: event.maxRetries,
+          reason: event.reason,
+        },
       };
     case "model.output_text.delta":
       if (event.outputVisibility === "provisional") {
         return {
           ...state,
           isThinking: true,
+          modelRetry: undefined,
           streamingText: "",
           streamingSources: undefined,
           streamingCitations: undefined,
@@ -457,12 +478,14 @@ function reduceAgentEvent(
       return {
         ...state,
         isThinking: false,
+        modelRetry: undefined,
         streamingText: state.streamingText + event.delta,
       };
     case "model.completed":
       return {
         ...state,
         isThinking: false,
+        modelRetry: undefined,
         streamingText:
           event.toolCalls.length > 0 || event.outputVisibility === "provisional"
             ? ""
@@ -474,6 +497,7 @@ function reduceAgentEvent(
       return {
         ...state,
         isThinking: false,
+        modelRetry: undefined,
         progress: projectAgentProgress(state.progress, event),
         plan: projectAgentPlan(state.plan, event),
       };
@@ -485,7 +509,7 @@ function reduceAgentEvent(
       };
     case "run.completed":
     case "run.failed":
-      return { ...state, isThinking: false };
+      return { ...state, isThinking: false, modelRetry: undefined };
     default:
       return state;
   }
@@ -521,6 +545,7 @@ function completeTurn(
     revision: revision ?? state.revision,
     isRunning: false,
     isThinking: false,
+    modelRetry: undefined,
     progress: [],
     agentTree: undefined,
     runMetrics: undefined,
@@ -529,25 +554,6 @@ function completeTurn(
     streamingSources: undefined,
     streamingCitations: undefined,
     messages: mergeMessages(state.messages, [assistantMessage]),
-  };
-}
-
-function hydrateActiveTurn(
-  state: SessionState,
-  activeTurn: ActiveTurnData,
-): SessionState {
-  return {
-    ...state,
-    revision: activeTurn.revision,
-    isRunning: true,
-    isThinking: activeTurn.isThinking,
-    progress: activeTurn.progress,
-    agentTree: activeTurn.agentTree ?? state.agentTree,
-    runMetrics: activeTurn.metrics ?? state.runMetrics,
-    plan: activeTurn.plan,
-    streamingText: activeTurn.streamingText,
-    streamingSources: activeTurn.sources,
-    streamingCitations: activeTurn.citations,
   };
 }
 

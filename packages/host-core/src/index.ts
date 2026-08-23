@@ -114,3 +114,14 @@ export {
   type AutomationExecutionResult,
   type AutomationSchedulerOptions,
 } from "./automation-scheduler.js";
+export {
+  DEFAULT_PRODUCT_TELEMETRY_ENDPOINT,
+  ProductTelemetry,
+  productTelemetryEnabled,
+  productTelemetrySource,
+  type ProductTelemetryEvent,
+  type ProductTelemetryOptions,
+  type ProductTelemetryPayload,
+  type ProductTelemetrySource,
+  type ProductTelemetryTransport,
+} from "./product-telemetry.js";

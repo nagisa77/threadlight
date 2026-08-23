@@ -13,7 +13,11 @@ import type {
   JsonRpcOutgoing,
   TerminalSessionEvent,
 } from "@threadlight/protocol";
-import { RunningThreadRegistry } from "@threadlight/host-core";
+import {
+  ProductTelemetry,
+  RunningThreadRegistry,
+  productTelemetryEnabled,
+} from "@threadlight/host-core";
 import { TerminalSessionManager } from "@threadlight/terminal-core";
 
 import {
@@ -32,6 +36,7 @@ import { registerDesktopIpc } from "./desktop-ipc-registration.js";
 import { registerDesktopProtocols } from "./desktop-protocols.js";
 import {
   appServerEnvironment,
+  defaultAppServerSettings,
   processSessionIdFromMessage,
   reconcileLegacyNoChangesAttention,
 } from "./desktop-runtime-model.js";
@@ -53,16 +58,7 @@ import {
   ConnectionStore,
   DesktopConnectionService,
 } from "./connection-store.js";
-import {
-  DEFAULT_CUSTOM_BASE_URL,
-  DEFAULT_DOUBAO_BASE_URL,
-  DEFAULT_GEMINI_BASE_URL,
-  DEFAULT_GROK_BASE_URL,
-  DEFAULT_KIMI_BASE_URL,
-  DEFAULT_MODEL,
-  DEFAULT_QWEN_BASE_URL,
-  SettingsStore,
-} from "./settings-store.js";
+import { SettingsStore } from "./settings-store.js";
 import { ProjectStore } from "./project-store.js";
 import { ProjectSearchService } from "./project-search.js";
 import { AutomationStore } from "./automation-store.js";
@@ -402,21 +398,15 @@ function ensureAppServer(
             override: process.env.THREADLIGHT_APP_SERVER_PATH,
           }),
           cwd: workspace.path,
-          environment: appServerEnvironment(
-            projectRoot,
-            settingsStore?.runtimeSettings() ?? {
-              provider: "openai",
-              searchProvider: "brave",
-              qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
-              kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
-              doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
-              geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
-              grokBaseUrl: DEFAULT_GROK_BASE_URL,
-              customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
-              model: DEFAULT_MODEL,
-            },
-            project?.scope,
-          ),
+          environment: {
+            ...appServerEnvironment(
+              projectRoot,
+              settingsStore?.runtimeSettings() ?? defaultAppServerSettings(),
+              project?.scope,
+            ),
+            THREADLIGHT_APP_VERSION: app.getVersion(),
+            THREADLIGHT_TELEMETRY_SOURCE: "desktop",
+          },
           send,
           handleComputerRequest: (request) => {
             if (!computerService) {
@@ -1156,6 +1146,14 @@ app.whenReady().then(async () => {
     security: desktopSecurity,
   });
   createWindow();
+  const productTelemetry = new ProductTelemetry({
+    homePath: threadlightHome,
+    source: "desktop",
+    appVersion: app.getVersion(),
+    enabled: productTelemetryEnabled(),
+    endpoint: process.env.THREADLIGHT_TELEMETRY_ENDPOINT,
+  });
+  void productTelemetry.reportOnce("install_succeeded");
   automationScheduler.start();
 
   for (const argument of process.argv) {

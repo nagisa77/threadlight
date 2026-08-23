@@ -4,6 +4,86 @@ import type OpenAI from "openai";
 import { OpenAICompatibleChatProvider } from "../src/openai-compatible-chat-provider.js";
 
 describe("OpenAICompatibleChatProvider", () => {
+  it("retries one transient stream disconnect before any visible output", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(
+        chunksThenThrows(
+          [
+            {
+              choices: [{ delta: { reasoning_content: "still thinking" } }],
+            },
+          ],
+          new TypeError("terminated"),
+        ),
+      )
+      .mockResolvedValueOnce(
+        chunks([{ choices: [{ delta: { content: "Recovered" } }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      streamRetryDelayMs: 0,
+      client,
+    });
+    const events: unknown[] = [];
+
+    const turn = await provider.generate(
+      {
+        instructions: "Respond",
+        input: "Build a snake game",
+        tools: [],
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([
+      {
+        type: "retry",
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+      },
+      { type: "output_text.delta", delta: "Recovered" },
+    ]);
+    expect(turn.text).toBe("Recovered");
+  });
+
+  it("does not replay a stream after visible output has started", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        chunksThenThrows(
+          [{ choices: [{ delta: { content: "Partial answer" } }] }],
+          new TypeError("terminated"),
+        ),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      streamRetryDelayMs: 0,
+      client,
+    });
+
+    await expect(
+      provider.generate({
+        instructions: "Respond",
+        input: "Build a snake game",
+        tools: [],
+      }),
+    ).rejects.toThrow("terminated");
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
   it("streams text and preserves reasoning plus tool linkage across turns", async () => {
     const create = vi
       .fn()
@@ -34,9 +114,7 @@ describe("OpenAICompatibleChatProvider", () => {
             choices: [
               {
                 delta: {
-                  tool_calls: [
-                    { index: 0, function: { arguments: "21}" } },
-                  ],
+                  tool_calls: [{ index: 0, function: { arguments: "21}" } }],
                 },
               },
             ],
@@ -86,9 +164,7 @@ describe("OpenAICompatibleChatProvider", () => {
         history: [
           { role: "user", text: "This fallback must not be duplicated" },
         ],
-        toolResults: [
-          { callId: "call-1", name: "double", output: "42" },
-        ],
+        toolResults: [{ callId: "call-1", name: "double", output: "42" }],
         tools: [],
       },
       {
@@ -98,9 +174,7 @@ describe("OpenAICompatibleChatProvider", () => {
 
     expect(create.mock.calls[0]?.[0].tool_choice).toBe("auto");
     expect(first).toMatchObject({
-      toolCalls: [
-        { id: "call-1", name: "double", arguments: { value: 21 } },
-      ],
+      toolCalls: [{ id: "call-1", name: "double", arguments: { value: 21 } }],
       usage: { inputTokens: 8, outputTokens: 4, totalTokens: 12 },
     });
     expect(create.mock.calls[1]?.[0].messages).toEqual([
@@ -291,9 +365,11 @@ describe("OpenAICompatibleChatProvider", () => {
   });
 
   it("falls back to visible history instead of replaying another provider's state", async () => {
-    const create = vi.fn().mockResolvedValue(
-      chunks([{ choices: [{ delta: { content: "Fresh" } }] }]),
-    );
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        chunks([{ choices: [{ delta: { content: "Fresh" } }] }]),
+      );
     const client = {
       chat: { completions: { create } },
     } as unknown as OpenAI;
@@ -422,4 +498,9 @@ describe("OpenAICompatibleChatProvider", () => {
 
 async function* chunks(values: readonly unknown[]) {
   for (const value of values) yield value;
+}
+
+async function* chunksThenThrows(values: readonly unknown[], error: Error) {
+  for (const value of values) yield value;
+  throw error;
 }

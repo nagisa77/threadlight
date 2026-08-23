@@ -22,7 +22,7 @@ if [ -z "$PACKAGE_URL" ] && [ -n "$RELEASE_VERSION" ]; then
   PACKAGE_URL="https://github.com/nagisa77/threadlight/releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz"
 fi
 INSTALLER_URL=${THREADLIGHT_SELF_HOST_SCRIPT_URL:-https://threadlight.xyz/install.sh}
-MANAGER_VERSION=1.0.0
+MANAGER_VERSION=1.1.0
 TEMP_ROOT=
 
 cleanup_temporary_files() {
@@ -209,9 +209,11 @@ install_self_host() {
   SELF_HOST_NAME=$host_name \
   SELF_HOST_PUBLIC_URL=$public_url \
   SELF_HOST_ORIGINS=$origins \
-  node - "$CONFIG_PATH" <<'NODE'
-const { chmodSync, writeFileSync } = require("node:fs");
-const { dirname } = require("node:path");
+  SELF_HOST_TELEMETRY_ID=${THREADLIGHT_TELEMETRY_ID:-} \
+  SELF_HOST_TELEMETRY_DISABLED=${THREADLIGHT_TELEMETRY_DISABLED:-} \
+  node - "$CONFIG_PATH" "$host_home" <<'NODE'
+const { chmodSync, mkdirSync, writeFileSync } = require("node:fs");
+const { dirname, join } = require("node:path");
 const path = process.argv[2];
 const config = {
   token: process.env.SELF_HOST_TOKEN,
@@ -226,6 +228,28 @@ const origins = [...new Set((process.env.SELF_HOST_ORIGINS || "").split("\n").fi
 if (origins.length) config.origins = origins;
 writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
 chmodSync(path, 0o600);
+
+const telemetryId = process.env.SELF_HOST_TELEMETRY_ID;
+const telemetryDisabled = /^(1|true|yes)$/i.test(process.env.SELF_HOST_TELEMETRY_DISABLED || "");
+if (telemetryDisabled) {
+  writeFileSync(join(process.argv[3], "telemetry-disabled"), "disabled\n", {
+    encoding: "utf8",
+    mode: 0o600,
+  });
+}
+if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(telemetryId || "")) {
+  const telemetryPath = join(process.argv[3], "telemetry.json");
+  mkdirSync(dirname(telemetryPath), { recursive: true, mode: 0o700 });
+  try {
+    writeFileSync(
+      telemetryPath,
+      `${JSON.stringify({ schemaVersion: 1, anonymousId: telemetryId }, null, 2)}\n`,
+      { encoding: "utf8", mode: 0o600, flag: "wx" },
+    );
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+}
 NODE
 
   if [ "$foreground" -eq 1 ]; then

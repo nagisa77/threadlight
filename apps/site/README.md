@@ -20,16 +20,25 @@ npm run site:build
 
 The static output is written to `apps/site/dist`.
 
+The output also contains an advanced-mode Pages Function at `_worker.js`. It
+validates the five anonymous product-funnel events documented in
+[`docs/TELEMETRY.md`](../../docs/TELEMETRY.md) and writes them through the
+`TELEMETRY_DB` D1 binding. Apply migrations before deploying a schema change:
+
+```bash
+npx --yes wrangler@4.120.0 d1 migrations apply threadlight-telemetry --remote
+```
+
 ## Cloudflare Pages
 
 Create a Pages project from this repository with:
 
-| Setting | Value |
-| --- | --- |
-| Production branch | `main` |
-| Root directory | repository root |
-| Build command | `npm run site:build` |
-| Build output directory | `apps/site/dist` |
+| Setting                | Value                |
+| ---------------------- | -------------------- |
+| Production branch      | `main`               |
+| Root directory         | repository root      |
+| Build command          | `npm run site:build` |
+| Build output directory | `apps/site/dist`     |
 
 Use `threadlight.xyz` as the production custom domain and redirect
 `www.threadlight.xyz` to the apex domain. The `/app` redirect intentionally

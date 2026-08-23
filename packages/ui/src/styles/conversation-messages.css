@@ -731,6 +731,25 @@
   font-size: 12px;
 }
 
+.model-retry-row {
+  display: flex;
+  width: fit-content;
+  max-width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 9px;
+  color: color-mix(in srgb, var(--accent) 76%, var(--ink));
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.model-retry-row svg {
+  flex: 0 0 auto;
+}
+
 .activity-list {
   margin-bottom: 13px;
   overflow: hidden;
@@ -743,11 +762,11 @@
   margin-bottom: 0;
 }
 
-.activity-list.live + .thinking-row {
+.activity-list.live + :is(.thinking-row, .model-retry-row) {
   margin-top: 10px;
 }
 
-.progress-list + .thinking-row {
+.progress-list + :is(.thinking-row, .model-retry-row) {
   margin-top: 10px;
 }
 

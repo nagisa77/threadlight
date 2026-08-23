@@ -4,19 +4,31 @@ All notable changes to Threadlight are documented here. The project follows [Sem
 
 ## Unreleased
 
+## 1.1.0 - 2026-08-23
+
+### Highlights
+
+- Made OpenAI-compatible streaming more resilient to provider retry and status events while keeping provider wire formats inside the adapter.
+- Added a privacy-minimized, first-party activation funnel from website visit through first completed task, with documented opt-out controls and no prompt, code, project, credential, or model data.
+- Refined progress and retry feedback across desktop and web so long-running model work remains legible without adding visual noise.
+
 ### Changed
 
 - Split collaboration contracts, orchestration transcript bookkeeping, generated-content parsing, application shell state, and voice input lifecycle out of the largest runtime and UI orchestrators.
 - Reworked the project website and bilingual READMEs around the runtime architecture, complete Showcase results, clearer launch paths, and explicit production boundaries.
+- Pinned website self-host commands and release downloads to 1.1.0 so installs are reproducible instead of following the latest source checkout.
 
 ### Added
 
 - Added three publish-ready Xiaohongshu campaigns with 19 original carousel pages built from real Threadlight task evidence and Showcase results.
 - Added English Remote Host and separate Web deployment guides, structured GitHub issue forms, and a read-only self-host service-manager version command.
+- Added GitHub Discussions and unrestricted public issue entry points for community questions and bug reports.
+- Added anonymous website, install, and first-task events backed by Cloudflare Pages and D1, plus an owner-only funnel report.
 
 ### Fixed
 
 - Copy controls on the project website now announce success to screen readers without changing the visual interaction.
+- OpenAI-compatible model retries now retain visible progress and avoid surfacing transient provider status records as assistant content.
 
 ## 1.0.0 - 2026-08-10
 
@@ -62,6 +74,7 @@ First public Alpha release.
 - Type-safe transport-neutral client and reusable React UI packages.
 - Deterministic offline tests built around scripted model providers.
 
-[Unreleased]: https://github.com/nagisa77/threadlight/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/nagisa77/threadlight/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/nagisa77/threadlight/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/nagisa77/threadlight/compare/v0.1.0...v1.0.0
 [0.1.0]: https://github.com/nagisa77/threadlight/releases/tag/v0.1.0

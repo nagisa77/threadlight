@@ -74,7 +74,7 @@ describe("one-line self-host installer", () => {
       env: { HOME: "/does-not-need-to-exist", PATH: process.env.PATH },
     });
 
-    expect(commandVersion).toBe("threadlight-self-host 1.0.0\n");
+    expect(commandVersion).toBe("threadlight-self-host 1.1.0\n");
     expect(flagVersion).toBe(commandVersion);
   });
 
@@ -88,9 +88,7 @@ describe("one-line self-host installer", () => {
     expect(installer).toContain(
       '(cd "$downloaded_repository_root" && npm ci && npm run host:package)',
     );
-    expect(installer).toContain(
-      "THREADLIGHT_SELF_HOST_SOURCE_URL",
-    );
+    expect(installer).toContain("THREADLIGHT_SELF_HOST_SOURCE_URL");
     expect(installer).toContain("THREADLIGHT_HOST_PACKAGE_URL");
     expect(installer).toContain(
       "releases/download/v$RELEASE_VERSION/threadlight-host-$RELEASE_VERSION.tgz",
@@ -212,6 +210,7 @@ esac
           THREADLIGHT_FAKE_WEB_INDEX: bundledWebIndex,
           THREADLIGHT_HOST_STARTED_MARKER: startedMarker,
           THREADLIGHT_NPM_LOG: npmLog,
+          THREADLIGHT_TELEMETRY_ID: "123e4567-e89b-42d3-a456-426614174000",
           THREADLIGHT_SELF_HOST_SOURCE_URL: `file://${sourceArchive}`,
           THREADLIGHT_SELF_HOST_SCRIPT_URL: "file:///does-not-exist",
         },
@@ -231,6 +230,17 @@ esac
       readFileSync(join(configRoot, "threadlight", "self-host.json"), "utf8"),
     ) as { origins: string[] };
     expect(savedConfig.origins).toEqual(["https://nagisa77.github.io"]);
+    expect(
+      JSON.parse(
+        readFileSync(
+          join(dataRoot, "threadlight-self-host/data/telemetry.json"),
+          "utf8",
+        ),
+      ),
+    ).toEqual({
+      schemaVersion: 1,
+      anonymousId: "123e4567-e89b-42d3-a456-426614174000",
+    });
   });
 
   it("migrates the old shared home into an isolated self-host directory", () => {

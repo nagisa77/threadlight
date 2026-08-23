@@ -1,7 +1,16 @@
 import type { JsonRpcOutgoing } from "@threadlight/protocol";
 
 import type { ProjectStore } from "./project-store.js";
-import { runtimeEnvironment } from "./settings-store.js";
+import {
+  DEFAULT_CUSTOM_BASE_URL,
+  DEFAULT_DOUBAO_BASE_URL,
+  DEFAULT_GEMINI_BASE_URL,
+  DEFAULT_GROK_BASE_URL,
+  DEFAULT_KIMI_BASE_URL,
+  DEFAULT_MODEL,
+  DEFAULT_QWEN_BASE_URL,
+  runtimeEnvironment,
+} from "./settings-store.js";
 import type { WorktreeDeliveryManager } from "./worktree-delivery.js";
 
 export function appServerEnvironment(
@@ -13,6 +22,22 @@ export function appServerEnvironment(
     ...runtimeEnvironment(settings),
     THREADLIGHT_PROJECT_ROOT: projectRoot,
     ...(scope === "standalone" ? { THREADLIGHT_TASK_SCOPE: "standalone" } : {}),
+  };
+}
+
+export function defaultAppServerSettings(): Parameters<
+  typeof runtimeEnvironment
+>[0] {
+  return {
+    provider: "openai",
+    searchProvider: "brave",
+    qwenBaseUrl: DEFAULT_QWEN_BASE_URL,
+    kimiBaseUrl: DEFAULT_KIMI_BASE_URL,
+    doubaoBaseUrl: DEFAULT_DOUBAO_BASE_URL,
+    geminiBaseUrl: DEFAULT_GEMINI_BASE_URL,
+    grokBaseUrl: DEFAULT_GROK_BASE_URL,
+    customBaseUrl: DEFAULT_CUSTOM_BASE_URL,
+    model: DEFAULT_MODEL,
   };
 }
 

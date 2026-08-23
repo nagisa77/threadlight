@@ -258,6 +258,8 @@ export const en: Messages = {
   waitingForUsage: "Waiting for provider usage",
   liveStreamRate: "Live stream",
   thinking: "Thinking…",
+  modelConnectionRetrying:
+    "Model connection interrupted. Retrying automatically ({attempt}/{maxRetries})…",
   add: "Add",
   addAttachment: "Add images or files",
   addAttachmentDescription: "Choose images, documents, or other local files",

@@ -118,10 +118,18 @@ export interface ModelTurn {
   usage?: Partial<TokenUsage>;
 }
 
-export type ModelStreamEvent = {
-  type: "output_text.delta";
-  delta: string;
-};
+export interface ModelRetryProgress {
+  retryAttempt: number;
+  maxRetries: number;
+  reason: "connection_lost";
+}
+
+export type ModelStreamEvent =
+  | {
+      type: "output_text.delta";
+      delta: string;
+    }
+  | ({ type: "retry" } & ModelRetryProgress);
 
 export type ModelOutputVisibility = "user" | "provisional";
 
@@ -139,6 +147,11 @@ export interface ModelProvider {
 export type AgentEvent =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
+  | ({
+      type: "model.retrying";
+      runId: string;
+      step: number;
+    } & ModelRetryProgress)
   | {
       type: "model.output_text.delta";
       runId: string;

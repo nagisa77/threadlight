@@ -31,6 +31,83 @@ function richPlanStep(
 }
 
 describe("AppServer", () => {
+  it("projects scripted model retry progress into the active turn", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const retryStarted = Promise.withResolvers<void>();
+    const finishRetry = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        options?.onEvent?.({
+          type: "retry",
+          retryAttempt: 1,
+          maxRetries: 1,
+          reason: "connection_lost",
+        });
+        retryStarted.resolve();
+        await finishRetry.promise;
+        return { text: "Recovered", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "worker", instructions: "Respond" }),
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Build a snake game" },
+    });
+    await retryStarted.promise;
+
+    expect(
+      messages.flatMap((message) =>
+        "method" in message
+          ? [
+              `${message.method}${message.method === "agent/event" ? `:${message.params.event.type}` : ""}`,
+            ]
+          : [],
+      ),
+    ).toContain("agent/event:model.retrying");
+    expect(
+      messages.find(
+        (message) =>
+          "method" in message &&
+          message.method === "agent/event" &&
+          message.params.event.type === "model.retrying",
+      ),
+    ).toMatchObject({
+      params: {
+        activeTurn: {
+          isThinking: true,
+          modelRetry: {
+            retryAttempt: 1,
+            maxRetries: 1,
+            reason: "connection_lost",
+          },
+        },
+      },
+    });
+
+    finishRetry.resolve();
+    await completed.promise;
+    await server.dispose();
+  });
+
   it("generates and persists a model title from the first user message before the turn completes", async () => {
     const messages: JsonRpcOutgoing[] = [];
     const titleReceived = Promise.withResolvers<void>();

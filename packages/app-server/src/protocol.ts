@@ -20,6 +20,7 @@ export type {
   JsonRpcRequest,
   JsonRpcResponse,
   MessageCapabilityData,
+  ModelRetryData,
   ProcessSnapshotData,
   QueuedTurnData,
   FollowUpDelivery,

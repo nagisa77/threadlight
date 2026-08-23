@@ -37,6 +37,11 @@ import {
   ProcessManager,
 } from "@threadlight/builtin-tools";
 import { ProjectMemoryStore } from "@threadlight/project-memory";
+import {
+  ProductTelemetry,
+  productTelemetryEnabled,
+  productTelemetrySource,
+} from "@threadlight/host-core";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -138,6 +143,14 @@ const standaloneTask = process.env.THREADLIGHT_TASK_SCOPE === "standalone";
 const threadlightHome = resolve(
   process.env.THREADLIGHT_HOME ?? join(homedir(), ".threadlight"),
 );
+const productTelemetry = new ProductTelemetry({
+  homePath: threadlightHome,
+  source: productTelemetrySource(process.env.THREADLIGHT_TELEMETRY_SOURCE),
+  appVersion: process.env.THREADLIGHT_APP_VERSION ?? "development",
+  enabled: productTelemetryEnabled(),
+  attributionId: process.env.THREADLIGHT_TELEMETRY_ID,
+  endpoint: process.env.THREADLIGHT_TELEMETRY_ENDPOINT,
+});
 const subagentProfiles = await loadSubagentProfiles({
   personalDirectory: join(threadlightHome, "agents"),
   ...(standaloneTask
@@ -258,6 +271,7 @@ const server = new AppServer({
     profiles: subagentProfiles,
   },
   generateConversationTitles: true,
+  productTelemetry,
   modelName,
   attachmentProvider: provider,
   attachmentRoot: process.env.THREADLIGHT_ATTACHMENT_ROOT,

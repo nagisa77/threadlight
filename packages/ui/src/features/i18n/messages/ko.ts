@@ -251,6 +251,8 @@ export const ko: Messages = {
   waitingForUsage: "Provider 사용량 대기 중",
   liveStreamRate: "라이브 스트림",
   thinking: "생각 중…",
+  modelConnectionRetrying:
+    "모델 연결이 중단되었습니다. 자동으로 다시 시도 중입니다({attempt}/{maxRetries})…",
   add: "추가",
   addAttachment: "이미지 또는 파일 추가",
   addAttachmentDescription: "이미지, 문서 또는 기타 로컬 파일 선택",

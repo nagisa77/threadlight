@@ -255,6 +255,8 @@ export const ja: Messages = {
   waitingForUsage: "Provider の使用量を待機中",
   liveStreamRate: "ライブストリーム",
   thinking: "思考中…",
+  modelConnectionRetrying:
+    "モデル接続が中断しました。自動で再試行しています（{attempt}/{maxRetries}）…",
   add: "追加",
   addAttachment: "画像またはファイルを追加",
   addAttachmentDescription: "画像、文書、その他のローカルファイルを選択",

@@ -73,12 +73,12 @@ The default listener is `127.0.0.1:7432`. For remote access, use an SSH tunnel, 
 
 ### macOS desktop app
 
-[Download the unsigned Apple Silicon test DMG](https://github.com/nagisa77/threadlight/releases/download/v1.0.0/Threadlight-1.0.0-macOS-arm64-unsigned-test.dmg)
+[Download the unsigned Apple Silicon test DMG](https://github.com/nagisa77/threadlight/releases/download/v1.1.0/Threadlight-1.1.0-macOS-arm64-unsigned-test.dmg)
 
 This is an **unsigned test build**. After installation, Control-click Threadlight in Finder and choose Open. If macOS still blocks it, use System Settings → Privacy & Security → Open Anyway.
 
 ```text
-SHA-256: 838f0a26e9f575cdb33e694b4fa923d865bde060581ab45104ae2f2266d74e0a
+SHA-256: fc8f0a3ee32e8c2610053158060d90cb998e4e54a60f3611b526e9e4f32a072f
 ```
 
 ### Web client
@@ -154,5 +154,6 @@ See the [development guide](./docs/DEVELOPMENT.md) and [contributing guide](./CO
 - The Web client is only an interface and must connect to your Host. Never expose a plaintext Host port publicly.
 - Approval mode controls tool writes and external access; it is not an operating-system sandbox.
 - Threadlight fits trusted local and self-hosted engineering workflows. Review permissions, network exposure, and isolation before production use.
+- Version 1.1 uses minimal first-party anonymous telemetry to distinguish visits, installs, and first tasks. It sends no prompts, code, project names, or credentials and can be fully disabled. See the [telemetry notice](./docs/TELEMETRY.md).
 
-Apache-2.0 · [Source](https://github.com/nagisa77/threadlight) · [Contributing](./CONTRIBUTING.md)
+Apache-2.0 · [Source](https://github.com/nagisa77/threadlight) · [Discussions](https://github.com/nagisa77/threadlight/discussions) · [Contributing](./CONTRIBUTING.md)

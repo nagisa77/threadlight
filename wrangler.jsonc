@@ -1,5 +1,19 @@
 {
   "name": "threadlight",
   "pages_build_output_dir": "./apps/site/dist",
-  "compatibility_date": "2026-08-10"
+  "compatibility_date": "2026-08-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "TELEMETRY_DB",
+      "database_name": "threadlight-telemetry",
+      "database_id": "94f033d3-ed1c-4a3d-a6be-c5aac56ffbd6",
+      "preview_database_id": "TELEMETRY_DB",
+      "migrations_dir": "./apps/site/migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 }
+  }
 }

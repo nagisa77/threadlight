@@ -110,7 +110,16 @@ export class AgentLoop {
                 delta: event.delta,
                 outputVisibility,
               });
+              return;
             }
+            emit({
+              type: "model.retrying",
+              runId,
+              step,
+              retryAttempt: event.retryAttempt,
+              maxRetries: event.maxRetries,
+              reason: event.reason,
+            });
           },
         },
       );

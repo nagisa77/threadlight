@@ -52,7 +52,13 @@ async function startHost(args: HostArgs): Promise<void> {
   }
 
   const [
-    { ProjectStore, SettingsStore, runtimeEnvironment },
+    {
+      ProductTelemetry,
+      ProjectStore,
+      SettingsStore,
+      productTelemetryEnabled,
+      runtimeEnvironment,
+    },
     { TerminalSessionManager },
     { createHostSecretCodec },
     { HostConnectionService, HostConnectionStore },
@@ -74,6 +80,15 @@ async function startHost(args: HostArgs): Promise<void> {
       process.env.THREADLIGHT_HOME ??
       join(homedir(), ".threadlight"),
   );
+  const appVersion = installedHostVersion();
+  const productTelemetry = new ProductTelemetry({
+    homePath,
+    source: "self_host",
+    appVersion,
+    enabled: productTelemetryEnabled(),
+    attributionId: process.env.THREADLIGHT_TELEMETRY_ID,
+    endpoint: process.env.THREADLIGHT_TELEMETRY_ENDPOINT,
+  });
   const projects = new ProjectStore(join(homePath, "project-map.json"), {
     standaloneRoot: join(homePath, "standalone"),
   });
@@ -119,6 +134,8 @@ async function startHost(args: HostArgs): Promise<void> {
         environment: {
           ...runtimeEnvironment(settings.runtimeSettings()),
           THREADLIGHT_HOME: homePath,
+          THREADLIGHT_APP_VERSION: appVersion,
+          THREADLIGHT_TELEMETRY_SOURCE: "self_host",
           THREADLIGHT_PROJECT_ROOT: projectBasePath,
           ...(projects.project(projectId)?.scope === "standalone"
             ? { THREADLIGHT_TASK_SCOPE: "standalone" }
@@ -146,6 +163,7 @@ async function startHost(args: HostArgs): Promise<void> {
       }),
   });
   const address = await server.start();
+  void productTelemetry.reportOnce("install_succeeded");
 
   process.stderr.write(
     `Threadlight Host listening on http://${address.host}:${address.port}\n`,

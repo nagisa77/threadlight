@@ -62,10 +62,10 @@ Build a standalone npm package without UI or Electron on the development machine
 npm run host:package
 ```
 
-The output is `artifacts/threadlight-host-1.0.0.tgz`. It contains two bundled Node.js entrypoints plus the built-in skills and plugins. Copy it to the remote machine, then run:
+The output is `artifacts/threadlight-host-1.1.0.tgz`. It contains two bundled Node.js entrypoints plus the built-in skills and plugins. Copy it to the remote machine, then run:
 
 ```bash
-npm install -g ./threadlight-host-1.0.0.tgz
+npm install -g ./threadlight-host-1.1.0.tgz
 
 export THREADLIGHT_HOST_TOKEN="$(openssl rand -hex 32)"
 threadlight-host --host 127.0.0.1 --port 7432

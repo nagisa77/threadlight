@@ -925,26 +925,22 @@ export class AgentOrchestrator {
       return;
     }
     if (event.type === "model.started") {
-      const id = modelTranscriptId(event.step);
-      const transcript = record.snapshot.transcript.some(
-        (entry) => entry.id === id,
-      )
-        ? record.snapshot.transcript
-        : [
-            ...record.snapshot.transcript,
-            {
-              id,
-              kind: "model" as const,
-              step: event.step,
-              status: "running" as const,
-              text: "",
-              startedAt: this.wallNow().toISOString(),
-            },
-          ];
+      const transcript = ensureModelTranscript(
+        record.snapshot.transcript,
+        event.step,
+        this.wallNow().toISOString(),
+      );
       this.taskState().patchRecord(record, "progress", {
         phase: "thinking",
         latestActivity: "Thinking",
         transcript,
+      });
+      return;
+    }
+    if (event.type === "model.retrying") {
+      this.taskState().patchRecord(record, "progress", {
+        phase: "thinking",
+        latestActivity: `Retrying model connection (${event.retryAttempt}/${event.maxRetries})`,
       });
       return;
     }

@@ -32,6 +32,9 @@ export interface OpenAICompatibleChatProviderOptions {
   defaultModel: string;
   provider: string;
   stateProvider?: string;
+  /** One adapter-local replay is safe before any visible output or tool call. */
+  maxStreamRetries?: number;
+  streamRetryDelayMs?: number;
   client?: OpenAI;
 }
 
@@ -45,6 +48,8 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
   private readonly defaultModel: string;
   private readonly provider: string;
   private readonly stateProvider: string;
+  private readonly maxStreamRetries: number;
+  private readonly streamRetryDelayMs: number;
 
   constructor(options: OpenAICompatibleChatProviderOptions) {
     this.client =
@@ -56,6 +61,12 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     this.defaultModel = options.defaultModel;
     this.provider = options.provider;
     this.stateProvider = options.stateProvider ?? options.provider;
+    this.maxStreamRetries = boundedInteger(options.maxStreamRetries ?? 1, 0, 3);
+    this.streamRetryDelayMs = boundedInteger(
+      options.streamRetryDelayMs ?? 500,
+      0,
+      30_000,
+    );
   }
 
   async uploadAttachment(
@@ -83,8 +94,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       );
       if (userIndexes.length < 2) break;
       const prefix = messages.filter(
-        (message, index) =>
-          index < userIndexes[0] && message.role === "system",
+        (message, index) => index < userIndexes[0] && message.role === "system",
       );
       messages = [...prefix, ...messages.slice(userIndexes[1])];
       prepared = { ...state, messages };
@@ -121,117 +131,142 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       messages.push({ role: "user", content: request.input });
     }
 
-    const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
-      model: request.model ?? this.defaultModel,
-      messages:
-        messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
-      ...(request.tools.length > 0
-        ? {
-            tools: request.tools.map((tool) => ({
-              type: "function" as const,
-              function: {
-                name: tool.name,
-                description: tool.description,
-                parameters: tool.parameters as JsonSchema,
-              },
-            })),
-            tool_choice: "auto",
-          }
-        : {}),
-      stream: true,
-      stream_options: { include_usage: true },
-    };
-
-    const stream = request.signal
-      ? await this.client.chat.completions.create(params, {
-          signal: request.signal,
-        })
-      : await this.client.chat.completions.create(params);
-    const pendingCalls = new Map<number, PendingToolCall>();
-    let text = "";
-    let reasoningContent = "";
-    let usage: Partial<TokenUsage> | undefined;
-
-    for await (const chunk of stream) {
-      if (chunk.usage) {
-        usage = {
-          inputTokens: chunk.usage.prompt_tokens,
-          outputTokens: chunk.usage.completion_tokens,
-          totalTokens: chunk.usage.total_tokens,
-        };
-      }
-
-      const delta = chunk.choices[0]?.delta;
-      if (!delta) continue;
-
-      if (delta.content) {
-        text += delta.content;
-        options.onEvent?.({
-          type: "output_text.delta",
-          delta: delta.content,
-        });
-      }
-
-      const reasoningDelta = (delta as Record<string, unknown>)[
-        "reasoning_content"
-      ];
-      if (typeof reasoningDelta === "string") {
-        reasoningContent += reasoningDelta;
-      }
-
-      for (const toolCall of delta.tool_calls ?? []) {
-        const pending = pendingCalls.get(toolCall.index) ?? {
-          id: "",
-          name: "",
-          arguments: "",
-        };
-        if (toolCall.id) pending.id += toolCall.id;
-        if (toolCall.function?.name) pending.name += toolCall.function.name;
-        if (toolCall.function?.arguments) {
-          pending.arguments += toolCall.function.arguments;
-        }
-        pendingCalls.set(toolCall.index, pending);
-      }
-    }
-
-    const toolCalls = [...pendingCalls.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([, call]) => ({
-        id: call.id,
-        name: call.name,
-        ...parseToolArguments(call.arguments, call.name),
-      }));
-    const assistantMessage: ChatMessage = {
-      role: "assistant",
-      content: text || null,
-      ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
-      ...(toolCalls.length > 0
-        ? {
-            tool_calls: [...pendingCalls.entries()]
-              .sort(([left], [right]) => left - right)
-              .map(([, call]) => ({
-                id: call.id,
-                type: "function",
-                function: { name: call.name, arguments: call.arguments },
+    const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming =
+      {
+        model: request.model ?? this.defaultModel,
+        messages:
+          messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+        ...(request.tools.length > 0
+          ? {
+              tools: request.tools.map((tool) => ({
+                type: "function" as const,
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters as JsonSchema,
+                },
               })),
+              tool_choice: "auto",
+            }
+          : {}),
+        stream: true,
+        stream_options: { include_usage: true },
+      };
+
+    let retryAttempt = 0;
+    while (true) {
+      const pendingCalls = new Map<number, PendingToolCall>();
+      let text = "";
+      let reasoningContent = "";
+      let usage: Partial<TokenUsage> | undefined;
+
+      try {
+        const stream = request.signal
+          ? await this.client.chat.completions.create(params, {
+              signal: request.signal,
+            })
+          : await this.client.chat.completions.create(params);
+
+        for await (const chunk of stream) {
+          if (chunk.usage) {
+            usage = {
+              inputTokens: chunk.usage.prompt_tokens,
+              outputTokens: chunk.usage.completion_tokens,
+              totalTokens: chunk.usage.total_tokens,
+            };
           }
-        : {}),
-    };
 
-    const stateMessages = hasAssistantPayload(assistantMessage)
-      ? [...messages, assistantMessage]
-      : messages;
+          const delta = chunk.choices[0]?.delta;
+          if (!delta) continue;
 
-    return {
-      text,
-      toolCalls,
-      state: {
-        protocol: "openai-compatible-chat",
-        provider: this.stateProvider,
-        messages: stateMessages,
-      } satisfies ChatProviderState,
-      usage,
-    };
+          if (delta.content) {
+            text += delta.content;
+            options.onEvent?.({
+              type: "output_text.delta",
+              delta: delta.content,
+            });
+          }
+
+          const reasoningDelta = (delta as Record<string, unknown>)[
+            "reasoning_content"
+          ];
+          if (typeof reasoningDelta === "string") {
+            reasoningContent += reasoningDelta;
+          }
+
+          for (const toolCall of delta.tool_calls ?? []) {
+            const pending = pendingCalls.get(toolCall.index) ?? {
+              id: "",
+              name: "",
+              arguments: "",
+            };
+            if (toolCall.id) pending.id += toolCall.id;
+            if (toolCall.function?.name) pending.name += toolCall.function.name;
+            if (toolCall.function?.arguments) {
+              pending.arguments += toolCall.function.arguments;
+            }
+            pendingCalls.set(toolCall.index, pending);
+          }
+        }
+      } catch (error) {
+        const canRetry =
+          retryAttempt < this.maxStreamRetries &&
+          text.length === 0 &&
+          pendingCalls.size === 0 &&
+          !request.signal?.aborted &&
+          isTransientStreamError(error);
+        if (!canRetry) throw error;
+
+        retryAttempt += 1;
+        options.onEvent?.({
+          type: "retry",
+          retryAttempt,
+          maxRetries: this.maxStreamRetries,
+          reason: "connection_lost",
+        });
+        await waitForRetry(this.streamRetryDelayMs, request.signal);
+        continue;
+      }
+
+      const toolCalls = [...pendingCalls.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([, call]) => ({
+          id: call.id,
+          name: call.name,
+          ...parseToolArguments(call.arguments, call.name),
+        }));
+      const assistantMessage: ChatMessage = {
+        role: "assistant",
+        content: text || null,
+        ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
+        ...(toolCalls.length > 0
+          ? {
+              tool_calls: [...pendingCalls.entries()]
+                .sort(([left], [right]) => left - right)
+                .map(([, call]) => ({
+                  id: call.id,
+                  type: "function",
+                  function: { name: call.name, arguments: call.arguments },
+                })),
+            }
+          : {}),
+      };
+
+      const stateMessages = hasAssistantPayload(assistantMessage)
+        ? [...messages, assistantMessage]
+        : messages;
+
+      return {
+        text,
+        toolCalls,
+        state: {
+          protocol: "openai-compatible-chat",
+          provider: this.stateProvider,
+          messages: stateMessages,
+        } satisfies ChatProviderState,
+        usage,
+      };
+    }
   }
 
   private messagesFrom(
@@ -252,9 +287,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     return [
       { role: "system", content: instructions },
       ...(history ?? []).flatMap(({ role, text }) =>
-        role === "assistant" && !text.trim()
-          ? []
-          : [{ role, content: text }],
+        role === "assistant" && !text.trim() ? [] : [{ role, content: text }],
       ),
     ];
   }
@@ -303,4 +336,70 @@ function parseToolArguments(
 
 function serializedBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value));
+}
+
+function boundedInteger(
+  value: number,
+  minimum: number,
+  maximum: number,
+): number {
+  if (!Number.isFinite(value)) return minimum;
+  return Math.min(maximum, Math.max(minimum, Math.floor(value)));
+}
+
+function isTransientStreamError(error: unknown): boolean {
+  const retryableStatuses = new Set([
+    408, 409, 429, 500, 502, 503, 504, 524, 529,
+  ]);
+  const retryableCodes = new Set([
+    "ECONNRESET",
+    "ECONNREFUSED",
+    "EPIPE",
+    "ETIMEDOUT",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_SOCKET",
+  ]);
+  const retryableMessage =
+    /\bterminated\b|fetch failed|socket hang up|premature close|other side closed|connection (?:reset|closed|lost)|network error/i;
+  let candidate: unknown = error;
+
+  for (let depth = 0; depth < 4 && candidate; depth += 1) {
+    if (typeof candidate !== "object") break;
+    const record = candidate as Record<string, unknown>;
+    if (
+      typeof record.status === "number" &&
+      retryableStatuses.has(record.status)
+    ) {
+      return true;
+    }
+    if (typeof record.code === "string" && retryableCodes.has(record.code)) {
+      return true;
+    }
+    if (
+      typeof record.message === "string" &&
+      retryableMessage.test(record.message)
+    ) {
+      return true;
+    }
+    candidate = record.cause;
+  }
+  return false;
+}
+
+function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  if (delayMs === 0) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, delayMs);
+    const abort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }

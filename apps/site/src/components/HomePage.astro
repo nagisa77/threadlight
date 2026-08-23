@@ -59,12 +59,12 @@ const copy = isEnglish
           label: "RECOMMENDED",
           title: "Deploy Host + Web",
           description:
-            "One command builds Host + Web from the latest main snapshot and keeps them running. Add projects from the UI after connecting.",
+            "One command installs the verified v1.1 Host + Web release and keeps it running. Add projects from the UI after connecting.",
           command: "One-line install",
           copy: "Copy",
           copied: "Copied",
           copiedAnnouncement: "Host and Web install command copied.",
-          requirement: "Node.js 22+ · builds latest main",
+          requirement: "Node.js 22+ · stable v1.1",
           guide: "Deployment guide",
         },
         hostOnly: {
@@ -79,7 +79,7 @@ const copy = isEnglish
           copiedAnnouncement: "Host-only install command copied.",
         },
         source: "Open the source code",
-        proof: ["Stable 1.0", "macOS first", "Apache-2.0"],
+        proof: ["Stable 1.1", "macOS first", "Apache-2.0"],
         frameTitle: "Threadlight · engineering workspace",
         frameStatus: "Agents active",
       },
@@ -206,8 +206,9 @@ const copy = isEnglish
         items: [
           ["Is multi-agent just multiple chat windows?", "No. Delegation, continuity, write ownership, result collection, and recovery are runtime behavior inside one task."],
           ["Does Threadlight lock me into one provider?", "No. Provider-specific wire formats stay in adapters, while the loop, tools, server, protocol, and client remain provider-neutral."],
-          ["Is Threadlight production-ready?", "Threadlight 1.0 is stable for trusted local engineering workflows. Production use still requires an explicit review of permissions, network exposure, and isolation."],
+          ["Is Threadlight production-ready?", "Threadlight 1.1 is stable for trusted local engineering workflows. Production use still requires an explicit review of permissions, network exposure, and isolation."],
           ["Does it provide a secure sandbox?", "No OS-level sandbox is included. Approval mode controls writes and external access, but strong isolation should come from containers, VMs, or the operating system."],
+          ["Does Threadlight collect usage data?", "Only five anonymous funnel events: site visit, download or install-command copy, successful install, and first completed task. No prompts, code, model names, file paths, API keys, or IP addresses are stored. Set THREADLIGHT_TELEMETRY_DISABLED=1 to opt out."],
         ],
       },
       footer: {
@@ -250,12 +251,12 @@ const copy = isEnglish
           label: "最推荐",
           title: "一键部署 Host + Web",
           description:
-            "一条命令从最新 main 快照构建 Host + Web 并保持运行。默认打开空 Host，连接后在 UI 内添加项目。",
+            "一条命令安装经过验证的 v1.1 Host + Web 正式包并保持运行。默认打开空 Host，连接后在 UI 内添加项目。",
           command: "一行安装",
           copy: "复制",
           copied: "已复制",
           copiedAnnouncement: "Host 与 Web 一键安装命令已复制。",
-          requirement: "需要 Node.js 22+ · 构建最新 main",
+          requirement: "需要 Node.js 22+ · 正式版 v1.1",
           guide: "部署说明",
         },
         hostOnly: {
@@ -270,7 +271,7 @@ const copy = isEnglish
           copiedAnnouncement: "仅 Host 安装命令已复制。",
         },
         source: "打开源代码",
-        proof: ["正式版 1.0", "macOS 优先", "Apache-2.0"],
+        proof: ["正式版 1.1", "macOS 优先", "Apache-2.0"],
         frameTitle: "Threadlight · 工程工作台",
         frameStatus: "Agent 协作中",
       },
@@ -397,8 +398,9 @@ const copy = isEnglish
         items: [
           ["多 Agent 只是多开几个聊天窗口吗？", "不是。委派、连续性、写入所有权、结果收集和恢复都是同一任务内部的 Runtime 行为。"],
           ["Threadlight 会绑定单一模型厂商吗？", "不会。厂商 wire format 留在 Adapter，Loop、Tools、Server、Protocol 与 Client 始终保持 Provider 中立。"],
-          ["Threadlight 现在适合生产环境吗？", "Threadlight 1.0 已是正式版本；用于生产环境前，仍需明确评估权限、网络暴露与隔离方案。"],
+          ["Threadlight 现在适合生产环境吗？", "Threadlight 1.1 已是正式版本；用于生产环境前，仍需明确评估权限、网络暴露与隔离方案。"],
           ["它提供安全 Sandbox 吗？", "不提供操作系统级 sandbox。审批模式会控制写入与外部访问，强隔离仍应由容器、虚拟机或操作系统提供。"],
+          ["Threadlight 会收集哪些使用数据？", "只记录官网访问、下载或复制安装命令、安装成功、首次任务完成这五类匿名漏斗事件；不记录 Prompt、代码、模型名、文件路径、API Key 或 IP。设置 THREADLIGHT_TELEMETRY_DISABLED=1 可关闭。"],
         ],
       },
       footer: {
@@ -407,11 +409,13 @@ const copy = isEnglish
       },
     };
 
-const selfHostCommand = "curl -fsSL https://threadlight.xyz/install.sh | sh";
+const releaseVersion = "1.1.0";
+const visitorIdPlaceholder = "__THREADLIGHT_VISITOR_ID__";
+const selfHostCommand = `curl -fsSL https://threadlight.xyz/install.sh | THREADLIGHT_SELF_HOST_VERSION=${releaseVersion} THREADLIGHT_TELEMETRY_ID=${visitorIdPlaceholder} sh`;
 const hostOnlyCommand =
-  "curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io";
+  `curl -fsSL https://threadlight.xyz/install.sh | THREADLIGHT_SELF_HOST_VERSION=${releaseVersion} THREADLIGHT_TELEMETRY_ID=${visitorIdPlaceholder} sh -s -- install --host-only --origin https://nagisa77.github.io`;
 const desktopDownloadLink =
-  "https://github.com/nagisa77/threadlight/releases/download/v1.0.0/Threadlight-1.0.0-macOS-arm64-unsigned-test.dmg";
+  `https://github.com/nagisa77/threadlight/releases/download/v${releaseVersion}/Threadlight-${releaseVersion}-macOS-arm64-unsigned-test.dmg`;
 const webClientLink = "https://nagisa77.github.io/threadlight/";
 
 const architectureLink = isEnglish
@@ -449,7 +453,7 @@ const selfHostDocsLink = isEnglish
   </div>
 </header>
 
-<main id="main">
+<main id="main" data-release={releaseVersion}>
   <section class="hero" aria-labelledby="hero-title">
     <div class="hero-grid" aria-hidden="true"></div>
     <div class="shell hero-inner">
@@ -468,14 +472,14 @@ const selfHostDocsLink = isEnglish
             <div class="code-card launch-command">
               <div class="code-toolbar">
                 <span>{copy.hero.selfHost.command}</span>
-                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied} data-announcement={copy.hero.selfHost.copiedAnnouncement}>{copy.hero.selfHost.copy}</button>
+                <button class="copy-button pressable" type="button" data-copy data-variant="host_web" data-copied={copy.hero.selfHost.copied} data-announcement={copy.hero.selfHost.copiedAnnouncement}>{copy.hero.selfHost.copy}</button>
               </div>
               <pre><code>{selfHostCommand}</code></pre>
             </div>
             <a class="launch-guide pressable" href={selfHostDocsLink}>{copy.hero.selfHost.guide}<span aria-hidden="true">↗</span></a>
           </article>
 
-          <a class="launch-card launch-card-link pressable" href={desktopDownloadLink}>
+          <a class="launch-card launch-card-link pressable" href={desktopDownloadLink} data-track-event="download_clicked" data-variant="mac_dmg">
             <span class="launch-label">{copy.hero.desktop.label}</span>
             <h2>{copy.hero.desktop.title}</h2>
             <p>{copy.hero.desktop.description}</p>
@@ -499,7 +503,7 @@ const selfHostDocsLink = isEnglish
             <div class="code-card host-only-command">
               <div class="code-toolbar">
                 <span>{copy.hero.hostOnly.command}</span>
-                <button class="copy-button pressable" type="button" data-copy data-copied={copy.hero.selfHost.copied} data-announcement={copy.hero.hostOnly.copiedAnnouncement}>{copy.hero.selfHost.copy}</button>
+                <button class="copy-button pressable" type="button" data-copy data-variant="host_only" data-copied={copy.hero.selfHost.copied} data-announcement={copy.hero.hostOnly.copiedAnnouncement}>{copy.hero.selfHost.copy}</button>
               </div>
               <pre><code>{hostOnlyCommand}</code></pre>
             </div>
@@ -769,6 +773,7 @@ const selfHostDocsLink = isEnglish
       <a href="https://github.com/nagisa77/threadlight">GitHub ↗</a>
       <a href="https://github.com/nagisa77/threadlight/releases/latest">Releases ↗</a>
       <a href="https://github.com/nagisa77/threadlight/issues">Issues ↗</a>
+      <a href="https://github.com/nagisa77/threadlight/discussions">Discussions ↗</a>
       <a href="https://github.com/nagisa77/threadlight/blob/main/CONTRIBUTING.md">Contribute ↗</a>
     </div>
     <p>© {new Date().getFullYear()} Threadlight. {copy.footer.license}</p>
@@ -778,6 +783,21 @@ const selfHostDocsLink = isEnglish
 <p id="copy-status" class="sr-only" aria-live="polite" aria-atomic="true"></p>
 
 <script>
+  const visitorId = productVisitorId();
+  const releaseVersion = document.querySelector<HTMLElement>("#main")?.dataset.release ?? "unknown";
+  document.querySelectorAll<HTMLElement>("code").forEach((code) => {
+    if (code.textContent?.includes("__THREADLIGHT_VISITOR_ID__")) {
+      code.textContent = code.textContent.replaceAll("__THREADLIGHT_VISITOR_ID__", visitorId);
+    }
+  });
+  captureProductEvent("site_visited");
+
+  document.querySelectorAll<HTMLElement>("[data-track-event]").forEach((element) => {
+    element.addEventListener("click", () => {
+      captureProductEvent(element.dataset.trackEvent ?? "", element.dataset.variant);
+    });
+  });
+
   document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((copyButton) => {
     copyButton.addEventListener("click", async () => {
       const code = copyButton.closest(".code-card")?.querySelector("code")?.textContent;
@@ -788,6 +808,7 @@ const selfHostDocsLink = isEnglish
         copyButton.textContent = copyButton.dataset.copied ?? original;
         const status = document.querySelector<HTMLElement>("#copy-status");
         if (status) status.textContent = copyButton.dataset.announcement ?? "";
+        captureProductEvent("install_command_copied", copyButton.dataset.variant);
         window.setTimeout(() => {
           copyButton.textContent = original;
         }, 1400);
@@ -796,6 +817,46 @@ const selfHostDocsLink = isEnglish
       }
     });
   });
+
+  function productVisitorId(): string {
+    const storageKey = "threadlight_visitor_id";
+    const uuidPattern =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored && uuidPattern.test(stored)) return stored;
+      const created = crypto.randomUUID();
+      window.localStorage.setItem(storageKey, created);
+      return created;
+    } catch {
+      return crypto.randomUUID();
+    }
+  }
+
+  function captureProductEvent(name: string, variant?: string) {
+    if (!name) return;
+    const body = JSON.stringify({
+      schemaVersion: 1,
+      eventId: crypto.randomUUID(),
+      anonymousId: visitorId,
+      name,
+      occurredAt: new Date().toISOString(),
+      source: "website",
+      appVersion: releaseVersion,
+      path: window.location.pathname,
+      ...(variant ? { variant } : {}),
+    });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/api/events", new Blob([body], { type: "application/json" }));
+      return;
+    }
+    void fetch("/api/events", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      keepalive: true,
+    }).catch(() => undefined);
+  }
 
   async function copyText(value: string) {
     try {

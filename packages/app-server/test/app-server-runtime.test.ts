@@ -19,6 +19,45 @@ import type { JsonRpcOutgoing } from "../src/protocol.js";
 import { MemorySuggestionStore } from "../src/suggestion-store.js";
 
 describe("AppServer runtime", () => {
+  it("records the first completed task through an injected offline telemetry reporter", async () => {
+    const completed = Promise.withResolvers<void>();
+    const reportOnce = vi.fn(async () => true);
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop({
+        async generate() {
+          return { text: "verified result", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({ name: "test", instructions: "Reply" }),
+      productTelemetry: { reportOnce },
+      send(message) {
+        messages.push(message);
+        if ("method" in message && message.method === "turn/completed") {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = (
+      messages.find((message) => "id" in message && message.id === 2)
+        ?.result as { threadId: string }
+    ).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Complete one scripted task" },
+    });
+    await completed.promise;
+
+    expect(reportOnce).toHaveBeenCalledOnce();
+    expect(reportOnce).toHaveBeenCalledWith("first_task_completed");
+    await server.dispose();
+  });
+
   it("cleans up a scripted model run before completing when the model forgets to clear sharing", async () => {
     let generation = 0;
     const shareActions: unknown[] = [];

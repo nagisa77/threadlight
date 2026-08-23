@@ -229,6 +229,8 @@ export const zhTW: Messages = {
   waitingForUsage: "等待 Provider 回傳用量",
   liveStreamRate: "即時串流",
   thinking: "正在思考…",
+  modelConnectionRetrying:
+    "模型連線中斷，正在自動重試（{attempt}/{maxRetries}）…",
   add: "新增",
   addAttachment: "新增圖片或檔案",
   addAttachmentDescription: "選擇圖片、文件或其他本機檔案",

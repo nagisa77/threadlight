@@ -2,6 +2,42 @@ import { describe, expect, it } from "vitest";
 import { initialSessionState, sessionReducer } from "../src/session.js";
 
 describe("sessionReducer model progress", () => {
+  it("shows automatic model retry progress until the stream resumes", () => {
+    let state = sessionReducer(initialSessionState, {
+      type: "agent.event",
+      event: {
+        type: "model.retrying",
+        runId: "run-1",
+        step: 1,
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+      },
+    });
+
+    expect(state).toMatchObject({
+      isThinking: true,
+      modelRetry: {
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+      },
+    });
+
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
+        type: "model.output_text.delta",
+        runId: "run-1",
+        step: 1,
+        delta: "Recovered",
+      },
+    });
+
+    expect(state.modelRetry).toBeUndefined();
+    expect(state.streamingText).toBe("Recovered");
+  });
+
   it("keeps model commentary before every multi-tool batch", () => {
     let state = sessionReducer(initialSessionState, {
       type: "agent.event",

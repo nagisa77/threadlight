@@ -420,6 +420,7 @@ export interface ActiveTurnData {
   revision: number;
   mode: TurnMode;
   isThinking: boolean;
+  modelRetry?: ModelRetryData;
   streamingText: string;
   metrics?: ActiveTurnMetricsData;
   /** Sources already cited by the currently streaming assistant output. */
@@ -429,6 +430,12 @@ export interface ActiveTurnData {
   progress: readonly ConversationProgressData[];
   plan?: AgentPlanData;
   agentTree?: AgentTreeData;
+}
+
+export interface ModelRetryData {
+  retryAttempt: number;
+  maxRetries: number;
+  reason: "connection_lost";
 }
 
 export type CapabilityKind = "skill" | "tool";
@@ -567,6 +574,11 @@ export type SuggestionLanguage = HostLanguage;
 export type AgentEventData =
   | { type: "run.started"; runId: string }
   | { type: "model.started"; runId: string; step: number }
+  | ({
+      type: "model.retrying";
+      runId: string;
+      step: number;
+    } & ModelRetryData)
   | {
       type: "model.output_text.delta";
       runId: string;

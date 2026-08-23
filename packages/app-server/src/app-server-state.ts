@@ -220,10 +220,21 @@ export class AppServerState {
       thread.pendingAssistantOutput = undefined;
       if (activeTurn) {
         activeTurn.isThinking = true;
+        activeTurn.modelRetry = undefined;
         activeTurn.streamingText = "";
+      }
+    } else if (event.type === "model.retrying") {
+      if (activeTurn) {
+        activeTurn.isThinking = true;
+        activeTurn.modelRetry = {
+          retryAttempt: event.retryAttempt,
+          maxRetries: event.maxRetries,
+          reason: event.reason,
+        };
       }
     } else if (event.type === "model.output_text.delta") {
       if (activeTurn) {
+        activeTurn.modelRetry = undefined;
         activeTurn.metrics.streamedBytes += Buffer.byteLength(
           event.delta,
           "utf8",
@@ -239,6 +250,7 @@ export class AppServerState {
     } else if (event.type === "model.completed") {
       thread.injectedInputPendingModelResponse = false;
       if (activeTurn) {
+        activeTurn.modelRetry = undefined;
         if (!activeTurn.agentTree) {
           activeTurn.metrics = addCompletedModelMetrics(
             activeTurn.metrics,
@@ -258,13 +270,19 @@ export class AppServerState {
           ? { text: event.text }
           : undefined;
     } else if (event.type === "tool.started") {
-      if (activeTurn) activeTurn.isThinking = false;
+      if (activeTurn) {
+        activeTurn.isThinking = false;
+        activeTurn.modelRetry = undefined;
+      }
     } else if (
       event.type === "message.completed" ||
       event.type === "run.completed" ||
       event.type === "run.failed"
     ) {
-      if (activeTurn) activeTurn.isThinking = false;
+      if (activeTurn) {
+        activeTurn.isThinking = false;
+        activeTurn.modelRetry = undefined;
+      }
       thread.injectedInputPendingModelResponse = false;
       thread.pendingAssistantOutput = undefined;
     }
@@ -327,6 +345,7 @@ export class AppServerState {
       revision: thread.revision,
       mode: activeTurn.mode,
       isThinking: activeTurn.isThinking,
+      ...(activeTurn.modelRetry ? { modelRetry: activeTurn.modelRetry } : {}),
       streamingText: sourcedStreamingOutput?.text ?? activeTurn.streamingText,
       metrics: {
         ...activeTurn.metrics,

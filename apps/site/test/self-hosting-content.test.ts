@@ -21,14 +21,14 @@ describe("homepage launch choices", () => {
     expect(pageSource).toContain("Deploy Host + Web");
     expect(pageSource).toContain("一键部署 Host + Web");
     expect(pageSource).toContain(
-      "builds Host + Web from the latest main snapshot",
+      "installs the verified v1.1 Host + Web release",
     );
-    expect(pageSource).toContain("从最新 main 快照构建 Host + Web");
+    expect(pageSource).toContain("安装经过验证的 v1.1 Host + Web 正式包");
     expect(pageSource).toContain(
-      "curl -fsSL https://threadlight.xyz/install.sh | sh",
+      "THREADLIGHT_SELF_HOST_VERSION=${releaseVersion}",
     );
     expect(pageSource).toContain(
-      "curl -fsSL https://threadlight.xyz/install.sh | sh -s -- install --host-only --origin https://nagisa77.github.io",
+      "THREADLIGHT_TELEMETRY_ID=${visitorIdPlaceholder}",
     );
     expect(pageSource).toContain('href="#host-only"');
     expect(pageSource).toContain('id="host-only"');
@@ -48,6 +48,12 @@ describe("homepage launch choices", () => {
     expect(pageSource).toContain('id="copy-status"');
     expect(pageSource).toContain('aria-live="polite"');
     expect(pageSource).toContain("data-announcement");
+    expect(pageSource).toContain('captureProductEvent("site_visited")');
+    expect(pageSource).toContain(
+      'captureProductEvent("install_command_copied"',
+    );
+    expect(pageSource).toContain('data-track-event="download_clicked"');
+    expect(pageSource).toContain("THREADLIGHT_TELEMETRY_DISABLED=1");
     expect(styles).toMatch(/@media \(max-width: 1080px\)[\s\S]*\.launch-grid/);
     expect(styles).toMatch(
       /@media \(max-width: 760px\)[\s\S]*\.launch-card-recommended/,

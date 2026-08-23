@@ -18,9 +18,7 @@ class ScriptedProvider implements ModelProvider {
     if (this.requests.length === 1) {
       return {
         text: "",
-        toolCalls: [
-          { id: "call_1", name: "double", arguments: { value: 21 } },
-        ],
+        toolCalls: [{ id: "call_1", name: "double", arguments: { value: 21 } }],
         state: [{ turn: 1 }],
       };
     }
@@ -34,6 +32,37 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("forwards provider-neutral retry progress from a scripted provider", async () => {
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      async generate(_request, options) {
+        options?.onEvent?.({
+          type: "retry",
+          retryAttempt: 1,
+          maxRetries: 1,
+          reason: "connection_lost",
+        });
+        return { text: "Recovered", toolCalls: [] };
+      },
+    };
+
+    await new AgentLoop(provider).run(
+      defineAgent({ name: "retry-progress", instructions: "Respond" }),
+      "Build",
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "model.retrying",
+        step: 1,
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+      }),
+    );
+  });
+
   it("retries a model turn that has neither content nor tool calls", async () => {
     const requests: ModelRequest[] = [];
     const provider: ModelProvider = {
@@ -163,9 +192,7 @@ describe("AgentLoop", () => {
     );
 
     expect(result.durationMs).toBeGreaterThan(0);
-    expect(
-      events.filter((event) => event.type === "model.completed"),
-    ).toEqual([
+    expect(events.filter((event) => event.type === "model.completed")).toEqual([
       expect.objectContaining({ durationMs: 5 }),
       expect.objectContaining({ durationMs: 5 }),
     ]);
@@ -473,10 +500,14 @@ describe("AgentLoop", () => {
       { type: "model.started", step: 1 },
       { type: "model.output_text.delta", step: 1, delta: "Hello" },
     ]);
-    expect(events.some((event) => event.type === "model.completed")).toBe(false);
+    expect(events.some((event) => event.type === "model.completed")).toBe(
+      false,
+    );
 
     finishGeneration();
-    await expect(resultPending).resolves.toMatchObject({ output: "Hello world" });
+    await expect(resultPending).resolves.toMatchObject({
+      output: "Hello world",
+    });
     expect(events.map((event) => event.type)).toEqual([
       "run.started",
       "model.started",
@@ -538,9 +569,7 @@ describe("AgentLoop", () => {
         type: "model.completed",
         step: 1,
         text: "",
-        toolCalls: [
-          { id: "call_1", name: "double", arguments: { value: 21 } },
-        ],
+        toolCalls: [{ id: "call_1", name: "double", arguments: { value: 21 } }],
       },
       {
         type: "model.completed",
@@ -563,9 +592,7 @@ describe("AgentLoop", () => {
           await firstGeneration.promise;
           return {
             text: "I will make the stale edit.",
-            toolCalls: [
-              { id: "stale-call", name: "write", arguments: {} },
-            ],
+            toolCalls: [{ id: "stale-call", name: "write", arguments: {} }],
             state: { responseId: "opaque-1" },
           };
         }
@@ -658,7 +685,9 @@ describe("AgentLoop", () => {
           };
         }
         return {
-          text: request.toolResults?.map((result) => result.output).join(", ") ?? "",
+          text:
+            request.toolResults?.map((result) => result.output).join(", ") ??
+            "",
           toolCalls: [],
         };
       },
@@ -698,5 +727,4 @@ describe("AgentLoop", () => {
       { type: "tool.completed", result: { callId: "call_2" } },
     ]);
   });
-
 });
