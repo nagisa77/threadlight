@@ -74,7 +74,6 @@ export function useDeliveryRuntime({
     setWorkspacePanelWidth,
     setWorkspaceReviewRequest,
     setWorkspaceDeliveryRequest,
-    workspaceFileOpenRequest,
     setWorkspaceFileOpenRequest,
     conversationChanges,
     setConversationChanges,
@@ -204,7 +203,6 @@ export function useDeliveryRuntime({
       session.plan,
       session.threadId,
       activePlanDocument.current,
-      (workspaceFileOpenRequest?.id ?? 0) + 1,
     );
     if (!next) {
       activePlanDocument.current = undefined;
@@ -213,7 +211,10 @@ export function useDeliveryRuntime({
     if (!workspace || !project || !session.threadId) return;
     activePlanDocument.current = next.documentKey;
     if (next.openPanel) setWorkspacePanelOpen(true);
-    setWorkspaceFileOpenRequest(next.request);
+    setWorkspaceFileOpenRequest((current) => ({
+      ...next.request,
+      id: (current?.id ?? 0) + 1,
+    }));
   }, [
     activePlanDocument,
     project,
@@ -223,7 +224,6 @@ export function useDeliveryRuntime({
     setWorkspaceFileOpenRequest,
     setWorkspacePanelOpen,
     workspace,
-    workspaceFileOpenRequest?.id,
   ]);
 
   const refreshChanges = useCallback(

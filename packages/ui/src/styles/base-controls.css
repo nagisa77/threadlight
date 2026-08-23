@@ -104,7 +104,9 @@
   top: 50%;
   left: 58px;
   display: grid;
-  width: clamp(260px, 70cqw, 560px);
+  width: max-content;
+  min-width: 144px;
+  max-width: min(70cqw, 560px);
   gap: 5px;
   padding: 11px 15px 12px;
   border: 1px solid color-mix(in srgb, var(--line-strong) 76%, transparent);

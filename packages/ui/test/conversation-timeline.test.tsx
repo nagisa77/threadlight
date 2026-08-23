@@ -80,6 +80,9 @@ describe("conversation timeline", () => {
       /\.conversation-timeline-item:hover \.conversation-timeline-tick\s*\{[^}]*width:\s*44px;/s,
     );
     expect(styles).toMatch(
+      /\.conversation-timeline-card\s*\{[^}]*width:\s*max-content;[^}]*min-width:\s*144px;[^}]*max-width:\s*min\(70cqw,\s*560px\);/s,
+    );
+    expect(styles).toMatch(
       /\.conversation-timeline-card strong\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
     );
     expect(styles).toMatch(

@@ -30,12 +30,11 @@ export function planDocumentOpenRequest(
   plan: AgentPlanData | undefined,
   threadId: string | undefined,
   activeDocumentKey: string | undefined,
-  requestId: number,
 ):
   | {
       documentKey: string;
       openPanel: boolean;
-      request: WorkspaceFileOpenRequest;
+      request: Omit<WorkspaceFileOpenRequest, "id">;
     }
   | undefined {
   if (!threadId || !plan?.documentPath || !plan.documentVersion) return;
@@ -45,7 +44,6 @@ export function planDocumentOpenRequest(
     documentKey,
     openPanel,
     request: {
-      id: requestId,
       path: plan.documentPath,
       activate: openPanel,
     },

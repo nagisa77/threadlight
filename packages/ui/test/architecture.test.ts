@@ -81,6 +81,17 @@ describe("UI feature boundaries", () => {
     }
   });
 
+  it("keeps plan document refreshes independent from their request ids", () => {
+    const deliveryRuntime = source(
+      "../src/features/delivery/runtime-controller.ts",
+    );
+
+    expect(deliveryRuntime).toContain(
+      "setWorkspaceFileOpenRequest((current) => ({",
+    );
+    expect(deliveryRuntime).not.toContain("workspaceFileOpenRequest?.id");
+  });
+
   it("keeps locale catalogs outside the i18n provider", () => {
     const provider = source("../src/i18n.tsx");
     expect(provider).toContain("./features/i18n/messages/zh-CN.js");

@@ -102,12 +102,11 @@ describe("ThreadlightApp", () => {
       documentPath: ".threadlight/plans/run-1.md",
       documentVersion: "0123456789abcdef",
     };
-    const first = planDocumentOpenRequest(plan, "thread-1", undefined, 1);
+    const first = planDocumentOpenRequest(plan, "thread-1", undefined);
     const refresh = planDocumentOpenRequest(
       { ...plan, documentVersion: "fedcba9876543210" },
       "thread-1",
       first?.documentKey,
-      2,
     );
     const nextTurn = planDocumentOpenRequest(
       {
@@ -117,7 +116,6 @@ describe("ThreadlightApp", () => {
       },
       "thread-1",
       first?.documentKey,
-      3,
     );
 
     expect(first).toMatchObject({
