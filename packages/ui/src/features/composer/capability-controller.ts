@@ -238,11 +238,7 @@ export function useCapabilityController({
   }
 
   function commitSelection(capability: CapabilityDescriptor, cursor?: number) {
-    setSelected((current) =>
-      current.some(({ id }) => id === capability.id)
-        ? current
-        : [...current, capability],
-    );
+    setSelected((current) => selectComposerCapability(current, capability));
     if (capability.id === "tool:plan") setComposerMode("plan");
     requestAnimationFrame(() => {
       textarea.current?.focus();
@@ -413,6 +409,15 @@ export function useCapabilityController({
     disconnectConnector,
     closeConnectorSetup,
   };
+}
+
+export function selectComposerCapability(
+  current: readonly CapabilityDescriptor[],
+  capability: CapabilityDescriptor,
+): readonly CapabilityDescriptor[] {
+  if (current.some(({ id }) => id === capability.id)) return current;
+  if (capability.id === "tool:compact") return [capability];
+  return [...current.filter(({ id }) => id !== "tool:compact"), capability];
 }
 
 export function connectorErrorMessage(reason: unknown, t: Translate): string {

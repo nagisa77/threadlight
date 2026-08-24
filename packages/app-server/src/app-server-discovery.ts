@@ -107,6 +107,7 @@ import {
 } from "./generated-content.js";
 import { RpcError, RpcMethodRouter } from "./rpc-router.js";
 import { AppServerTurnQueue } from "./app-server-turn-queue.js";
+import { capabilitiesWithCompact } from "./context-compaction.js";
 
 import type {
   AgentFactory,
@@ -268,7 +269,12 @@ export class AppServerDiscovery {
       const thread = await this.host.requireThread(threadId);
       if (refresh) await this.host.refreshThreadCapabilities?.(thread);
       return {
-        capabilities: cloneCapabilities(thread.runtime?.capabilities),
+        capabilities: cloneCapabilities(
+          capabilitiesWithCompact(
+            thread.runtime?.capabilities,
+            thread.conversation,
+          ),
+        ),
       };
     }
 

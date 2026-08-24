@@ -1,6 +1,7 @@
 import type {
   CapabilityDescriptor,
   ConnectorStatusData,
+  ContextCompactionData,
   MessageCapabilityData,
 } from "@threadlight/protocol";
 import {
@@ -11,6 +12,7 @@ import {
   ListTodo,
   LoaderCircle,
   Mail,
+  Minimize2,
   Monitor,
   Paperclip,
   Plug,
@@ -186,20 +188,18 @@ export function CapabilityChips({
         <span className="capability-chip" key={capability.id}>
           <CapabilityIcon icon={capability.icon} kind={capability.kind} />
           <span>{capability.name}</span>
-          {onPreview &&
-            capability.kind === "skill" &&
-            capability.localPath && (
-              <button
-                type="button"
-                className="capability-chip-preview pressable"
-                disabled={disabled}
-                aria-label={`${t("preview")} ${capability.name}`}
-                title={t("preview")}
-                onClick={() => onPreview(capability)}
-              >
-                <Eye size={12} />
-              </button>
-            )}
+          {onPreview && capability.kind === "skill" && capability.localPath && (
+            <button
+              type="button"
+              className="capability-chip-preview pressable"
+              disabled={disabled}
+              aria-label={`${t("preview")} ${capability.name}`}
+              title={t("preview")}
+              onClick={() => onPreview(capability)}
+            >
+              <Eye size={12} />
+            </button>
+          )}
           {onManage &&
             (capability.id.startsWith("mcp:") ||
               capability.connectorRef !== undefined) && (
@@ -286,6 +286,62 @@ export function MessageCapabilityReceipts({
           )}
         </span>
       ))}
+    </div>
+  );
+}
+
+export function ContextCompactionReceipt({
+  compaction,
+}: {
+  compaction: ContextCompactionData;
+}) {
+  const { language, t } = useI18n();
+  const tokenCount = (value: number) =>
+    new Intl.NumberFormat(language, {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
+  const details =
+    compaction.status === "compacted"
+      ? t("contextCompactionTokenRange", {
+          before: tokenCount(compaction.tokensBefore),
+          after: tokenCount(compaction.tokensAfter),
+        })
+      : t("contextCompactionCurrentTokens", {
+          tokens: tokenCount(compaction.tokensAfter),
+        });
+  const source =
+    compaction.source === "automatic"
+      ? `${t("contextCompactionAutomatic")} · `
+      : "";
+  return (
+    <div
+      className="message-capability-receipts assistant"
+      aria-label={
+        compaction.status === "compacted"
+          ? t("contextCompacted")
+          : t("contextAlreadyCompact")
+      }
+    >
+      <span className="message-capability-receipt">
+        <span className="message-capability-icon" aria-hidden="true">
+          <Minimize2 size={14} />
+        </span>
+        <span className="message-capability-name">
+          {compaction.status === "compacted"
+            ? t("contextCompacted")
+            : t("contextAlreadyCompact")}
+        </span>
+        <span className="message-capability-status">
+          {source}
+          {details}
+        </span>
+        <Check
+          className="message-capability-check"
+          size={12}
+          aria-hidden="true"
+        />
+      </span>
     </div>
   );
 }
@@ -385,15 +441,14 @@ export function CapabilityMenu({
                   <span className="capability-option-copy">
                     <span className="capability-option-title">
                       <strong>{capability.name}</strong>
-                      {capability.kind === "skill" &&
-                        capability.localPath && (
-                          <span
-                            className="capability-option-location"
-                            title={skillLocalDirectory(capability.localPath)}
-                          >
-                            {skillLocalDirectory(capability.localPath)}
-                          </span>
-                        )}
+                      {capability.kind === "skill" && capability.localPath && (
+                        <span
+                          className="capability-option-location"
+                          title={skillLocalDirectory(capability.localPath)}
+                        >
+                          {skillLocalDirectory(capability.localPath)}
+                        </span>
+                      )}
                     </span>
                     <small>{capability.description}</small>
                   </span>
@@ -617,6 +672,7 @@ function CapabilityIcon({
   if (icon === "powerpoint") return <Presentation size={14} />;
   if (icon === "computer") return <Monitor size={14} />;
   if (icon === "plan") return <ListTodo size={14} />;
+  if (icon === "compact") return <Minimize2 size={14} />;
   if (icon === "attachment") return <Paperclip size={14} />;
   if (icon === "skill-creator") return <Sparkles size={14} />;
   if (icon === "plugin") return <Plug size={14} />;

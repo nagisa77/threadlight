@@ -20,17 +20,30 @@ const messages: readonly ConversationMessage[] = [
     text: "",
     attachments: [{ name: "reference.png" }],
   },
+  {
+    id: "question-3",
+    role: "user",
+    text: "",
+    capabilityRefs: ["tool:compact"],
+  },
 ];
 
 describe("conversation timeline", () => {
   it("pairs each question with its first non-empty answer", () => {
-    expect(conversationTimelineEntries(messages, "Attachment-only")).toEqual([
+    expect(
+      conversationTimelineEntries(
+        messages,
+        "Attachment-only",
+        "Compact context",
+      ),
+    ).toEqual([
       {
         messageId: "question-1",
         question: "First question",
         response: "First answer",
       },
       { messageId: "question-2", question: "Attachment-only" },
+      { messageId: "question-3", question: "Compact context" },
     ]);
   });
 
@@ -43,7 +56,8 @@ describe("conversation timeline", () => {
     expect(html).toContain("跳转到提问：First question");
     expect(html).toContain("First answer");
     expect(html).toContain("仅附件消息");
-    expect(html.match(/conversation-timeline-item/g)).toHaveLength(2);
+    expect(html).toContain("压缩上下文");
+    expect(html.match(/conversation-timeline-item/g)).toHaveLength(3);
     expect(html.match(/<small>/g)).toHaveLength(1);
   });
 

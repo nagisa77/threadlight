@@ -524,6 +524,19 @@ export interface AttachmentData {
   path: string;
 }
 
+/** Display-safe receipt for a rolling context compaction boundary. */
+export interface ContextCompactionData {
+  status: "compacted" | "unchanged";
+  source: "manual" | "automatic";
+  generation: number;
+  compactedAt: string;
+  /** Provider-neutral estimate; adapters do not expose vendor tokenizers here. */
+  tokensBefore: number;
+  /** Provider-neutral estimate after retaining the recent verbatim suffix. */
+  tokensAfter: number;
+  messagesCompacted: number;
+}
+
 export interface ConversationMessageData {
   id: string;
   role: "user" | "assistant";
@@ -534,6 +547,8 @@ export interface ConversationMessageData {
   capabilityRefs?: readonly string[];
   /** Display-safe snapshot of capabilities selected or applied for this message. */
   capabilities?: readonly MessageCapabilityData[];
+  /** Present on the assistant message that reports manual or automatic compaction. */
+  contextCompaction?: ContextCompactionData;
   error?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;

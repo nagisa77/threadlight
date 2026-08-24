@@ -5,6 +5,7 @@ import {
   CapabilityChips,
   CapabilityMenu,
   ConnectorSetupDialog,
+  ContextCompactionReceipt,
   MessageCapabilityReceipts,
 } from "../src/capabilities.js";
 import { I18nProvider } from "../src/i18n.js";
@@ -21,6 +22,15 @@ describe("CapabilityMenu", () => {
           onSelect={() => undefined}
           capabilities={[
             {
+              id: "tool:compact",
+              kind: "tool",
+              name: "Compact context",
+              description: "Summarize older context",
+              icon: "compact",
+              visibility: "featured",
+              status: "ready",
+            },
+            {
               id: "mcp:gmail",
               kind: "tool",
               name: "Gmail",
@@ -34,8 +44,7 @@ describe("CapabilityMenu", () => {
               kind: "skill",
               name: "Documents",
               description: "Create documents",
-              localPath:
-                "/Users/tim/.agents/skills/documents/SKILL.md",
+              localPath: "/Users/tim/.agents/skills/documents/SKILL.md",
               icon: "documents",
               visibility: "featured",
               status: "ready",
@@ -48,11 +57,33 @@ describe("CapabilityMenu", () => {
     expect(html).toContain("工具");
     expect(html).toContain("技能");
     expect(html).toContain("lucide-mail");
+    expect(html).toContain("lucide-minimize-2");
     expect(html).toContain("lucide-file-text");
-    expect(html).toContain(
-      'title="/Users/tim/.agents/skills/documents"',
-    );
+    expect(html).toContain('title="/Users/tim/.agents/skills/documents"');
     expect(html).toContain("/Users/tim/.agents/skills/documents");
+  });
+
+  it("renders a compact context receipt with estimated token change", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ContextCompactionReceipt
+          compaction={{
+            status: "compacted",
+            source: "automatic",
+            generation: 2,
+            compactedAt: "2026-08-24T00:00:00.000Z",
+            tokensBefore: 48_000,
+            tokensAfter: 12_000,
+            messagesCompacted: 8,
+          }}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('aria-label="上下文已压缩"');
+    expect(html).toContain("自动 · 约 4.8万 → 1.2万 tokens");
+    expect(html).toContain("lucide-minimize-2");
+    expect(html).toContain("lucide-check");
   });
 
   it("uses one menu surface for files, tools, and skills", () => {
@@ -171,8 +202,7 @@ describe("CapabilityMenu", () => {
             status: "needs_configuration",
             configured: false,
             authorized: false,
-            redirectUrl:
-              "http://127.0.0.1:43119/oauth/callback/gmail",
+            redirectUrl: "http://127.0.0.1:43119/oauth/callback/gmail",
           }}
           busy={false}
           onCancel={() => undefined}
@@ -185,12 +215,8 @@ describe("CapabilityMenu", () => {
     expect(html).toContain("连接 Gmail");
     expect(html).toContain("OAuth Client Secret");
     expect(html).toContain('type="password"');
-    expect(html).toContain(
-      "http://127.0.0.1:43119/oauth/callback/gmail",
-    );
-    expect(html).toContain(
-      '<div class="connector-dialog-actions"><button',
-    );
+    expect(html).toContain("http://127.0.0.1:43119/oauth/callback/gmail");
+    expect(html).toContain('<div class="connector-dialog-actions"><button');
     expect(html).not.toContain(
       '<div class="connector-dialog-actions"><span></span>',
     );
@@ -272,8 +298,7 @@ describe("CapabilityMenu", () => {
             status: "ready",
             configured: true,
             authorized: true,
-            redirectUrl:
-              "http://127.0.0.1:43119/oauth/callback/gmail",
+            redirectUrl: "http://127.0.0.1:43119/oauth/callback/gmail",
           }}
           busy={false}
           onCancel={() => undefined}

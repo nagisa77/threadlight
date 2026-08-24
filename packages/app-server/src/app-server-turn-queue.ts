@@ -121,6 +121,10 @@ import {
   snapshotCapabilities,
   projectStoredAgentThread,
 } from "./app-server-support.js";
+import {
+  COMPACT_CONTEXT_CAPABILITY_ID,
+  capabilitiesWithCompact,
+} from "./context-compaction.js";
 
 export interface AppServerTurnQueueHost {
   threads: Map<string, ThreadState>;
@@ -188,12 +192,19 @@ export class AppServerTurnQueue {
     for (const attachment of attachments) {
       this.requireLocalAttachment(attachment);
     }
-    if (!input.trim() && attachments.length === 0) {
+    if (
+      !input.trim() &&
+      attachments.length === 0 &&
+      !capabilityRefs.includes(COMPACT_CONTEXT_CAPABILITY_ID)
+    ) {
       throw new RpcError(-32602, "A turn requires text or an attachment");
     }
 
     const thread = await this.host.requireThread(threadId, runtimeError);
-    const availableCapabilities = thread.runtime?.capabilities ?? [];
+    const availableCapabilities = capabilitiesWithCompact(
+      thread.runtime?.capabilities,
+      thread.conversation,
+    );
     const availableCapabilityIds = new Set(
       availableCapabilities.map(({ id }) => id),
     );
@@ -327,6 +338,34 @@ export class AppServerTurnQueue {
     });
 
     return { turnId };
+  }
+
+  async startNextQueuedTurn(
+    threadId: string,
+    thread: ThreadState,
+  ): Promise<void> {
+    if (thread.activeTurn) return;
+    const item = thread.conversation.queuedTurns?.[0];
+    if (!item) return;
+    try {
+      await this.beginTurn(
+        threadId,
+        item.input,
+        "default",
+        thread.accessMode,
+        item.attachments ?? [],
+        [],
+        [],
+        thread,
+        undefined,
+        undefined,
+        item,
+      );
+    } catch (error) {
+      process.stderr.write(
+        `Could not start queued turn ${item.id}: ${String(error)}\n`,
+      );
+    }
   }
 
   async addFollowUp(params: unknown): Promise<{ item: QueuedTurnData }> {

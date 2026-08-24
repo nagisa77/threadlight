@@ -51,6 +51,19 @@ export interface StoredAgentRun {
   agents: readonly StoredAgentThread[];
 }
 
+/** Host-owned rolling summary; the durable user-visible transcript stays intact. */
+export interface StoredContextCompaction {
+  version: 1;
+  generation: number;
+  summary: string;
+  firstKeptMessageId?: string;
+  source: "manual" | "automatic";
+  compactedAt: string;
+  tokensBefore: number;
+  tokensAfter: number;
+  messagesCompacted: number;
+}
+
 export interface StoredConversation {
   version: 1;
   threadId: string;
@@ -67,6 +80,7 @@ export interface StoredConversation {
   messages: readonly ConversationMessageData[];
   queuedTurns?: readonly QueuedTurnData[];
   modelState?: unknown;
+  contextCompaction?: StoredContextCompaction;
   agentSnapshot?: StoredAgentSnapshot;
   agentRuns?: readonly StoredAgentRun[];
 }
@@ -202,11 +216,32 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     (conversation.queuedTurns === undefined ||
       (Array.isArray(conversation.queuedTurns) &&
         conversation.queuedTurns.every(isQueuedTurn))) &&
+    (conversation.contextCompaction === undefined ||
+      isStoredContextCompaction(conversation.contextCompaction)) &&
     (conversation.agentSnapshot === undefined ||
       isStoredAgentSnapshot(conversation.agentSnapshot)) &&
     (conversation.agentRuns === undefined ||
       (Array.isArray(conversation.agentRuns) &&
         conversation.agentRuns.every(isStoredAgentRun)))
+  );
+}
+
+function isStoredContextCompaction(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const checkpoint = value as Record<string, unknown>;
+  return (
+    checkpoint.version === 1 &&
+    Number.isInteger(checkpoint.generation) &&
+    Number(checkpoint.generation) > 0 &&
+    typeof checkpoint.summary === "string" &&
+    (checkpoint.firstKeptMessageId === undefined ||
+      typeof checkpoint.firstKeptMessageId === "string") &&
+    (checkpoint.source === "manual" || checkpoint.source === "automatic") &&
+    typeof checkpoint.compactedAt === "string" &&
+    isNonNegativeNumber(checkpoint.tokensBefore) &&
+    isNonNegativeNumber(checkpoint.tokensAfter) &&
+    Number.isInteger(checkpoint.messagesCompacted) &&
+    Number(checkpoint.messagesCompacted) >= 0
   );
 }
 
@@ -314,6 +349,8 @@ function isConversationMessage(value: unknown): boolean {
     (message.capabilities === undefined ||
       (Array.isArray(message.capabilities) &&
         message.capabilities.every(isMessageCapability))) &&
+    (message.contextCompaction === undefined ||
+      isContextCompaction(message.contextCompaction)) &&
     (message.error === undefined || typeof message.error === "boolean") &&
     (message.mode === undefined ||
       message.mode === "default" ||
@@ -332,6 +369,22 @@ function isConversationMessage(value: unknown): boolean {
         message.progress.every(isConversationProgress))) &&
     (message.agentTree === undefined || isAgentTree(message.agentTree)) &&
     (message.activities === undefined || Array.isArray(message.activities))
+  );
+}
+
+function isContextCompaction(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const receipt = value as Record<string, unknown>;
+  return (
+    (receipt.status === "compacted" || receipt.status === "unchanged") &&
+    (receipt.source === "manual" || receipt.source === "automatic") &&
+    Number.isInteger(receipt.generation) &&
+    Number(receipt.generation) >= 0 &&
+    typeof receipt.compactedAt === "string" &&
+    isNonNegativeNumber(receipt.tokensBefore) &&
+    isNonNegativeNumber(receipt.tokensAfter) &&
+    Number.isInteger(receipt.messagesCompacted) &&
+    Number(receipt.messagesCompacted) >= 0
   );
 }
 

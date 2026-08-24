@@ -16,6 +16,7 @@ import {
   activateComposerMenuOnPointerDown,
   preserveComposerFocusOnPointerDown,
 } from "./features/composer/controller.js";
+import { composerSubmissionAvailable } from "./composer-submission.js";
 import { ComposerQueue } from "./features/composer/composer-queue.js";
 import { DevelopmentModeControl } from "./features/composer/development-mode.js";
 import { ModelSelector } from "./features/composer/model-selector.js";
@@ -389,6 +390,7 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
     composerRuntime: { submit },
     attachments: { attachments, preparing },
     capabilities: {
+      selected,
       setSelected,
       setQuery,
       addMenuOpen,
@@ -560,7 +562,11 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
             onClick={() => void submit()}
             disabled={
               submitting ||
-              (!input.trim() && attachments.length === 0) ||
+              !composerSubmissionAvailable(
+                input,
+                attachments.length,
+                selected,
+              ) ||
               state.connection !== "ready" ||
               !providerReady ||
               voiceStatus !== "idle" ||

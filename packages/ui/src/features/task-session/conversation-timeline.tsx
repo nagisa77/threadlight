@@ -12,13 +12,18 @@ export interface ConversationTimelineEntry {
 export function conversationTimelineEntries(
   messages: readonly ConversationMessage[],
   attachmentFallback: string,
+  compactFallback = attachmentFallback,
 ): ConversationTimelineEntry[] {
   const entries: ConversationTimelineEntry[] = [];
   let current: ConversationTimelineEntry | undefined;
 
   for (const message of messages) {
     if (message.role === "user") {
-      const question = timelinePreview(message.text) || attachmentFallback;
+      const question =
+        timelinePreview(message.text) ||
+        (message.capabilityRefs?.includes("tool:compact")
+          ? compactFallback
+          : attachmentFallback);
       current = { messageId: message.id, question };
       entries.push(current);
       continue;
@@ -43,6 +48,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   const entries = conversationTimelineEntries(
     messages,
     t("attachmentOnlyFollowUp"),
+    t("contextCompactionTimeline"),
   );
   const entryIds = entries.map(({ messageId }) => messageId);
   const entrySignature = entryIds.join("\u0000");

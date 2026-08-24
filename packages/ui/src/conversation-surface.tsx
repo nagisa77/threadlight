@@ -11,7 +11,10 @@ import type { AppViewModel } from "./app-view-model.js";
 import { useI18n } from "./i18n.js";
 import { isNearBottom } from "./scroll.js";
 import { MarkdownContent, type LocalFileReference } from "./markdown.js";
-import { MessageCapabilityReceipts } from "./capabilities.js";
+import {
+  ContextCompactionReceipt,
+  MessageCapabilityReceipts,
+} from "./capabilities.js";
 import { TaskHeader } from "./features/productivity/task-header.js";
 import { EmptyState } from "./features/navigation/project-dialogs.js";
 import { ConversationTimeline as Timeline } from "./features/task-session/conversation-timeline.js";
@@ -323,7 +326,11 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
         capabilityRefs={message.capabilityRefs}
         catalog={capabilities}
       />
-      {(message.text || message.role === "assistant") && (
+      {message.contextCompaction && (
+        <ContextCompactionReceipt compaction={message.contextCompaction} />
+      )}
+      {(message.text ||
+        (message.role === "assistant" && !message.contextCompaction)) && (
         <div className="message-body">
           {message.progress && message.progress.length > 0 && (
             <ProgressList
@@ -439,6 +446,7 @@ function LiveRun({
     sessionApi: { terminateProcess },
     delivery: { openLocalFile, revealLocalFile },
   } = model;
+  const compacting = isCompactionTurn(state.messages);
   if (
     state.progress.length === 0 &&
     state.streamingText.length === 0 &&
@@ -483,10 +491,17 @@ function LiveRun({
       ) : state.isThinking ? (
         <div className="thinking-row">
           <LoaderCircle size={15} />
-          {t("thinking")}
+          {t(compacting ? "compactingContext" : "thinking")}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function isCompactionTurn(messages: readonly ConversationMessage[]): boolean {
+  const latest = messages[messages.length - 1];
+  return Boolean(
+    latest?.role === "user" && latest.capabilityRefs?.includes("tool:compact"),
   );
 }
 

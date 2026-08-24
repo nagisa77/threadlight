@@ -9,6 +9,13 @@ export {
   ModelStatePersistence,
 } from "./model-state-persistence.js";
 export {
+  COMPACT_CONTEXT_CAPABILITY,
+  COMPACT_CONTEXT_CAPABILITY_ID,
+  DEFAULT_CONTEXT_RESERVE_TOKENS,
+  DEFAULT_CONTEXT_WINDOW_TOKENS,
+  DEFAULT_KEEP_RECENT_TOKENS,
+} from "./context-compaction.js";
+export {
   FileConversationStore,
   MemoryConversationStore,
 } from "./conversation-store.js";
@@ -63,10 +70,7 @@ export {
   SkillsOnlyPluginRegistry,
   validatePluginRegistrySnapshot,
 } from "./plugin-registry.js";
-export {
-  createSkill,
-  createSkillCreateTool,
-} from "./skill-creator.js";
+export { createSkill, createSkillCreateTool } from "./skill-creator.js";
 export {
   classifyToolCall,
   ExecutionPolicyRunController,
@@ -106,10 +110,16 @@ export type {
 export type { FinalizedSourceCitations } from "./source-citations.js";
 export type { ModelStatePersistenceOptions } from "./model-state-persistence.js";
 export type {
+  ContextCompactionConfig,
+  ContextCompactionOptions,
+  ContextCompactionOutcome,
+} from "./context-compaction.js";
+export type {
   ConversationStore,
   StoredAgentRun,
   StoredAgentSnapshot,
   StoredAgentThread,
+  StoredContextCompaction,
   StoredConversation,
 } from "./conversation-store.js";
 export type {

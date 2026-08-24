@@ -9,6 +9,8 @@ import {
   removeCapabilityQuery,
   skillLocalDirectory,
 } from "../src/capabilities.js";
+import { selectComposerCapability } from "../src/features/composer/capability-controller.js";
+import { composerSubmissionAvailable } from "../src/composer-submission.js";
 
 const capabilities = [
   {
@@ -67,29 +69,42 @@ describe("composer capabilities", () => {
     expect(capabilityQueryAt("person@example.com", 18)).toBeUndefined();
   });
 
+  it("treats @compact as an exclusive empty-input tool action", () => {
+    const compact = {
+      id: "tool:compact",
+      kind: "tool" as const,
+      name: "Compact context",
+      description: "Summarize older context",
+    };
+    expect(
+      selectComposerCapability([capabilities[0]!, capabilities[1]!], compact),
+    ).toEqual([compact]);
+    expect(selectComposerCapability([compact], capabilities[0]!)).toEqual([
+      capabilities[0],
+    ]);
+    expect(composerSubmissionAvailable("", 0, [compact])).toBe(true);
+    expect(composerSubmissionAvailable("", 0, [])).toBe(false);
+  });
+
   it("searches names and descriptions while excluding selected items", () => {
+    expect(filterCapabilities(capabilities, "email", new Set())).toEqual([
+      capabilities[1],
+    ]);
     expect(
-      filterCapabilities(capabilities, "email", new Set()),
-    ).toEqual([capabilities[1]]);
-    expect(
-      filterCapabilities(
-        capabilities,
-        "",
-        new Set(["skill:documents"]),
-      ),
+      filterCapabilities(capabilities, "", new Set(["skill:documents"])),
     ).toEqual([capabilities[1], capabilities[3]]);
-    expect(
-      filterCapabilities(capabilities, "audit", new Set()),
-    ).toEqual([capabilities[2]]);
+    expect(filterCapabilities(capabilities, "audit", new Set())).toEqual([
+      capabilities[2],
+    ]);
     expect(
       filterCapabilities(capabilities, "internal-review/skill", new Set()),
     ).toEqual([capabilities[2]]);
   });
 
   it("derives a display directory from local skill entry paths", () => {
-    expect(
-      skillLocalDirectory("/Users/tim/.agents/skills/pdf/SKILL.md"),
-    ).toBe("/Users/tim/.agents/skills/pdf");
+    expect(skillLocalDirectory("/Users/tim/.agents/skills/pdf/SKILL.md")).toBe(
+      "/Users/tim/.agents/skills/pdf",
+    );
     expect(
       skillLocalDirectory("C:\\Users\\tim\\.agents\\skills\\pdf\\SKILL.md"),
     ).toBe("C:\\Users\\tim\\.agents\\skills\\pdf");

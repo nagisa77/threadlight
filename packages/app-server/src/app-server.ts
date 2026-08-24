@@ -114,6 +114,16 @@ import { AppServerTurnQueue } from "./app-server-turn-queue.js";
 import { AppServerDiscovery } from "./app-server-discovery.js";
 import { AppServerState } from "./app-server-state.js";
 import { AppServerThreadFactory } from "./app-server-thread-factory.js";
+import {
+  COMPACT_CONTEXT_CAPABILITY_ID,
+  ContextCompactor,
+  modelHistory,
+  type ContextCompactionOptions,
+} from "./context-compaction.js";
+import {
+  completeManualContextCompaction,
+  maybeCompactContext,
+} from "./app-server-context-compaction.js";
 import { ExecutionApprovalCoordinator } from "./execution-approval-coordinator.js";
 import {
   activeTurnForDisplay,
@@ -149,6 +159,8 @@ interface SharedAppServerOptions {
   modelName?: string;
   generateConversationTitles?: boolean;
   productTelemetry?: Pick<ProductTelemetry, "reportOnce">;
+  /** Rolling-summary policy; omitted values use the Pi-compatible defaults. */
+  contextCompaction?: ContextCompactionOptions;
   multiAgent?: {
     profiles: readonly SubagentProfile[];
     maxConcurrent?: number;
@@ -240,6 +252,7 @@ export class AppServer {
   private readonly modelName?: string;
   private readonly generateConversationTitles: boolean;
   private readonly productTelemetry?: Pick<ProductTelemetry, "reportOnce">;
+  private readonly contextCompactor: ContextCompactor;
   private readonly multiAgent?: SharedAppServerOptions["multiAgent"];
   private readonly rpc: RpcMethodRouter<ThreadlightMethod>;
   private readonly threads = new Map<string, ThreadState>();
@@ -278,6 +291,10 @@ export class AppServer {
     this.generateConversationTitles =
       options.generateConversationTitles ?? false;
     this.productTelemetry = options.productTelemetry;
+    this.contextCompactor = new ContextCompactor(
+      this.loop,
+      options.contextCompaction,
+    );
     this.multiAgent = options.multiAgent;
     this.rpc = new RpcMethodRouter<ThreadlightMethod>({
       initialize: (params) => {
@@ -391,7 +408,7 @@ export class AppServer {
       (thread.conversation.queuedTurns?.length ?? 0) > 0
     ) {
       setTimeout(() => {
-        void this.startNextQueuedTurn(threadId, thread!);
+        void this.turnQueue().startNextQueuedTurn(threadId, thread!);
       }, 0);
     }
     this.approvals.replay(threadId);
@@ -576,6 +593,24 @@ export class AppServer {
     };
 
     try {
+      if (capabilityRefs.includes(COMPACT_CONTEXT_CAPABILITY_ID)) {
+        await completeManualContextCompaction({
+          compactor: this.contextCompactor,
+          state: this.state(),
+          thread,
+          threadId,
+          turnId,
+          input,
+          provider,
+          model,
+          controller,
+          diagnostics,
+          now: this.now,
+          cleanup,
+        });
+        return;
+      }
+
       const planController = new PlanExecutionController({
         requirePlan: mode === "plan",
       });
@@ -685,13 +720,22 @@ export class AppServer {
         instructions: turnPrompt.instructions,
         tools: turnTools,
       };
+      const contextCompaction = await maybeCompactContext({
+        compactor: this.contextCompactor,
+        state: this.state(),
+        thread,
+        agent: turnAgent,
+        input: attachmentRuntime.input,
+        signal: controller.signal,
+        now: this.now,
+      });
       const runOptions = {
         toolScopeId: threadId,
         modelState: thread.conversation.modelState,
-        history: thread.conversation.messages
-          .slice(0, -1)
-          .filter((message) => message.text.length > 0)
-          .map(({ role, text }) => ({ role, text })),
+        history: modelHistory(
+          thread.conversation,
+          thread.conversation.messages.slice(0, -1),
+        ),
         controller: runController,
         signal: controller.signal,
         takeAdditionalInput: async () => {
@@ -804,6 +848,9 @@ export class AppServer {
         ...(appliedCapabilities.length > 0
           ? { capabilities: appliedCapabilities }
           : {}),
+        ...(contextCompaction?.receipt
+          ? { contextCompaction: contextCompaction.receipt }
+          : {}),
         ...(sourcedOutput.sources.length > 0
           ? {
               sources: sourcedOutput.sources,
@@ -831,7 +878,10 @@ export class AppServer {
         revision: thread.revision,
         message: assistantMessage,
         output: sourcedOutput.text,
-        usage: result.usage,
+        usage: addTokenUsage(
+          contextCompaction?.usage ?? normalizedUsage(),
+          result.usage,
+        ),
         diagnostics: turnDiagnostics,
         ...(appliedCapabilities.length > 0
           ? { capabilities: appliedCapabilities }
@@ -897,7 +947,7 @@ export class AppServer {
     } finally {
       await cleanup();
       if (thread.activeTurn?.id === turnId) thread.activeTurn = undefined;
-      await this.startNextQueuedTurn(threadId, thread);
+      await this.turnQueue().startNextQueuedTurn(threadId, thread);
     }
   }
 
@@ -1067,34 +1117,6 @@ export class AppServer {
       };
     });
     if (saved) this.state().notify("thread/title", { threadId, title });
-  }
-
-  private async startNextQueuedTurn(
-    threadId: string,
-    thread: ThreadState,
-  ): Promise<void> {
-    if (thread.activeTurn) return;
-    const item = thread.conversation.queuedTurns?.[0];
-    if (!item) return;
-    try {
-      await this.turnQueue().beginTurn(
-        threadId,
-        item.input,
-        "default",
-        thread.accessMode,
-        item.attachments ?? [],
-        [],
-        [],
-        thread,
-        undefined,
-        undefined,
-        item,
-      );
-    } catch (error) {
-      process.stderr.write(
-        `Could not start queued turn ${item.id}: ${String(error)}\n`,
-      );
-    }
   }
 
   private state(): AppServerState {

@@ -15,6 +15,7 @@ import {
   type CapabilityDescriptor,
   type ConversationAccessMode,
   type ConversationActivityData,
+  type ContextCompactionData,
   type ConversationMessageData,
   type ConversationProgressData,
   type FollowUpDelivery,
@@ -34,6 +35,7 @@ import {
   requestTurnStart,
 } from "./session-requests.js";
 import { hydrateActiveTurn } from "./session-state.js";
+import { composerSubmissionAvailable } from "../../composer-submission.js";
 export {
   requestNewThreadTurnStart,
   requestThreadOpen,
@@ -53,6 +55,7 @@ export interface ConversationMessage {
   followUpDelivery?: FollowUpDelivery;
   capabilityRefs?: readonly string[];
   capabilities?: readonly MessageCapabilityData[];
+  contextCompaction?: ContextCompactionData;
   error?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
@@ -915,7 +918,7 @@ export function useThreadlightSession(
     ) => {
       const text = value.trim();
       if (
-        (!text && attachments.length === 0) ||
+        !composerSubmissionAvailable(text, attachments.length, capabilities) ||
         !state.threadId ||
         state.isRunning
       ) {

@@ -22,6 +22,7 @@ import {
   type PendingAttachment,
   type VoiceInputStatus,
 } from "./controller.js";
+import { composerSubmissionAvailable } from "../../composer-submission.js";
 
 interface ComposerHistoryResult {
   index: number;
@@ -234,7 +235,15 @@ export function useComposerRuntime(options: ComposerRuntimeOptions) {
     }
     const draftInput = value;
     const draftAttachments = [...pendingAttachmentsRef.current];
-    if (!draftInput.trim() && draftAttachments.length === 0) return;
+    if (
+      !composerSubmissionAvailable(
+        draftInput,
+        draftAttachments.length,
+        selectedCapabilities,
+      )
+    ) {
+      return;
+    }
     if (!submissionGate.current.tryStart()) return;
     const submittingFollowUp = session.isRunning;
     followOutput.current = true;
