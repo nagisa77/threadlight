@@ -1,27 +1,18 @@
 import { randomUUID } from "node:crypto";
 
+import { ModelSession } from "./model-session.js";
+import { mergeAdditionalInput, skippedToolResult } from "./run-input.js";
+import { RunStatistics } from "./run-statistics.js";
+import { executeTool } from "./tool-executor.js";
 import type {
   Agent,
   AgentEvent,
-  AgentRunCheckpoint,
-  ModelConversationMessage,
   ModelProvider,
-  ModelRequest,
-  ModelTurn,
   RunOptions,
   RunResult,
-  TokenUsage,
-  Tool,
-  ToolCall,
   ToolResult,
 } from "./types.js";
-import { toolErrorMetadata } from "./tool-error.js";
 
-const EMPTY_USAGE: TokenUsage = {
-  inputTokens: 0,
-  outputTokens: 0,
-  totalTokens: 0,
-};
 const EMPTY_RESPONSE_RETRY_INSTRUCTION =
   "Your previous response contained neither visible content nor a tool call. Continue by returning a non-empty response or calling an available tool.";
 
@@ -35,19 +26,28 @@ export class AgentLoop {
   ): Promise<RunResult> {
     const runId = randomUUID();
     const emit = (event: AgentEvent) => options.onEvent?.(event);
-    const startedAt = currentTime(options);
+    const statistics = new RunStatistics(options.now);
+    const startedAt = statistics.now();
 
     emit({ type: "run.started", runId });
 
     try {
-      return await this.execute(agent, input, runId, startedAt, options, emit);
+      return await this.execute(
+        agent,
+        input,
+        runId,
+        startedAt,
+        options,
+        statistics,
+        emit,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       emit({
         type: "run.failed",
         runId,
         error: message,
-        durationMs: elapsed(startedAt, options),
+        durationMs: statistics.elapsedSince(startedAt),
       });
       throw error;
     }
@@ -59,17 +59,14 @@ export class AgentLoop {
     runId: string,
     startedAt: number,
     options: RunOptions,
+    statistics: RunStatistics,
     emit: (event: AgentEvent) => void,
   ): Promise<RunResult> {
     const tools = agent.tools ?? [];
     const maxSteps = agent.maxSteps ?? 5_000;
-    const usage = { ...EMPTY_USAGE };
-    let state = options.modelState;
+    const modelSession = new ModelSession(options);
     let toolResults: ToolResult[] = [];
     let continuationInput: string | undefined;
-    let contextHistory = [...(options.history ?? [])];
-    let contextReplaced = false;
-    let previousModelUsage: Partial<TokenUsage> | undefined;
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
@@ -91,46 +88,30 @@ export class AgentLoop {
           : mergeAdditionalInput(continuationInput, boundaryInput);
       continuationInput = undefined;
 
-      const pendingContextHistory = appendPendingContext(
-        contextHistory,
-        modelInput,
-        toolResults,
-      );
-      let request: ModelRequest = {
-        model: agent.model,
-        provider: agent.provider,
-        instructions,
-        input: modelInput,
-        attachments: directive.attachments,
-        history: contextHistory,
-        state,
-        toolResults,
-        tools: advertisedTools,
-        signal: options.signal,
+      const modelRequestOptions = {
+        runId,
+        step,
+        agent: { ...agent, instructions, tools: advertisedTools },
+        request: {
+          model: agent.model,
+          provider: agent.provider,
+          instructions,
+          input: modelInput,
+          attachments: directive.attachments,
+          toolResults,
+          tools: advertisedTools,
+          signal: options.signal,
+        },
       };
       const preparation = options.beforeModelRequest
-        ? await options.beforeModelRequest({
-            runId,
-            step,
-            agent: { ...agent, instructions, tools: advertisedTools },
-            request,
-            fallbackHistory: pendingContextHistory,
-            previousModelUsage,
+        ? await modelSession.prepareRequest({
+            ...modelRequestOptions,
+            beforeModelRequest: options.beforeModelRequest,
           })
-        : undefined;
-      if (preparation) {
-        contextHistory = [...preparation.history];
-        contextReplaced = true;
-        state = undefined;
+        : modelSession.createRequest(modelRequestOptions);
+      if (preparation.contextReplaced) {
         toolResults = [];
-        addUsage(usage, preparation.usage);
-        request = {
-          ...request,
-          input: undefined,
-          history: contextHistory,
-          state: undefined,
-          toolResults: [],
-        };
+        statistics.addUsage(preparation.usage);
         if (preparation.compaction) {
           emit({
             type: "context.compacted",
@@ -140,28 +121,23 @@ export class AgentLoop {
             usage: preparation.usage,
           });
         }
-        await options.onCheckpoint?.({
-          step,
-          phase: "context_compacted",
-          modelState: undefined,
-          contextTokens: 0,
-          contextHistory: [...contextHistory],
-          usage: { ...usage },
-        });
-      } else {
-        contextHistory = pendingContextHistory;
+        await options.onCheckpoint?.(
+          modelSession.compactionCheckpoint(step, statistics.snapshot()),
+        );
       }
 
       emit({ type: "model.started", runId, step });
 
-      const modelStartedAt = currentTime(options);
+      const modelStartedAt = statistics.now();
       let ttftMs: number | undefined;
-      const turn = await this.provider.generate(request, {
+      const turn = await this.provider.generate(preparation.request, {
         onEvent: (event) => {
           if (event.type === "output_text.delta") {
             const firstTextDelta =
               ttftMs === undefined && event.delta.length > 0;
-            if (firstTextDelta) ttftMs = elapsed(modelStartedAt, options);
+            if (firstTextDelta) {
+              ttftMs = statistics.elapsedSince(modelStartedAt);
+            }
             emit({
               type: "model.output_text.delta",
               runId,
@@ -190,25 +166,16 @@ export class AgentLoop {
         text: turn.text,
         toolCalls: turn.toolCalls,
         usage: turn.usage,
-        durationMs: elapsed(modelStartedAt, options),
+        durationMs: statistics.elapsedSince(modelStartedAt),
         ...(ttftMs === undefined ? {} : { ttftMs }),
         outputVisibility,
       });
 
-      state = turn.state;
-      addUsage(usage, turn.usage);
-      previousModelUsage = turn.usage;
-      contextHistory = appendAssistantContext(contextHistory, turn);
-      await options.onCheckpoint?.({
-        step,
-        phase: "model_completed",
-        modelState: state,
-        ...(previousModelUsage?.totalTokens === undefined
-          ? {}
-          : { contextTokens: previousModelUsage.totalTokens }),
-        ...(contextReplaced ? { contextHistory: [...contextHistory] } : {}),
-        usage: { ...usage },
-      });
+      modelSession.completeTurn(turn);
+      statistics.addUsage(turn.usage);
+      await options.onCheckpoint?.(
+        modelSession.checkpoint(step, "model_completed", statistics.snapshot()),
+      );
 
       const additionalInput = options.takeAdditionalInput
         ? await options.takeAdditionalInput()
@@ -246,7 +213,7 @@ export class AgentLoop {
           continue;
         }
         emit({ type: "message.completed", runId, text: output });
-        const durationMs = elapsed(startedAt, options);
+        const durationMs = statistics.elapsedSince(startedAt);
         emit({ type: "run.completed", runId, steps: step, durationMs });
 
         return {
@@ -254,12 +221,8 @@ export class AgentLoop {
           output,
           steps: step,
           durationMs,
-          modelState: state,
-          ...(previousModelUsage?.totalTokens === undefined
-            ? {}
-            : { contextTokens: previousModelUsage.totalTokens }),
-          ...(contextReplaced ? { contextHistory } : {}),
-          usage,
+          ...modelSession.resultContext(),
+          usage: statistics.snapshot(),
         };
       }
 
@@ -267,27 +230,28 @@ export class AgentLoop {
       for (const [index, call] of turn.toolCalls.entries()) {
         options.signal?.throwIfAborted();
         toolResults.push(
-          await this.executeTool(call, tools, runId, step, options, emit, {
+          await executeTool({
+            call,
+            tools,
+            runId,
             step,
-            phase: "tool_started",
-            modelState: state,
-            ...(previousModelUsage?.totalTokens === undefined
-              ? {}
-              : { contextTokens: previousModelUsage.totalTokens }),
-            ...(contextReplaced ? { contextHistory: [...contextHistory] } : {}),
-            usage: { ...usage },
+            runOptions: options,
+            statistics,
+            emit,
+            startedCheckpoint: modelSession.checkpoint(
+              step,
+              "tool_started",
+              statistics.snapshot(),
+            ),
           }),
         );
-        await options.onCheckpoint?.({
-          step,
-          phase: "tool_completed",
-          modelState: state,
-          ...(previousModelUsage?.totalTokens === undefined
-            ? {}
-            : { contextTokens: previousModelUsage.totalTokens }),
-          ...(contextReplaced ? { contextHistory: [...contextHistory] } : {}),
-          usage: { ...usage },
-        });
+        await options.onCheckpoint?.(
+          modelSession.checkpoint(
+            step,
+            "tool_completed",
+            statistics.snapshot(),
+          ),
+        );
         const additionalInput = options.takeAdditionalInput
           ? await options.takeAdditionalInput()
           : undefined;
@@ -308,177 +272,4 @@ export class AgentLoop {
 
     throw new Error(`Agent exceeded maxSteps (${maxSteps})`);
   }
-
-  private async executeTool(
-    call: ToolCall,
-    tools: readonly Tool[],
-    runId: string,
-    step: number,
-    options: RunOptions,
-    emit: (event: AgentEvent) => void,
-    startedCheckpoint: AgentRunCheckpoint,
-  ): Promise<ToolResult> {
-    const tool = tools.find((candidate) => candidate.name === call.name);
-    if (call.argumentError) {
-      emit({ type: "tool.started", runId, call });
-      await options.onCheckpoint?.(startedCheckpoint);
-      const toolStartedAt = currentTime(options);
-      const result: ToolResult = {
-        callId: call.id,
-        name: call.name,
-        output: call.argumentError,
-        ...(tool?.kind ? { kind: tool.kind } : {}),
-        isError: true,
-      };
-      emit({
-        type: "tool.completed",
-        runId,
-        result,
-        durationMs: elapsed(toolStartedAt, options),
-      });
-      return result;
-    }
-    const controllerContext = { runId, step, tools };
-    const decision = options.controller?.beforeToolCall
-      ? await options.controller.beforeToolCall(call, tool, controllerContext)
-      : undefined;
-    if (decision && !decision.allowed) {
-      return {
-        callId: call.id,
-        name: call.name,
-        output: decision.message ?? `Tool call rejected: ${call.name}`,
-        ...(tool?.kind ? { kind: tool.kind } : {}),
-        isError: true,
-      };
-    }
-    if (!tool) {
-      return {
-        callId: call.id,
-        name: call.name,
-        output: `Unknown tool: ${call.name}`,
-        isError: true,
-      };
-    }
-
-    emit({ type: "tool.started", runId, call });
-    await options.onCheckpoint?.(startedCheckpoint);
-    const toolStartedAt = currentTime(options);
-
-    let result: ToolResult;
-    try {
-      const output = await tool.execute(call.arguments, {
-        runId,
-        ...(options.toolScopeId ? { scopeId: options.toolScopeId } : {}),
-        signal: options.signal ?? new AbortController().signal,
-      });
-      result = {
-        callId: call.id,
-        name: call.name,
-        output: serialize(output),
-        ...(tool.kind ? { kind: tool.kind } : {}),
-      };
-    } catch (error) {
-      const metadata = toolErrorMetadata(error);
-      result = {
-        callId: call.id,
-        name: call.name,
-        output: error instanceof Error ? error.message : String(error),
-        ...(tool.kind ? { kind: tool.kind } : {}),
-        isError: true,
-        ...(metadata ? { error: metadata } : {}),
-      };
-    }
-
-    emit({
-      type: "tool.completed",
-      runId,
-      result,
-      durationMs: elapsed(toolStartedAt, options),
-    });
-    if (options.controller?.afterToolCall) {
-      await options.controller.afterToolCall(call, result, controllerContext);
-    }
-    return result;
-  }
-}
-
-function appendPendingContext(
-  history: readonly ModelConversationMessage[],
-  input: string | undefined,
-  toolResults: readonly ToolResult[],
-): ModelConversationMessage[] {
-  const next = [...history];
-  if (toolResults.length > 0) {
-    next.push({
-      role: "user",
-      text: toolResults
-        .map(
-          (result) =>
-            `<tool_result name=${JSON.stringify(result.name)} call_id=${JSON.stringify(result.callId)}${result.isError ? ' error="true"' : ""}>\n${result.output}\n</tool_result>`,
-        )
-        .join("\n\n"),
-    });
-  }
-  if (input?.trim()) next.push({ role: "user", text: input });
-  return next;
-}
-
-function appendAssistantContext(
-  history: readonly ModelConversationMessage[],
-  turn: ModelTurn,
-): ModelConversationMessage[] {
-  const toolCalls = turn.toolCalls.map(
-    (call) =>
-      `<tool_call name=${JSON.stringify(call.name)} call_id=${JSON.stringify(call.id)}>\n${serialize(call.arguments)}\n</tool_call>`,
-  );
-  const text = [turn.text, ...toolCalls].filter(Boolean).join("\n\n");
-  return text ? [...history, { role: "assistant", text }] : [...history];
-}
-
-function currentTime(options: RunOptions): number {
-  return options.now?.() ?? performance.now();
-}
-
-function elapsed(startedAt: number, options: RunOptions): number {
-  return Math.max(0, Math.round((currentTime(options) - startedAt) * 10) / 10);
-}
-
-function mergeAdditionalInput(
-  current: string | undefined,
-  additional: string | undefined,
-): string | undefined {
-  const next = additional?.trim();
-  if (!next) return current;
-  const block = `[Additional user instruction received while the run was active]\n${next}`;
-  return current ? `${current}\n\n${block}` : block;
-}
-
-function skippedToolResult(call: ToolCall, tools: readonly Tool[]): ToolResult {
-  const kind = tools.find(({ name }) => name === call.name)?.kind;
-  return {
-    callId: call.id,
-    name: call.name,
-    output:
-      "Skipped because the user added a newer instruction. Re-evaluate the task before calling tools again.",
-    ...(kind ? { kind } : {}),
-    isError: true,
-  };
-}
-
-function serialize(value: unknown): string {
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value) ?? "null";
-  } catch {
-    return String(value);
-  }
-}
-
-function addUsage(
-  total: TokenUsage,
-  next: Partial<TokenUsage> | undefined,
-): void {
-  total.inputTokens += next?.inputTokens ?? 0;
-  total.outputTokens += next?.outputTokens ?? 0;
-  total.totalTokens += next?.totalTokens ?? 0;
 }
