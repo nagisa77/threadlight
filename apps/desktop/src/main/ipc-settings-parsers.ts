@@ -553,11 +553,21 @@ export function parseConversationUpdate(
   if (
     typeof update.projectId !== "string" ||
     typeof update.id !== "string" ||
-    typeof update.title !== "string"
+    typeof update.title !== "string" ||
+    (update.accessMode !== undefined &&
+      update.accessMode !== "approval" &&
+      update.accessMode !== "full")
   ) {
     throw new Error("Invalid conversation update");
   }
-  return { projectId: update.projectId, id: update.id, title: update.title };
+  return {
+    projectId: update.projectId,
+    id: update.id,
+    title: update.title,
+    ...(update.accessMode === "approval" || update.accessMode === "full"
+      ? { accessMode: update.accessMode }
+      : {}),
+  };
 }
 
 export function parseConversationMetadataUpdate(

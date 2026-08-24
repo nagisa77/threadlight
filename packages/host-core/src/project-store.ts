@@ -32,6 +32,7 @@ interface DesktopConversationRecoveryRequest
 }
 interface DesktopConversationUpdate extends DesktopConversationTarget {
   title: string;
+  accessMode?: "approval" | "full";
 }
 interface DesktopConversationMetadataUpdate
   extends DesktopConversationTarget {
@@ -316,6 +317,9 @@ export class ProjectStore {
       if (!conversation.renamedAt && !conversation.titleGeneratedAt) {
         conversation.title = title;
       }
+      if (update.accessMode !== undefined) {
+        conversation.accessMode = update.accessMode;
+      }
       conversation.updatedAt = timestamp;
     } else {
       project.conversations.push({
@@ -325,6 +329,7 @@ export class ProjectStore {
         updatedAt: timestamp,
         status: "pending",
         unread: false,
+        ...(update.accessMode ? { accessMode: update.accessMode } : {}),
       });
     }
     this.write(stored);

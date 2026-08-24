@@ -812,7 +812,10 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     t,
   });
 
-  async function persistSubmittedThread(threadId: string) {
+  async function persistSubmittedThread(
+    threadId: string,
+    accessMode: ConversationAccessMode,
+  ) {
     if (!projects || !currentProject) return;
     try {
       const existingTitle = currentProject.conversations.find(
@@ -823,6 +826,7 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
           projectId: currentProject.id,
           id: threadId,
           title: existingTitle ?? t("task"),
+          accessMode,
         }),
       );
     } catch (error) {

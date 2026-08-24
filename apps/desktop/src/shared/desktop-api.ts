@@ -398,6 +398,7 @@ export interface DesktopConversationUpdate {
   projectId: string;
   id: string;
   title: string;
+  accessMode?: ConversationAccessMode;
 }
 
 export interface DesktopConversationMetadataUpdate {

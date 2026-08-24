@@ -233,6 +233,7 @@ export class HttpHostClient {
     projectId: string;
     id: string;
     title: string;
+    accessMode?: "approval" | "full";
   }): Promise<HostProjectsSnapshot> {
     return this.request("/v1/host/conversations/upsert", {
       method: "POST",

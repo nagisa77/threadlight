@@ -432,6 +432,9 @@ export class HostApiController {
         snapshot = this.host.options.projects.upsertConversation({
           ...target,
           title: requiredString(body.title, "title"),
+          ...(body.accessMode === "approval" || body.accessMode === "full"
+            ? { accessMode: body.accessMode }
+            : {}),
         });
       } else if (url.pathname.endsWith("/update")) {
         snapshot = this.host.options.projects.updateConversation({

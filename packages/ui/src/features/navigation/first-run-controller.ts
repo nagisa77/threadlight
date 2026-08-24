@@ -127,6 +127,7 @@ export function useFirstRunController({
         projectId: demo.project.id,
         id: result.threadId,
         title: t("demoTask"),
+        accessMode,
       }),
     );
   }

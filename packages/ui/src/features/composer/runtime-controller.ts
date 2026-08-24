@@ -124,7 +124,10 @@ interface ComposerRuntimeOptions {
     delivery: FollowUpDelivery,
     attachments: readonly AttachmentData[],
   ): Promise<boolean>;
-  persistSubmittedThread(threadId: string): Promise<void>;
+  persistSubmittedThread(
+    threadId: string,
+    accessMode: ConversationAccessMode,
+  ): Promise<void>;
   navigateHistory(input: {
     messages: readonly ComposerMessage[];
     current: string;
@@ -279,7 +282,14 @@ export function useComposerRuntime(options: ComposerRuntimeOptions) {
       setComposerMode("default");
       setSelectedCapabilities([]);
       clearAttachments(draftAttachments);
-      await persistSubmittedThread(submittedThreadId);
+      await persistSubmittedThread(
+        submittedThreadId,
+        accessModeForSubmittedThread({
+          newTaskDraft,
+          draftAccessMode,
+          selectedAccessMode,
+        }),
+      );
     } finally {
       submissionGate.current.stop();
       setSubmitting(false);
@@ -462,6 +472,14 @@ async function submitTurn(input: {
     input.setNewTaskDraftError(undefined);
   }
   return input.session.threadId;
+}
+
+export function accessModeForSubmittedThread(input: {
+  newTaskDraft: boolean;
+  draftAccessMode: ConversationAccessMode;
+  selectedAccessMode: ConversationAccessMode;
+}): ConversationAccessMode {
+  return input.newTaskDraft ? input.draftAccessMode : input.selectedAccessMode;
 }
 
 function handleCapabilityKey(

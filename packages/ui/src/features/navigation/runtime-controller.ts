@@ -44,6 +44,23 @@ import type { useNavigationController } from "./controller.js";
 
 type NavigationState = ReturnType<typeof useNavigationController>;
 
+interface StandaloneDraftTransition {
+  setProjectSnapshot(snapshot: ProjectsSnapshot): void;
+  closeConversationPanels(): void;
+  showThread(): void;
+  beginDraft(): void;
+}
+
+export function enterStandaloneDraft(
+  snapshot: ProjectsSnapshot,
+  transition: StandaloneDraftTransition,
+): void {
+  transition.setProjectSnapshot(snapshot);
+  transition.closeConversationPanels();
+  transition.showThread();
+  transition.beginDraft();
+}
+
 interface NavigationRuntimeOptions {
   client: ThreadlightClient;
   navigation: NavigationState;
@@ -491,10 +508,12 @@ export function useNavigationRuntime(options: NavigationRuntimeOptions) {
     setProjectError(undefined);
     try {
       const snapshot = await projects.createStandalone();
-      setProjectSnapshot(snapshot);
-      closeConversationPanels();
-      setView("thread");
-      await connectProject(snapshot);
+      enterStandaloneDraft(snapshot, {
+        setProjectSnapshot,
+        closeConversationPanels,
+        showThread: () => setView("thread"),
+        beginDraft,
+      });
       requestAnimationFrame(() => textarea.current?.focus());
     } catch (reason) {
       setProjectError(errorMessage(reason));

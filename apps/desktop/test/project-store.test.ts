@@ -762,6 +762,7 @@ describe("ProjectStore", () => {
       projectId: "project-1",
       id: "thread-full",
       title: "Trusted task",
+      accessMode: "full",
     });
     store.upsertConversation({
       projectId: "project-1",
@@ -769,10 +770,10 @@ describe("ProjectStore", () => {
       title: "Guarded task",
     });
 
-    store.updateConversation({
+    store.upsertConversation({
       projectId: "project-1",
       id: "thread-full",
-      accessMode: "full",
+      title: "Trusted task",
     });
 
     const conversations =

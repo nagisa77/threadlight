@@ -199,8 +199,15 @@ describe("sessionReducer", () => {
         calls.push(`thread/start:${developmentMode}`);
         return { threadId: "thread-2" };
       },
-      startTurn: async (threadId: string, text: string) => {
-        calls.push(`turn/start:${threadId}:${text}`);
+      startTurn: async (
+        threadId: string,
+        text: string,
+        _attachments: unknown,
+        _mode: unknown,
+        _capabilityRefs: unknown,
+        accessMode: string,
+      ) => {
+        calls.push(`turn/start:${threadId}:${text}:${accessMode}`);
       },
     };
 
@@ -211,7 +218,7 @@ describe("sessionReducer", () => {
       [],
       "default",
       [],
-      "approval",
+      "full",
       undefined,
       undefined,
       "worktree",
@@ -221,7 +228,7 @@ describe("sessionReducer", () => {
     expect(calls).toEqual([
       "initialize",
       "thread/start:worktree",
-      "turn/start:thread-2:First question",
+      "turn/start:thread-2:First question:full",
     ]);
     expect(created).toEqual(["thread-2"]);
     expect(result).toEqual({ threadId: "thread-2", started: { ok: true } });

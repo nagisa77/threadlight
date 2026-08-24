@@ -479,6 +479,7 @@ class RemoteWebProjectsAdapter implements ProjectsAdapter {
     projectId: string;
     id: string;
     title: string;
+    accessMode?: "approval" | "full";
   }): Promise<ProjectsSnapshot> {
     return this.sync(await this.host.upsertConversation(update));
   }

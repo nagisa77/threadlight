@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { createSubmissionGate } from "../src/app.js";
+import { accessModeForSubmittedThread } from "../src/features/composer/runtime-controller.js";
 import { attachmentHint } from "../src/features/task-session/conversation-content.js";
 import {
   I18nProvider,
@@ -22,6 +23,26 @@ function translate(
 }
 
 describe("composer submission gate", () => {
+  it("persists the draft's full-access mode when the first message creates the task", () => {
+    expect(
+      accessModeForSubmittedThread({
+        newTaskDraft: true,
+        draftAccessMode: "full",
+        selectedAccessMode: "approval",
+      }),
+    ).toBe("full");
+  });
+
+  it("persists the existing task's selected access mode", () => {
+    expect(
+      accessModeForSubmittedThread({
+        newTaskDraft: false,
+        draftAccessMode: "approval",
+        selectedAccessMode: "full",
+      }),
+    ).toBe("full");
+  });
+
   it("allows only one in-flight submission", () => {
     const gate = createSubmissionGate();
     expect(gate.pending).toBe(false);
