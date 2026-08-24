@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { Agent } from "@threadlight/agent-loop";
+import type {
+  Agent,
+  ModelConversationMessage,
+  RunOptions,
+} from "@threadlight/agent-loop";
 
 import type { ConversationMessageData } from "./protocol.js";
 import type { ThreadState } from "./thread-state.js";
@@ -9,7 +13,10 @@ import { composePrompt, promptBlocksFromSnapshot } from "./prompt-composer.js";
 import type { TurnDiagnosticsRecorder } from "./app-server-support.js";
 import {
   ContextCompactor,
+  lastProviderContextTokens,
+  modelHistoryContext,
   type ContextCompactionOutcome,
+  type RuntimeContextCompactionOutcome,
 } from "./context-compaction.js";
 
 interface ManualContextCompactionInput {
@@ -35,6 +42,19 @@ interface AutomaticContextCompactionInput {
   input: string;
   signal: AbortSignal;
   now(): Date;
+}
+
+interface RuntimeContextCompactionInput {
+  compactor: ContextCompactor;
+  state: AppServerState;
+  thread: ThreadState;
+  now(): Date;
+}
+
+interface RuntimeContextCompaction {
+  history: readonly ModelConversationMessage[];
+  beforeModelRequest: NonNullable<RunOptions["beforeModelRequest"]>;
+  outcome(): ContextCompactionOutcome | undefined;
 }
 
 export async function completeManualContextCompaction({
@@ -133,6 +153,79 @@ export async function maybeCompactContext({
   });
   await persistContextCompaction(state, thread, outcome);
   return outcome;
+}
+
+export function createRuntimeContextCompaction({
+  compactor,
+  state,
+  thread,
+  now,
+}: RuntimeContextCompactionInput): RuntimeContextCompaction {
+  const messages = thread.conversation.messages.slice(0, -1);
+  const historyContext = modelHistoryContext(thread.conversation, messages);
+  const sourceMessageIds = new Map(
+    historyContext.history.flatMap((message, index) => {
+      const sourceId = historyContext.sourceMessageIds[index];
+      return sourceId ? [[message, sourceId] as const] : [];
+    }),
+  );
+  let latest: ContextCompactionOutcome | undefined;
+  return {
+    history: historyContext.history,
+    beforeModelRequest: compactor.createBeforeModelRequest({
+      initialGeneration: thread.conversation.contextCompaction?.generation,
+      initialContextTokens: lastProviderContextTokens(messages),
+      onCompacted: async (outcome) => {
+        const firstKeptMessageId = outcome.firstKeptMessage
+          ? sourceMessageIds.get(outcome.firstKeptMessage)
+          : undefined;
+        latest = await persistRuntimeContextCompaction(
+          state,
+          thread,
+          outcome,
+          firstKeptMessageId ?? thread.conversation.messages.at(-1)?.id,
+          now(),
+        );
+      },
+    }),
+    outcome: () => latest,
+  };
+}
+
+export async function persistRuntimeContextCompaction(
+  state: AppServerState,
+  thread: ThreadState,
+  outcome: RuntimeContextCompactionOutcome,
+  firstKeptMessageId: string | undefined,
+  now: Date,
+): Promise<ContextCompactionOutcome> {
+  const checkpoint = {
+    version: 1 as const,
+    generation: outcome.record.generation,
+    summary: outcome.summary,
+    ...(firstKeptMessageId ? { firstKeptMessageId } : {}),
+    source: "automatic" as const,
+    compactedAt: now.toISOString(),
+    tokensBefore: outcome.record.tokensBefore,
+    tokensAfter: outcome.record.tokensAfter,
+    messagesCompacted: outcome.record.messagesCompacted,
+  };
+  const compacted: ContextCompactionOutcome = {
+    checkpoint,
+    receipt: {
+      status: "compacted",
+      source: "automatic",
+      generation: checkpoint.generation,
+      compactedAt: checkpoint.compactedAt,
+      tokensBefore: checkpoint.tokensBefore,
+      tokensAfter: checkpoint.tokensAfter,
+      messagesCompacted: checkpoint.messagesCompacted,
+    },
+    usage: outcome.usage,
+    durationMs: outcome.record.durationMs,
+  };
+  await persistContextCompaction(state, thread, compacted);
+  return compacted;
 }
 
 async function persistContextCompaction(

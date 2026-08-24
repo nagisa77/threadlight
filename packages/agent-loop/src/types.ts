@@ -111,6 +111,40 @@ export interface ModelRequest {
   signal?: AbortSignal;
 }
 
+/**
+ * Provider-neutral context available immediately before one model request.
+ * `fallbackHistory` includes pending input and tool results as visible text.
+ */
+export interface BeforeModelRequestContext {
+  runId: string;
+  step: number;
+  agent: Agent;
+  request: ModelRequest;
+  fallbackHistory: readonly ModelConversationMessage[];
+  previousModelUsage?: Partial<TokenUsage>;
+}
+
+export interface ContextCompactionRecord {
+  generation: number;
+  tokensBefore: number;
+  tokensAfter: number;
+  messagesCompacted: number;
+  durationMs: number;
+}
+
+/** Host-provided replacement context for the imminent model request. */
+export interface BeforeModelRequestResult {
+  /** Complete visible fallback, including pending input and tool results. */
+  history: readonly ModelConversationMessage[];
+  /** Clear provider-specific state whose call linkage is no longer valid. */
+  clearModelState: true;
+  /** The replacement history already contains the pending request context. */
+  consumePendingContext: true;
+  /** Model usage spent preparing this request, such as summary generation. */
+  usage?: Partial<TokenUsage>;
+  compaction?: ContextCompactionRecord;
+}
+
 export interface ModelTurn {
   text: string;
   toolCalls: readonly ToolCall[];
@@ -146,6 +180,12 @@ export interface ModelProvider {
 
 export type AgentEvent =
   | { type: "run.started"; runId: string }
+  | ({
+      type: "context.compacted";
+      runId: string;
+      step: number;
+      usage?: Partial<TokenUsage>;
+    } & ContextCompactionRecord)
   | { type: "model.started"; runId: string; step: number }
   | ({
       type: "model.retrying";
@@ -201,6 +241,13 @@ export interface RunOptions {
   /** Prior visible turns forwarded without interpreting provider-specific state. */
   history?: readonly ModelConversationMessage[];
   controller?: RunController;
+  /** Runs after controller shaping and immediately before every generate call. */
+  beforeModelRequest?: (
+    context: BeforeModelRequestContext,
+  ) =>
+    | BeforeModelRequestResult
+    | undefined
+    | Promise<BeforeModelRequestResult | undefined>;
   /**
    * Consumes user input added while this run is active.
    *
@@ -222,8 +269,13 @@ export interface RunOptions {
 
 export interface AgentRunCheckpoint {
   step: number;
-  phase: "model_completed" | "tool_started" | "tool_completed";
+  phase:
+    "context_compacted" | "model_completed" | "tool_started" | "tool_completed";
   modelState?: unknown;
+  /** Last provider-reported context size for the next preflight check. */
+  contextTokens?: number;
+  /** Complete provider-neutral fallback at this safe boundary. */
+  contextHistory?: readonly ModelConversationMessage[];
   usage: TokenUsage;
 }
 
@@ -294,6 +346,10 @@ export interface RunResult {
   steps: number;
   durationMs: number;
   modelState?: unknown;
+  /** Last provider-reported context size for a resumed run. */
+  contextTokens?: number;
+  /** Complete provider-neutral fallback for continuation or provider changes. */
+  contextHistory?: readonly ModelConversationMessage[];
   usage: TokenUsage;
 }
 
@@ -428,6 +484,7 @@ export interface ChildAgentRunContext {
   agentId: string;
   parentId: string;
   profile: SubagentProfile;
+  contextTokens?: number;
 }
 
 export interface AgentRuntimeTaskSnapshot {
@@ -436,6 +493,8 @@ export interface AgentRuntimeTaskSnapshot {
   pendingInput: readonly string[];
   collected: boolean;
   modelState?: unknown;
+  contextTokens?: number;
+  contextHistory?: readonly ModelConversationMessage[];
   checkpointStep?: number;
   checkpointPhase?: AgentRunCheckpoint["phase"];
 }
@@ -465,6 +524,7 @@ export interface ResumableAgentThread {
   latestTask: AgentTaskSnapshot;
   history: readonly ModelConversationMessage[];
   modelState?: unknown;
+  contextTokens?: number;
 }
 
 export type AgentLifecycleErrorCode =
@@ -492,7 +552,11 @@ export interface AgentOrchestratorOptions extends RunOptions {
     context: ChildAgentRunContext,
   ) => Pick<
     RunOptions,
-    "controller" | "toolScopeId" | "history" | "onCheckpoint"
+    | "beforeModelRequest"
+    | "controller"
+    | "toolScopeId"
+    | "history"
+    | "onCheckpoint"
   >;
 }
 

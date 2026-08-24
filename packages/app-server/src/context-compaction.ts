@@ -1,7 +1,10 @@
 import type {
   Agent,
   AgentLoop,
+  BeforeModelRequestContext,
+  BeforeModelRequestResult,
   ModelConversationMessage,
+  RunOptions,
   TokenUsage,
 } from "@threadlight/agent-loop";
 import type {
@@ -58,6 +61,22 @@ export interface ContextCompactionOutcome {
   durationMs: number;
 }
 
+export interface RuntimeContextCompactionOutcome {
+  summary: string;
+  firstKeptMessage?: ModelConversationMessage;
+  record: NonNullable<BeforeModelRequestResult["compaction"]>;
+  usage: TokenUsage;
+}
+
+export interface RuntimeContextCompactionOptions {
+  initialGeneration?: number;
+  /** Last provider-reported context size from an earlier root turn. */
+  initialContextTokens?: number;
+  onCompacted?: (
+    outcome: RuntimeContextCompactionOutcome,
+  ) => void | Promise<void>;
+}
+
 interface CompactInput {
   conversation: StoredConversation;
   messages: readonly ConversationMessageData[];
@@ -103,6 +122,87 @@ export class ContextCompactor {
     const threshold =
       this.config.contextWindowTokens - this.config.reserveTokens;
     return active.length > 0 && projected >= threshold;
+  }
+
+  /**
+   * Creates independent state for one root or child agent run. The returned
+   * hook is evaluated before every model request by AgentLoop.
+   */
+  createBeforeModelRequest(
+    options: RuntimeContextCompactionOptions = {},
+  ): NonNullable<RunOptions["beforeModelRequest"]> {
+    let generation = options.initialGeneration ?? 0;
+    let initialContextTokens = options.initialContextTokens ?? 0;
+    return async (context) => {
+      const tokensBefore = projectedRuntimeRequestTokens(
+        context,
+        initialContextTokens,
+      );
+      const threshold =
+        this.config.contextWindowTokens - this.config.reserveTokens;
+      if (tokensBefore < threshold) return;
+
+      const requestHistory = context.request.history ?? [];
+      const pendingHistory = context.fallbackHistory.slice(
+        requestHistory.length,
+      );
+      const extracted = extractRollingSummary(requestHistory);
+      const split = splitRecentHistory(
+        extracted.history,
+        this.config.keepRecentTokens,
+      );
+      if (split.older.length === 0 && context.request.state === undefined) {
+        return;
+      }
+
+      let summary = extracted.summary;
+      let usage = { ...EMPTY_USAGE };
+      let durationMs = 0;
+      if (split.older.length > 0) {
+        const result = await this.loop.run(
+          {
+            ...context.agent,
+            name: `${context.agent.name}-context-compaction`,
+            instructions: SUMMARY_INSTRUCTIONS,
+            tools: [],
+            maxSteps: 1,
+          },
+          runtimeSummaryPrompt(extracted.summary, split.older),
+          { signal: context.request.signal },
+        );
+        summary = result.output.trim();
+        usage = result.usage;
+        durationMs = result.durationMs;
+      }
+
+      const history = runtimeModelHistoryFrom(summary, [
+        ...split.recent,
+        ...pendingHistory,
+      ]);
+      generation += 1;
+      const record = {
+        generation,
+        tokensBefore,
+        tokensAfter: estimateRuntimeRequestTokens(context.request, history),
+        messagesCompacted: split.older.length,
+        durationMs,
+      };
+      const outcome: RuntimeContextCompactionOutcome = {
+        summary,
+        firstKeptMessage: split.recent[0] ?? pendingHistory[0],
+        record,
+        usage,
+      };
+      initialContextTokens = 0;
+      await options.onCompacted?.(outcome);
+      return {
+        history,
+        clearModelState: true,
+        consumePendingContext: true,
+        usage,
+        compaction: record,
+      };
+    };
   }
 
   async compact(input: CompactInput): Promise<ContextCompactionOutcome> {
@@ -250,10 +350,34 @@ export function modelHistory(
   conversation: StoredConversation,
   messages: readonly ConversationMessageData[] = conversation.messages,
 ): readonly ModelConversationMessage[] {
-  return modelHistoryFrom(
-    conversation.contextCompaction?.summary,
-    activeMessages(conversation, messages),
-  );
+  return modelHistoryContext(conversation, messages).history;
+}
+
+export interface ModelHistoryContext {
+  history: readonly ModelConversationMessage[];
+  /** Message ID for each history entry; summaries have no source ID. */
+  sourceMessageIds: readonly (string | undefined)[];
+}
+
+export function modelHistoryContext(
+  conversation: StoredConversation,
+  messages: readonly ConversationMessageData[] = conversation.messages,
+): ModelHistoryContext {
+  const active = activeMessages(conversation, messages);
+  const history: ModelConversationMessage[] = [];
+  const sourceMessageIds: (string | undefined)[] = [];
+  const summary = conversation.contextCompaction?.summary.trim();
+  if (summary) {
+    history.push(summaryHistoryMessage(summary));
+    sourceMessageIds.push(undefined);
+  }
+  for (const message of active) {
+    const text = messageContextText(message);
+    if (!text) continue;
+    history.push({ role: message.role, text });
+    sourceMessageIds.push(message.id);
+  }
+  return { history, sourceMessageIds };
 }
 
 function modelHistoryFrom(
@@ -262,16 +386,7 @@ function modelHistoryFrom(
 ): readonly ModelConversationMessage[] {
   const history: ModelConversationMessage[] = [];
   const summary = summaryValue?.trim();
-  if (summary) {
-    history.push({
-      role: "user",
-      text: [
-        "[Rolling context summary from earlier turns]",
-        summary,
-        "[End rolling context summary]",
-      ].join("\n"),
-    });
-  }
+  if (summary) history.push(summaryHistoryMessage(summary));
   history.push(
     ...messages
       .map((message) => ({
@@ -281,6 +396,28 @@ function modelHistoryFrom(
       .filter((message) => message.text.length > 0),
   );
   return history;
+}
+
+function runtimeModelHistoryFrom(
+  summaryValue: string | undefined,
+  messages: readonly ModelConversationMessage[],
+): readonly ModelConversationMessage[] {
+  const summary = summaryValue?.trim();
+  return [
+    ...(summary ? [summaryHistoryMessage(summary)] : []),
+    ...messages.map((message) => ({ ...message })),
+  ];
+}
+
+function summaryHistoryMessage(summary: string): ModelConversationMessage {
+  return {
+    role: "user",
+    text: [
+      "[Rolling context summary from earlier turns]",
+      summary,
+      "[End rolling context summary]",
+    ].join("\n"),
+  };
 }
 
 export function estimateTokens(text: string): number {
@@ -348,6 +485,40 @@ function splitRecentMessages(
   };
 }
 
+function splitRecentHistory(
+  history: readonly ModelConversationMessage[],
+  keepRecentTokens: number,
+): {
+  older: readonly ModelConversationMessage[];
+  recent: readonly ModelConversationMessage[];
+} {
+  const turns: ModelConversationMessage[][] = [];
+  for (const message of history) {
+    if (message.role === "user" || turns.length === 0) turns.push([]);
+    turns[turns.length - 1]!.push(message);
+  }
+  let recentTokens = 0;
+  let firstRecentTurn = turns.length;
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turnTokens = turns[index]!.reduce(
+      (total, message) => total + estimateTokens(message.text) + 4,
+      0,
+    );
+    if (
+      firstRecentTurn < turns.length &&
+      recentTokens + turnTokens > keepRecentTokens
+    ) {
+      break;
+    }
+    recentTokens += turnTokens;
+    firstRecentTurn = index;
+  }
+  return {
+    older: turns.slice(0, firstRecentTurn).flat(),
+    recent: turns.slice(firstRecentTurn).flat(),
+  };
+}
+
 function groupTurns(
   messages: readonly ConversationMessageData[],
 ): ConversationMessageData[][] {
@@ -385,6 +556,46 @@ function estimateRequestTokens(
   );
 }
 
+function estimateRuntimeRequestTokens(
+  request: BeforeModelRequestContext["request"],
+  history: readonly ModelConversationMessage[],
+): number {
+  const toolTokens = request.tools.reduce(
+    (total, tool) =>
+      total +
+      estimateTokens(tool.name) +
+      estimateTokens(tool.description) +
+      estimateTokens(JSON.stringify(tool.parameters)) +
+      16,
+    0,
+  );
+  return (
+    estimateTokens(request.instructions) +
+    history.reduce(
+      (total, message) => total + estimateTokens(message.text) + 4,
+      0,
+    ) +
+    toolTokens +
+    16
+  );
+}
+
+function projectedRuntimeRequestTokens(
+  context: BeforeModelRequestContext,
+  initialContextTokens: number,
+): number {
+  const requestHistoryLength = context.request.history?.length ?? 0;
+  const pendingTokens = context.fallbackHistory
+    .slice(requestHistoryLength)
+    .reduce((total, message) => total + estimateTokens(message.text) + 4, 0);
+  const observedTokens =
+    context.previousModelUsage?.totalTokens ?? initialContextTokens;
+  return Math.max(
+    estimateRuntimeRequestTokens(context.request, context.fallbackHistory),
+    observedTokens + pendingTokens,
+  );
+}
+
 function projectedRequestTokens(
   conversation: StoredConversation,
   messages: readonly ConversationMessageData[],
@@ -400,7 +611,7 @@ function projectedRequestTokens(
   return Math.max(estimated, projectedObserved);
 }
 
-function lastProviderContextTokens(
+export function lastProviderContextTokens(
   messages: readonly ConversationMessageData[],
 ): number | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -446,6 +657,51 @@ function summaryPrompt(
         ]
       : []),
   ].join("\n");
+}
+
+function runtimeSummaryPrompt(
+  previousSummary: string,
+  history: readonly ModelConversationMessage[],
+): string {
+  return [
+    "<previous_summary>",
+    previousSummary || "No previous rolling summary.",
+    "</previous_summary>",
+    "",
+    "<older_transcript>",
+    history
+      .map(
+        (message) =>
+          `<message role="${message.role}">\n${message.text}\n</message>`,
+      )
+      .join("\n\n"),
+    "</older_transcript>",
+  ].join("\n");
+}
+
+function extractRollingSummary(history: readonly ModelConversationMessage[]): {
+  summary: string;
+  history: readonly ModelConversationMessage[];
+} {
+  const summaries: string[] = [];
+  const visible: ModelConversationMessage[] = [];
+  for (const message of history) {
+    const summary = rollingSummaryText(message.text);
+    if (message.role === "user" && summary !== undefined) {
+      if (summary) summaries.push(summary);
+    } else {
+      visible.push(message);
+    }
+  }
+  return { summary: summaries.join("\n\n"), history: visible };
+}
+
+function rollingSummaryText(text: string): string | undefined {
+  const match =
+    /^\[Rolling context summary from earlier (?:turns|model calls)\]\n([\s\S]*?)\n\[End rolling context summary\]$/.exec(
+      text.trim(),
+    );
+  return match?.[1]?.trim();
 }
 
 function messageContextText(message: ConversationMessageData): string {

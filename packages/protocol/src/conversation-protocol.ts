@@ -414,7 +414,11 @@ export interface AgentThreadData {
   };
   checkpoint?: {
     step: number;
-    phase: "model_completed" | "tool_started" | "tool_completed";
+    phase:
+      | "context_compacted"
+      | "model_completed"
+      | "tool_started"
+      | "tool_completed";
     hasModelState: boolean;
   };
 }
@@ -598,6 +602,17 @@ export type SuggestionLanguage = HostLanguage;
 
 export type AgentEventData =
   | { type: "run.started"; runId: string }
+  | {
+      type: "context.compacted";
+      runId: string;
+      step: number;
+      generation: number;
+      tokensBefore: number;
+      tokensAfter: number;
+      messagesCompacted: number;
+      durationMs: number;
+      usage?: Partial<TokenUsageData>;
+    }
   | { type: "model.started"; runId: string; step: number }
   | ({
       type: "model.retrying";

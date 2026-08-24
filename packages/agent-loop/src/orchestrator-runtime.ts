@@ -109,6 +109,11 @@ export function parentAgentPath(path: string): string {
   return index <= 0 ? "/root" : path.slice(0, index);
 }
 
+export function removeFromQueue(queue: string[], agentId: string): void {
+  const index = queue.indexOf(agentId);
+  if (index >= 0) queue.splice(index, 1);
+}
+
 export function formatAgentMessage(message: AgentTaskMessage): string {
   return [
     `Message from ${message.fromAgentName} (${message.fromAgentThreadId}):`,

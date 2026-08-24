@@ -66,6 +66,14 @@ export class AgentTaskState {
       usage: { ...result.usage },
     });
     record.modelState = result.modelState;
+    if (result.contextTokens !== undefined) {
+      record.contextTokens = result.contextTokens;
+    }
+    if (result.contextHistory) {
+      record.contextHistory = result.contextHistory.map((message) => ({
+        ...message,
+      }));
+    }
     this.scheduleRuntimeCheckpoint();
     record.completion.resolve(cloneSnapshot(record.snapshot));
   }
@@ -188,6 +196,14 @@ export class AgentTaskState {
     checkpoint: AgentRunCheckpoint,
   ): void {
     record.modelState = checkpoint.modelState;
+    if (checkpoint.contextTokens !== undefined) {
+      record.contextTokens = checkpoint.contextTokens;
+    }
+    if (checkpoint.contextHistory) {
+      record.contextHistory = checkpoint.contextHistory.map((message) => ({
+        ...message,
+      }));
+    }
     record.checkpointStep = checkpoint.step;
     record.checkpointPhase = checkpoint.phase;
     record.snapshot = {

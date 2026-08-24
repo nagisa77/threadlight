@@ -13,6 +13,7 @@ import type {
   ConversationMessageData,
   QueuedTurnData,
 } from "@threadlight/protocol";
+import type { ModelConversationMessage } from "@threadlight/agent-loop";
 
 import {
   validatePromptSnapshot,
@@ -31,8 +32,11 @@ export interface StoredAgentThread {
   pendingInput: readonly string[];
   collected: boolean;
   modelState?: unknown;
+  contextTokens?: number;
+  contextHistory?: readonly ModelConversationMessage[];
   checkpointStep?: number;
-  checkpointPhase?: "model_completed" | "tool_started" | "tool_completed";
+  checkpointPhase?:
+    "context_compacted" | "model_completed" | "tool_started" | "tool_completed";
   interruption?: {
     previousStatus: "queued" | "running";
     interruptedAt: string;
@@ -275,15 +279,31 @@ function isStoredAgentThread(value: unknown): value is StoredAgentThread {
     Array.isArray(thread.pendingInput) &&
     thread.pendingInput.every((input) => typeof input === "string") &&
     typeof thread.collected === "boolean" &&
+    (thread.contextTokens === undefined ||
+      (Number.isSafeInteger(thread.contextTokens) &&
+        Number(thread.contextTokens) >= 0)) &&
+    (thread.contextHistory === undefined ||
+      (Array.isArray(thread.contextHistory) &&
+        thread.contextHistory.every(isModelConversationMessage))) &&
     (thread.checkpointStep === undefined ||
       (Number.isInteger(thread.checkpointStep) &&
         Number(thread.checkpointStep) >= 0)) &&
     (thread.checkpointPhase === undefined ||
+      thread.checkpointPhase === "context_compacted" ||
       thread.checkpointPhase === "model_completed" ||
       thread.checkpointPhase === "tool_started" ||
       thread.checkpointPhase === "tool_completed") &&
     (thread.interruption === undefined ||
       isStoredAgentInterruption(thread.interruption))
+  );
+}
+
+function isModelConversationMessage(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const message = value as Record<string, unknown>;
+  return (
+    (message.role === "user" || message.role === "assistant") &&
+    typeof message.text === "string"
   );
 }
 

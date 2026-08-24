@@ -158,6 +158,16 @@ export class AppServerState {
                 runtimeAgent.modelState,
               ),
             }),
+        ...(runtimeAgent.contextTokens === undefined
+          ? {}
+          : { contextTokens: runtimeAgent.contextTokens }),
+        ...(runtimeAgent.contextHistory === undefined
+          ? {}
+          : {
+              contextHistory: runtimeAgent.contextHistory.map((message) => ({
+                ...message,
+              })),
+            }),
         ...(runtimeAgent.checkpointStep === undefined
           ? {}
           : { checkpointStep: runtimeAgent.checkpointStep }),

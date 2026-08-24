@@ -4,6 +4,7 @@ import { AgentLoop } from "../src/agent-loop.js";
 import { defineAgent, defineTool } from "../src/types.js";
 import type {
   AgentEvent,
+  BeforeModelRequestContext,
   ModelProvider,
   ModelRequest,
   ModelTurn,
@@ -32,6 +33,101 @@ class ScriptedProvider implements ModelProvider {
 }
 
 describe("AgentLoop", () => {
+  it("prepares every model request and can replace opaque tool linkage with visible history", async () => {
+    const requests: ModelRequest[] = [];
+    const checkpoints: Array<{
+      phase: string;
+      contextHistory?: readonly { role: string; text: string }[];
+    }> = [];
+    const beforeModelRequest = vi.fn(
+      async (context: BeforeModelRequestContext) => {
+        if (context.step !== 2) return;
+        return {
+          history: context.fallbackHistory,
+          clearModelState: true as const,
+          consumePendingContext: true as const,
+          usage: { inputTokens: 7, outputTokens: 3, totalTokens: 10 },
+          compaction: {
+            generation: 1,
+            tokensBefore: 120,
+            tokensAfter: 30,
+            messagesCompacted: 1,
+            durationMs: 4,
+          },
+        };
+      },
+    );
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        if (requests.length === 1) {
+          return {
+            text: "Checking",
+            toolCalls: [
+              { id: "call-read", name: "read", arguments: { path: "a" } },
+            ],
+            state: { opaque: "call-read" },
+            usage: { inputTokens: 90, outputTokens: 5, totalTokens: 95 },
+          };
+        }
+        return {
+          text: "Done",
+          toolCalls: [],
+          state: { compacted: true },
+          usage: { inputTokens: 30, outputTokens: 5, totalTokens: 35 },
+        };
+      },
+    };
+
+    const result = await new AgentLoop(provider).run(
+      defineAgent({
+        name: "compactable",
+        instructions: "Inspect",
+        tools: [
+          defineTool({
+            name: "read",
+            description: "Read a file",
+            parameters: { type: "object" },
+            async execute() {
+              return "file contents";
+            },
+          }),
+        ],
+      }),
+      "Start",
+      {
+        beforeModelRequest,
+        onCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
+      },
+    );
+
+    expect(beforeModelRequest).toHaveBeenCalledTimes(2);
+    expect(requests[1]).toMatchObject({
+      state: undefined,
+      input: undefined,
+      toolResults: [],
+    });
+    const replacement = requests[1]?.history
+      ?.map(({ text }) => text)
+      .join("\n");
+    expect(replacement).toContain("call-read");
+    expect(replacement).toContain("file contents");
+    expect(checkpoints).toContainEqual(
+      expect.objectContaining({
+        phase: "context_compacted",
+        modelState: undefined,
+        contextHistory: expect.any(Array),
+      }),
+    );
+    expect(result.usage).toEqual({
+      inputTokens: 127,
+      outputTokens: 13,
+      totalTokens: 140,
+    });
+    expect(result.contextHistory?.at(-1)?.text).toBe("Done");
+    expect(result.contextTokens).toBe(35);
+  });
+
   it("defaults the agent step limit to 5000", async () => {
     let requests = 0;
     const provider: ModelProvider = {

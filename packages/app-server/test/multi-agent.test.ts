@@ -7,7 +7,6 @@ import {
   type ModelProvider,
 } from "@threadlight/agent-loop";
 import type {
-  AgentTreeData,
   AgentThreadData,
   ConversationMessageData,
   JsonRpcOutgoing,
@@ -15,8 +14,302 @@ import type {
 
 import { AppServer } from "../src/app-server.js";
 import { MemoryConversationStore } from "../src/conversation-store.js";
+import { latestTree, result } from "./multi-agent-test-support.js";
 
 describe("AppServer multi-agent runtime", () => {
+  it("compacts each child independently before its model calls and persists the fallback", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const store = new MemoryConversationStore();
+    const completed = Promise.withResolvers<void>();
+    const childRequests: Parameters<ModelProvider["generate"]>[0][] = [];
+    const summaryInputs: string[] = [];
+    let rootTurns = 0;
+    let childTurns = 0;
+    const largeEvidence = "large tool evidence ".repeat(800);
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("durable rolling summary")) {
+          summaryInputs.push(request.input ?? "");
+          return {
+            text: request.input?.includes("Inspect large context")
+              ? "CHILD-SUMMARY"
+              : "ROOT-SUMMARY",
+            toolCalls: [],
+            usage: { inputTokens: 4, outputTokens: 1, totalTokens: 5 },
+          };
+        }
+        if (request.instructions.includes("SUBAGENT ROLE")) {
+          childRequests.push(request);
+          childTurns += 1;
+          if (childTurns < 3) {
+            return {
+              text: `Inspecting batch ${childTurns}`,
+              toolCalls: [
+                {
+                  id: `inspect-${childTurns}`,
+                  name: "inspect_large",
+                  arguments: { batch: childTurns },
+                },
+              ],
+              state: { child: childTurns },
+              usage: { inputTokens: 8, outputTokens: 2, totalTokens: 10 },
+            };
+          }
+          return {
+            text: "Child completed after compaction.",
+            toolCalls: [],
+            state: { child: 3 },
+            usage: { inputTokens: 900, outputTokens: 50, totalTokens: 950 },
+          };
+        }
+
+        rootTurns += 1;
+        if (rootTurns === 1) {
+          return {
+            text: "Delegating.",
+            toolCalls: [
+              {
+                id: "spawn-compact-child",
+                name: "spawn_agent",
+                arguments: {
+                  role: "explorer",
+                  task: "Inspect large context",
+                },
+              },
+            ],
+          };
+        }
+        if (rootTurns === 2) {
+          return {
+            text: "Waiting.",
+            toolCalls: [
+              {
+                id: "wait-compact-child",
+                name: "wait_for_agents",
+                arguments: {},
+              },
+            ],
+          };
+        }
+        expect(request.toolResults?.[0]?.output).toContain(
+          "Child completed after compaction",
+        );
+        return { text: "Integrated compacted child.", toolCalls: [] };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "threadlight",
+        instructions: "Complete work",
+        tools: [
+          defineTool({
+            name: "inspect_large",
+            description: "Return a large read-only result",
+            mutability: "read",
+            parameters: { type: "object" },
+            async execute() {
+              return largeEvidence;
+            },
+          }),
+        ],
+      }),
+      conversationStore: store,
+      contextCompaction: {
+        contextWindowTokens: 1_000,
+        reserveTokens: 100,
+        keepRecentTokens: 200,
+      },
+      multiAgent: {
+        profiles: [
+          {
+            name: "explorer",
+            description: "Inspect without writes",
+            instructions: "Inspect and return evidence",
+            toolAccess: "read-only",
+          },
+        ],
+      },
+      send(message) {
+        messages.push(message);
+        if (
+          "method" in message &&
+          (message.method === "turn/completed" ||
+            message.method === "turn/failed")
+        ) {
+          completed.resolve();
+        }
+      },
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Exercise child compaction" },
+    });
+    await completed.promise;
+
+    expect(childRequests).toHaveLength(3);
+    expect(childRequests[1]).toMatchObject({
+      state: undefined,
+      input: undefined,
+      toolResults: [],
+    });
+    expect(
+      childRequests[1]?.history?.map(({ text }) => text).join("\n"),
+    ).toContain("large tool evidence");
+    expect(childRequests[2]?.history?.[0]?.text).toContain("CHILD-SUMMARY");
+    expect(
+      summaryInputs.some((input) => input.includes("Inspect large context")),
+    ).toBe(true);
+
+    const conversation = await store.load(threadId);
+    const run = conversation?.agentRuns?.[0];
+    const child = run?.agents.find(({ agent }) => agent.id !== run.rootId);
+    expect(child).toMatchObject({
+      modelState: { child: 3 },
+      contextTokens: 950,
+      checkpointPhase: "model_completed",
+    });
+    expect(child?.contextHistory?.[0]?.text).toContain("CHILD-SUMMARY");
+    expect(child?.agent.usage).toEqual({
+      inputTokens: 920,
+      outputTokens: 55,
+      totalTokens: 975,
+    });
+    const childThreadId = child!.agent.agentThreadId!;
+    await server.dispose();
+
+    const resumedMessages: JsonRpcOutgoing[] = [];
+    const resumedCompleted = Promise.withResolvers<void>();
+    let resumedRootTurns = 0;
+    const resumedServer = new AppServer({
+      loop: new AgentLoop({
+        async generate(request) {
+          if (request.instructions.includes("durable rolling summary")) {
+            return {
+              text: "CHILD-SUMMARY RESUMED",
+              toolCalls: [],
+            };
+          }
+          if (request.instructions.includes("SUBAGENT ROLE")) {
+            expect(request.input).toBeUndefined();
+            expect(request.state).toBeUndefined();
+            expect(request.history?.[0]?.text).toContain(
+              "CHILD-SUMMARY RESUMED",
+            );
+            expect(
+              request.history?.map(({ text }) => text).join("\n"),
+            ).toContain("Continue compacted child");
+            return {
+              text: "Resumed compacted child.",
+              toolCalls: [],
+              state: { child: 4 },
+            };
+          }
+          resumedRootTurns += 1;
+          if (resumedRootTurns === 1) {
+            return {
+              text: "Continuing child.",
+              toolCalls: [
+                {
+                  id: "follow-up-compacted-child",
+                  name: "follow_up_agent",
+                  arguments: {
+                    agentId: childThreadId,
+                    input: "Continue compacted child",
+                  },
+                },
+              ],
+            };
+          }
+          if (resumedRootTurns === 2) {
+            return {
+              text: "Waiting for child.",
+              toolCalls: [
+                {
+                  id: "wait-resumed-compacted-child",
+                  name: "wait_for_agents",
+                  arguments: { agentIds: [childThreadId] },
+                },
+              ],
+            };
+          }
+          expect(
+            [
+              request.toolResults?.[0]?.output,
+              ...(request.history?.map(({ text }) => text) ?? []),
+            ].join("\n"),
+          ).toContain("Resumed compacted child");
+          return { text: "Integrated resumed child.", toolCalls: [] };
+        },
+      }),
+      agent: defineAgent({
+        name: "threadlight",
+        instructions: "Complete work",
+      }),
+      conversationStore: store,
+      contextCompaction: {
+        contextWindowTokens: 1_000,
+        reserveTokens: 100,
+        keepRecentTokens: 200,
+      },
+      multiAgent: {
+        profiles: [
+          {
+            name: "explorer",
+            description: "Inspect without writes",
+            instructions: "Inspect and return evidence",
+            toolAccess: "read-only",
+          },
+        ],
+      },
+      send(message) {
+        resumedMessages.push(message);
+        if (
+          "method" in message &&
+          (message.method === "turn/completed" ||
+            message.method === "turn/failed")
+        ) {
+          resumedCompleted.resolve();
+        }
+      },
+    });
+    await resumedServer.receive({
+      jsonrpc: "2.0",
+      id: 10,
+      method: "initialize",
+    });
+    await resumedServer.receive({
+      jsonrpc: "2.0",
+      id: 11,
+      method: "thread/resume",
+      params: { threadId },
+    });
+    await resumedServer.receive({
+      jsonrpc: "2.0",
+      id: 12,
+      method: "turn/start",
+      params: { threadId, input: "Resume compacted work" },
+    });
+    await resumedCompleted.promise;
+    const resumedCompletion = resumedMessages.find(
+      (message) =>
+        "method" in message &&
+        (message.method === "turn/completed" ||
+          message.method === "turn/failed"),
+    );
+    expect(resumedCompletion).toMatchObject({ method: "turn/completed" });
+    expect(
+      (resumedCompletion as { params: { output: string } }).params.output,
+    ).toBe("Integrated resumed child.");
+    await resumedServer.dispose();
+  });
+
   it("streams an inspectable tree, steers a scripted child, and persists its final result", async () => {
     const childStarted = Promise.withResolvers<void>();
     const releaseChild = Promise.withResolvers<void>();
@@ -902,24 +1195,3 @@ describe("AppServer multi-agent runtime", () => {
     await server.dispose();
   });
 });
-
-function result<T>(messages: readonly JsonRpcOutgoing[], id: number): T {
-  const message = messages.find(
-    (candidate) => "id" in candidate && candidate.id === id,
-  );
-  if (!message || !("result" in message)) throw new Error(`Missing RPC ${id}`);
-  return message.result as T;
-}
-
-function latestTree(messages: readonly JsonRpcOutgoing[]): AgentTreeData {
-  const notification = [...messages]
-    .reverse()
-    .find(
-      (message) =>
-        "method" in message && message.method === "agent/tree-updated",
-    );
-  if (!notification || !("params" in notification)) {
-    throw new Error("Missing agent tree notification");
-  }
-  return (notification.params as { tree: AgentTreeData }).tree;
-}

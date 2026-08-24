@@ -21,10 +21,12 @@ export interface AgentTaskRecord {
   pendingInput: string[];
   collected: boolean;
   modelState?: unknown;
+  contextTokens?: number;
   checkpointStep?: number;
   checkpointPhase?: AgentRunCheckpoint["phase"];
   execution?: Promise<void>;
   history?: readonly ModelConversationMessage[];
+  contextHistory?: readonly ModelConversationMessage[];
 }
 
 export interface SpawnOptions {
@@ -36,6 +38,7 @@ export interface SpawnOptions {
   followUpOf?: string;
   agentThreadId?: string;
   modelState?: unknown;
+  contextTokens?: number;
   history?: readonly ModelConversationMessage[];
   message?: AgentTaskMessage;
 }

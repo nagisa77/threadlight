@@ -56,6 +56,7 @@ import {
   lifecycleError,
   parentAgentPath,
   positiveInteger,
+  removeFromQueue,
   rootRunOptions,
 } from "./orchestrator-runtime.js";
 
@@ -100,11 +101,6 @@ import type {
   TokenUsage,
 } from "./types.js";
 
-/**
- * A single provider-neutral multi-agent run.
- *
- * Scheduling remains provider-neutral and preserves opaque state per run.
- */
 export class AgentOrchestrator {
   private readonly profiles = new Map<string, SubagentProfile>();
   private readonly resumableThreads = new Map<string, ResumableAgentThread>();
@@ -207,6 +203,10 @@ export class AgentOrchestrator {
         ...(record.modelState === undefined
           ? {}
           : { modelState: record.modelState }),
+        ...(record.contextTokens !== undefined && {
+          contextTokens: record.contextTokens,
+        }),
+        ...(record.contextHistory && { contextHistory: record.contextHistory }),
         ...(record.checkpointStep === undefined
           ? {}
           : { checkpointStep: record.checkpointStep }),
@@ -461,6 +461,8 @@ export class AgentOrchestrator {
     const profileName =
       previous?.profile?.name ?? target.resumable?.profileName;
     const modelState = previous?.modelState ?? target.resumable?.modelState;
+    const contextTokens =
+      previous?.contextTokens ?? target.resumable?.contextTokens;
     const history = previous
       ? this.taskRegistry().childThreadHistory(previous)
       : (target.resumable?.history ?? []);
@@ -495,6 +497,7 @@ export class AgentOrchestrator {
       followUpOf: latestTask.id,
       agentThreadId: target.threadId,
       modelState,
+      contextTokens,
       history,
       ...(message ? { message } : {}),
     });
@@ -536,7 +539,7 @@ export class AgentOrchestrator {
     )) {
       member.controller.abort(new Error("Agent interrupted by collaborator"));
       if (member.snapshot.status === "queued") {
-        this.removeFromQueue(member.snapshot.id);
+        removeFromQueue(this.queue, member.snapshot.id);
       }
       this.detachChildExecution(member);
       this.taskState().interruptRecord(member, "Interrupted by collaborator");
@@ -588,7 +591,7 @@ export class AgentOrchestrator {
       if (!isTerminal(record.snapshot.status)) {
         record.controller.abort(new Error("Agent thread closed by parent"));
         if (record.snapshot.status === "queued") {
-          this.removeFromQueue(record.snapshot.id);
+          removeFromQueue(this.queue, record.snapshot.id);
         }
         this.detachChildExecution(record);
         this.taskState().cancelRecord(record, "Closed by parent agent");
@@ -769,6 +772,7 @@ export class AgentOrchestrator {
       profile,
     );
     record.modelState = options.modelState;
+    record.contextTokens = options.contextTokens;
     record.history = options.history;
     this.queue.push(id);
     this.taskState().emit(
@@ -832,6 +836,7 @@ export class AgentOrchestrator {
       agentId: record.snapshot.id,
       parentId: record.snapshot.parentId ?? this.rootId,
       profile,
+      contextTokens: record.contextTokens,
     });
     const signal = combineSignals(this.rootSignal, record.controller.signal);
     const childAgent: Agent = {
@@ -1158,7 +1163,7 @@ export class AgentOrchestrator {
     )) {
       member.controller.abort(new Error(reason));
       if (member.snapshot.status === "queued") {
-        this.removeFromQueue(member.snapshot.id);
+        removeFromQueue(this.queue, member.snapshot.id);
       }
       this.detachChildExecution(member);
       this.taskState().cancelRecord(member, reason);
@@ -1170,7 +1175,7 @@ export class AgentOrchestrator {
       if (isTerminal(record.snapshot.status)) continue;
       record.controller.abort(new Error(reason));
       if (record.snapshot.status === "queued") {
-        this.removeFromQueue(record.snapshot.id);
+        removeFromQueue(this.queue, record.snapshot.id);
       }
       this.detachChildExecution(record);
       this.taskState().cancelRecord(record, reason);
@@ -1188,10 +1193,5 @@ export class AgentOrchestrator {
     this.running.delete(record.snapshot.id);
     if (record.execution) this.childPromises.delete(record.execution);
     record.execution = undefined;
-  }
-
-  private removeFromQueue(agentId: string): void {
-    const index = this.queue.indexOf(agentId);
-    if (index >= 0) this.queue.splice(index, 1);
   }
 }

@@ -4,7 +4,10 @@ import type {
   Agent,
   AgentEvent,
   AgentRunCheckpoint,
+  ModelConversationMessage,
   ModelProvider,
+  ModelRequest,
+  ModelTurn,
   RunOptions,
   RunResult,
   TokenUsage,
@@ -64,6 +67,9 @@ export class AgentLoop {
     let state = options.modelState;
     let toolResults: ToolResult[] = [];
     let continuationInput: string | undefined;
+    let contextHistory = [...(options.history ?? [])];
+    let contextReplaced = false;
+    let previousModelUsage: Partial<TokenUsage> | undefined;
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
@@ -75,7 +81,6 @@ export class AgentLoop {
         ? await options.controller.beforeModel(controllerContext)
         : {};
       const outputVisibility = directive.outputVisibility ?? "user";
-      emit({ type: "model.started", runId, step });
       const advertisedTools = directive.tools ?? tools;
       const instructions = directive.instructions
         ? `${agent.instructions}\n\n${directive.instructions}`
@@ -86,48 +91,97 @@ export class AgentLoop {
           : mergeAdditionalInput(continuationInput, boundaryInput);
       continuationInput = undefined;
 
+      const pendingContextHistory = appendPendingContext(
+        contextHistory,
+        modelInput,
+        toolResults,
+      );
+      let request: ModelRequest = {
+        model: agent.model,
+        provider: agent.provider,
+        instructions,
+        input: modelInput,
+        attachments: directive.attachments,
+        history: contextHistory,
+        state,
+        toolResults,
+        tools: advertisedTools,
+        signal: options.signal,
+      };
+      const preparation = options.beforeModelRequest
+        ? await options.beforeModelRequest({
+            runId,
+            step,
+            agent: { ...agent, instructions, tools: advertisedTools },
+            request,
+            fallbackHistory: pendingContextHistory,
+            previousModelUsage,
+          })
+        : undefined;
+      if (preparation) {
+        contextHistory = [...preparation.history];
+        contextReplaced = true;
+        state = undefined;
+        toolResults = [];
+        addUsage(usage, preparation.usage);
+        request = {
+          ...request,
+          input: undefined,
+          history: contextHistory,
+          state: undefined,
+          toolResults: [],
+        };
+        if (preparation.compaction) {
+          emit({
+            type: "context.compacted",
+            runId,
+            step,
+            ...preparation.compaction,
+            usage: preparation.usage,
+          });
+        }
+        await options.onCheckpoint?.({
+          step,
+          phase: "context_compacted",
+          modelState: undefined,
+          contextTokens: 0,
+          contextHistory: [...contextHistory],
+          usage: { ...usage },
+        });
+      } else {
+        contextHistory = pendingContextHistory;
+      }
+
+      emit({ type: "model.started", runId, step });
+
       const modelStartedAt = currentTime(options);
       let ttftMs: number | undefined;
-      const turn = await this.provider.generate(
-        {
-          model: agent.model,
-          provider: agent.provider,
-          instructions,
-          input: modelInput,
-          attachments: directive.attachments,
-          history: options.history,
-          state,
-          toolResults,
-          tools: advertisedTools,
-          signal: options.signal,
-        },
-        {
-          onEvent: (event) => {
-            if (event.type === "output_text.delta") {
-              const firstTextDelta =
-                ttftMs === undefined && event.delta.length > 0;
-              if (firstTextDelta) ttftMs = elapsed(modelStartedAt, options);
-              emit({
-                type: "model.output_text.delta",
-                runId,
-                step,
-                delta: event.delta,
-                ...(firstTextDelta ? { ttftMs } : {}),
-                outputVisibility,
-              });
-              return;
-            }
+      const turn = await this.provider.generate(request, {
+        onEvent: (event) => {
+          if (event.type === "output_text.delta") {
+            const firstTextDelta =
+              ttftMs === undefined && event.delta.length > 0;
+            if (firstTextDelta) ttftMs = elapsed(modelStartedAt, options);
             emit({
-              type: "model.retrying",
+              type: "model.output_text.delta",
               runId,
               step,
-              retryAttempt: event.retryAttempt,
-              maxRetries: event.maxRetries,
-              reason: event.reason,
+              delta: event.delta,
+              ...(firstTextDelta ? { ttftMs } : {}),
+              outputVisibility,
             });
-          },
+            return;
+          }
+          emit({
+            type: "model.retrying",
+            runId,
+            step,
+            retryAttempt: event.retryAttempt,
+            maxRetries: event.maxRetries,
+            reason: event.reason,
+          });
         },
-      );
+      });
 
       emit({
         type: "model.completed",
@@ -143,10 +197,16 @@ export class AgentLoop {
 
       state = turn.state;
       addUsage(usage, turn.usage);
+      previousModelUsage = turn.usage;
+      contextHistory = appendAssistantContext(contextHistory, turn);
       await options.onCheckpoint?.({
         step,
         phase: "model_completed",
         modelState: state,
+        ...(previousModelUsage?.totalTokens === undefined
+          ? {}
+          : { contextTokens: previousModelUsage.totalTokens }),
+        ...(contextReplaced ? { contextHistory: [...contextHistory] } : {}),
         usage: { ...usage },
       });
 
@@ -195,6 +255,10 @@ export class AgentLoop {
           steps: step,
           durationMs,
           modelState: state,
+          ...(previousModelUsage?.totalTokens === undefined
+            ? {}
+            : { contextTokens: previousModelUsage.totalTokens }),
+          ...(contextReplaced ? { contextHistory } : {}),
           usage,
         };
       }
@@ -207,6 +271,10 @@ export class AgentLoop {
             step,
             phase: "tool_started",
             modelState: state,
+            ...(previousModelUsage?.totalTokens === undefined
+              ? {}
+              : { contextTokens: previousModelUsage.totalTokens }),
+            ...(contextReplaced ? { contextHistory: [...contextHistory] } : {}),
             usage: { ...usage },
           }),
         );
@@ -214,6 +282,10 @@ export class AgentLoop {
           step,
           phase: "tool_completed",
           modelState: state,
+          ...(previousModelUsage?.totalTokens === undefined
+            ? {}
+            : { contextTokens: previousModelUsage.totalTokens }),
+          ...(contextReplaced ? { contextHistory: [...contextHistory] } : {}),
           usage: { ...usage },
         });
         const additionalInput = options.takeAdditionalInput
@@ -328,6 +400,39 @@ export class AgentLoop {
     }
     return result;
   }
+}
+
+function appendPendingContext(
+  history: readonly ModelConversationMessage[],
+  input: string | undefined,
+  toolResults: readonly ToolResult[],
+): ModelConversationMessage[] {
+  const next = [...history];
+  if (toolResults.length > 0) {
+    next.push({
+      role: "user",
+      text: toolResults
+        .map(
+          (result) =>
+            `<tool_result name=${JSON.stringify(result.name)} call_id=${JSON.stringify(result.callId)}${result.isError ? ' error="true"' : ""}>\n${result.output}\n</tool_result>`,
+        )
+        .join("\n\n"),
+    });
+  }
+  if (input?.trim()) next.push({ role: "user", text: input });
+  return next;
+}
+
+function appendAssistantContext(
+  history: readonly ModelConversationMessage[],
+  turn: ModelTurn,
+): ModelConversationMessage[] {
+  const toolCalls = turn.toolCalls.map(
+    (call) =>
+      `<tool_call name=${JSON.stringify(call.name)} call_id=${JSON.stringify(call.id)}>\n${serialize(call.arguments)}\n</tool_call>`,
+  );
+  const text = [turn.text, ...toolCalls].filter(Boolean).join("\n\n");
+  return text ? [...history, { role: "assistant", text }] : [...history];
 }
 
 function currentTime(options: RunOptions): number {

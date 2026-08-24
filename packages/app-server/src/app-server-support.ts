@@ -29,6 +29,7 @@ import {
 
 import type {
   ActiveTurnData,
+  AgentEventData,
   AgentThreadData,
   AttachmentData,
   AgentPlanData,
@@ -116,6 +117,7 @@ export class TurnDiagnosticsRecorder {
   > = [];
   private readonly toolCalls: Array<TurnDiagnosticsData["toolCalls"][number]> =
     [];
+  private compactionUsage = normalizedUsage();
   private durationMs = 0;
   private readonly startedMonotonic = performance.now();
 
@@ -125,6 +127,10 @@ export class TurnDiagnosticsRecorder {
   ) {}
 
   record(event: AgentEvent): void {
+    if (event.type === "context.compacted") {
+      this.compactionUsage = addTokenUsage(this.compactionUsage, event.usage);
+      return;
+    }
     if (event.type === "model.completed") {
       this.modelSteps.push({
         step: event.step,
@@ -158,6 +164,10 @@ export class TurnDiagnosticsRecorder {
     agentTree?: AgentTreeSnapshot,
   ): TurnDiagnosticsData {
     const rootAgentId = agentTree?.rootId;
+    const rootModelUsage = this.modelSteps.reduce(
+      (usage, step) => addTokenUsage(usage, step.usage),
+      normalizedUsage(),
+    );
     const root = diagnosticsScope(
       this.modelSteps.map((step) => ({
         ...step,
@@ -169,6 +179,7 @@ export class TurnDiagnosticsRecorder {
         ...(rootAgentId ? { agentId: rootAgentId } : {}),
         agentRole: "root",
       })),
+      addTokenUsage(rootModelUsage, this.compactionUsage),
     );
     const children = childDiagnosticsScope(agentTree);
     const total = diagnosticsScope(
@@ -228,7 +239,14 @@ export function childDiagnosticsScope(
       });
     }
   }
-  return diagnosticsScope(modelSteps, toolCalls);
+  return diagnosticsScope(
+    modelSteps,
+    toolCalls,
+    children.reduce(
+      (usage, child) => addTokenUsage(usage, child.usage),
+      normalizedUsage(),
+    ),
+  );
 }
 
 export function diagnosticsScope(
@@ -441,7 +459,7 @@ export function isAttachment(value: unknown): value is AttachmentData {
   );
 }
 
-export function clientSafeAgentEvent(event: AgentEvent): AgentEvent {
+export function clientSafeAgentEvent(event: AgentEvent): AgentEventData {
   if (
     event.type !== "tool.completed" ||
     event.result.name !== "computer" ||
@@ -531,6 +549,7 @@ export function resumableAgentThreads(
       latestTask: ResumableAgentThread["latestTask"];
       history: ResumableAgentThread["history"];
       modelState?: unknown;
+      contextTokens?: number;
     }
   >();
 
@@ -539,16 +558,22 @@ export function resumableAgentThreads(
       if (stored.agent.id === run.rootId) continue;
       const threadId = stored.agent.agentThreadId ?? stored.agent.id;
       const previous = threads.get(threadId);
-      const history = [
-        ...(previous?.history ?? []),
-        ...(stored.agent.output
-          ? [
-              { role: "user" as const, text: stored.agent.task },
-              { role: "assistant" as const, text: stored.agent.output },
-            ]
-          : []),
-      ];
+      const history = stored.contextHistory
+        ? stored.contextHistory.map((message) => ({ ...message }))
+        : [
+            ...(previous?.history ?? []),
+            ...(stored.agent.output
+              ? [
+                  { role: "user" as const, text: stored.agent.task },
+                  { role: "assistant" as const, text: stored.agent.output },
+                ]
+              : []),
+          ];
       const profileName = stored.profileName ?? previous?.profileName;
+      const contextTokens =
+        stored.contextTokens === undefined
+          ? previous?.contextTokens
+          : stored.contextTokens;
       threads.set(threadId, {
         ...(profileName ? { profileName } : {}),
         taskIds: [...(previous?.taskIds ?? []), stored.agent.id],
@@ -560,6 +585,7 @@ export function resumableAgentThreads(
         ...(stored.modelState === undefined
           ? {}
           : { modelState: stored.modelState }),
+        ...(contextTokens === undefined ? {} : { contextTokens }),
       });
     }
   }

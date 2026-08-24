@@ -117,12 +117,11 @@ import { AppServerThreadFactory } from "./app-server-thread-factory.js";
 import {
   COMPACT_CONTEXT_CAPABILITY_ID,
   ContextCompactor,
-  modelHistory,
   type ContextCompactionOptions,
 } from "./context-compaction.js";
 import {
   completeManualContextCompaction,
-  maybeCompactContext,
+  createRuntimeContextCompaction,
 } from "./app-server-context-compaction.js";
 import { ExecutionApprovalCoordinator } from "./execution-approval-coordinator.js";
 import {
@@ -720,22 +719,17 @@ export class AppServer {
         instructions: turnPrompt.instructions,
         tools: turnTools,
       };
-      const contextCompaction = await maybeCompactContext({
+      const runtimeContextCompaction = createRuntimeContextCompaction({
         compactor: this.contextCompactor,
         state: this.state(),
         thread,
-        agent: turnAgent,
-        input: attachmentRuntime.input,
-        signal: controller.signal,
         now: this.now,
       });
       const runOptions = {
         toolScopeId: threadId,
         modelState: thread.conversation.modelState,
-        history: modelHistory(
-          thread.conversation,
-          thread.conversation.messages.slice(0, -1),
-        ),
+        history: runtimeContextCompaction.history,
+        beforeModelRequest: runtimeContextCompaction.beforeModelRequest,
         controller: runController,
         signal: controller.signal,
         takeAdditionalInput: async () => {
@@ -782,8 +776,12 @@ export class AppServer {
               maxAgents: this.multiAgent.maxAgents,
               maxDepth: this.multiAgent.maxDepth,
               wallNow: this.now,
-              createChildRunOptions: () => ({
+              createChildRunOptions: ({ contextTokens }) => ({
                 toolScopeId: threadId,
+                beforeModelRequest:
+                  this.contextCompactor.createBeforeModelRequest({
+                    initialContextTokens: contextTokens,
+                  }),
                 controller: new UserActionRunController(
                   composeRunControllers([
                     this.approvals.enabled && accessMode !== "full"
@@ -812,6 +810,7 @@ export class AppServer {
       const result = orchestrator
         ? await orchestrator.run(turnAgent, attachmentRuntime.input)
         : await this.loop.run(turnAgent, attachmentRuntime.input, runOptions);
+      const contextCompaction = runtimeContextCompaction.outcome();
       const persistedModelState = this.modelStatePersistence.prepare(
         result.modelState,
       );
@@ -878,10 +877,7 @@ export class AppServer {
         revision: thread.revision,
         message: assistantMessage,
         output: sourcedOutput.text,
-        usage: addTokenUsage(
-          contextCompaction?.usage ?? normalizedUsage(),
-          result.usage,
-        ),
+        usage: result.usage,
         diagnostics: turnDiagnostics,
         ...(appliedCapabilities.length > 0
           ? { capabilities: appliedCapabilities }
@@ -1156,8 +1152,6 @@ import {
   TurnDiagnosticsRecorder,
   childDiagnosticsScope,
   diagnosticsScope,
-  addTokenUsage,
-  normalizedUsage,
   objectParams,
   requireString,
   parseTurnMode,

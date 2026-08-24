@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AgentLoop,
   defineAgent,
+  defineTool,
   type ModelProvider,
   type ModelRequest,
 } from "@threadlight/agent-loop";
@@ -19,6 +20,103 @@ describe("rolling context compaction", () => {
   it("uses the Pi-compatible reserve and recent-context defaults", () => {
     expect(DEFAULT_CONTEXT_RESERVE_TOKENS).toBe(16_384);
     expect(DEFAULT_KEEP_RECENT_TOKENS).toBe(20_000);
+  });
+
+  it("checks again before later root model calls within the same turn", async () => {
+    const messages: JsonRpcOutgoing[] = [];
+    const normalRequests: ModelRequest[] = [];
+    const summaryRequests: ModelRequest[] = [];
+    let normalTurns = 0;
+    const provider: ModelProvider = {
+      async generate(request) {
+        if (request.instructions.includes("durable rolling summary")) {
+          summaryRequests.push(request);
+          return {
+            text: "ROOT-MIDRUN-SUMMARY",
+            toolCalls: [],
+            usage: { inputTokens: 15, outputTokens: 5, totalTokens: 20 },
+          };
+        }
+        normalRequests.push(request);
+        normalTurns += 1;
+        if (normalTurns <= 3) {
+          return {
+            text: `Reading batch ${normalTurns}`,
+            toolCalls: [
+              {
+                id: `read-${normalTurns}`,
+                name: "large_read",
+                arguments: { batch: normalTurns },
+              },
+            ],
+            state: { root: normalTurns },
+            usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
+          };
+        }
+        return {
+          text: "Root completed after an in-turn compaction.",
+          toolCalls: [],
+          state: { root: 4 },
+          usage: { inputTokens: 20, outputTokens: 5, totalTokens: 25 },
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "worker",
+        instructions: "Read all batches and finish.",
+        tools: [
+          defineTool({
+            name: "large_read",
+            description: "Return a sizeable read-only batch",
+            mutability: "read",
+            parameters: { type: "object" },
+            async execute() {
+              return "root evidence ".repeat(200);
+            },
+          }),
+        ],
+      }),
+      contextCompaction: {
+        contextWindowTokens: 2_400,
+        reserveTokens: 200,
+        keepRecentTokens: 800,
+      },
+      send: (message) => messages.push(message),
+    });
+
+    const threadId = await start(server, messages);
+    const completed = await runTurn(
+      server,
+      messages,
+      threadId,
+      10,
+      "Read the large batches",
+    );
+
+    expect(normalRequests).toHaveLength(4);
+    expect(summaryRequests).toHaveLength(1);
+    expect(summaryRequests[0]?.input).toContain("root evidence");
+    expect(normalRequests[3]).toMatchObject({
+      state: undefined,
+      input: undefined,
+      toolResults: [],
+    });
+    expect(normalRequests[3]?.history?.[0]?.text).toContain(
+      "ROOT-MIDRUN-SUMMARY",
+    );
+    expect(completed.params.message.contextCompaction).toMatchObject({
+      status: "compacted",
+      source: "automatic",
+      generation: 1,
+    });
+    expect(completed.params.usage).toEqual({
+      inputTokens: 95,
+      outputTokens: 25,
+      totalTokens: 120,
+    });
+    await server.dispose();
   });
 
   it("exposes @compact for existing tasks and compacts without ordinary model output", async () => {

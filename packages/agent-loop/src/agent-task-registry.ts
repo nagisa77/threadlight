@@ -355,17 +355,17 @@ export class AgentTaskRegistry {
   childThreadHistory(
     record: AgentTaskRecord,
   ): readonly ModelConversationMessage[] {
-    const records = this.recordsForThread(agentThreadId(record));
+    if (record.contextHistory) {
+      return record.contextHistory.map((message) => ({ ...message }));
+    }
     return [
-      ...(records[0]?.history ?? []),
-      ...records.flatMap(({ snapshot }) =>
-        snapshot.output
-          ? [
-              { role: "user" as const, text: snapshot.task },
-              { role: "assistant" as const, text: snapshot.output },
-            ]
-          : [],
-      ),
+      ...(record.history ?? []),
+      ...(record.snapshot.output
+        ? [
+            { role: "user" as const, text: record.snapshot.task },
+            { role: "assistant" as const, text: record.snapshot.output },
+          ]
+        : []),
     ];
   }
 
