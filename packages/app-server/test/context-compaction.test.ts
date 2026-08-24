@@ -138,6 +138,57 @@ describe("rolling context compaction", () => {
     await server.dispose();
   });
 
+  it("uses provider-observed context and resets oversized opaque state on manual compact", async () => {
+    const requests: ModelRequest[] = [];
+    const messages: JsonRpcOutgoing[] = [];
+    const store = new MemoryConversationStore();
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return {
+          text: "The task is complete and the durable result is recorded.",
+          toolCalls: [],
+          state: { opaqueConversation: ["system", "tools", "results"] },
+          usage: {
+            inputTokens: 23_781,
+            outputTokens: 566,
+            totalTokens: 24_347,
+          },
+        };
+      },
+    };
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({
+        name: "worker",
+        instructions: "Complete the task.",
+      }),
+      conversationStore: store,
+      send: (message) => messages.push(message),
+    });
+
+    const threadId = await start(server, messages);
+    await runTurn(server, messages, threadId, 15, "Build the requested app");
+    expect((await store.load(threadId))?.modelState).toBeDefined();
+
+    const compacted = await runTurn(server, messages, threadId, 16, "", [
+      "tool:compact",
+    ]);
+    expect(requests).toHaveLength(1);
+    expect(compacted.params.message.contextCompaction).toMatchObject({
+      status: "compacted",
+      source: "manual",
+      generation: 1,
+      tokensBefore: 24_347,
+      messagesCompacted: 0,
+    });
+    expect(
+      compacted.params.message.contextCompaction?.tokensAfter,
+    ).toBeLessThan(24_347);
+    expect((await store.load(threadId))?.modelState).toBeUndefined();
+    await server.dispose();
+  });
+
   it("automatically rolls the previous summary forward and retains the recent suffix verbatim", async () => {
     const requests: ModelRequest[] = [];
     const messages: JsonRpcOutgoing[] = [];

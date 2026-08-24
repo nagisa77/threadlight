@@ -93,31 +93,46 @@ export class ContextCompactor {
 
   shouldCompact(input: Omit<CompactInput, "source" | "now">): boolean {
     const active = activeMessages(input.conversation, input.messages);
-    const estimated = estimateRequestTokens(
+    const projected = projectedRequestTokens(
+      input.conversation,
+      input.messages,
       input.agent,
       modelHistory(input.conversation, input.messages),
       input.input,
     );
-    const observed = lastProviderInputTokens(input.messages);
-    const projectedObserved =
-      observed === undefined ? 0 : observed + estimateTokens(input.input);
     const threshold =
       this.config.contextWindowTokens - this.config.reserveTokens;
-    return (
-      active.length > 0 && Math.max(estimated, projectedObserved) >= threshold
-    );
+    return active.length > 0 && projected >= threshold;
   }
 
   async compact(input: CompactInput): Promise<ContextCompactionOutcome> {
     const active = activeMessages(input.conversation, input.messages);
     const split = splitRecentMessages(active, this.config.keepRecentTokens);
-    const tokensBefore = estimateActiveTokens(
-      input.conversation.contextCompaction?.summary,
-      active,
+    const pendingInput = input.source === "automatic" ? input.input : "";
+    const tokensBefore = projectedRequestTokens(
+      input.conversation,
+      input.messages,
+      input.agent,
+      modelHistoryFrom(input.conversation.contextCompaction?.summary, active),
+      pendingInput,
+    );
+    const tokensAfter = estimateRequestTokens(
+      input.agent,
+      modelHistoryFrom(
+        input.conversation.contextCompaction?.summary,
+        split.recent,
+      ),
+      pendingInput,
     );
 
     if (split.older.length === 0) {
-      if (input.source === "automatic" && input.conversation.modelState) {
+      const shouldResetOpaqueState = Boolean(
+        input.conversation.modelState &&
+        (input.source === "automatic" ||
+          (tokensBefore > this.config.keepRecentTokens &&
+            tokensAfter < tokensBefore)),
+      );
+      if (shouldResetOpaqueState) {
         const checkpoint = checkpointFor(
           input.conversation,
           input.source,
@@ -125,7 +140,7 @@ export class ContextCompactor {
           input.conversation.contextCompaction?.summary ?? "",
           split.recent,
           tokensBefore,
-          tokensBefore,
+          tokensAfter,
           0,
         );
         return {
@@ -167,7 +182,11 @@ export class ContextCompactor {
       { signal: input.signal },
     );
     const summary = result.output.trim();
-    const tokensAfter = estimateActiveTokens(summary, split.recent);
+    const compactedTokens = estimateRequestTokens(
+      input.agent,
+      modelHistoryFrom(summary, split.recent),
+      pendingInput,
+    );
     const checkpoint = checkpointFor(
       input.conversation,
       input.source,
@@ -175,7 +194,7 @@ export class ContextCompactor {
       summary,
       split.recent,
       tokensBefore,
-      tokensAfter,
+      compactedTokens,
       split.older.length,
     );
     return {
@@ -231,8 +250,18 @@ export function modelHistory(
   conversation: StoredConversation,
   messages: readonly ConversationMessageData[] = conversation.messages,
 ): readonly ModelConversationMessage[] {
+  return modelHistoryFrom(
+    conversation.contextCompaction?.summary,
+    activeMessages(conversation, messages),
+  );
+}
+
+function modelHistoryFrom(
+  summaryValue: string | undefined,
+  messages: readonly ConversationMessageData[],
+): readonly ModelConversationMessage[] {
   const history: ModelConversationMessage[] = [];
-  const summary = conversation.contextCompaction?.summary.trim();
+  const summary = summaryValue?.trim();
   if (summary) {
     history.push({
       role: "user",
@@ -244,7 +273,7 @@ export function modelHistory(
     });
   }
   history.push(
-    ...activeMessages(conversation, messages)
+    ...messages
       .map((message) => ({
         role: message.role,
         text: messageContextText(message),
@@ -356,7 +385,22 @@ function estimateRequestTokens(
   );
 }
 
-function lastProviderInputTokens(
+function projectedRequestTokens(
+  conversation: StoredConversation,
+  messages: readonly ConversationMessageData[],
+  agent: Agent,
+  history: readonly ModelConversationMessage[],
+  input: string,
+): number {
+  const estimated = estimateRequestTokens(agent, history, input);
+  if (!conversation.modelState) return estimated;
+  const observed = lastProviderContextTokens(messages);
+  const projectedObserved =
+    observed === undefined ? 0 : observed + estimateTokens(input);
+  return Math.max(estimated, projectedObserved);
+}
+
+function lastProviderContextTokens(
   messages: readonly ConversationMessageData[],
 ): number | undefined {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -365,22 +409,9 @@ function lastProviderInputTokens(
     const steps =
       diagnostics.metrics?.root.modelSteps ?? diagnostics.modelSteps;
     const usage = steps[steps.length - 1]?.usage;
-    if (usage) return usage.inputTokens;
+    if (usage) return usage.totalTokens;
   }
   return undefined;
-}
-
-function estimateActiveTokens(
-  summary: string | undefined,
-  messages: readonly ConversationMessageData[],
-): number {
-  return (
-    (summary ? estimateTokens(summary) + 8 : 0) +
-    messages.reduce(
-      (total, message) => total + estimateMessageTokens(message),
-      0,
-    )
-  );
 }
 
 function estimateMessageTokens(message: ConversationMessageData): number {

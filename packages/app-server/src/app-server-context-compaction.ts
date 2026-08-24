@@ -57,7 +57,6 @@ export async function completeManualContextCompaction({
     ...(model ? { model } : {}),
     instructions: composePrompt(promptBlocksFromSnapshot(thread.promptSnapshot))
       .instructions,
-    tools: [],
   };
   const compaction = await compactor.compact({
     conversation: thread.conversation,
