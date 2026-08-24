@@ -89,6 +89,7 @@ export {
   type ExecutionPolicySnapshot,
 } from "./execution-policy.js";
 export { TerminalPanel } from "./terminal.js";
+export { BrowserView } from "./browser.js";
 export {
   ProjectOpenControl,
   ProjectOpenerIcon,
@@ -196,6 +197,7 @@ export type {
   TerminalEvent,
   TerminalSessionInfo,
 } from "./terminal.js";
+export type { BrowserAdapter } from "./browser.js";
 export type {
   ProjectOpenerAdapter,
   ProjectOpenerId,

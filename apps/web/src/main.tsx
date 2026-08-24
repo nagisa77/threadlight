@@ -203,6 +203,7 @@ function WebApp() {
           voiceInput={session.voiceInput}
           memory={session.memory}
           terminal={session.terminal}
+          browser={session.browser}
           workspace={session.workspace}
           executionPolicy={session.executionPolicy}
         />

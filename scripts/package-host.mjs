@@ -38,7 +38,7 @@ await mkdir(packageRoot, { recursive: true });
 
 const common = {
   bundle: true,
-  external: ["node-pty", "ws"],
+  external: ["node-pty", "playwright-core", "ws"],
   format: "esm",
   banner: {
     js: 'import { createRequire as __threadlightCreateRequire } from "node:module"; const require = __threadlightCreateRequire(import.meta.url);',
@@ -99,6 +99,7 @@ await writeFile(
       },
       dependencies: {
         "node-pty": "^1.1.0",
+        "playwright-core": "^1.62.1",
         ws: "^8.18.0",
       },
       files: [
@@ -154,6 +155,8 @@ Run \`threadlight --help\` for approval, worktree, model, JSON, and existing-tas
 Use an SSH tunnel, VPN, or HTTPS reverse proxy when connecting across an
 untrusted network. Interactive remote terminals use node-pty. Linux hosts may
 need Python, make, and a C++ compiler when a prebuilt binary is unavailable.
+Remote browser streaming also requires Google Chrome or Chromium on the Host;
+set \`THREADLIGHT_CHROME_PATH\` when it is installed in a non-standard path.
 `,
   "utf8",
 );

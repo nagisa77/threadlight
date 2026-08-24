@@ -54,6 +54,7 @@ export function ThreadlightAppView({ model }: { model: AppViewModel }) {
       projectOpener,
       preferredProjectOpener,
       terminal,
+      browser,
       workspace,
       executionPolicy,
       onLanguageChange,
@@ -353,6 +354,7 @@ export function ThreadlightAppView({ model }: { model: AppViewModel }) {
             <LazyWorkspacePanel
               adapter={workspace}
               terminal={terminal}
+              browser={browser}
               projectId={currentProject.id}
               threadId={state.threadId}
               projectName={currentProject.name}

@@ -330,6 +330,7 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     computerShare,
     computerPermissions,
     terminal,
+    browser,
     workspace,
     projectOpener,
     executionPolicy,

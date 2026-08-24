@@ -125,3 +125,11 @@ export {
   type ProductTelemetrySource,
   type ProductTelemetryTransport,
 } from "./product-telemetry.js";
+export {
+  RemoteBrowserService,
+  browserMouseButton,
+  findChromeExecutable,
+  normalizeBrowserUrl,
+  type RemoteBrowserServiceOptions,
+  type RemoteBrowserSessions,
+} from "./remote-browser.js";

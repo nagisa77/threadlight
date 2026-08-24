@@ -535,6 +535,8 @@ export const zh = {
   terminalWorkspaceContext: "{workspace} · {branch}",
   file: "文件",
   openFile: "打开文件",
+  browser: "浏览器",
+  newBrowserTab: "新建浏览器标签",
   openSystemFile: "打开系统文件…",
   openRemoteFile: "打开远端文件…",
   systemFiles: "系统文件",

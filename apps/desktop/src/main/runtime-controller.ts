@@ -1,21 +1,24 @@
-import type { BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from "electron";
+import type { IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import type { TerminalSessionManager } from "@threadlight/terminal-core";
 
 import type { DesktopComputerService } from "./computer-service.js";
 import type { ProjectStore } from "./project-store.js";
 import type { RemoteTerminalClient } from "./remote-terminal-client.js";
+import type { DesktopBrowserController } from "./browser-controller.js";
 import { resolveTerminalWorkspace } from "./task-workspace.js";
 import {
   parseTerminalCreateRequest,
   parseTerminalResizeRequest,
   parseTerminalWriteRequest,
+  parseBrowserCommand,
+  parseBrowserCreateRequest,
 } from "./ipc-workspace-parsers.js";
 
 export interface DesktopRuntimeControllerHost {
   readonly terminalService: TerminalSessionManager | null;
   readonly remoteTerminalClient: RemoteTerminalClient | null;
+  readonly browser: DesktopBrowserController;
   readonly computerService: DesktopComputerService | null;
-  readonly mainWindow: BrowserWindow | null;
   requireProject(
     value: unknown,
   ): NonNullable<ReturnType<ProjectStore["project"]>>;
@@ -97,6 +100,54 @@ export class DesktopRuntimeController {
       this.host.remoteTerminalClient.close(value);
     } else {
       this.host.terminalService.close(value);
+    }
+  }
+
+  async handleBrowserCreate(event: IpcMainInvokeEvent, value: unknown) {
+    this.host.requireTrustedSender(event);
+    const request = parseBrowserCreateRequest(value);
+    const project = this.host.requireProject(request.projectId);
+    if (project.runtime?.kind === "remote") {
+      return this.host.browser.requireRemote().create(request);
+    }
+    if (!this.host.browser.sessions) {
+      throw new Error("Browser is not available.");
+    }
+    return this.host.browser.sessions.create(request);
+  }
+
+  handleBrowserCommand(event: IpcMainEvent, value: unknown): void {
+    if (!this.host.isTrustedSender(event)) return;
+    let sessionId: string | undefined;
+    try {
+      const command = parseBrowserCommand(value);
+      sessionId = command.sessionId;
+      if (this.host.browser.remoteClient?.owns(command.sessionId)) {
+        this.host.browser.remoteClient.command(command);
+      } else if (this.host.browser.sessions?.owns(command.sessionId)) {
+        void this.host.browser.sessions
+          .command(command)
+          .catch((error) =>
+            this.host.browser.sendError(command.sessionId, error),
+          );
+      }
+    } catch (error) {
+      this.host.browser.sendError(sessionId, error);
+    }
+  }
+
+  async handleBrowserClose(
+    event: IpcMainInvokeEvent,
+    value: unknown,
+  ): Promise<void> {
+    this.host.requireTrustedSender(event);
+    if (typeof value !== "string" || !value) {
+      throw new Error("Invalid browser session id.");
+    }
+    if (this.host.browser.remoteClient?.owns(value)) {
+      this.host.browser.remoteClient.close(value);
+    } else {
+      await this.host.browser.sessions?.close(value);
     }
   }
 

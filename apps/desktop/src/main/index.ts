@@ -43,6 +43,7 @@ import {
 import { runtimeConnectionKey } from "./runtime-connection-key.js";
 import { RemoteHostConnection } from "./remote-host-connection.js";
 import { RemoteTerminalClient } from "./remote-terminal-client.js";
+import { DesktopBrowserController } from "./browser-controller.js";
 import { HostCredentialStore } from "./host-credential-store.js";
 import { HostStore, LOCAL_HOST_ID } from "./host-store.js";
 import { DesktopComputerService } from "./computer-service.js";
@@ -139,6 +140,10 @@ let connectionStore: ConnectionStore | null = null;
 let connectionService: DesktopConnectionService | null = null;
 let hostCredentials: HostCredentialStore | null = null;
 let executionPolicyStore: ExecutionPolicyStore | null = null;
+const browserController = new DesktopBrowserController({
+  window: () => mainWindow,
+  remoteHost: () => remoteHost,
+});
 const taskExecutionGrants = new Set<string>();
 const pendingExecutionApprovals = new Map<
   string,
@@ -165,10 +170,7 @@ const automationTurnWaiters = new Map<
   }
 >();
 const automationThreads = new Map<string, string>();
-const appIconPath = resolve(
-  import.meta.dirname,
-  "../../resources/app-icon.png",
-);
+const appIcon = resolve(import.meta.dirname, "../../resources/app-icon.png");
 
 function activeHostId(): string {
   return hostStore?.snapshot().activeHostId ?? LOCAL_HOST_ID;
@@ -252,7 +254,7 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     title: "Threadlight",
-    icon: appIconPath,
+    icon: appIcon,
     backgroundColor: "#f7f7f8",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     webPreferences: {
@@ -511,6 +513,7 @@ function stopTerminalSessions(): void {
   terminalService?.dispose();
   remoteTerminalClient?.dispose();
   remoteTerminalClient = null;
+  browserController.resetSessions();
 }
 
 function workspaceForRuntimeMessage(
@@ -921,7 +924,7 @@ const notificationController = new DesktopNotificationController({
     return automationThreads;
   },
   get appIconPath() {
-    return appIconPath;
+    return appIcon;
   },
   nextAutomationRequestId: () => ++automationRequestId,
   createWindow,
@@ -939,11 +942,9 @@ const runtimeController = new DesktopRuntimeController({
   get remoteTerminalClient() {
     return remoteTerminalClient;
   },
+  browser: browserController,
   get computerService() {
     return computerService;
-  },
-  get mainWindow() {
-    return mainWindow;
   },
   requireProject: desktopSecurity.requireProject.bind(desktopSecurity),
   requireRemoteTerminalClient,
@@ -1005,7 +1006,7 @@ async function disposeTaskWorkspace(
 }
 
 app.whenReady().then(async () => {
-  if (process.platform === "darwin") app.dock?.setIcon(appIconPath);
+  if (process.platform === "darwin") app.dock?.setIcon(appIcon);
 
   const threadlightHome =
     process.env.THREADLIGHT_HOME ?? join(app.getPath("home"), ".threadlight");
@@ -1130,6 +1131,7 @@ app.whenReady().then(async () => {
     window.webContents.send(DESKTOP_COMPUTER_SHARE_CHANGED_CHANNEL, snapshot);
   }, computerPermissionService);
   terminalService = new TerminalSessionManager(sendTerminalEvent);
+  browserController.initialize(threadlightHome);
   registerDesktopProtocols({
     isRemoteHost,
     currentActiveProject,
@@ -1190,6 +1192,7 @@ app.on("before-quit", () => {
   void connectionService?.dispose();
   computerService?.dispose();
   stopTerminalSessions();
+  void browserController.close();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

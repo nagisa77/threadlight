@@ -1,4 +1,5 @@
 import {
+  BrowserStreamClient,
   BrowserTerminalClient,
   HttpHostClient,
   SwitchableHttpRuntimeTransport,
@@ -17,6 +18,7 @@ import type {
   AttachmentPreviewAdapter,
   AttachmentStageAdapter,
   AutomationAdapter,
+  BrowserAdapter,
   ClipboardAdapter,
   ConversationChangesSnapshot,
   ConnectorAuthorizationAdapter,
@@ -59,6 +61,7 @@ export interface RemoteWebSession {
   memory: ProjectMemoryAdapter;
   workspace: WorkspaceAdapter;
   terminal?: TerminalAdapter;
+  browser?: BrowserAdapter;
   executionPolicy: ExecutionPolicyAdapter;
   dispose(): void;
 }
@@ -73,6 +76,9 @@ export interface CreateRemoteWebSessionOptions extends RemoteWebCredentials {
   storage?: Pick<Storage, "getItem" | "setItem">;
   createTerminalSocket?: ConstructorParameters<
     typeof BrowserTerminalClient
+  >[0]["createSocket"];
+  createBrowserSocket?: ConstructorParameters<
+    typeof BrowserStreamClient
   >[0]["createSocket"];
   openOAuthWindow?: () => OAuthWindowHandle | null;
 }
@@ -221,6 +227,15 @@ export async function createRemoteWebSession(
           : {}),
       })
     : undefined;
+  const browser = health.capabilities?.browser
+    ? remoteBrowserAdapter({
+        endpoint: options.endpoint,
+        token: options.token,
+        ...(options.createBrowserSocket
+          ? { createSocket: options.createBrowserSocket }
+          : {}),
+      })
+    : undefined;
   const executionPolicy = new RemoteExecutionPolicyAdapter(
     client,
     projects,
@@ -249,11 +264,13 @@ export async function createRemoteWebSession(
     memory,
     workspace,
     ...(terminal ? { terminal } : {}),
+    ...(browser ? { browser } : {}),
     executionPolicy,
     dispose() {
       attachments.dispose();
       executionPolicy.dispose();
       terminal?.dispose();
+      browser?.dispose();
       client.dispose();
       transport.close();
     },
@@ -733,6 +750,33 @@ function remoteTerminalAdapter(
     create: (request) => client.create(request),
     write: ({ sessionId, data }) => client.write(sessionId, data),
     resize: ({ sessionId, cols, rows }) => client.resize(sessionId, cols, rows),
+    async close(sessionId) {
+      client.close(sessionId);
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    dispose() {
+      client.dispose();
+      listeners.clear();
+    },
+  };
+}
+
+function remoteBrowserAdapter(
+  options: Omit<ConstructorParameters<typeof BrowserStreamClient>[0], "send">,
+): BrowserAdapter & { dispose(): void } {
+  const listeners = new Set<Parameters<BrowserAdapter["subscribe"]>[0]>();
+  const client = new BrowserStreamClient({
+    ...options,
+    send: (event) => {
+      for (const listener of listeners) listener(event);
+    },
+  });
+  return {
+    create: (request) => client.create(request),
+    command: (message) => client.command(message),
     async close(sessionId) {
       client.close(sessionId);
     },

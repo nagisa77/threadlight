@@ -29,6 +29,12 @@ export {
   type BrowserSocketEvent,
   type BrowserTerminalClientOptions,
 } from "./browser-terminal-client.js";
+export {
+  BrowserStreamClient,
+  browserWebSocketUrl,
+  parseBrowserServerMessage,
+  type BrowserStreamClientOptions,
+} from "./browser-stream-client.js";
 export { createBrowserUuid } from "./browser-uuid.js";
 export {
   parseThreadlightCli,

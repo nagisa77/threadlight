@@ -22,6 +22,7 @@ import {
   Folder,
   FolderOpen,
   FolderTree,
+  Globe2,
   GitCommitHorizontal,
   GitBranch,
   GitMerge,
@@ -51,6 +52,7 @@ import { useTheme } from "./theme.js";
 import { languageForPath } from "./source-language.js";
 import type { HighlightSegment } from "./syntax-highlighter.js";
 import { TerminalView, type TerminalAdapter } from "./terminal.js";
+import { BrowserView, type BrowserAdapter } from "./browser.js";
 import {
   AgentPanel,
   type AgentPanelControls,
@@ -187,6 +189,7 @@ export function workspacePanelRequestSteps(
 export function WorkspacePanel({
   adapter,
   terminal,
+  browser,
   projectId,
   threadId,
   projectName,
@@ -221,6 +224,7 @@ export function WorkspacePanel({
 }: {
   adapter: WorkspaceAdapter;
   terminal?: TerminalAdapter;
+  browser?: BrowserAdapter;
   projectId: string;
   threadId?: string;
   projectName: string;
@@ -397,25 +401,27 @@ export function WorkspacePanel({
             ? t("review")
             : tab.kind === "agents"
               ? t("agents")
-              : tab.kind === "delivery"
-                ? t("deliveryCenter")
-                : tab.kind === "terminal"
-                  ? terminalTabLabel(
-                      "task",
-                      tab.branch ?? taskBranch,
-                      undefined,
-                      t,
-                    )
-                  : tab.kind === "original-terminal"
+              : tab.kind === "browser"
+                ? tab.title || t("newBrowserTab")
+                : tab.kind === "delivery"
+                  ? t("deliveryCenter")
+                  : tab.kind === "terminal"
                     ? terminalTabLabel(
-                        "original",
-                        tab.branch ?? originalBranch,
+                        "task",
+                        tab.branch ?? taskBranch,
                         undefined,
                         t,
                       )
-                    : tab.path
-                      ? tab.title
-                      : t("openFile"),
+                    : tab.kind === "original-terminal"
+                      ? terminalTabLabel(
+                          "original",
+                          tab.branch ?? originalBranch,
+                          undefined,
+                          t,
+                        )
+                      : tab.path
+                        ? tab.title
+                        : t("openFile"),
       })),
     );
   }, [originalBranch, taskBranch, t]);
@@ -438,7 +444,9 @@ export function WorkspacePanel({
           ? createDeliveryTab(t)
           : kind === "agents"
             ? createAgentTab(t)
-            : createFileTab(t);
+            : kind === "browser"
+              ? createBrowserTab(t)
+              : createFileTab(t);
     setTabs((current) => [...current, tab]);
     setActiveTabId(tab.id);
   }
@@ -602,6 +610,8 @@ export function WorkspacePanel({
                     <GitBranch size={14} />
                   ) : tab.kind === "delivery" ? (
                     <PackageCheck size={14} />
+                  ) : tab.kind === "browser" ? (
+                    <Globe2 size={14} />
                   ) : tab.kind === "terminal" ||
                     tab.kind === "original-terminal" ? (
                     <Terminal size={14} />
@@ -640,17 +650,25 @@ export function WorkspacePanel({
                       "original-terminal",
                       ...(deliveryEnabled ? (["delivery"] as const) : []),
                       ...(agentPanel?.tree ? (["agents"] as const) : []),
+                      ...(browser ? (["browser"] as const) : []),
                       "file",
                     ]
                   : deliveryEnabled
                     ? [
                         "delivery",
                         ...(agentPanel?.tree ? (["agents"] as const) : []),
+                        ...(browser ? (["browser"] as const) : []),
                         "file",
                       ]
                     : agentPanel?.tree
-                      ? ["agents", "file"]
-                      : ["file"]
+                      ? [
+                          "agents",
+                          ...(browser ? (["browser"] as const) : []),
+                          "file",
+                        ]
+                      : browser
+                        ? ["browser", "file"]
+                        : ["file"]
               }
               taskTerminalLabel={terminalWorkspaceContextLabel(
                 "task",
@@ -708,6 +726,34 @@ export function WorkspacePanel({
                                 undefined,
                                 t,
                               ),
+                            }
+                          : currentTab,
+                      ),
+                    );
+                  }}
+                />
+              ))}
+          {browser &&
+            tabs
+              .filter((tab) => tab.kind === "browser")
+              .map((tab) => (
+                <BrowserView
+                  key={tab.id}
+                  adapter={browser}
+                  projectId={projectId}
+                  hidden={tab.id !== activeTab?.id}
+                  label={tab.title}
+                  onSessionChange={(browserSession) => {
+                    setTabs((current) =>
+                      current.map((currentTab) =>
+                        currentTab.id === tab.id
+                          ? {
+                              ...currentTab,
+                              title:
+                                browserSession.title ||
+                                (browserSession.url === "about:blank"
+                                  ? t("newBrowserTab")
+                                  : browserSession.url),
                             }
                           : currentTab,
                       ),
@@ -773,7 +819,9 @@ export function WorkspacePanel({
               onOpenSystemFile={canOpenSystemFile ? openSystemFile : undefined}
               remoteSystemFiles={Boolean(remoteFileRoot)}
             />
-          ) : activeTab?.kind === "terminal" ? null : (
+          ) : activeTab?.kind === "terminal" ||
+            activeTab?.kind === "original-terminal" ||
+            activeTab?.kind === "browser" ? null : (
             <WorkspacePanelEmpty onAdd={addFileTab} />
           )}
         </div>
@@ -989,6 +1037,7 @@ import {
   WorkspacePanelEmpty,
   WorkspaceTree,
   createAgentTab,
+  createBrowserTab,
   createDeliveryTab,
   createFileTab,
   createReviewTab,

@@ -1,11 +1,14 @@
 import type {
   AttachmentData,
+  BrowserSessionEvent,
+  BrowserSessionInfo,
   ConversationAccessMode,
   HostDirectoryListOptions,
   HostDirectoryListing,
   HostFileListing,
   HostLanguage,
   HostProjectDiagnosticBundle,
+  HostBrowserClientMessage,
   JsonRpcOutgoing,
   JsonRpcRequest,
   TerminalSessionEvent,
@@ -91,6 +94,10 @@ export const DESKTOP_TERMINAL_WRITE_CHANNEL = "threadlight:terminal:write";
 export const DESKTOP_TERMINAL_RESIZE_CHANNEL = "threadlight:terminal:resize";
 export const DESKTOP_TERMINAL_CLOSE_CHANNEL = "threadlight:terminal:close";
 export const DESKTOP_TERMINAL_EVENT_CHANNEL = "threadlight:terminal:event";
+export const DESKTOP_BROWSER_CREATE_CHANNEL = "threadlight:browser:create";
+export const DESKTOP_BROWSER_COMMAND_CHANNEL = "threadlight:browser:command";
+export const DESKTOP_BROWSER_CLOSE_CHANNEL = "threadlight:browser:close";
+export const DESKTOP_BROWSER_EVENT_CHANNEL = "threadlight:browser:event";
 export const DESKTOP_CONVERSATION_CHANGES_GET_CHANNEL =
   "threadlight:conversation-changes:get";
 export const DESKTOP_CONVERSATION_CHANGES_RESTORE_CHANNEL =
@@ -489,6 +496,20 @@ export interface DesktopTerminalResizeRequest {
 }
 
 export type DesktopTerminalEvent = TerminalSessionEvent;
+
+export interface DesktopBrowserCreateRequest {
+  projectId: string;
+  width: number;
+  height: number;
+  deviceScaleFactor?: number;
+}
+
+export type DesktopBrowserSession = BrowserSessionInfo;
+export type DesktopBrowserCommand = Exclude<
+  HostBrowserClientMessage,
+  { type: "open" }
+>;
+export type DesktopBrowserEvent = BrowserSessionEvent;
 
 export interface DesktopConversationChangesRequest {
   projectId: string;
@@ -937,6 +958,12 @@ export interface DesktopApi {
   resizeTerminal(request: DesktopTerminalResizeRequest): void;
   closeTerminal(sessionId: string): Promise<void>;
   onTerminalEvent(listener: (event: DesktopTerminalEvent) => void): () => void;
+  createBrowser(
+    request: DesktopBrowserCreateRequest,
+  ): Promise<DesktopBrowserSession>;
+  sendBrowserCommand(command: DesktopBrowserCommand): void;
+  closeBrowser(sessionId: string): Promise<void>;
+  onBrowserEvent(listener: (event: DesktopBrowserEvent) => void): () => void;
   getConversationChanges(
     request: DesktopConversationChangesRequest,
   ): Promise<DesktopConversationChangesSnapshot>;

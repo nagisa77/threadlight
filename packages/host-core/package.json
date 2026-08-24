@@ -18,6 +18,7 @@
     "@threadlight/project-memory": "1.1.0",
     "@threadlight/protocol": "1.1.0",
     "diff": "^9.0.0",
-    "ignore": "^7.0.6"
+    "ignore": "^7.0.6",
+    "playwright-core": "^1.62.1"
   }
 }

@@ -727,4 +727,4 @@ export interface HostCodeHostCommitPushResult {
   status: HostCodeHostDeliveryStatus;
 }
 
-export const THREADLIGHT_HOST_PROTOCOL_VERSION = 4 as const;
+export const THREADLIGHT_HOST_PROTOCOL_VERSION = 5 as const;

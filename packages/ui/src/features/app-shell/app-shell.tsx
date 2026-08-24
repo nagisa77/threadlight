@@ -19,6 +19,7 @@ import {
   type ThemePreference,
 } from "../../theme.js";
 import type { TerminalAdapter } from "../../terminal.js";
+import type { BrowserAdapter } from "../../browser.js";
 import type { VoiceInputAdapter } from "../../voice-input.js";
 import type { WorkspaceAdapter } from "../../workspace-panel.js";
 import type {
@@ -54,6 +55,7 @@ export interface ThreadlightAppProps {
   computerShare?: ComputerShareAdapter;
   computerPermissions?: ComputerPermissionAdapter;
   terminal?: TerminalAdapter;
+  browser?: BrowserAdapter;
   workspace?: WorkspaceAdapter;
   projectOpener?: ProjectOpenerAdapter;
   executionPolicy?: ExecutionPolicyAdapter;

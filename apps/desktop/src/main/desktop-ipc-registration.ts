@@ -332,6 +332,18 @@ export function registerDesktopIpc({
     desktopApi.DESKTOP_TERMINAL_CLOSE_CHANNEL,
     runtime.handleTerminalClose.bind(runtime),
   );
+  ipcMain.handle(
+    desktopApi.DESKTOP_BROWSER_CREATE_CHANNEL,
+    runtime.handleBrowserCreate.bind(runtime),
+  );
+  ipcMain.on(
+    desktopApi.DESKTOP_BROWSER_COMMAND_CHANNEL,
+    runtime.handleBrowserCommand.bind(runtime),
+  );
+  ipcMain.handle(
+    desktopApi.DESKTOP_BROWSER_CLOSE_CHANNEL,
+    runtime.handleBrowserClose.bind(runtime),
+  );
   ipcMain.on(
     previewApi.DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
     runtime.handleComputerPreviewClose.bind(runtime),

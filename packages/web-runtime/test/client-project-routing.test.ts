@@ -69,22 +69,22 @@ describe("remote Web protocol handshake", () => {
     expect(error).toBeInstanceOf(IncompatibleHostProtocolError);
     if (!(error instanceof IncompatibleHostProtocolError)) return;
     expect(error).toMatchObject({
-      clientProtocolVersion: 4,
+      clientProtocolVersion: 5,
       hostProtocolVersion: 1,
       upgradeTarget: "host",
     });
-    expect(error.message).toContain("Web client protocol version: 4");
+    expect(error.message).toContain("Web client protocol version: 5");
     expect(error.message).toContain("Host protocol version: 1");
     expect(error.message).toContain("Update the Threadlight Host");
     expect(requests).toEqual(["https://host.example.com/v1/health"]);
   });
 
   it("recommends upgrading the Web client for a newer Host protocol", () => {
-    const error = new IncompatibleHostProtocolError(5);
+    const error = new IncompatibleHostProtocolError(6);
 
     expect(error.upgradeTarget).toBe("web");
-    expect(error.message).toContain("Web client protocol version: 4");
-    expect(error.message).toContain("Host protocol version: 5");
+    expect(error.message).toContain("Web client protocol version: 5");
+    expect(error.message).toContain("Host protocol version: 6");
     expect(error.message).toContain("Update this Threadlight Web client");
   });
 
@@ -121,7 +121,7 @@ describe("remote Web protocol handshake", () => {
       const payload = url.endsWith("/v1/health")
         ? {
             ok: true,
-            protocolVersion: 4,
+            protocolVersion: 5,
             hostId: "host-current",
             name: "Current Host",
             homePath: "/host",

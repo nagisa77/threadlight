@@ -30,6 +30,11 @@ export {
   type ThreadlightHostAddress,
   type ThreadlightHostServerOptions,
 } from "./host-server.js";
+export {
+  HostBrowserGateway,
+  parseBrowserMessage,
+  type HostBrowserGatewayOptions,
+} from "./host-browser-gateway.js";
 export { createHostSecretCodec } from "./host-secret-codec.js";
 export {
   JsonLineRuntimePeer,

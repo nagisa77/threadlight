@@ -30,6 +30,7 @@ import {
   type TaskWorkspace,
   WorktreeDeliveryManager,
   type ProjectStore,
+  type RemoteBrowserService,
   type SettingsStore,
   transcribeAudio,
   testProviderConnection,
@@ -67,6 +68,7 @@ import type {
 import { WebSocketServer } from "ws";
 
 import { HostTerminalGateway } from "./host-terminal-gateway.js";
+import { HostBrowserGateway } from "./host-browser-gateway.js";
 import { HostWebAssets } from "./host-web-assets.js";
 import {
   listHostFiles,
@@ -82,6 +84,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_BODY_BYTES,
   MAX_TERMINAL_MESSAGE_BYTES,
+  MAX_BROWSER_MESSAGE_BYTES,
   RPC_TIMEOUT_MS,
 } from "./host-constants.js";
 import { HostApiController } from "./host-api-controller.js";
@@ -117,6 +120,7 @@ export interface ThreadlightHostServerOptions {
   createTerminalSessions?(
     send: (event: TerminalSessionEvent) => void,
   ): TerminalSessionController;
+  browserService?: RemoteBrowserService;
   taskWorkspaces?: TaskWorkspaceManager;
   conversationChanges?: ConversationChangeTracker;
   worktreeDelivery?: WorktreeDeliveryManager;
@@ -164,6 +168,8 @@ export class ThreadlightHostServer {
   private readonly pending = new Map<string, PendingResponse>();
   private readonly terminalGateway?: HostTerminalGateway;
   private readonly terminalWebSockets?: WebSocketServer;
+  private readonly browserGateway?: HostBrowserGateway;
+  private readonly browserWebSockets?: WebSocketServer;
   private readonly projectSearch = new ProjectSearchService();
   private readonly automationStore: AutomationStore;
   private readonly automationScheduler: AutomationScheduler;
@@ -236,6 +242,17 @@ export class ThreadlightHostServer {
         perMessageDeflate: false,
       });
     }
+    if (options.browserService) {
+      this.browserGateway = new HostBrowserGateway({
+        projects: options.projects,
+        createSessions: (send) => options.browserService!.createSessions(send),
+      });
+      this.browserWebSockets = new WebSocketServer({
+        noServer: true,
+        maxPayload: MAX_BROWSER_MESSAGE_BYTES,
+        perMessageDeflate: false,
+      });
+    }
   }
 
   async start(): Promise<ThreadlightHostAddress> {
@@ -245,7 +262,10 @@ export class ThreadlightHostServer {
     const server = createServer((request, response) => {
       void this.handleRequest(request, response);
     });
-    if (this.terminalGateway && this.terminalWebSockets) {
+    if (
+      (this.terminalGateway && this.terminalWebSockets) ||
+      (this.browserGateway && this.browserWebSockets)
+    ) {
       server.on("upgrade", (request, socket, head) => {
         this.handleUpgrade(request, socket, head);
       });
@@ -320,6 +340,9 @@ export class ThreadlightHostServer {
     );
     this.terminalGateway?.close();
     this.terminalWebSockets?.close();
+    await this.browserGateway?.close();
+    this.browserWebSockets?.close();
+    await this.options.browserService?.close();
     await this.stopRuntimes();
     const server = this.server;
     this.server = undefined;
@@ -365,7 +388,14 @@ export class ThreadlightHostServer {
           hostId: this.options.hostId,
           name: this.options.name,
           homePath: this.options.homePath,
-          ...(this.terminalGateway ? { capabilities: { terminal: true } } : {}),
+          ...(this.terminalGateway || this.browserGateway
+            ? {
+                capabilities: {
+                  ...(this.terminalGateway ? { terminal: true } : {}),
+                  ...(this.browserGateway ? { browser: true } : {}),
+                },
+              }
+            : {}),
         } satisfies ThreadlightHostHealth);
         return;
       }
@@ -946,11 +976,15 @@ export class ThreadlightHostServer {
     head: Buffer,
   ): void {
     const url = new URL(request.url ?? "/", "http://host.local");
-    if (
-      url.pathname !== "/v1/host/terminal" ||
-      !this.terminalGateway ||
-      !this.terminalWebSockets
-    ) {
+    const terminal =
+      url.pathname === "/v1/host/terminal" &&
+      this.terminalGateway &&
+      this.terminalWebSockets;
+    const browser =
+      url.pathname === "/v1/host/browser" &&
+      this.browserGateway &&
+      this.browserWebSockets;
+    if (!terminal && !browser) {
       rejectUpgrade(socket, 404, "Not Found");
       return;
     }
@@ -963,8 +997,17 @@ export class ThreadlightHostServer {
       rejectUpgrade(socket, 403, "Forbidden");
       return;
     }
-    this.terminalWebSockets.handleUpgrade(request, socket, head, (webSocket) =>
-      this.terminalGateway?.accept(webSocket),
+    if (terminal) {
+      this.terminalWebSockets!.handleUpgrade(
+        request,
+        socket,
+        head,
+        (webSocket) => this.terminalGateway?.accept(webSocket),
+      );
+      return;
+    }
+    this.browserWebSockets!.handleUpgrade(request, socket, head, (webSocket) =>
+      this.browserGateway?.accept(webSocket),
     );
   }
 

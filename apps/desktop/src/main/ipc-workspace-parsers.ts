@@ -229,6 +229,11 @@ import {
   type DesktopExecutionApprovalResponse,
   type DesktopExecutionPolicyRevokeRequest,
 } from "../shared/desktop-api.js";
+import { parseBrowserMessage } from "@threadlight/app-server";
+import type {
+  DesktopBrowserCommand,
+  DesktopBrowserCreateRequest,
+} from "../shared/desktop-api.js";
 import {
   DESKTOP_COMPUTER_PREVIEW_CLOSE_CHANNEL,
   DESKTOP_COMPUTER_PREVIEW_DRAG_CHANNEL,
@@ -547,6 +552,38 @@ export function parseTerminalCreateRequest(
     cols: request.cols,
     rows: request.rows,
   };
+}
+
+export function parseBrowserCreateRequest(
+  value: unknown,
+): DesktopBrowserCreateRequest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid browser creation request.");
+  }
+  const parsed = parseBrowserMessage(
+    Buffer.from(
+      JSON.stringify({
+        ...(value as Record<string, unknown>),
+        type: "open",
+        requestId: "desktop",
+      }),
+    ),
+  );
+  if (parsed.type !== "open") throw new Error("Invalid browser request.");
+  return {
+    projectId: parsed.projectId,
+    width: parsed.width,
+    height: parsed.height,
+    ...(parsed.deviceScaleFactor
+      ? { deviceScaleFactor: parsed.deviceScaleFactor }
+      : {}),
+  };
+}
+
+export function parseBrowserCommand(value: unknown): DesktopBrowserCommand {
+  const parsed = parseBrowserMessage(Buffer.from(JSON.stringify(value)));
+  if (parsed.type === "open") throw new Error("Invalid browser command.");
+  return parsed;
 }
 
 export function parseTerminalWriteRequest(

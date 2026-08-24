@@ -725,6 +725,14 @@ export function createFileTab(t: Translate): WorkspaceTab {
   };
 }
 
+export function createBrowserTab(t: Translate): WorkspaceTab {
+  return {
+    id: createBrowserUuid(),
+    kind: "browser",
+    title: t("newBrowserTab"),
+  };
+}
+
 export function createTerminalTab(
   workspace: "task" | "original",
   branch: string | undefined,

@@ -58,6 +58,7 @@ export interface ThreadlightHostHealth {
   homePath: string;
   capabilities?: {
     terminal?: boolean;
+    browser?: boolean;
   };
 }
 
@@ -115,6 +116,155 @@ export type HostTerminalServerMessage =
       session: TerminalSessionInfo;
     }
   | TerminalSessionEvent
+  | {
+      type: "error";
+      requestId?: string;
+      sessionId?: string;
+      message: string;
+    };
+
+export interface BrowserViewport {
+  width: number;
+  height: number;
+  deviceScaleFactor: number;
+}
+
+export interface BrowserSessionInfo {
+  id: string;
+  url: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+  viewport: BrowserViewport;
+}
+
+export type BrowserMouseButton = "none" | "left" | "middle" | "right";
+
+export type BrowserSessionEvent =
+  | {
+      type: "state";
+      session: BrowserSessionInfo;
+    }
+  | {
+      type: "frame";
+      sessionId: string;
+      frameId: number;
+      data: string;
+      width: number;
+      height: number;
+    }
+  | {
+      type: "dialog";
+      sessionId: string;
+      dialogId: string;
+      dialogType: "alert" | "beforeunload" | "confirm" | "prompt";
+      message: string;
+      defaultValue: string;
+    }
+  | {
+      type: "download";
+      sessionId: string;
+      downloadId: string;
+      filename: string;
+      status: "started" | "completed" | "failed";
+      path?: string;
+      error?: string;
+    }
+  | {
+      type: "closed";
+      sessionId: string;
+      reason?: string;
+    }
+  | {
+      type: "error";
+      sessionId?: string;
+      message: string;
+    };
+
+export type HostBrowserClientMessage =
+  | {
+      type: "open";
+      requestId: string;
+      projectId: string;
+      width: number;
+      height: number;
+      deviceScaleFactor?: number;
+    }
+  | {
+      type: "navigate";
+      sessionId: string;
+      url: string;
+    }
+  | {
+      type: "back" | "forward" | "reload" | "stop";
+      sessionId: string;
+    }
+  | {
+      type: "resize";
+      sessionId: string;
+      width: number;
+      height: number;
+      deviceScaleFactor?: number;
+    }
+  | {
+      type: "pointer";
+      sessionId: string;
+      phase: "move" | "down" | "up";
+      x: number;
+      y: number;
+      button: BrowserMouseButton;
+      clickCount?: number;
+      modifiers?: number;
+    }
+  | {
+      type: "wheel";
+      sessionId: string;
+      x: number;
+      y: number;
+      deltaX: number;
+      deltaY: number;
+      modifiers?: number;
+    }
+  | {
+      type: "key";
+      sessionId: string;
+      phase: "down" | "up";
+      key: string;
+      code: string;
+      text?: string;
+      modifiers?: number;
+      repeat?: boolean;
+    }
+  | {
+      type: "insert-text";
+      sessionId: string;
+      text: string;
+    }
+  | {
+      type: "frame-ack";
+      sessionId: string;
+      frameId: number;
+    }
+  | {
+      type: "dialog";
+      sessionId: string;
+      dialogId: string;
+      accept: boolean;
+      promptText?: string;
+    }
+  | {
+      type: "close";
+      sessionId: string;
+    };
+
+export type HostBrowserServerMessage =
+  | {
+      type: "opened";
+      requestId: string;
+      session: BrowserSessionInfo;
+    }
+  | BrowserSessionEvent
   | {
       type: "error";
       requestId?: string;

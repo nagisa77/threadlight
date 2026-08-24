@@ -78,6 +78,10 @@ import {
   DESKTOP_TERMINAL_EVENT_CHANNEL,
   DESKTOP_TERMINAL_RESIZE_CHANNEL,
   DESKTOP_TERMINAL_WRITE_CHANNEL,
+  DESKTOP_BROWSER_CLOSE_CHANNEL,
+  DESKTOP_BROWSER_COMMAND_CHANNEL,
+  DESKTOP_BROWSER_CREATE_CHANNEL,
+  DESKTOP_BROWSER_EVENT_CHANNEL,
   DESKTOP_WORKSPACE_FILE_GET_CHANNEL,
   DESKTOP_WORKSPACE_FILE_DOWNLOAD_CHANNEL,
   DESKTOP_WORKSPACE_FILE_REVEAL_CHANNEL,
@@ -87,6 +91,7 @@ import {
   type DesktopComputerPermissionSnapshot,
   type DesktopComputerShareSnapshot,
   type DesktopTerminalEvent,
+  type DesktopBrowserEvent,
   type DesktopExecutionApprovalRequest,
 } from "../shared/desktop-api.js";
 
@@ -344,6 +349,24 @@ const api: DesktopApi = {
     ipcRenderer.on(DESKTOP_TERMINAL_EVENT_CHANNEL, handler);
     return () =>
       ipcRenderer.removeListener(DESKTOP_TERMINAL_EVENT_CHANNEL, handler);
+  },
+  createBrowser(request) {
+    return ipcRenderer.invoke(DESKTOP_BROWSER_CREATE_CHANNEL, request);
+  },
+  sendBrowserCommand(command) {
+    ipcRenderer.send(DESKTOP_BROWSER_COMMAND_CHANNEL, command);
+  },
+  closeBrowser(sessionId) {
+    return ipcRenderer.invoke(DESKTOP_BROWSER_CLOSE_CHANNEL, sessionId);
+  },
+  onBrowserEvent(listener) {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      browserEvent: DesktopBrowserEvent,
+    ) => listener(browserEvent);
+    ipcRenderer.on(DESKTOP_BROWSER_EVENT_CHANNEL, handler);
+    return () =>
+      ipcRenderer.removeListener(DESKTOP_BROWSER_EVENT_CHANNEL, handler);
   },
   getConversationChanges(request) {
     return ipcRenderer.invoke(

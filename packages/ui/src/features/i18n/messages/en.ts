@@ -595,6 +595,8 @@ export const en: Messages = {
   terminalWorkspaceContext: "{workspace} · {branch}",
   file: "File",
   openFile: "Open file",
+  browser: "Browser",
+  newBrowserTab: "New browser tab",
   openSystemFile: "Open system file…",
   openRemoteFile: "Open remote file…",
   systemFiles: "System files",

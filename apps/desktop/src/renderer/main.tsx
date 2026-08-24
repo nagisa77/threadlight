@@ -1,11 +1,15 @@
 import { createRoot } from "react-dom/client";
 import { ThreadlightClient } from "@threadlight/client";
-import { VOICE_INPUT_ERROR_CODES } from "@threadlight/protocol";
+import {
+  VOICE_INPUT_ERROR_CODES,
+  type BrowserSessionEvent,
+} from "@threadlight/protocol";
 import { ThreadlightApp } from "@threadlight/ui/app";
 import {
   type AttachmentPreviewAdapter,
   type AttachmentStageAdapter,
   type AutomationAdapter,
+  type BrowserAdapter,
   type ClipboardAdapter,
   type ComputerPermissionAdapter,
   type ComputerShareAdapter,
@@ -190,6 +194,47 @@ const terminal: TerminalAdapter = {
   close: (sessionId) => window.threadlightDesktop.closeTerminal(sessionId),
   subscribe: (listener) => window.threadlightDesktop.onTerminalEvent(listener),
 };
+const browserListeners = new Set<Parameters<BrowserAdapter["subscribe"]>[0]>();
+const browserSessions = new Set<string>();
+const earlyBrowserEvents = new Map<string, BrowserSessionEvent[]>();
+window.threadlightDesktop.onBrowserEvent((event) => {
+  const sessionId = event.type === "state" ? event.session.id : event.sessionId;
+  if (sessionId && !browserSessions.has(sessionId)) {
+    const buffered = earlyBrowserEvents.get(sessionId) ?? [];
+    const next: BrowserSessionEvent[] =
+      event.type === "frame"
+        ? [...buffered.filter((candidate) => candidate.type !== "frame"), event]
+        : [...buffered, event].slice(-8);
+    earlyBrowserEvents.set(sessionId, next);
+    return;
+  }
+  for (const listener of browserListeners) listener(event);
+});
+const browser: BrowserAdapter = {
+  async create(request) {
+    const session = await window.threadlightDesktop.createBrowser(request);
+    browserSessions.add(session.id);
+    // Local Chrome can emit its first screencast frame before IPC resolves.
+    // Flush on the next task so BrowserView has recorded the returned session.
+    setTimeout(() => {
+      for (const event of earlyBrowserEvents.get(session.id) ?? []) {
+        for (const listener of browserListeners) listener(event);
+      }
+      earlyBrowserEvents.delete(session.id);
+    }, 0);
+    return session;
+  },
+  command: (command) => window.threadlightDesktop.sendBrowserCommand(command),
+  async close(sessionId) {
+    browserSessions.delete(sessionId);
+    earlyBrowserEvents.delete(sessionId);
+    await window.threadlightDesktop.closeBrowser(sessionId);
+  },
+  subscribe(listener) {
+    browserListeners.add(listener);
+    return () => browserListeners.delete(listener);
+  },
+};
 const workspace: WorkspaceAdapter = {
   getChanges: (projectId, threadId) =>
     window.threadlightDesktop.getConversationChanges({ projectId, threadId }),
@@ -307,6 +352,7 @@ createRoot(root).render(
     computerShare={computerShare}
     computerPermissions={computerPermissions}
     terminal={terminal}
+    browser={browser}
     workspace={workspace}
     executionPolicy={executionPolicy}
   />,

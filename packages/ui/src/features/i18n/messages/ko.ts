@@ -587,6 +587,8 @@ export const ko: Messages = {
   terminalWorkspaceContext: "{workspace} · {branch}",
   file: "파일",
   openFile: "파일 열기",
+  browser: "브라우저",
+  newBrowserTab: "새 브라우저 탭",
   openSystemFile: "시스템 파일 열기…",
   openRemoteFile: "원격 파일 열기…",
   systemFiles: "시스템 파일",

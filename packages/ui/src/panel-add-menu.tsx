@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Files, GitBranch, PackageCheck, Plus, Terminal } from "lucide-react";
+import {
+  Files,
+  GitBranch,
+  Globe2,
+  PackageCheck,
+  Plus,
+  Terminal,
+} from "lucide-react";
 import { useI18n } from "./i18n.js";
 
 export type PanelViewKind =
-  "terminal" | "original-terminal" | "delivery" | "agents" | "file";
+  "terminal" | "original-terminal" | "delivery" | "agents" | "browser" | "file";
 
 export function PanelAddMenu({
   available,
@@ -96,6 +103,20 @@ export function PanelAddMenu({
           >
             <Files size={16} />
             <span>{t("file")}</span>
+          </button>
+        )}
+        {available.includes("browser") && (
+          <button
+            type="button"
+            className="panel-add-option pressable"
+            role="menuitem"
+            onClick={() => {
+              onSelect("browser");
+              setOpen(false);
+            }}
+          >
+            <Globe2 size={16} />
+            <span>{t("browser")}</span>
           </button>
         )}
         {available.includes("delivery") && (

@@ -594,6 +594,8 @@ export const ja: Messages = {
   terminalWorkspaceContext: "{workspace} · {branch}",
   file: "ファイル",
   openFile: "ファイルを開く",
+  browser: "ブラウザー",
+  newBrowserTab: "新しいブラウザータブ",
   openSystemFile: "システムファイルを開く…",
   openRemoteFile: "リモートファイルを開く…",
   systemFiles: "システムファイル",

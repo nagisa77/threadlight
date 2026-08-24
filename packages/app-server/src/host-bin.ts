@@ -55,6 +55,7 @@ async function startHost(args: HostArgs): Promise<void> {
     {
       ProductTelemetry,
       ProjectStore,
+      RemoteBrowserService,
       SettingsStore,
       productTelemetryEnabled,
       runtimeEnvironment,
@@ -81,6 +82,7 @@ async function startHost(args: HostArgs): Promise<void> {
       join(homedir(), ".threadlight"),
   );
   const appVersion = installedHostVersion();
+  const browserService = new RemoteBrowserService({ homePath });
   const productTelemetry = new ProductTelemetry({
     homePath,
     source: "self_host",
@@ -161,6 +163,7 @@ async function startHost(args: HostArgs): Promise<void> {
         environment: hostTerminalEnvironment(process.env),
         maxSessions: 16,
       }),
+    browserService,
   });
   const address = await server.start();
   void productTelemetry.reportOnce("install_succeeded");

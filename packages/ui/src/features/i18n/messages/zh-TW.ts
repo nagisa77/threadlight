@@ -543,6 +543,8 @@ export const zhTW: Messages = {
   terminalWorkspaceContext: "{workspace} · {branch}",
   file: "檔案",
   openFile: "開啟檔案",
+  browser: "瀏覽器",
+  newBrowserTab: "新增瀏覽器分頁",
   openSystemFile: "開啟系統檔案…",
   openRemoteFile: "開啟遠端檔案…",
   systemFiles: "系統檔案",

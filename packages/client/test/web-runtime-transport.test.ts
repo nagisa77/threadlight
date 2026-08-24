@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BrowserTerminalClient,
+  BrowserStreamClient,
   HttpRuntimeTransport,
   SwitchableHttpRuntimeTransport,
   browserTerminalProtocols,
@@ -190,6 +191,78 @@ describe("BrowserTerminalClient", () => {
       type: "data",
       sessionId: "terminal-1",
       data: "/workspace\r\n",
+    });
+    client.dispose();
+  });
+});
+
+describe("BrowserStreamClient", () => {
+  it("streams early Chrome frames after opening and keeps credentials out of the URL", async () => {
+    const socket = new ScriptedBrowserSocket();
+    const events: unknown[] = [];
+    let socketUrl = "";
+    const client = new BrowserStreamClient({
+      endpoint: "https://host.example.test/base",
+      token: "browser-secret",
+      send: (event) => events.push(event),
+      createSocket(url) {
+        socketUrl = url;
+        return socket;
+      },
+    });
+
+    const opening = client.create({
+      projectId: "project-1",
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+    });
+    socket.open();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = JSON.parse(socket.sent[0]!) as { requestId: string };
+    const session = {
+      id: "browser-1",
+      url: "about:blank",
+      title: "",
+      canGoBack: false,
+      canGoForward: false,
+      loading: false,
+      viewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
+    };
+    socket.message({
+      type: "frame",
+      sessionId: "browser-1",
+      frameId: 4,
+      data: "jpeg",
+      width: 1280,
+      height: 720,
+    });
+    socket.message({ type: "opened", requestId: request.requestId, session });
+
+    await expect(opening).resolves.toEqual(session);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events).toEqual([
+      {
+        type: "frame",
+        sessionId: "browser-1",
+        frameId: 4,
+        data: "jpeg",
+        width: 1280,
+        height: 720,
+      },
+    ]);
+    expect(socketUrl).toBe("wss://host.example.test/v1/host/browser");
+    expect(socketUrl).not.toContain("browser-secret");
+
+    client.command({
+      type: "frame-ack",
+      sessionId: "browser-1",
+      frameId: 4,
+    });
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({
+      type: "frame-ack",
+      sessionId: "browser-1",
+      frameId: 4,
     });
     client.dispose();
   });
