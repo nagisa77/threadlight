@@ -227,6 +227,14 @@
   margin-bottom: 8px;
 }
 
+.progress-context-compaction {
+  margin: 0;
+}
+
+.progress-context-compaction .message-capability-receipts.assistant {
+  margin-bottom: 0;
+}
+
 .message-capability-receipt {
   display: inline-flex;
   min-width: 0;

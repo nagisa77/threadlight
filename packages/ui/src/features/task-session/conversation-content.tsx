@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { useI18n, type Translate } from "../../i18n.js";
+import { ContextCompactionReceipt } from "../../capabilities.js";
 import { MarkdownContent, type LocalFileReference } from "../../markdown.js";
 import type { ProjectSummary, ProjectsSnapshot } from "../../projects.js";
 import type {
@@ -53,6 +54,11 @@ export function ProgressList({
     <div className="progress-list">
       {progress.map((step, index) => (
         <div className="progress-step" key={index}>
+          {step.contextCompaction && (
+            <div className="progress-context-compaction">
+              <ContextCompactionReceipt compaction={step.contextCompaction} />
+            </div>
+          )}
           {step.text.trim() && (
             <div className="progress-copy">
               <MarkdownContent

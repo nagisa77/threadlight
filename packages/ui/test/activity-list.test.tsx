@@ -2,8 +2,107 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ActivityList, ProgressList } from "../src/app.js";
+import { ConversationMessageItem } from "../src/conversation-surface.js";
+import { I18nProvider } from "../src/i18n.js";
 
 describe("ActivityList", () => {
+  it("renders every automatic compaction in chronological progress order", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ProgressList
+          progress={[
+            { text: "压缩前的执行进度", activities: [] },
+            {
+              text: "",
+              activities: [],
+              contextCompaction: {
+                status: "compacted",
+                source: "automatic",
+                generation: 1,
+                tokensBefore: 112_423,
+                tokensAfter: 28_937,
+                messagesCompacted: 30,
+              },
+            },
+            { text: "压缩后的执行进度", activities: [] },
+            {
+              text: "",
+              activities: [],
+              contextCompaction: {
+                status: "compacted",
+                source: "automatic",
+                generation: 2,
+                tokensBefore: 111_900,
+                tokensAfter: 27_400,
+                messagesCompacted: 24,
+              },
+            },
+          ]}
+        />
+      </I18nProvider>,
+    );
+
+    const before = html.indexOf("压缩前的执行进度");
+    const firstReceipt = html.indexOf("约 11.2万 → 2.9万 tokens");
+    const after = html.indexOf("压缩后的执行进度");
+    const secondReceipt = html.indexOf("约 11.2万 → 2.7万 tokens");
+    expect(before).toBeLessThan(firstReceipt);
+    expect(firstReceipt).toBeLessThan(after);
+    expect(after).toBeLessThan(secondReceipt);
+    expect(html.match(/lucide-minimize-2/g)).toHaveLength(2);
+  });
+
+  it("does not duplicate an inline automatic receipt at the message top", () => {
+    const compaction = {
+      status: "compacted" as const,
+      source: "automatic" as const,
+      generation: 1,
+      compactedAt: "2026-08-24T08:02:34.352Z",
+      tokensBefore: 112_423,
+      tokensAfter: 28_937,
+      messagesCompacted: 30,
+    };
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ConversationMessageItem
+          message={{
+            id: "message-1",
+            role: "assistant",
+            text: "压缩后继续完成任务。",
+            contextCompaction: compaction,
+            progress: [
+              { text: "压缩前执行。", activities: [] },
+              {
+                text: "",
+                activities: [],
+                contextCompaction: compaction,
+              },
+            ],
+          }}
+          capabilities={[]}
+          bookmarked={false}
+          canCopyText={false}
+          canRevealLocalFile={false}
+          onTerminateProcess={async () => {}}
+          onOpenLocalFile={() => {}}
+          onRevealLocalFile={() => {}}
+          onRewriteQuestion={() => {}}
+          onOpenAgent={() => {}}
+          onToggleBookmark={() => {}}
+          onCopyText={async () => {}}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html.indexOf("压缩前执行。")).toBeLessThan(
+      html.indexOf("约 11.2万 → 2.9万 tokens"),
+    );
+    expect(html.indexOf("约 11.2万 → 2.9万 tokens")).toBeLessThan(
+      html.indexOf("压缩后继续完成任务。"),
+    );
+    expect(html.match(/lucide-minimize-2/g)).toHaveLength(1);
+  });
+
   it("renders commentary before every tool in the batch", () => {
     const html = renderToStaticMarkup(
       <ProgressList

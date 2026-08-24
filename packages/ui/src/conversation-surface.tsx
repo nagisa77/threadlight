@@ -303,6 +303,14 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
   onToggleBookmark,
   onCopyText,
 }: ConversationMessageItemProps) {
+  const hasInlineAutomaticCompaction = message.progress?.some(
+    (step) => step.contextCompaction?.source === "automatic",
+  );
+  const showMessageCompaction = Boolean(
+    message.contextCompaction &&
+    (message.contextCompaction.source !== "automatic" ||
+      !hasInlineAutomaticCompaction),
+  );
   return (
     <article
       id={`message-${message.id}`}
@@ -326,7 +334,7 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
         capabilityRefs={message.capabilityRefs}
         catalog={capabilities}
       />
-      {message.contextCompaction && (
+      {message.contextCompaction && showMessageCompaction && (
         <ContextCompactionReceipt compaction={message.contextCompaction} />
       )}
       {(message.text ||

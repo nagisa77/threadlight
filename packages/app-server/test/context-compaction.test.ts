@@ -24,6 +24,7 @@ describe("rolling context compaction", () => {
 
   it("checks again before later root model calls within the same turn", async () => {
     const messages: JsonRpcOutgoing[] = [];
+    const store = new MemoryConversationStore();
     const normalRequests: ModelRequest[] = [];
     const summaryRequests: ModelRequest[] = [];
     let normalTurns = 0;
@@ -83,6 +84,7 @@ describe("rolling context compaction", () => {
         reserveTokens: 200,
         keepRecentTokens: 800,
       },
+      conversationStore: store,
       send: (message) => messages.push(message),
     });
 
@@ -111,6 +113,18 @@ describe("rolling context compaction", () => {
       source: "automatic",
       generation: 1,
     });
+    expect(completed.params.message.progress?.at(-1)).toMatchObject({
+      text: "",
+      activities: [],
+      contextCompaction: {
+        status: "compacted",
+        source: "automatic",
+        generation: 1,
+      },
+    });
+    expect(
+      (await store.load(threadId))?.messages.at(-1)?.progress?.at(-1),
+    ).toMatchObject({ contextCompaction: { generation: 1 } });
     expect(completed.params.usage).toEqual({
       inputTokens: 95,
       outputTokens: 25,

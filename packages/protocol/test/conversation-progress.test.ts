@@ -196,6 +196,55 @@ describe("conversation progress projection", () => {
     ]);
   });
 
+  it("keeps every automatic compaction at its exact position in progress", () => {
+    const before = projectAgentProgress([], {
+      type: "model.completed",
+      runId: "run-1",
+      step: 1,
+      text: "I’ll inspect the current state.",
+      toolCalls: [{ id: "call-1", name: "workspace_inspect", arguments: {} }],
+    });
+    const firstCompaction = projectAgentProgress(before, {
+      type: "context.compacted",
+      runId: "run-1",
+      step: 2,
+      generation: 1,
+      tokensBefore: 112_423,
+      tokensAfter: 28_937,
+      messagesCompacted: 30,
+      durationMs: 1_200,
+    });
+    const between = projectAgentProgress(firstCompaction, {
+      type: "model.completed",
+      runId: "run-1",
+      step: 2,
+      text: "I’ll continue with the reduced context.",
+      toolCalls: [{ id: "call-2", name: "exec_command", arguments: {} }],
+    });
+    const secondCompaction = projectAgentProgress(between, {
+      type: "context.compacted",
+      runId: "run-1",
+      step: 3,
+      generation: 2,
+      tokensBefore: 111_900,
+      tokensAfter: 27_400,
+      messagesCompacted: 24,
+      durationMs: 900,
+    });
+
+    expect(secondCompaction.map(({ text }) => text)).toEqual([
+      "I’ll inspect the current state.",
+      "",
+      "I’ll continue with the reduced context.",
+      "",
+    ]);
+    expect(
+      secondCompaction.flatMap((step) =>
+        step.contextCompaction ? [step.contextCompaction.generation] : [],
+      ),
+    ).toEqual([1, 2]);
+  });
+
   it("updates live and stored process projections with one shared reducer", () => {
     const running = runningProcess();
     const progress: readonly ConversationProgressData[] = [
@@ -226,13 +275,16 @@ describe("conversation progress projection", () => {
       completedAt: "2026-07-27T12:00:01.000Z",
     };
 
-    expect(projectProgressProcess(progress, completed)[0]?.activities[0])
-      .toMatchObject({ status: "completed", process: { exitCode: 0 } });
-    expect(projectMessagesProcess(messages, completed)[0]?.progress?.[0]
-      ?.activities[0]).toMatchObject({
-        status: "completed",
-        process: { exitCode: 0 },
-      });
+    expect(
+      projectProgressProcess(progress, completed)[0]?.activities[0],
+    ).toMatchObject({ status: "completed", process: { exitCode: 0 } });
+    expect(
+      projectMessagesProcess(messages, completed)[0]?.progress?.[0]
+        ?.activities[0],
+    ).toMatchObject({
+      status: "completed",
+      process: { exitCode: 0 },
+    });
     expect(runningProcessSessionIds(progress, messages)).toEqual(["session-1"]);
   });
 
@@ -259,14 +311,15 @@ describe("conversation progress projection", () => {
       completedAt: "2026-07-27T12:00:01.000Z",
     };
 
-    expect(projectProgressProcess(progress, warning)[0]?.activities[0])
-      .toMatchObject({
+    expect(
+      projectProgressProcess(progress, warning)[0]?.activities[0],
+    ).toMatchObject({
+      status: "completed_with_warnings",
+      process: {
         status: "completed_with_warnings",
-        process: {
-          status: "completed_with_warnings",
-          exitCode: 0,
-        },
-      });
+        exitCode: 0,
+      },
+    });
   });
 });
 

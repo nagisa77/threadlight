@@ -292,6 +292,8 @@ export interface ConversationActivityData {
 export interface ConversationProgressData {
   text: string;
   activities: readonly ConversationActivityData[];
+  /** Automatic context boundary shown at its exact position in the run. */
+  contextCompaction?: ContextCompactionProgressData;
 }
 
 export type AgentTaskStatusData =
@@ -542,6 +544,12 @@ export interface ContextCompactionData {
   tokensAfter: number;
   messagesCompacted: number;
 }
+
+/** Automatic compaction data that does not require a persisted wall-clock time. */
+export type ContextCompactionProgressData = Omit<
+  ContextCompactionData,
+  "compactedAt"
+>;
 
 export interface ConversationMessageData {
   id: string;

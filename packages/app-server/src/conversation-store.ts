@@ -730,7 +730,25 @@ function isConversationProgress(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const progress = value as Record<string, unknown>;
   return (
-    typeof progress.text === "string" && Array.isArray(progress.activities)
+    typeof progress.text === "string" &&
+    Array.isArray(progress.activities) &&
+    (progress.contextCompaction === undefined ||
+      isContextCompactionProgress(progress.contextCompaction))
+  );
+}
+
+function isContextCompactionProgress(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const receipt = value as Record<string, unknown>;
+  return (
+    receipt.status === "compacted" &&
+    receipt.source === "automatic" &&
+    Number.isInteger(receipt.generation) &&
+    Number(receipt.generation) >= 0 &&
+    isNonNegativeNumber(receipt.tokensBefore) &&
+    isNonNegativeNumber(receipt.tokensAfter) &&
+    Number.isInteger(receipt.messagesCompacted) &&
+    Number(receipt.messagesCompacted) >= 0
   );
 }
 

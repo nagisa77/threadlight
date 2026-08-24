@@ -12,6 +12,13 @@
   margin-bottom: 18px;
 }
 
+.message-body
+  > .progress-list:has(
+    > .progress-step:last-child > .progress-context-compaction
+  ) {
+  margin-bottom: 16px;
+}
+
 .progress-copy + .activity-list {
   margin-top: 10px;
 }

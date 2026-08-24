@@ -2,6 +2,7 @@ import type {
   CapabilityDescriptor,
   ConnectorStatusData,
   ContextCompactionData,
+  ContextCompactionProgressData,
   MessageCapabilityData,
 } from "@threadlight/protocol";
 import {
@@ -293,7 +294,7 @@ export function MessageCapabilityReceipts({
 export function ContextCompactionReceipt({
   compaction,
 }: {
-  compaction: ContextCompactionData;
+  compaction: ContextCompactionData | ContextCompactionProgressData;
 }) {
   const { language, t } = useI18n();
   const tokenCount = (value: number) =>

@@ -9,6 +9,7 @@ release/
 coverage/
 artifacts/
 .threadlight/
+.threadlight-demo/
 .wrangler/
 apps/site/.astro/content.d.ts
 apps/site/.astro/content-modules.mjs

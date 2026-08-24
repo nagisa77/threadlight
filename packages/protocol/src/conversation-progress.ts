@@ -15,6 +15,24 @@ export function projectAgentProgress(
   progress: readonly ConversationProgressData[],
   event: AgentEventData,
 ): ConversationProgressData[] {
+  if (event.type === "context.compacted") {
+    return [
+      ...progress,
+      {
+        text: "",
+        activities: [],
+        contextCompaction: {
+          status: "compacted",
+          source: "automatic",
+          generation: event.generation,
+          tokensBefore: event.tokensBefore,
+          tokensAfter: event.tokensAfter,
+          messagesCompacted: event.messagesCompacted,
+        },
+      },
+    ];
+  }
+
   if (
     event.type === "model.completed" &&
     event.toolCalls.some((call) => !isPlanControlTool(call.name))
@@ -41,10 +59,7 @@ export function projectAgentProgress(
     );
   }
 
-  if (
-    event.type !== "tool.completed" ||
-    isPlanControlTool(event.result.name)
-  ) {
+  if (event.type !== "tool.completed" || isPlanControlTool(event.result.name)) {
     return [...progress];
   }
 
@@ -100,10 +115,7 @@ export function projectMessagesProcess(
     const activities = message.activities
       ? projectActivitiesProcess(message.activities, process)
       : undefined;
-    if (
-      progress === message.progress &&
-      activities === message.activities
-    ) {
+    if (progress === message.progress && activities === message.activities) {
       return message;
     }
     changed = true;
