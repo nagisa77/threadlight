@@ -90,10 +90,14 @@ export interface ModelAttachment {
   providerReference?: unknown;
 }
 
-/** Provider-neutral visible transcript used when opaque state cannot cross providers. */
+/** Provider-neutral transcript used when opaque state cannot cross providers. */
 export interface ModelConversationMessage {
   role: "user" | "assistant";
   text: string;
+  /** Structured assistant calls retained across compaction/provider changes. */
+  toolCalls?: readonly ToolCall[];
+  /** Structured tool outputs retained across compaction/provider changes. */
+  toolResults?: readonly ToolResult[];
 }
 
 export interface ModelRequest {
@@ -113,7 +117,7 @@ export interface ModelRequest {
 
 /**
  * Provider-neutral context available immediately before one model request.
- * `fallbackHistory` includes pending input and tool results as visible text.
+ * `fallbackHistory` includes pending input and structured tool results.
  */
 export interface BeforeModelRequestContext {
   runId: string;

@@ -1,4 +1,3 @@
-import { serializeValue } from "./runtime-value.js";
 import type {
   Agent,
   AgentRunCheckpoint,
@@ -171,12 +170,8 @@ function appendPendingContext(
   if (toolResults.length > 0) {
     next.push({
       role: "user",
-      text: toolResults
-        .map(
-          (result) =>
-            `<tool_result name=${JSON.stringify(result.name)} call_id=${JSON.stringify(result.callId)}${result.isError ? ' error="true"' : ""}>\n${result.output}\n</tool_result>`,
-        )
-        .join("\n\n"),
+      text: "",
+      toolResults: toolResults.map((result) => ({ ...result })),
     });
   }
   if (input?.trim()) next.push({ role: "user", text: input });
@@ -187,10 +182,15 @@ function appendAssistantContext(
   history: readonly ModelConversationMessage[],
   turn: ModelTurn,
 ): ModelConversationMessage[] {
-  const toolCalls = turn.toolCalls.map(
-    (call) =>
-      `<tool_call name=${JSON.stringify(call.name)} call_id=${JSON.stringify(call.id)}>\n${serializeValue(call.arguments)}\n</tool_call>`,
-  );
-  const text = [turn.text, ...toolCalls].filter(Boolean).join("\n\n");
-  return text ? [...history, { role: "assistant", text }] : [...history];
+  if (!turn.text && turn.toolCalls.length === 0) return [...history];
+  return [
+    ...history,
+    {
+      role: "assistant",
+      text: turn.text,
+      ...(turn.toolCalls.length > 0
+        ? { toolCalls: turn.toolCalls.map((call) => ({ ...call })) }
+        : {}),
+    },
+  ];
 }

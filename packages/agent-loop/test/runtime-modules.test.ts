@@ -80,12 +80,26 @@ describe("agent-loop runtime modules", () => {
       state: undefined,
       toolResults: [],
     });
-    const visibleFallback = second.request.history
-      ?.map(({ text }) => text)
-      .join("\n");
-    expect(visibleFallback).toContain("call-1");
-    expect(visibleFallback).toContain("contents");
-    expect(visibleFallback).toContain("Continue");
+    expect(second.request.history).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          toolCalls: [expect.objectContaining({ id: "call-1", name: "read" })],
+        }),
+        expect.objectContaining({
+          toolResults: [
+            expect.objectContaining({
+              callId: "call-1",
+              name: "read",
+              output: "contents",
+            }),
+          ],
+        }),
+        expect.objectContaining({ role: "user", text: "Continue" }),
+      ]),
+    );
+    expect(
+      second.request.history?.map(({ text }) => text).join("\n"),
+    ).not.toContain("<tool_call>");
     expect(session.compactionCheckpoint(2, statisticsUsage())).toMatchObject({
       phase: "context_compacted",
       modelState: undefined,

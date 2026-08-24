@@ -103,6 +103,47 @@ describe("ActivityList", () => {
     expect(html.match(/lucide-minimize-2/g)).toHaveLength(1);
   });
 
+  it("marks interrupted progress as a continuation grouping anchor", () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider language="zh-CN">
+        <ConversationMessageItem
+          message={{
+            id: "assistant-interrupted",
+            role: "assistant",
+            text: "",
+            interrupted: true,
+            progress: [
+              {
+                text: "正在应用修改。",
+                activities: [
+                  {
+                    id: "call-1",
+                    name: "apply_patch",
+                    status: "terminated",
+                  },
+                ],
+              },
+            ],
+          }}
+          capabilities={[]}
+          bookmarked={false}
+          canCopyText={false}
+          canRevealLocalFile={false}
+          onTerminateProcess={async () => {}}
+          onOpenLocalFile={() => {}}
+          onRevealLocalFile={() => {}}
+          onRewriteQuestion={() => {}}
+          onOpenAgent={() => {}}
+          onToggleBookmark={() => {}}
+          onCopyText={async () => {}}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('data-interrupted="true"');
+    expect(html.match(/class="markdown-content"/g)).toHaveLength(1);
+  });
+
   it("renders commentary before every tool in the batch", () => {
     const html = renderToStaticMarkup(
       <ProgressList

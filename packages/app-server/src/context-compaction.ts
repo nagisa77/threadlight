@@ -1,11 +1,12 @@
-import type {
-  Agent,
-  AgentLoop,
-  BeforeModelRequestContext,
-  BeforeModelRequestResult,
-  ModelConversationMessage,
-  RunOptions,
-  TokenUsage,
+import {
+  modelConversationMessageText,
+  type Agent,
+  type AgentLoop,
+  type BeforeModelRequestContext,
+  type BeforeModelRequestResult,
+  type ModelConversationMessage,
+  type RunOptions,
+  type TokenUsage,
 } from "@threadlight/agent-loop";
 import type {
   CapabilityDescriptor,
@@ -501,7 +502,8 @@ function splitRecentHistory(
   let firstRecentTurn = turns.length;
   for (let index = turns.length - 1; index >= 0; index -= 1) {
     const turnTokens = turns[index]!.reduce(
-      (total, message) => total + estimateTokens(message.text) + 4,
+      (total, message) =>
+        total + estimateTokens(modelConversationMessageText(message)) + 4,
       0,
     );
     if (
@@ -547,7 +549,8 @@ function estimateRequestTokens(
   return (
     estimateTokens(agent.instructions) +
     history.reduce(
-      (total, message) => total + estimateTokens(message.text) + 4,
+      (total, message) =>
+        total + estimateTokens(modelConversationMessageText(message)) + 4,
       0,
     ) +
     estimateTokens(input) +
@@ -572,7 +575,8 @@ function estimateRuntimeRequestTokens(
   return (
     estimateTokens(request.instructions) +
     history.reduce(
-      (total, message) => total + estimateTokens(message.text) + 4,
+      (total, message) =>
+        total + estimateTokens(modelConversationMessageText(message)) + 4,
       0,
     ) +
     toolTokens +
@@ -587,7 +591,11 @@ function projectedRuntimeRequestTokens(
   const requestHistoryLength = context.request.history?.length ?? 0;
   const pendingTokens = context.fallbackHistory
     .slice(requestHistoryLength)
-    .reduce((total, message) => total + estimateTokens(message.text) + 4, 0);
+    .reduce(
+      (total, message) =>
+        total + estimateTokens(modelConversationMessageText(message)) + 4,
+      0,
+    );
   const observedTokens =
     context.previousModelUsage?.totalTokens ?? initialContextTokens;
   return Math.max(
@@ -672,7 +680,7 @@ function runtimeSummaryPrompt(
     history
       .map(
         (message) =>
-          `<message role="${message.role}">\n${message.text}\n</message>`,
+          `<message role="${message.role}">\n${modelConversationMessageText(message)}\n</message>`,
       )
       .join("\n\n"),
     "</older_transcript>",

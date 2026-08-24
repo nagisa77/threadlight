@@ -107,11 +107,23 @@ describe("AgentLoop", () => {
       input: undefined,
       toolResults: [],
     });
-    const replacement = requests[1]?.history
-      ?.map(({ text }) => text)
-      .join("\n");
-    expect(replacement).toContain("call-read");
-    expect(replacement).toContain("file contents");
+    expect(requests[1]?.history).toEqual([
+      { role: "user", text: "Start" },
+      {
+        role: "assistant",
+        text: "Checking",
+        toolCalls: [
+          { id: "call-read", name: "read", arguments: { path: "a" } },
+        ],
+      },
+      {
+        role: "user",
+        text: "",
+        toolResults: [
+          { callId: "call-read", name: "read", output: "file contents" },
+        ],
+      },
+    ]);
     expect(checkpoints).toContainEqual(
       expect.objectContaining({
         phase: "context_compacted",
@@ -385,6 +397,42 @@ describe("AgentLoop", () => {
     );
     expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["read"]);
     expect(requests[1]?.input).toBe("Completion rejected; continue.");
+  });
+
+  it("fails fast when a model repeatedly ignores completion requirements", async () => {
+    const requests: ModelRequest[] = [];
+    const events: AgentEvent[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return {
+          text: `<tool_call name="wait_for_agents" call_id="plain-text-${requests.length}">\n{}\n</tool_call>`,
+          toolCalls: [],
+        };
+      },
+    };
+
+    await expect(
+      new AgentLoop(provider).run(
+        defineAgent({ name: "guarded", instructions: "Use tools" }),
+        "Finish after collecting subagents",
+        {
+          controller: {
+            validateCompletion: () =>
+              "Subagents are still active. Call wait_for_agents before finishing.",
+          },
+          onEvent: (event) => events.push(event),
+        },
+      ),
+    ).rejects.toThrow(
+      "could not satisfy completion requirements after 3 attempts",
+    );
+
+    expect(requests).toHaveLength(3);
+    expect(requests[1]?.input).toContain("Subagents are still active");
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "run.failed" }),
+    );
   });
 
   it("lets runtime control choose canonical output without changing provider state", async () => {

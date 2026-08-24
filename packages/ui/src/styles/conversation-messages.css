@@ -12,6 +12,12 @@
   margin-bottom: 18px;
 }
 
+.message[data-interrupted="true"]
+  .message-body
+  > :is(.progress-list, .activity-list, .agent-tree):last-child {
+  margin-bottom: 0;
+}
+
 .message-body
   > .progress-list:has(
     > .progress-step:last-child > .progress-context-compaction

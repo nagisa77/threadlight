@@ -583,7 +583,7 @@ export interface ConversationMessageData {
 /** Conversation payload used by the interactive thread surface. */
 export type ConversationDisplayMessageData = Omit<
   ConversationMessageData,
-  "diagnostics" | "interrupted"
+  "diagnostics"
 >;
 
 export interface MessageSourceData {

@@ -315,6 +315,7 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
     <article
       id={`message-${message.id}`}
       className={`message ${message.role} ${message.error ? "error" : ""}`}
+      data-interrupted={message.interrupted || undefined}
       tabIndex={-1}
     >
       {message.role === "user" && message.followUpDelivery === "inject" && (
@@ -366,7 +367,7 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
               onOpenInPanel={onOpenAgent}
             />
           )}
-          {message.role === "assistant" ? (
+          {message.role === "assistant" && message.text ? (
             <MarkdownContent
               onOpenLocalFile={onOpenLocalFile}
               sources={message.sources}
@@ -377,9 +378,9 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
             >
               {message.text}
             </MarkdownContent>
-          ) : (
+          ) : message.role === "user" ? (
             <p>{message.text}</p>
-          )}
+          ) : null}
         </div>
       )}
       {message.text && (

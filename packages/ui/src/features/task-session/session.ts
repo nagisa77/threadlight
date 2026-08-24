@@ -355,7 +355,11 @@ export function sessionReducer(
       );
     case "turn.failed":
       if (action.message?.interrupted) {
-        return completeSessionInterruption(state, action.revision);
+        return completeSessionInterruption(
+          state,
+          action.message,
+          action.revision,
+        );
       }
       return completeSessionTurn(
         state,

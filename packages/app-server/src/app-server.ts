@@ -917,9 +917,10 @@ export class AppServer {
       const assistantMessage: ConversationMessageData = {
         id: randomUUID(),
         role: "assistant",
-        text: failureText,
-        error: true,
-        ...(interrupted ? { interrupted: true } : {}),
+        text: interrupted
+          ? (thread.activeTurn?.streamingText ?? "")
+          : failureText,
+        ...(interrupted ? { interrupted: true } : { error: true }),
         ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
         ...(thread.plan ? { plan: thread.plan } : {}),
         ...(visibleAgentTree(thread.activeTurn?.agentTree)

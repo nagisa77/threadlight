@@ -306,7 +306,37 @@ function isModelConversationMessage(value: unknown): boolean {
   const message = value as Record<string, unknown>;
   return (
     (message.role === "user" || message.role === "assistant") &&
-    typeof message.text === "string"
+    typeof message.text === "string" &&
+    (message.toolCalls === undefined ||
+      (Array.isArray(message.toolCalls) &&
+        message.toolCalls.every(isModelConversationToolCall))) &&
+    (message.toolResults === undefined ||
+      (Array.isArray(message.toolResults) &&
+        message.toolResults.every(isModelConversationToolResult)))
+  );
+}
+
+function isModelConversationToolCall(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const call = value as Record<string, unknown>;
+  return (
+    typeof call.id === "string" &&
+    typeof call.name === "string" &&
+    (call.argumentError === undefined || typeof call.argumentError === "string")
+  );
+}
+
+function isModelConversationToolResult(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const result = value as Record<string, unknown>;
+  return (
+    typeof result.callId === "string" &&
+    typeof result.name === "string" &&
+    typeof result.output === "string" &&
+    (result.kind === undefined ||
+      result.kind === "function" ||
+      result.kind === "computer") &&
+    (result.isError === undefined || typeof result.isError === "boolean")
   );
 }
 

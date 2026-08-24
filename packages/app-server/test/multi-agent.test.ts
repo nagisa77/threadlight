@@ -4,6 +4,7 @@ import {
   AgentLoop,
   defineAgent,
   defineTool,
+  modelConversationMessageText,
   type ModelProvider,
 } from "@threadlight/agent-loop";
 import type {
@@ -160,7 +161,7 @@ describe("AppServer multi-agent runtime", () => {
       toolResults: [],
     });
     expect(
-      childRequests[1]?.history?.map(({ text }) => text).join("\n"),
+      childRequests[1]?.history?.map(modelConversationMessageText).join("\n"),
     ).toContain("large tool evidence");
     expect(childRequests[2]?.history?.[0]?.text).toContain("CHILD-SUMMARY");
     expect(
@@ -242,7 +243,7 @@ describe("AppServer multi-agent runtime", () => {
           expect(
             [
               request.toolResults?.[0]?.output,
-              ...(request.history?.map(({ text }) => text) ?? []),
+              ...(request.history?.map(modelConversationMessageText) ?? []),
             ].join("\n"),
           ).toContain("Resumed compacted child");
           return { text: "Integrated resumed child.", toolCalls: [] };

@@ -9,9 +9,10 @@ import type {
 export function conversationMessagesForDisplay(
   messages: readonly ConversationMessageData[],
 ): ConversationDisplayMessageData[] {
-  return messages
-    .filter((message) => message.interrupted !== true)
-    .map(conversationMessageForDisplay);
+  return messages.flatMap((message) => {
+    const display = conversationMessageForDisplay(message);
+    return display ? [display] : [];
+  });
 }
 
 export function activeTurnForDisplay(
@@ -44,14 +45,12 @@ export function findConversationActivity(
 
 function conversationMessageForDisplay(
   message: ConversationMessageData,
-): ConversationDisplayMessageData {
-  const {
-    diagnostics: _diagnostics,
-    interrupted: _interrupted,
-    ...display
-  } = message;
-  return {
+): ConversationDisplayMessageData | undefined {
+  const { diagnostics: _diagnostics, error, ...display } = message;
+  const result: ConversationDisplayMessageData = {
     ...display,
+    ...(error !== undefined && !message.interrupted ? { error } : {}),
+    ...(message.interrupted && error ? { text: "" } : {}),
     ...(message.progress
       ? { progress: progressForDisplay(message.progress) }
       : {}),
@@ -59,6 +58,22 @@ function conversationMessageForDisplay(
       ? { activities: message.activities.map(activityForDisplay) }
       : {}),
   };
+  return message.interrupted && !hasVisibleInterruptedContent(result)
+    ? undefined
+    : result;
+}
+
+function hasVisibleInterruptedContent(
+  message: ConversationDisplayMessageData,
+): boolean {
+  return Boolean(
+    message.text.trim() ||
+    message.progress?.length ||
+    message.activities?.length ||
+    message.plan ||
+    message.agentTree ||
+    message.contextCompaction,
+  );
 }
 
 function progressForDisplay(

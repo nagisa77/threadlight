@@ -548,6 +548,258 @@ describe("OpenAICompatibleChatProvider", () => {
     ]);
   });
 
+  it("restores structured compacted tool history as native chat messages", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        chunks([{ choices: [{ delta: { content: "Recovered" } }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      client,
+    });
+
+    await provider.generate({
+      instructions: "Continue after compaction",
+      input: "Resume",
+      history: [
+        { role: "user", text: "Inspect the workspace" },
+        {
+          role: "assistant",
+          text: "Checking the active agents.",
+          toolCalls: [
+            {
+              id: "wait-1",
+              name: "wait_for_agents",
+              arguments: { timeoutMs: 60_000 },
+            },
+          ],
+        },
+        {
+          role: "user",
+          text: "",
+          toolResults: [
+            {
+              callId: "wait-1",
+              name: "wait_for_agents",
+              output: "All subagents completed",
+            },
+          ],
+        },
+      ],
+      tools: [
+        {
+          name: "wait_for_agents",
+          description: "Wait for agents",
+          parameters: { type: "object" },
+        },
+      ],
+    });
+
+    expect(create.mock.calls[0]?.[0].messages).toEqual([
+      { role: "system", content: "Continue after compaction" },
+      { role: "user", content: "Inspect the workspace" },
+      {
+        role: "assistant",
+        content: "Checking the active agents.",
+        tool_calls: [
+          {
+            id: "wait-1",
+            type: "function",
+            function: {
+              name: "wait_for_agents",
+              arguments: '{"timeoutMs":60000}',
+            },
+          },
+        ],
+      },
+      {
+        role: "tool",
+        tool_call_id: "wait-1",
+        content: "All subagents completed",
+      },
+      { role: "user", content: "Resume" },
+    ]);
+  });
+
+  it("migrates legacy XML fallback history back to native chat messages", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValue(
+        chunks([{ choices: [{ delta: { content: "Recovered" } }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      client,
+    });
+
+    await provider.generate({
+      instructions: "Continue after compaction",
+      history: [
+        {
+          role: "assistant",
+          text: 'Waiting.\n\n<tool_call name="wait_for_agents" call_id="legacy-wait">\n{"timeoutMs":60000}\n</tool_call>',
+        },
+        {
+          role: "user",
+          text: '<tool_result name="wait_for_agents" call_id="legacy-wait">\nDone\n</tool_result>',
+        },
+      ],
+      tools: [],
+    });
+
+    expect(create.mock.calls[0]?.[0].messages).toEqual([
+      { role: "system", content: "Continue after compaction" },
+      {
+        role: "assistant",
+        content: "Waiting.",
+        tool_calls: [
+          {
+            id: "legacy-wait",
+            type: "function",
+            function: {
+              name: "wait_for_agents",
+              arguments: '{"timeoutMs":60000}',
+            },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "legacy-wait", content: "Done" },
+    ]);
+  });
+
+  it("recovers textual tool calls without streaming protocol markup", async () => {
+    const create = vi.fn().mockResolvedValue(
+      chunks([
+        { choices: [{ delta: { content: "Waiting for agents.\n\n<tool_" } }] },
+        {
+          choices: [
+            {
+              delta: {
+                content:
+                  'call name="wait_for_agents" call_id="text-wait">\n{"timeoutMs":60000}\n</tool_call>',
+              },
+            },
+          ],
+        },
+      ]),
+    );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      client,
+    });
+    const deltas: string[] = [];
+
+    const turn = await provider.generate(
+      {
+        instructions: "Use tools",
+        input: "Collect the agents",
+        tools: [
+          {
+            name: "wait_for_agents",
+            description: "Wait for agents",
+            parameters: { type: "object" },
+          },
+        ],
+      },
+      { onEvent: (event) => deltas.push(event.delta) },
+    );
+
+    expect(deltas.join("")).toBe("Waiting for agents.\n\n");
+    expect(deltas.join("")).not.toContain("<tool_call");
+    expect(turn).toMatchObject({
+      text: "Waiting for agents.",
+      toolCalls: [
+        {
+          id: "text-wait",
+          name: "wait_for_agents",
+          arguments: { timeoutMs: 60_000 },
+        },
+      ],
+      state: {
+        messages: [
+          { role: "system" },
+          { role: "user" },
+          {
+            role: "assistant",
+            content: "Waiting for agents.",
+            tool_calls: [
+              {
+                id: "text-wait",
+                type: "function",
+                function: {
+                  name: "wait_for_agents",
+                  arguments: '{"timeoutMs":60000}',
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails malformed textual tool calls without exposing protocol markup", async () => {
+    const create = vi.fn().mockResolvedValue(
+      chunks([
+        {
+          choices: [
+            {
+              delta: {
+                content:
+                  '<tool_call name="wait```html\n_for_agents" call_id="broken-wait">\n{}\n</tool_call>',
+              },
+            },
+          ],
+        },
+      ]),
+    );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      client,
+    });
+    const deltas: string[] = [];
+
+    await expect(
+      provider.generate(
+        {
+          instructions: "Use tools",
+          input: "Collect the agents",
+          tools: [
+            {
+              name: "wait_for_agents",
+              description: "Wait for agents",
+              parameters: { type: "object" },
+            },
+          ],
+        },
+        { onEvent: (event) => deltas.push(event.delta) },
+      ),
+    ).rejects.toThrow("could not be converted to the native tool protocol");
+
+    expect(deltas).toEqual([]);
+  });
+
   it("omits empty assistant messages when restoring or recording chat state", async () => {
     const create = vi
       .fn()

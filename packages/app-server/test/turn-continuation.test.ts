@@ -9,6 +9,7 @@ import {
 
 import { AppServer } from "../src/app-server.js";
 import { CONTINUE_INTERRUPTED_TURN_INPUT } from "../src/app-server-turn-queue.js";
+import { conversationMessagesForDisplay } from "../src/conversation-display.js";
 import { MemoryConversationStore } from "../src/conversation-store.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
 
@@ -77,13 +78,15 @@ describe("turn continuation", () => {
     await interrupted.promise;
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(
-      (await conversationStore.load(threadId))?.messages.at(-1),
-    ).toMatchObject({
+    const interruption = (await conversationStore.load(threadId))?.messages.at(
+      -1,
+    );
+    expect(interruption).toMatchObject({
       role: "assistant",
-      error: true,
+      text: "",
       interrupted: true,
     });
+    expect(interruption).not.toHaveProperty("error");
 
     await server.receive({
       jsonrpc: "2.0",
@@ -131,5 +134,52 @@ describe("turn continuation", () => {
       messages.find((message) => "id" in message && message.id === 6),
     ).toMatchObject({ result: { turnId: expect.any(String) } });
     await server.dispose();
+  });
+
+  it("keeps interrupted model and tool progress while hiding control text", () => {
+    expect(
+      conversationMessagesForDisplay([
+        {
+          id: "assistant-interrupted",
+          role: "assistant",
+          text: "Turn interrupted by client",
+          error: true,
+          interrupted: true,
+          progress: [
+            {
+              text: "模型调用 1/3：先检查实现。",
+              activities: [
+                {
+                  id: "call-1",
+                  name: "read_file",
+                  status: "completed",
+                  detail: "internal detail",
+                },
+              ],
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "assistant-interrupted",
+        role: "assistant",
+        text: "",
+        interrupted: true,
+        progress: [
+          {
+            text: "模型调用 1/3：先检查实现。",
+            activities: [
+              {
+                id: "call-1",
+                name: "read_file",
+                status: "completed",
+                detailAvailable: true,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 });

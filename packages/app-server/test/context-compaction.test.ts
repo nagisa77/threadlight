@@ -108,6 +108,19 @@ describe("rolling context compaction", () => {
     expect(normalRequests[3]?.history?.[0]?.text).toContain(
       "ROOT-MIDRUN-SUMMARY",
     );
+    expect(
+      normalRequests[3]?.history?.some(
+        ({ toolCalls }) => toolCalls?.length === 1,
+      ),
+    ).toBe(true);
+    expect(
+      normalRequests[3]?.history?.some(
+        ({ toolResults }) => toolResults?.length === 1,
+      ),
+    ).toBe(true);
+    expect(
+      normalRequests[3]?.history?.map(({ text }) => text).join("\n"),
+    ).not.toContain("<tool_call>");
     expect(completed.params.message.contextCompaction).toMatchObject({
       status: "compacted",
       source: "automatic",

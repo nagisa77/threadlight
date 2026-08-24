@@ -8,6 +8,8 @@ import type {
   ModelRequest,
   ModelTurn,
   TokenUsage,
+  ToolCall,
+  ToolResult,
 } from "@threadlight/agent-loop";
 
 interface ChatMessage extends Record<string, unknown> {
@@ -159,6 +161,10 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       let text = "";
       let reasoningContent = "";
       let usage: Partial<TokenUsage> | undefined;
+      const textStream = createToolAwareTextStream(
+        request.tools.length > 0,
+        options,
+      );
 
       try {
         const stream = request.signal
@@ -181,10 +187,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
 
           if (delta.content) {
             text += delta.content;
-            options.onEvent?.({
-              type: "output_text.delta",
-              delta: delta.content,
-            });
+            textStream.push(delta.content);
           }
 
           const reasoningDelta = (delta as Record<string, unknown>)[
@@ -227,29 +230,60 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
         continue;
       }
 
-      const toolCalls = [...pendingCalls.entries()]
+      let toolCalls = [...pendingCalls.entries()]
         .sort(([left], [right]) => left - right)
         .map(([, call]) => ({
           id: call.id,
           name: call.name,
           ...parseToolArguments(call.arguments, call.name),
         }));
-      const assistantMessage: ChatMessage = {
-        role: "assistant",
-        content: text || null,
-        ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
-        ...(toolCalls.length > 0
-          ? {
-              tool_calls: [...pendingCalls.entries()]
-                .sort(([left], [right]) => left - right)
-                .map(([, call]) => ({
-                  id: call.id,
-                  type: "function",
-                  function: { name: call.name, arguments: call.arguments },
-                })),
-            }
-          : {}),
-      };
+      const recovered =
+        toolCalls.length === 0
+          ? recoverTextToolCalls(
+              text,
+              request.tools.map(({ name }) => name),
+            )
+          : undefined;
+      if (recovered) {
+        text = recovered.text;
+        toolCalls = recovered.toolCalls;
+        textStream.finish(true);
+      } else if (request.tools.length > 0 && looksLikeTextToolCall(text)) {
+        textStream.finish(true);
+        throw new Error(
+          "Model returned a textual tool call that could not be converted to the native tool protocol.",
+        );
+      } else {
+        textStream.finish(false);
+      }
+      const assistantMessage: ChatMessage = recovered
+        ? {
+            ...assistantHistoryMessage(text, toolCalls),
+            ...(reasoningContent
+              ? { reasoning_content: reasoningContent }
+              : {}),
+          }
+        : {
+            role: "assistant",
+            content: text || null,
+            ...(reasoningContent
+              ? { reasoning_content: reasoningContent }
+              : {}),
+            ...(toolCalls.length > 0
+              ? {
+                  tool_calls: [...pendingCalls.entries()]
+                    .sort(([left], [right]) => left - right)
+                    .map(([, call]) => ({
+                      id: call.id,
+                      type: "function",
+                      function: {
+                        name: call.name,
+                        arguments: call.arguments,
+                      },
+                    })),
+                }
+              : {}),
+          };
 
       const stateMessages = hasAssistantPayload(assistantMessage)
         ? [...messages, assistantMessage]
@@ -285,10 +319,219 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
 
     return [
       { role: "system", content: instructions },
-      ...(history ?? []).flatMap(({ role, text }) =>
-        role === "assistant" && !text.trim() ? [] : [{ role, content: text }],
-      ),
+      ...chatMessagesFromHistory(history),
     ];
+  }
+}
+
+function chatMessagesFromHistory(
+  history: ModelRequest["history"],
+): ChatMessage[] {
+  return (history ?? []).flatMap((message) => {
+    if (message.role === "assistant") {
+      const legacy = message.toolCalls?.length
+        ? undefined
+        : parseLegacyToolCalls(message.text);
+      const toolCalls = message.toolCalls ?? legacy?.toolCalls ?? [];
+      const text = legacy?.text ?? message.text;
+      if (!text.trim() && toolCalls.length === 0) return [];
+      return [assistantHistoryMessage(text, toolCalls)];
+    }
+
+    const legacy = message.toolResults?.length
+      ? undefined
+      : parseLegacyToolResults(message.text);
+    const toolResults = message.toolResults ?? legacy ?? [];
+    if (toolResults.length > 0) {
+      return toolResults.map(toolHistoryMessage);
+    }
+    return message.text.trim()
+      ? [{ role: "user" as const, content: message.text }]
+      : [];
+  });
+}
+
+function assistantHistoryMessage(
+  text: string,
+  toolCalls: readonly ToolCall[],
+): ChatMessage {
+  return {
+    role: "assistant",
+    content: text || null,
+    ...(toolCalls.length > 0
+      ? {
+          tool_calls: toolCalls.map((call) => ({
+            id: call.id,
+            type: "function" as const,
+            function: {
+              name: call.name,
+              arguments: serializeToolArguments(call.arguments),
+            },
+          })),
+        }
+      : {}),
+  };
+}
+
+function toolHistoryMessage(result: ToolResult): ChatMessage {
+  return {
+    role: "tool",
+    tool_call_id: result.callId,
+    content: result.output,
+  };
+}
+
+const TEXT_TOOL_CALL_MARKER = "<tool_call";
+const LEGACY_TOOL_CALL_BLOCK =
+  /<tool_call\s+([^>]*)>\r?\n?([\s\S]*?)\r?\n?<\/tool_call>/g;
+const LEGACY_TOOL_RESULT_BLOCK =
+  /<tool_result\s+([^>]*)>\r?\n?([\s\S]*?)\r?\n?<\/tool_result>/g;
+
+function createToolAwareTextStream(
+  toolsAvailable: boolean,
+  options: ModelGenerateOptions,
+): {
+  push(delta: string): void;
+  finish(recoveredToolCall: boolean): void;
+} {
+  let pending = "";
+  let withholdingToolCall = false;
+  const emit = (delta: string) => {
+    if (delta) options.onEvent?.({ type: "output_text.delta", delta });
+  };
+
+  return {
+    push(delta) {
+      if (!toolsAvailable) {
+        emit(delta);
+        return;
+      }
+      pending += delta;
+      if (withholdingToolCall) return;
+      const markerIndex = pending.indexOf(TEXT_TOOL_CALL_MARKER);
+      if (markerIndex >= 0) {
+        emit(pending.slice(0, markerIndex));
+        pending = pending.slice(markerIndex);
+        withholdingToolCall = true;
+        return;
+      }
+      const suffixLength = markerPrefixSuffixLength(pending);
+      const safeLength = pending.length - suffixLength;
+      emit(pending.slice(0, safeLength));
+      pending = pending.slice(safeLength);
+    },
+    finish(recoveredToolCall) {
+      if (!recoveredToolCall) emit(pending);
+      pending = "";
+    },
+  };
+}
+
+function markerPrefixSuffixLength(value: string): number {
+  const maximum = Math.min(value.length, TEXT_TOOL_CALL_MARKER.length - 1);
+  for (let length = maximum; length > 0; length -= 1) {
+    if (value.endsWith(TEXT_TOOL_CALL_MARKER.slice(0, length))) {
+      return length;
+    }
+  }
+  return 0;
+}
+
+function recoverTextToolCalls(
+  source: string,
+  availableToolNames: readonly string[],
+): { text: string; toolCalls: ToolCall[] } | undefined {
+  const parsed = parseLegacyToolCalls(source);
+  if (!parsed) return;
+  const available = new Set(availableToolNames);
+  return parsed.toolCalls.every(({ name }) => available.has(name))
+    ? parsed
+    : undefined;
+}
+
+function looksLikeTextToolCall(source: string): boolean {
+  return (
+    source.includes(TEXT_TOOL_CALL_MARKER) &&
+    source.includes("call_id=") &&
+    source.includes("</tool_call>")
+  );
+}
+
+function parseLegacyToolCalls(
+  source: string,
+): { text: string; toolCalls: ToolCall[] } | undefined {
+  const toolCalls: ToolCall[] = [];
+  let malformed = false;
+  const text = source.replace(
+    LEGACY_TOOL_CALL_BLOCK,
+    (_block, attributes: string, body: string) => {
+      const name = jsonAttribute(attributes, "name");
+      const id = jsonAttribute(attributes, "call_id");
+      if (!name || !id) {
+        malformed = true;
+        return _block;
+      }
+      toolCalls.push({
+        id,
+        name,
+        ...parseToolArguments(body.trim(), name),
+      });
+      return "";
+    },
+  );
+  return !malformed && toolCalls.length > 0
+    ? { text: text.trim(), toolCalls }
+    : undefined;
+}
+
+function parseLegacyToolResults(source: string): ToolResult[] | undefined {
+  const toolResults: ToolResult[] = [];
+  let malformed = false;
+  const remainder = source.replace(
+    LEGACY_TOOL_RESULT_BLOCK,
+    (_block, attributes: string, body: string) => {
+      const name = jsonAttribute(attributes, "name");
+      const callId = jsonAttribute(attributes, "call_id");
+      if (!name || !callId) {
+        malformed = true;
+        return _block;
+      }
+      toolResults.push({
+        callId,
+        name,
+        output: trimBoundaryNewlines(body),
+        ...(attributes.includes('error="true"') ? { isError: true } : {}),
+      });
+      return "";
+    },
+  );
+  return !malformed && !remainder.trim() && toolResults.length > 0
+    ? toolResults
+    : undefined;
+}
+
+function jsonAttribute(attributes: string, name: string): string | undefined {
+  const match = new RegExp(`(?:^|\\s)${name}=("(?:\\\\.|[^"\\\\])*")`).exec(
+    attributes,
+  );
+  if (!match?.[1]) return;
+  try {
+    const value = JSON.parse(match[1]) as unknown;
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return;
+  }
+}
+
+function trimBoundaryNewlines(value: string): string {
+  return value.replace(/^\r?\n/, "").replace(/\r?\n$/, "");
+}
+
+function serializeToolArguments(arguments_: unknown): string {
+  try {
+    return JSON.stringify(arguments_) ?? "{}";
+  } catch {
+    return "{}";
   }
 }
 

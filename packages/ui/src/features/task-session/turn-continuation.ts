@@ -1,9 +1,16 @@
 import { useCallback } from "react";
 import type { ThreadlightClient } from "@threadlight/client";
-import type { ConversationAccessMode } from "@threadlight/protocol";
+import type {
+  ConversationAccessMode,
+  ConversationMessageData,
+} from "@threadlight/protocol";
 
 import { requestTurnContinuation } from "./session-requests.js";
-import type { SessionAction, SessionState } from "./session.js";
+import type {
+  ConversationMessage,
+  SessionAction,
+  SessionState,
+} from "./session.js";
 
 type UpdateSession = (threadId: string, action: SessionAction) => void;
 
@@ -99,9 +106,11 @@ export function rejectSessionContinuation(
 
 export function completeSessionInterruption(
   state: SessionState,
+  message: ConversationMessageData,
   revision?: number,
 ): SessionState {
   if (revision !== undefined && revision < state.revision) return state;
+  const preserved = interruptedMessageForDisplay(message);
   return {
     ...state,
     revision: revision ?? state.revision,
@@ -116,5 +125,27 @@ export function completeSessionInterruption(
     streamingText: "",
     streamingSources: undefined,
     streamingCitations: undefined,
+    messages:
+      preserved && !state.messages.some(({ id }) => id === preserved.id)
+        ? [...state.messages, preserved]
+        : state.messages,
   };
+}
+
+function interruptedMessageForDisplay(
+  message: ConversationMessageData,
+): ConversationMessage | undefined {
+  const { diagnostics: _diagnostics, error, ...display } = message;
+  const preserved: ConversationMessage = {
+    ...display,
+    ...(error ? { text: "" } : {}),
+  };
+  return preserved.text.trim() ||
+    preserved.progress?.length ||
+    preserved.activities?.length ||
+    preserved.plan ||
+    preserved.agentTree ||
+    preserved.contextCompaction
+    ? preserved
+    : undefined;
 }

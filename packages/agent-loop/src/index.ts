@@ -1,6 +1,7 @@
 export { AgentLoop } from "./agent-loop.js";
 export { AgentOrchestrator } from "./agent-orchestrator.js";
 export { ToolExecutionError, toolErrorMetadata } from "./tool-error.js";
+export { modelConversationMessageText } from "./model-conversation.js";
 export { defineAgent, defineTool } from "./types.js";
 
 export type {

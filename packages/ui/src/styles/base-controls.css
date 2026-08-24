@@ -46,9 +46,15 @@
 }
 
 .message-list {
+  --conversation-message-gap: 28px;
+
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: var(--conversation-message-gap);
+}
+
+.message[data-interrupted="true"] + :is(.message.assistant, .live-run) {
+  margin-top: calc(16px - var(--conversation-message-gap));
 }
 
 .conversation-timeline {

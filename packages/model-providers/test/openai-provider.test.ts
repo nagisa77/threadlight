@@ -51,6 +51,66 @@ describe("OpenAIResponsesProvider", () => {
     });
   });
 
+  it("restores structured compacted tool history for the Responses API", async () => {
+    const response = {
+      output_text: "done",
+      output: [],
+    } as unknown as OpenAI.Responses.Response;
+    const responseStream = {
+      on() {
+        return responseStream;
+      },
+      async finalResponse() {
+        return response;
+      },
+    };
+    const stream = vi.fn(() => responseStream);
+    const client = { responses: { stream } } as unknown as OpenAI;
+    const provider = new OpenAIResponsesProvider({ client });
+
+    await provider.generate({
+      instructions: "Continue",
+      history: [
+        {
+          role: "assistant",
+          text: "Checking.",
+          toolCalls: [
+            { id: "call-1", name: "lookup", arguments: { query: "status" } },
+          ],
+        },
+        {
+          role: "user",
+          text: "",
+          toolResults: [
+            {
+              callId: "call-1",
+              name: "lookup",
+              output: "ready",
+            },
+          ],
+        },
+      ],
+      tools: [],
+    });
+
+    expect(stream.mock.calls[0]?.[0]).toMatchObject({
+      input: [
+        { role: "assistant", content: "Checking." },
+        {
+          type: "function_call",
+          call_id: "call-1",
+          name: "lookup",
+          arguments: '{"query":"status"}',
+        },
+        {
+          type: "function_call_output",
+          call_id: "call-1",
+          output: "ready",
+        },
+      ],
+    });
+  });
+
   it("omits computer tools for models that do not support the native protocol", async () => {
     const response = {
       output_text: "Hello",

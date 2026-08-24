@@ -192,10 +192,7 @@ export class OpenAIResponsesProvider implements ModelProvider {
     const computerToolsRemoved = availableTools.length !== request.tools.length;
     const input: OpenAI.Responses.ResponseInput = Array.isArray(request.state)
       ? sanitizeResponseInput(request.state)
-      : (request.history ?? []).map(({ role, text }) => ({
-          role,
-          content: text,
-        }));
+      : responseInputFromHistory(request.history);
 
     for (const result of request.toolResults ?? []) {
       const tool = request.tools.find(
@@ -340,6 +337,46 @@ export class OpenAIResponsesProvider implements ModelProvider {
           }
         : undefined,
     };
+  }
+}
+
+function responseInputFromHistory(
+  history: ModelRequest["history"],
+): OpenAI.Responses.ResponseInput {
+  const input: OpenAI.Responses.ResponseInput = [];
+  for (const message of history ?? []) {
+    if (message.role === "assistant") {
+      if (message.text) {
+        input.push({ role: "assistant", content: message.text });
+      }
+      for (const call of message.toolCalls ?? []) {
+        input.push({
+          type: "function_call",
+          call_id: call.id,
+          name: call.name,
+          arguments: serializeHistoryToolArguments(call.arguments),
+        } as OpenAI.Responses.ResponseInputItem);
+      }
+      continue;
+    }
+
+    for (const result of message.toolResults ?? []) {
+      input.push({
+        type: "function_call_output",
+        call_id: result.callId,
+        output: result.output,
+      });
+    }
+    if (message.text) input.push({ role: "user", content: message.text });
+  }
+  return input;
+}
+
+function serializeHistoryToolArguments(arguments_: unknown): string {
+  try {
+    return JSON.stringify(arguments_) ?? "{}";
+  } catch {
+    return "{}";
   }
 }
 

@@ -15,6 +15,7 @@ import type {
 
 const EMPTY_RESPONSE_RETRY_INSTRUCTION =
   "Your previous response contained neither visible content nor a tool call. Continue by returning a non-empty response or calling an available tool.";
+const MAX_CONSECUTIVE_COMPLETION_REJECTIONS = 3;
 
 export class AgentLoop {
   constructor(private readonly provider: ModelProvider) {}
@@ -67,6 +68,7 @@ export class AgentLoop {
     const modelSession = new ModelSession(options);
     let toolResults: ToolResult[] = [];
     let continuationInput: string | undefined;
+    let consecutiveCompletionRejections = 0;
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
@@ -184,6 +186,7 @@ export class AgentLoop {
         ? await options.takeAdditionalInput()
         : undefined;
       if (additionalInput) {
+        consecutiveCompletionRejections = 0;
         continuationInput = mergeAdditionalInput(
           continuationInput,
           additionalInput,
@@ -199,10 +202,20 @@ export class AgentLoop {
           ? await options.controller.validateCompletion(turn, controllerContext)
           : undefined;
         if (completionError) {
+          consecutiveCompletionRejections += 1;
+          if (
+            consecutiveCompletionRejections >=
+            MAX_CONSECUTIVE_COMPLETION_REJECTIONS
+          ) {
+            throw new Error(
+              `Agent could not satisfy completion requirements after ${MAX_CONSECUTIVE_COMPLETION_REJECTIONS} attempts: ${completionError}`,
+            );
+          }
           continuationInput = completionError;
           toolResults = [];
           continue;
         }
+        consecutiveCompletionRejections = 0;
         const controlledOutput = options.controller?.resolveCompletionOutput
           ? await options.controller.resolveCompletionOutput(
               turn,
@@ -229,6 +242,7 @@ export class AgentLoop {
         };
       }
 
+      consecutiveCompletionRejections = 0;
       toolResults = [];
       for (const [index, call] of turn.toolCalls.entries()) {
         options.signal?.throwIfAborted();
