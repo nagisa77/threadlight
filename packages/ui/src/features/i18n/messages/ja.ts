@@ -323,6 +323,7 @@ export const ja: Messages = {
   stop: "停止",
   sendMessage: "メッセージを送信",
   send: "送信",
+  continueTask: "続ける",
   injectMessage: "実行中のタスクへすぐに追加",
   queueMessage: "キューに追加",
   queuedMessages: "保留中のメッセージ",

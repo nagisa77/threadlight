@@ -36,6 +36,8 @@ describe("FileConversationStore", () => {
           id: "message-2",
           role: "assistant" as const,
           text: "Hi",
+          error: true,
+          interrupted: true,
           plan: {
             source: "user" as const,
             items: [

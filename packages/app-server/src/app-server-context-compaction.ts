@@ -48,6 +48,7 @@ interface RuntimeContextCompactionInput {
   compactor: ContextCompactor;
   state: AppServerState;
   thread: ThreadState;
+  currentInputPersisted?: boolean;
   now(): Date;
 }
 
@@ -159,9 +160,12 @@ export function createRuntimeContextCompaction({
   compactor,
   state,
   thread,
+  currentInputPersisted = true,
   now,
 }: RuntimeContextCompactionInput): RuntimeContextCompaction {
-  const messages = thread.conversation.messages.slice(0, -1);
+  const messages = currentInputPersisted
+    ? thread.conversation.messages.slice(0, -1)
+    : thread.conversation.messages;
   const historyContext = modelHistoryContext(thread.conversation, messages);
   const sourceMessageIds = new Map(
     historyContext.history.flatMap((message, index) => {

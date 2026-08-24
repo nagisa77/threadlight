@@ -34,15 +34,23 @@ import {
   requestThreadOpen,
   requestTurnStart,
 } from "./session-requests.js";
-import { hydrateActiveTurn } from "./session-state.js";
+import {
+  completeSessionInterruption,
+  rejectSessionContinuation,
+  startSessionContinuation,
+  useTurnContinuationActions,
+} from "./turn-continuation.js";
+import { completeSessionTurn, hydrateActiveTurn } from "./session-state.js";
 import { composerSubmissionAvailable } from "../../composer-submission.js";
 export {
   requestNewThreadTurnStart,
   requestThreadOpen,
+  requestTurnContinuation,
   requestTurnStart,
   type OpenedThread,
   type ThreadOpenResult,
 } from "./session-requests.js";
+export { canContinueSession } from "./turn-continuation.js";
 
 export type ToolActivity = ConversationActivityData;
 export type ConversationProgress = ConversationProgressData;
@@ -57,6 +65,7 @@ export interface ConversationMessage {
   capabilities?: readonly MessageCapabilityData[];
   contextCompaction?: ContextCompactionData;
   error?: boolean;
+  interrupted?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
   progress?: readonly ConversationProgress[];
@@ -81,6 +90,7 @@ export interface SessionState {
   model?: string;
   isRunning: boolean;
   isThinking: boolean;
+  continuationAvailable: boolean;
   modelRetry?: ModelRetryData;
   runMetrics?: ActiveTurnMetricsData;
   messages: readonly ConversationMessage[];
@@ -103,6 +113,7 @@ export type SessionAction =
       queuedTurns?: readonly QueuedTurnData[];
       revision?: number;
       activeTurn?: ActiveTurnData;
+      continuationAvailable?: boolean;
       provider?: string;
       model?: string;
     }
@@ -118,6 +129,8 @@ export type SessionAction =
       mode?: TurnMode;
     }
   | { type: "message.rejected"; id: string; error: string }
+  | { type: "continuation.started" }
+  | { type: "continuation.rejected"; error: string }
   | {
       type: "turn.started";
       mode: TurnMode;
@@ -172,6 +185,7 @@ export const initialSessionState: SessionState = {
   revision: 0,
   isRunning: false,
   isThinking: false,
+  continuationAvailable: false,
   messages: [],
   queuedTurns: [],
   progress: [],
@@ -201,6 +215,9 @@ export function sessionReducer(
           threadId: action.threadId,
           ...(action.provider ? { provider: action.provider } : {}),
           ...(action.model ? { model: action.model } : {}),
+          ...(action.continuationAvailable !== undefined
+            ? { continuationAvailable: action.continuationAvailable }
+            : {}),
           messages: mergeMessages(action.messages ?? [], state.messages),
         };
       }
@@ -215,6 +232,9 @@ export function sessionReducer(
         queuedTurns: action.queuedTurns ?? [],
         isRunning: action.activeTurn !== undefined,
         isThinking: action.activeTurn?.isThinking ?? false,
+        continuationAvailable:
+          action.activeTurn === undefined &&
+          action.continuationAvailable === true,
         modelRetry: action.activeTurn?.modelRetry,
         progress: action.activeTurn?.progress ?? [],
         agentTree: action.activeTurn?.agentTree,
@@ -253,6 +273,7 @@ export function sessionReducer(
         ...state,
         isRunning: true,
         isThinking: true,
+        continuationAvailable: false,
         modelRetry: undefined,
         progress: [],
         agentTree: undefined,
@@ -297,6 +318,10 @@ export function sessionReducer(
         submissionError: action.error,
         messages: state.messages.filter((message) => message.id !== action.id),
       };
+    case "continuation.started":
+      return startSessionContinuation(state);
+    case "continuation.rejected":
+      return rejectSessionContinuation(state, action.error);
     case "turn.started":
       if (action.revision !== undefined && action.revision < state.revision) {
         return state;
@@ -309,13 +334,14 @@ export function sessionReducer(
         revision: action.revision ?? state.revision,
         isRunning: true,
         isThinking: true,
+        continuationAvailable: false,
         modelRetry: undefined,
         ...(action.mode === "plan" && !state.plan
           ? { plan: { source: "user", items: [] } }
           : {}),
       };
     case "turn.completed":
-      return completeTurn(
+      return completeSessionTurn(
         state,
         action.id,
         action.output,
@@ -328,7 +354,10 @@ export function sessionReducer(
         action.message,
       );
     case "turn.failed":
-      return completeTurn(
+      if (action.message?.interrupted) {
+        return completeSessionInterruption(state, action.revision);
+      }
+      return completeSessionTurn(
         state,
         action.id,
         action.error,
@@ -526,48 +555,6 @@ function reduceAgentEvent(
   }
 }
 
-function completeTurn(
-  state: SessionState,
-  id: string,
-  text: string,
-  error = false,
-  capabilities: readonly MessageCapabilityData[] = [],
-  diagnostics?: TurnDiagnosticsData,
-  sources: readonly MessageSourceData[] = [],
-  citations: readonly MessageCitationData[] = [],
-  revision?: number,
-  message?: ConversationMessageData,
-): SessionState {
-  if (revision !== undefined && revision < state.revision) return state;
-  const assistantMessage: ConversationMessage = message ?? {
-    id,
-    role: "assistant",
-    text,
-    error,
-    ...(state.progress.length > 0 ? { progress: state.progress } : {}),
-    ...(state.plan ? { plan: state.plan } : {}),
-    ...(state.agentTree ? { agentTree: state.agentTree } : {}),
-    ...(!error && capabilities.length > 0 ? { capabilities } : {}),
-    ...(diagnostics ? { diagnostics } : {}),
-    ...(sources.length > 0 ? { sources, citations } : {}),
-  };
-  return {
-    ...state,
-    revision: revision ?? state.revision,
-    isRunning: false,
-    isThinking: false,
-    modelRetry: undefined,
-    progress: [],
-    agentTree: undefined,
-    runMetrics: undefined,
-    plan: undefined,
-    streamingText: "",
-    streamingSources: undefined,
-    streamingCitations: undefined,
-    messages: mergeMessages(state.messages, [assistantMessage]),
-  };
-}
-
 function mergeMessages(
   first: readonly ConversationMessage[],
   second: readonly ConversationMessage[],
@@ -723,6 +710,7 @@ export function useThreadlightSession(
           queuedTurns: opened.queuedTurns,
           revision: opened.revision,
           activeTurn: opened.activeTurn,
+          continuationAvailable: opened.continuationAvailable,
           provider: opened.provider,
           model: opened.model,
         });
@@ -1052,17 +1040,11 @@ export function useThreadlightSession(
     [activateThread, client, updateSession],
   );
 
-  const interrupt = useCallback(async () => {
-    if (!state.threadId) return;
-    try {
-      await client.interruptTurn(state.threadId);
-    } catch (error) {
-      updateSession(state.threadId, {
-        type: "connection.failed",
-        error: errorMessage(error),
-      });
-    }
-  }, [client, state.threadId, updateSession]);
+  const { continueTurn, interrupt } = useTurnContinuationActions(
+    client,
+    state,
+    updateSession,
+  );
 
   const addFollowUp = useCallback(
     async (
@@ -1187,6 +1169,7 @@ export function useThreadlightSession(
     deleteThread,
     send,
     sendNewThread,
+    continueTurn,
     addFollowUp,
     injectQueuedTurn,
     reorderQueuedTurn,

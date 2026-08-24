@@ -417,6 +417,7 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     deleteThread,
     send,
     sendNewThread,
+    continueTurn,
     setThreadModel,
     addFollowUp,
     injectQueuedTurn,
@@ -883,6 +884,8 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     clearSubmissionError,
     sendNewThread,
     send,
+    continueTurn: () =>
+      continueTurn(selectedAccessMode, selectedProvider, selectedModel),
     addFollowUp,
     persistSubmittedThread,
     navigateHistory: navigateComposerHistory,

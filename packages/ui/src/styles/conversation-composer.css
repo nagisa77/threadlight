@@ -751,6 +751,16 @@
   background: #29292d;
 }
 
+.composer-action.send.continue {
+  display: flex;
+  width: auto;
+  gap: 5px;
+  padding: 0 10px;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .model-selector-popover {
   width: 264px;
   gap: 2px;

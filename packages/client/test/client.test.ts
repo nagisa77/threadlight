@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  JsonRpcOutgoing,
-  JsonRpcRequest,
-} from "@threadlight/protocol";
+import type { JsonRpcOutgoing, JsonRpcRequest } from "@threadlight/protocol";
 
 import {
   ClientClosedError,
@@ -147,11 +144,7 @@ describe("ThreadlightClient", () => {
       item: { delivery: "inject" },
     });
 
-    const reordered = client.reorderQueuedTurn(
-      "thread-1",
-      "item-1",
-      "item-2",
-    );
+    const reordered = client.reorderQueuedTurn("thread-1", "item-1", "item-2");
     expect(transport.sent[2]).toMatchObject({
       method: "turn/queue/reorder",
       params: {
@@ -315,6 +308,37 @@ describe("ThreadlightClient", () => {
     client.dispose();
   });
 
+  it("marks an interrupted-turn continuation without a visible message", async () => {
+    const transport = new ScriptedTransport();
+    const client = new ThreadlightClient(transport);
+
+    const started = client.continueTurn(
+      "thread-1",
+      "full",
+      "openai",
+      "gpt-5.6",
+    );
+
+    expect(transport.sent[0]).toMatchObject({
+      method: "turn/start",
+      params: {
+        threadId: "thread-1",
+        input: "",
+        continuation: true,
+        accessMode: "full",
+        provider: "openai",
+        model: "gpt-5.6",
+      },
+    });
+    transport.emit({
+      jsonrpc: "2.0",
+      id: transport.sent[0].id ?? null,
+      result: { turnId: "turn-continued" },
+    });
+    await expect(started).resolves.toEqual({ turnId: "turn-continued" });
+    client.dispose();
+  });
+
   it("sends connector configuration and authorization requests", async () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);
@@ -326,10 +350,7 @@ describe("ThreadlightClient", () => {
       "client-secret",
     );
     const authorized = client.authorizeConnector("thread-1", "mcp:gmail");
-    const disconnected = client.disconnectConnector(
-      "thread-1",
-      "mcp:gmail",
-    );
+    const disconnected = client.disconnectConnector("thread-1", "mcp:gmail");
 
     expect(transport.sent).toMatchObject([
       {
@@ -367,8 +388,7 @@ describe("ThreadlightClient", () => {
           status: "ready",
           configured: true,
           authorized: true,
-          redirectUrl:
-            "http://127.0.0.1:43119/oauth/callback/gmail",
+          redirectUrl: "http://127.0.0.1:43119/oauth/callback/gmail",
         },
       });
     }

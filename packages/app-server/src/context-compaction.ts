@@ -705,6 +705,7 @@ function rollingSummaryText(text: string): string | undefined {
 }
 
 function messageContextText(message: ConversationMessageData): string {
+  if (message.interrupted) return "";
   const attachments = message.attachments?.map(
     ({ name, mimeType, path }) => `- ${name} (${mimeType}): ${path}`,
   );

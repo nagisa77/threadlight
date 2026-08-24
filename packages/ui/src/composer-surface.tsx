@@ -4,6 +4,7 @@ import {
   KeyRound,
   LoaderCircle,
   Paperclip,
+  Play,
   Plus,
 } from "lucide-react";
 import type { TaskDevelopmentMode } from "@threadlight/protocol";
@@ -16,7 +17,10 @@ import {
   activateComposerMenuOnPointerDown,
   preserveComposerFocusOnPointerDown,
 } from "./features/composer/controller.js";
-import { composerSubmissionAvailable } from "./composer-submission.js";
+import {
+  composerContinuationAvailable,
+  composerSubmissionAvailable,
+} from "./composer-submission.js";
 import { ComposerQueue } from "./features/composer/composer-queue.js";
 import { DevelopmentModeControl } from "./features/composer/development-mode.js";
 import { ModelSelector } from "./features/composer/model-selector.js";
@@ -420,6 +424,12 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
   const developmentModeEditable = Boolean(
     showDevelopmentMode && newTaskDraft && !state.threadId,
   );
+  const continuing = composerContinuationAvailable(
+    input,
+    attachments.length,
+    selected,
+    state,
+  );
 
   return (
     <div className="composer-toolbar">
@@ -557,26 +567,32 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
         ) : (
           <button
             type="button"
-            className="composer-action send pressable"
+            className={`composer-action send pressable${continuing ? " continue" : ""}`}
             onPointerDown={preserveComposerFocusOnPointerDown}
             onClick={() => void submit()}
             disabled={
               submitting ||
-              !composerSubmissionAvailable(
-                input,
-                attachments.length,
-                selected,
-              ) ||
+              (!continuing &&
+                !composerSubmissionAvailable(
+                  input,
+                  attachments.length,
+                  selected,
+                )) ||
               state.connection !== "ready" ||
               !providerReady ||
               voiceStatus !== "idle" ||
               preparing
             }
-            aria-label={t("sendMessage")}
-            title={t("send")}
+            aria-label={t(continuing ? "continueTask" : "sendMessage")}
+            title={t(continuing ? "continueTask" : "send")}
           >
             {submitting ? (
               <LoaderCircle className="spin" size={18} />
+            ) : continuing ? (
+              <>
+                <Play size={14} fill="currentColor" strokeWidth={2} />
+                <span>{t("continueTask")}</span>
+              </>
             ) : (
               <ArrowUp size={18} strokeWidth={2.4} />
             )}

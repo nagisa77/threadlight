@@ -288,6 +288,7 @@ export const zh = {
   stop: "停止",
   sendMessage: "发送消息",
   send: "发送",
+  continueTask: "继续",
   injectMessage: "尽快注入当前运行",
   queueMessage: "加入队列",
   queuedMessages: "待处理消息",

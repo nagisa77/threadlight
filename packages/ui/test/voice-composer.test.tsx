@@ -87,6 +87,19 @@ describe("voice composer", () => {
     );
   });
 
+  it("turns the idle send action into a labeled continuation action", () => {
+    expect(composerSource).toContain(
+      "const continuing = composerContinuationAvailable(",
+    );
+    expect(composerSource).toContain(
+      'className={`composer-action send pressable${continuing ? " continue" : ""}`}',
+    );
+    expect(composerSource).toContain(
+      'aria-label={t(continuing ? "continueTask" : "sendMessage")}',
+    );
+    expect(composerSource).toContain('<span>{t("continueTask")}</span>');
+  });
+
   it("keeps the mobile composer expanded for the full voice lifecycle", () => {
     expect(composerSource).toContain(
       'voiceStatus !== "idle" ? " is-voice-active" : ""',

@@ -294,6 +294,7 @@ export const zhTW: Messages = {
   stop: "停止",
   sendMessage: "傳送訊息",
   send: "傳送",
+  continueTask: "繼續",
   injectMessage: "儘快注入目前執行",
   queueMessage: "加入佇列",
   queuedMessages: "待處理訊息",

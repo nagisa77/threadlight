@@ -51,6 +51,7 @@ import type {
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
   ThreadlightMethod,
+  ThreadlightMethodMap,
   TokenUsageData,
   TurnDiagnosticsData,
   TurnMode,
@@ -110,7 +111,10 @@ import {
   type PullRequestChangeInput,
 } from "./generated-content.js";
 import { RpcError, RpcMethodRouter } from "./rpc-router.js";
-import { AppServerTurnQueue } from "./app-server-turn-queue.js";
+import {
+  AppServerTurnQueue,
+  TURN_INTERRUPTED_BY_CLIENT_MESSAGE,
+} from "./app-server-turn-queue.js";
 import { AppServerDiscovery } from "./app-server-discovery.js";
 import { AppServerState } from "./app-server-state.js";
 import { AppServerThreadFactory } from "./app-server-thread-factory.js";
@@ -388,15 +392,9 @@ export class AppServer {
     return { threadId };
   }
 
-  private async resumeThread(params: unknown): Promise<{
-    threadId: string;
-    messages: readonly ConversationDisplayMessageData[];
-    queuedTurns: readonly QueuedTurnData[];
-    revision: number;
-    activeTurn?: ActiveTurnData;
-    provider?: string;
-    model?: string;
-  }> {
+  private async resumeThread(
+    params: unknown,
+  ): Promise<ThreadlightMethodMap["thread/resume"]["result"]> {
     const { threadId, runtimeError: runtimeErrorValue } = objectParams(params);
     requireString(threadId, "threadId");
     const runtimeError = parseRuntimeError(runtimeErrorValue);
@@ -418,6 +416,9 @@ export class AppServer {
       queuedTurns: thread.conversation.queuedTurns ?? [],
       revision: thread.revision,
       ...(activeTurn ? { activeTurn: activeTurnForDisplay(activeTurn) } : {}),
+      ...(thread.conversation.messages.at(-1)?.interrupted
+        ? { continuationAvailable: true as const }
+        : {}),
       ...(thread.conversation.provider
         ? { provider: thread.conversation.provider }
         : {}),
@@ -571,6 +572,7 @@ export class AppServer {
     controller: AbortController,
     provider?: string,
     model?: string,
+    currentInputPersisted = true,
   ): Promise<void> {
     this.state().notify("turn/started", {
       threadId,
@@ -728,6 +730,7 @@ export class AppServer {
         compactor: this.contextCompactor,
         state: this.state(),
         thread,
+        currentInputPersisted,
         now: this.now,
       });
       const runOptions = {
@@ -902,6 +905,9 @@ export class AppServer {
     } catch (error) {
       const failureText =
         error instanceof Error ? error.message : String(error);
+      const interrupted =
+        controller.signal.reason instanceof Error &&
+        controller.signal.reason.message === TURN_INTERRUPTED_BY_CLIENT_MESSAGE;
       const turnDiagnostics = diagnostics.complete(
         "failed",
         this.now(),
@@ -913,6 +919,7 @@ export class AppServer {
         role: "assistant",
         text: failureText,
         error: true,
+        ...(interrupted ? { interrupted: true } : {}),
         ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
         ...(thread.plan ? { plan: thread.plan } : {}),
         ...(visibleAgentTree(thread.activeTurn?.agentTree)

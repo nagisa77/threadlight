@@ -22,7 +22,10 @@ import {
   type PendingAttachment,
   type VoiceInputStatus,
 } from "./controller.js";
-import { composerSubmissionAvailable } from "../../composer-submission.js";
+import {
+  composerContinuationAvailable,
+  composerSubmissionAvailable,
+} from "../../composer-submission.js";
 
 interface ComposerHistoryResult {
   index: number;
@@ -40,6 +43,7 @@ interface ComposerSession {
   provider?: string;
   model?: string;
   isRunning: boolean;
+  continuationAvailable: boolean;
   submissionError?: string;
   messages: readonly ComposerMessage[];
 }
@@ -120,6 +124,7 @@ interface ComposerRuntimeOptions {
     provider?: string,
     model?: string,
   ): Promise<boolean>;
+  continueTurn(): Promise<boolean>;
   addFollowUp(
     value: string,
     delivery: FollowUpDelivery,
@@ -188,6 +193,7 @@ export function useComposerRuntime(options: ComposerRuntimeOptions) {
     clearSubmissionError,
     sendNewThread,
     send,
+    continueTurn,
     addFollowUp,
     persistSubmittedThread,
     navigateHistory,
@@ -235,7 +241,14 @@ export function useComposerRuntime(options: ComposerRuntimeOptions) {
     }
     const draftInput = value;
     const draftAttachments = [...pendingAttachmentsRef.current];
+    const continuing = composerContinuationAvailable(
+      draftInput,
+      draftAttachments.length,
+      selectedCapabilities,
+      session,
+    );
     if (
+      !continuing &&
       !composerSubmissionAvailable(
         draftInput,
         draftAttachments.length,
@@ -261,6 +274,10 @@ export function useComposerRuntime(options: ComposerRuntimeOptions) {
         () => restoreDraft(draftInput),
       );
       if (!staged) return;
+      if (continuing) {
+        if (!(await continueTurn())) restoreDraft(draftInput);
+        return;
+      }
       if (submittingFollowUp) {
         if (!(await addFollowUp(value, followUpDelivery, staged))) {
           restoreDraft(draftInput);

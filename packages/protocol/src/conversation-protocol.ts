@@ -564,6 +564,8 @@ export interface ConversationMessageData {
   /** Present on the assistant message that reports manual or automatic compaction. */
   contextCompaction?: ContextCompactionData;
   error?: boolean;
+  /** The assistant message terminated because the user interrupted the turn. */
+  interrupted?: boolean;
   mode?: TurnMode;
   plan?: AgentPlanData;
   progress?: readonly ConversationProgressData[];
@@ -581,7 +583,7 @@ export interface ConversationMessageData {
 /** Conversation payload used by the interactive thread surface. */
 export type ConversationDisplayMessageData = Omit<
   ConversationMessageData,
-  "diagnostics"
+  "diagnostics" | "interrupted"
 >;
 
 export interface MessageSourceData {
@@ -692,6 +694,8 @@ export interface ThreadlightMethodMap {
       queuedTurns: readonly QueuedTurnData[];
       revision: number;
       activeTurn?: ActiveTurnData;
+      /** The last turn was explicitly interrupted by the user and can resume. */
+      continuationAvailable?: boolean;
       /** Provider/model selected for this conversation, if any. */
       provider?: string;
       model?: string;
@@ -746,6 +750,8 @@ export interface ThreadlightMethodMap {
     params: {
       threadId: string;
       input: string;
+      /** Resume the immediately preceding user-interrupted turn. */
+      continuation?: boolean;
       mode?: TurnMode;
       accessMode?: ConversationAccessMode;
       attachments?: readonly AttachmentData[];

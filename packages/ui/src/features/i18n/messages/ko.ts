@@ -319,6 +319,7 @@ export const ko: Messages = {
   stop: "중지",
   sendMessage: "메시지 보내기",
   send: "보내기",
+  continueTask: "계속",
   injectMessage: "실행 중인 작업에 바로 추가",
   queueMessage: "대기열에 추가",
   queuedMessages: "대기 중인 메시지",

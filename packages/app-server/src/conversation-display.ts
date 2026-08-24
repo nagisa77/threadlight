@@ -9,7 +9,9 @@ import type {
 export function conversationMessagesForDisplay(
   messages: readonly ConversationMessageData[],
 ): ConversationDisplayMessageData[] {
-  return messages.map(conversationMessageForDisplay);
+  return messages
+    .filter((message) => message.interrupted !== true)
+    .map(conversationMessageForDisplay);
 }
 
 export function activeTurnForDisplay(
@@ -43,7 +45,11 @@ export function findConversationActivity(
 function conversationMessageForDisplay(
   message: ConversationMessageData,
 ): ConversationDisplayMessageData {
-  const { diagnostics: _diagnostics, ...display } = message;
+  const {
+    diagnostics: _diagnostics,
+    interrupted: _interrupted,
+    ...display
+  } = message;
   return {
     ...display,
     ...(message.progress

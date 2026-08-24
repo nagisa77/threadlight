@@ -15,6 +15,7 @@ export interface OpenedThread {
   queuedTurns?: readonly QueuedTurnData[];
   revision?: number;
   activeTurn?: ActiveTurnData;
+  continuationAvailable?: boolean;
   provider?: string;
   model?: string;
 }
@@ -76,6 +77,31 @@ export async function requestTurnStart(
       provider,
       model,
     );
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function requestTurnContinuation(
+  client: {
+    continueTurn(
+      threadId: string,
+      accessMode: ConversationAccessMode,
+      provider?: string,
+      model?: string,
+    ): Promise<unknown>;
+  },
+  threadId: string,
+  accessMode: ConversationAccessMode = "approval",
+  provider?: string,
+  model?: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    await client.continueTurn(threadId, accessMode, provider, model);
     return { ok: true };
   } catch (error) {
     return {

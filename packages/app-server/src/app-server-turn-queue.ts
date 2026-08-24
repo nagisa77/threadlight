@@ -126,6 +126,10 @@ import {
   capabilitiesWithCompact,
 } from "./context-compaction.js";
 
+export const CONTINUE_INTERRUPTED_TURN_INPUT =
+  "Continue the interrupted task from where it stopped. Review the conversation and preserved progress first, then resume the remaining work without repeating completed steps unless necessary.";
+export const TURN_INTERRUPTED_BY_CLIENT_MESSAGE = "Turn interrupted by client";
+
 export interface AppServerTurnQueueHost {
   threads: Map<string, ThreadState>;
   processes?: ProcessController;
@@ -160,6 +164,7 @@ export interface AppServerTurnQueueHost {
     controller: AbortController,
     provider?: string,
     model?: string,
+    currentInputPersisted?: boolean,
   ): Promise<void>;
 }
 
@@ -174,6 +179,7 @@ export class AppServerTurnQueue {
       accessMode: accessModeValue,
       attachments: attachmentValue,
       capabilityRefs: capabilityRefsValue,
+      continuation: continuationValue,
       provider: providerValue,
       model: modelValue,
       runtimeError: runtimeErrorValue,
@@ -184,6 +190,10 @@ export class AppServerTurnQueue {
     }
     const attachments = parseAttachments(attachmentValue);
     const capabilityRefs = parseCapabilityRefs(capabilityRefsValue);
+    if (continuationValue !== undefined && continuationValue !== true) {
+      throw new RpcError(-32602, "continuation must be true when provided");
+    }
+    const continuation = continuationValue === true;
     const mode = parseTurnMode(modeValue);
     const accessMode = parseConversationAccessMode(accessModeValue);
     const provider = parseModelProvider(providerValue);
@@ -194,6 +204,7 @@ export class AppServerTurnQueue {
     }
     if (
       !input.trim() &&
+      !continuation &&
       attachments.length === 0 &&
       !capabilityRefs.includes(COMPACT_CONTEXT_CAPABILITY_ID)
     ) {
@@ -201,6 +212,26 @@ export class AppServerTurnQueue {
     }
 
     const thread = await this.host.requireThread(threadId, runtimeError);
+    if (continuation) {
+      if (
+        input.trim() ||
+        attachments.length > 0 ||
+        capabilityRefs.length > 0 ||
+        mode !== "default"
+      ) {
+        throw new RpcError(
+          -32602,
+          "A continuation cannot include input, attachments, capabilities, or a turn mode",
+        );
+      }
+      const latest = thread.conversation.messages.at(-1);
+      if (latest?.role !== "assistant" || latest.interrupted !== true) {
+        throw new RpcError(
+          -32004,
+          "Thread does not have an interrupted turn to continue",
+        );
+      }
+    }
     const availableCapabilities = capabilitiesWithCompact(
       thread.runtime?.capabilities,
       thread.conversation,
@@ -221,7 +252,7 @@ export class AppServerTurnQueue {
 
     return this.beginTurn(
       threadId,
-      input,
+      continuation ? CONTINUE_INTERRUPTED_TURN_INPUT : input,
       mode,
       accessMode,
       attachments,
@@ -230,6 +261,8 @@ export class AppServerTurnQueue {
       thread,
       provider,
       model,
+      undefined,
+      !continuation,
     );
   }
 
@@ -245,6 +278,7 @@ export class AppServerTurnQueue {
     provider?: string,
     model?: string,
     queuedItem?: QueuedTurnData,
+    persistInput = true,
   ): Promise<{ turnId: string }> {
     if (thread.activeTurn) {
       throw new RpcError(-32003, "Thread already has an active turn");
@@ -272,16 +306,18 @@ export class AppServerTurnQueue {
     thread.progress = [];
     thread.injectedInputPendingModelResponse = false;
     thread.plan = mode === "plan" ? { source: "user", items: [] } : undefined;
-    const userMessage: ConversationMessageData = {
-      id: randomUUID(),
-      role: "user",
-      text: input,
-      ...(mode === "plan" ? { mode } : {}),
-      ...(attachments.length > 0 ? { attachments } : {}),
-      ...(queuedItem ? { followUpDelivery: queuedItem.delivery } : {}),
-      ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
-      ...(capabilities.length > 0 ? { capabilities } : {}),
-    };
+    const userMessage: ConversationMessageData | undefined = persistInput
+      ? {
+          id: randomUUID(),
+          role: "user",
+          text: input,
+          ...(mode === "plan" ? { mode } : {}),
+          ...(attachments.length > 0 ? { attachments } : {}),
+          ...(queuedItem ? { followUpDelivery: queuedItem.delivery } : {}),
+          ...(capabilityRefs.length > 0 ? { capabilityRefs } : {}),
+          ...(capabilities.length > 0 ? { capabilities } : {}),
+        }
+      : undefined;
     try {
       await this.host.mutateConversation(thread, (conversation) =>
         this.host.updateConversation(
@@ -298,7 +334,9 @@ export class AppServerTurnQueue {
                 }
               : {}),
           },
-          [...conversation.messages, userMessage],
+          userMessage
+            ? [...conversation.messages, userMessage]
+            : conversation.messages,
         ),
       );
     } catch (error) {
@@ -312,7 +350,7 @@ export class AppServerTurnQueue {
     // make this a no-op for follow-up turns.
     this.host.requestConversationTitle(threadId, thread);
 
-    if (queuedItem) {
+    if (queuedItem && userMessage) {
       this.host.notifyQueueUpdated(threadId, thread);
       this.host.notify("turn/follow-up/consumed", {
         threadId,
@@ -334,6 +372,7 @@ export class AppServerTurnQueue {
         controller,
         provider,
         model,
+        persistInput,
       );
     });
 
@@ -506,7 +545,7 @@ export class AppServerTurnQueue {
     const activeTurn = this.host.threads.get(threadId)?.activeTurn;
     if (!activeTurn) return { interrupted: false };
 
-    activeTurn.controller.abort(new Error("Turn interrupted by client"));
+    activeTurn.controller.abort(new Error(TURN_INTERRUPTED_BY_CLIENT_MESSAGE));
     return { interrupted: true };
   }
 

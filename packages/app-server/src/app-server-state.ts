@@ -389,7 +389,10 @@ export class AppServerState {
     // The assistant message is persisted before the completion notification.
     // Do not expose the same turn as both completed history and live output in
     // the small interval between those two operations.
-    if (thread.conversation.messages.at(-1)?.role === "assistant") return;
+    const latestMessage = thread.conversation.messages.at(-1);
+    if (latestMessage?.role === "assistant" && !latestMessage.interrupted) {
+      return;
+    }
     const sourcedStreamingOutput = activeTurn.sourceCitations?.preview(
       activeTurn.streamingText,
     );

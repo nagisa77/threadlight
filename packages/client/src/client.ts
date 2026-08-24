@@ -206,6 +206,22 @@ export class ThreadlightClient {
     });
   }
 
+  continueTurn(
+    threadId: string,
+    accessMode: ConversationAccessMode = "approval",
+    provider?: string,
+    model?: string,
+  ) {
+    return this.request("turn/start", {
+      threadId,
+      input: "",
+      continuation: true,
+      ...(accessMode === "full" ? { accessMode } : {}),
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+    });
+  }
+
   interruptTurn(threadId: string) {
     return this.request("turn/interrupt", { threadId });
   }

@@ -375,6 +375,8 @@ function isConversationMessage(value: unknown): boolean {
     (message.contextCompaction === undefined ||
       isContextCompaction(message.contextCompaction)) &&
     (message.error === undefined || typeof message.error === "boolean") &&
+    (message.interrupted === undefined ||
+      typeof message.interrupted === "boolean") &&
     (message.mode === undefined ||
       message.mode === "default" ||
       message.mode === "plan") &&

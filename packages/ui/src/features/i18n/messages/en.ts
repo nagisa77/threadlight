@@ -326,6 +326,7 @@ export const en: Messages = {
   stop: "Stop",
   sendMessage: "Send message",
   send: "Send",
+  continueTask: "Continue",
   injectMessage: "Inject into the active run",
   queueMessage: "Add to queue",
   queuedMessages: "Pending messages",

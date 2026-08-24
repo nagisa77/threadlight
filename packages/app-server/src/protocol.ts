@@ -30,6 +30,7 @@ export type {
   ThreadlightNotificationMap,
   ThreadlightNotificationMethod,
   ThreadlightMethod,
+  ThreadlightMethodMap,
   TokenUsageData,
   TurnDiagnosticsData,
   TurnMode,

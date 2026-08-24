@@ -10,7 +10,10 @@ import {
   skillLocalDirectory,
 } from "../src/capabilities.js";
 import { selectComposerCapability } from "../src/features/composer/capability-controller.js";
-import { composerSubmissionAvailable } from "../src/composer-submission.js";
+import {
+  composerContinuationAvailable,
+  composerSubmissionAvailable,
+} from "../src/composer-submission.js";
 
 const capabilities = [
   {
@@ -84,6 +87,33 @@ describe("composer capabilities", () => {
     ]);
     expect(composerSubmissionAvailable("", 0, [compact])).toBe(true);
     expect(composerSubmissionAvailable("", 0, [])).toBe(false);
+  });
+
+  it("offers continuation only for a completely empty interrupted task", () => {
+    const interrupted = {
+      isRunning: false,
+      continuationAvailable: true,
+    };
+    expect(composerContinuationAvailable("", 0, [], interrupted)).toBe(true);
+    expect(composerContinuationAvailable("继续检查", 0, [], interrupted)).toBe(
+      false,
+    );
+    expect(composerContinuationAvailable("", 1, [], interrupted)).toBe(false);
+    expect(
+      composerContinuationAvailable("", 0, [capabilities[0]!], interrupted),
+    ).toBe(false);
+    expect(
+      composerContinuationAvailable("", 0, [], {
+        ...interrupted,
+        isRunning: true,
+      }),
+    ).toBe(false);
+    expect(
+      composerContinuationAvailable("", 0, [], {
+        isRunning: false,
+        continuationAvailable: false,
+      }),
+    ).toBe(false);
   });
 
   it("searches names and descriptions while excluding selected items", () => {
