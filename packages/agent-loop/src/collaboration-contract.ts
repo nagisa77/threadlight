@@ -7,6 +7,7 @@ export const FOLLOW_UP_AGENT_TOOL = "follow_up_agent";
 export const RETRY_AGENT_TOOL = "retry_agent";
 export const CHECK_AGENTS_TOOL = "check_agents";
 export const WAIT_FOR_AGENTS_TOOL = "wait_for_agents";
+export const READ_AGENT_RESULT_TOOL = "read_agent_result";
 export const STEER_AGENT_TOOL = "steer_agent";
 export const INTERRUPT_AGENT_TOOL = "interrupt_agent";
 export const CLOSE_AGENT_TOOL = "close_agent";
@@ -19,6 +20,7 @@ export const COLLABORATION_TOOLS = new Set([
   RETRY_AGENT_TOOL,
   CHECK_AGENTS_TOOL,
   WAIT_FOR_AGENTS_TOOL,
+  READ_AGENT_RESULT_TOOL,
   STEER_AGENT_TOOL,
   INTERRUPT_AGENT_TOOL,
   CLOSE_AGENT_TOOL,
@@ -39,7 +41,7 @@ export function toolsForChild(
       !excluded.has(tool.name) &&
       (profile.toolAccess === "all" || tool.mutability === "read"),
   );
-  const collaboration = collaborationTools.filter(
+  const collaboration = (profile.leaf ? [] : collaborationTools).filter(
     (tool) => !excluded.has(tool.name),
   );
   const combined = [...base, ...collaboration];
@@ -61,6 +63,7 @@ export function delegationInstructions(
     "Keep interrupt, close, retry, and write-capable follow-up under the owning parent; peer communication must not grant peer lifecycle or write authority.",
     `Use ${FOLLOW_UP_AGENT_TOOL} only as the legacy alias for ${FOLLOWUP_TASK_TOOL}; use ${SPAWN_AGENT_TOOL} for independent work.`,
     `Use ${RETRY_AGENT_TOOL} to rerun a finished or interrupted turn from fresh provider state while retaining its thread linkage.`,
+    `Status checks return only changed summaries. Call ${READ_AGENT_RESULT_TOOL} when the exact result is needed.`,
     `Agent threads persist for the whole parent conversation: finishing a child turn does not delete or close its thread. Use ${INTERRUPT_AGENT_TOOL} to stop only the current turn while keeping the thread reusable. Use ${CLOSE_AGENT_TOOL} only when no more work or results are needed from that thread.`,
     "Do not duplicate the same task across agents. Give each task enough context to be completed without asking the user.",
     "A write-capable subagent has exclusive workspace write ownership while active. The parent may continue read-only work and must wait before writing.",

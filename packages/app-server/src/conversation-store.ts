@@ -34,6 +34,7 @@ export interface StoredAgentThread {
   modelState?: unknown;
   contextTokens?: number;
   contextHistory?: readonly ModelConversationMessage[];
+  fullOutput?: string;
   checkpointStep?: number;
   checkpointPhase?:
     "context_compacted" | "model_completed" | "tool_started" | "tool_completed";
@@ -285,6 +286,8 @@ function isStoredAgentThread(value: unknown): value is StoredAgentThread {
     (thread.contextHistory === undefined ||
       (Array.isArray(thread.contextHistory) &&
         thread.contextHistory.every(isModelConversationMessage))) &&
+    (thread.fullOutput === undefined ||
+      typeof thread.fullOutput === "string") &&
     (thread.checkpointStep === undefined ||
       (Number.isInteger(thread.checkpointStep) &&
         Number(thread.checkpointStep) >= 0)) &&

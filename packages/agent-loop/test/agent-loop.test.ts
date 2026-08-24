@@ -155,6 +155,7 @@ describe("AgentLoop", () => {
           retryAttempt: 1,
           maxRetries: 1,
           reason: "connection_lost",
+          discardPartialOutput: true,
         });
         return { text: "Recovered", toolCalls: [] };
       },
@@ -173,6 +174,7 @@ describe("AgentLoop", () => {
         retryAttempt: 1,
         maxRetries: 1,
         reason: "connection_lost",
+        discardPartialOutput: true,
       }),
     );
   });

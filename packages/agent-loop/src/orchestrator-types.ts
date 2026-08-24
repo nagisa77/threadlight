@@ -27,6 +27,10 @@ export interface AgentTaskRecord {
   execution?: Promise<void>;
   history?: readonly ModelConversationMessage[];
   contextHistory?: readonly ModelConversationMessage[];
+  /** Monotonic in-memory revision used for incremental status delivery. */
+  revision: number;
+  /** Exact result, kept out of ordinary collaboration status payloads. */
+  fullOutput?: string;
 }
 
 export interface SpawnOptions {

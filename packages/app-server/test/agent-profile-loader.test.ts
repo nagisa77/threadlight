@@ -44,6 +44,8 @@ describe("loadSubagentProfiles", () => {
     ]);
     expect(profiles.find(({ name }) => name === "worker")).toMatchObject({
       toolAccess: "all",
+      leaf: true,
+      skillRole: "worker",
       excludedTools: expect.arrayContaining(["project_memory"]),
     });
   });
@@ -70,6 +72,8 @@ describe("loadSubagentProfiles", () => {
         'model = "security-model"',
         'provider = "custom-provider"',
         "max_steps = 9",
+        "leaf = false",
+        'skill_role = "security"',
       ].join("\n"),
     );
     await writeFile(
@@ -115,6 +119,8 @@ describe("loadSubagentProfiles", () => {
       model: "security-model",
       provider: "custom-provider",
       maxSteps: 9,
+      leaf: false,
+      skillRole: "security",
     });
     expect(profiles.find(({ name }) => name === "browser-debug")).toMatchObject(
       {

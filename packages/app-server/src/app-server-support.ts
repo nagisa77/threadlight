@@ -550,6 +550,7 @@ export function resumableAgentThreads(
       history: ResumableAgentThread["history"];
       modelState?: unknown;
       contextTokens?: number;
+      fullOutput?: string;
     }
   >();
 
@@ -574,6 +575,7 @@ export function resumableAgentThreads(
         stored.contextTokens === undefined
           ? previous?.contextTokens
           : stored.contextTokens;
+      const fullOutput = stored.fullOutput ?? previous?.fullOutput;
       threads.set(threadId, {
         ...(profileName ? { profileName } : {}),
         taskIds: [...(previous?.taskIds ?? []), stored.agent.id],
@@ -586,6 +588,7 @@ export function resumableAgentThreads(
           ? {}
           : { modelState: stored.modelState }),
         ...(contextTokens === undefined ? {} : { contextTokens }),
+        ...(fullOutput === undefined ? {} : { fullOutput }),
       });
     }
   }

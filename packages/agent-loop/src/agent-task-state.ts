@@ -66,6 +66,7 @@ export class AgentTaskState {
       usage: { ...result.usage },
     });
     record.modelState = result.modelState;
+    record.fullOutput = result.output;
     if (result.contextTokens !== undefined) {
       record.contextTokens = result.contextTokens;
     }
@@ -141,6 +142,7 @@ export class AgentTaskState {
     reason: AgentTreeUpdateReason,
     patch: Partial<AgentTaskSnapshot>,
   ): void {
+    record.revision += 1;
     record.snapshot = {
       ...record.snapshot,
       ...patch,
@@ -162,6 +164,7 @@ export class AgentTaskState {
       completion: deferred<AgentTaskSnapshot>(),
       pendingInput: [],
       collected: false,
+      revision: 0,
     };
     this.host.records.set(snapshot.id, record);
     return record;

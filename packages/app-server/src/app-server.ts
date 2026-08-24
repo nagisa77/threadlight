@@ -712,6 +712,11 @@ export class AppServer {
           : []),
       ]);
       const turnPrompt = composePrompt(turnPromptBlocks);
+      const leafInstructionCapsule = composePrompt(
+        turnPromptBlocks.filter(({ authority }) =>
+          ["host", "project", "turn"].includes(authority),
+        ),
+      ).instructions;
       const turnAgent = {
         ...thread.agent,
         ...(provider ? { provider } : {}),
@@ -778,6 +783,7 @@ export class AppServer {
               wallNow: this.now,
               createChildRunOptions: ({ contextTokens }) => ({
                 toolScopeId: threadId,
+                instructionCapsule: leafInstructionCapsule,
                 beforeModelRequest:
                   this.contextCompactor.createBeforeModelRequest({
                     initialContextTokens: contextTokens,

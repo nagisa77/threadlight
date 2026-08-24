@@ -1,18 +1,6 @@
 import { createHash } from "node:crypto";
-import {
-  readdir,
-  readFile,
-  realpath,
-  stat,
-} from "node:fs/promises";
-import {
-  isAbsolute,
-  dirname,
-  join,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, dirname, join, relative, resolve, sep } from "node:path";
 
 import { defineTool, type Tool } from "@threadlight/agent-loop";
 
@@ -56,10 +44,21 @@ export interface SkillDescriptor {
     name: string;
     version: string;
   };
+  /** Direct role entry points discovered under agents/<role>.md. */
+  roles?: readonly string[];
 }
 
 export interface SkillReadResult extends SkillDescriptor {
   instructions: string;
+  resources: readonly string[];
+}
+
+export interface SkillCapsuleResult extends SkillDescriptor {
+  role: string;
+  entryPath: string;
+  /** Self-contained role instructions; the shared SKILL.md body is omitted. */
+  instructions: string;
+  /** Non-role resources that remain available to this capsule. */
   resources: readonly string[];
 }
 
@@ -206,13 +205,14 @@ export class SkillRegistry {
             `${entry.scope}\0${entry.invocationName}\0${entry.path}\0${entry.hash}`,
           )
       ) {
-        throw new Error(`Skill snapshot hash mismatch: ${entry.invocationName}`);
+        throw new Error(
+          `Skill snapshot hash mismatch: ${entry.invocationName}`,
+        );
       }
       const skillRoot = dirname(entry.path);
       if (
         entry.resources.some(
-          (resource) =>
-            !isAbsolute(resource) || !isWithin(skillRoot, resource),
+          (resource) => !isAbsolute(resource) || !isWithin(skillRoot, resource),
         )
       ) {
         throw new Error(
@@ -221,6 +221,7 @@ export class SkillRegistry {
       }
       return {
         ...entry,
+        roles: entry.roles ?? [...skillRoleEntries(entry).keys()],
         instructions: renderSkillInstructions(entry, parsed.body),
       };
     });
@@ -236,8 +237,12 @@ export class SkillRegistry {
 
   descriptors(): readonly SkillDescriptor[] {
     return this.loadedSkills.map(
-      ({ source: _source, resources: _resources, instructions: _instructions, ...skill }) =>
-        skill,
+      ({
+        source: _source,
+        resources: _resources,
+        instructions: _instructions,
+        ...skill
+      }) => skill,
     );
   }
 
@@ -257,6 +262,44 @@ export class SkillRegistry {
     if (!skill) throw new Error(`Unknown skill: ${nameOrId}`);
     const { source: _source, ...result } = skill;
     return result;
+  }
+
+  async capsule(
+    nameOrId: string,
+    role: string,
+    signal?: AbortSignal,
+  ): Promise<SkillCapsuleResult> {
+    const normalized = nameOrId.trim().replace(/^\$/, "");
+    const skill = this.resolve(normalized);
+    if (!skill) throw new Error(`Unknown skill: ${nameOrId}`);
+    const normalizedRole = normalizeSkillRole(role);
+    const entryPath = skillRoleEntries(skill).get(normalizedRole);
+    if (!entryPath) {
+      throw new Error(
+        `Skill $${skill.invocationName} has no role entry ${normalizedRole}; available roles: ${(skill.roles ?? []).join(", ") || "none"}`,
+      );
+    }
+    const entry = await this.readResource(skill.id, entryPath, signal);
+    const resources = skill.resources.filter(
+      (path) => !isAgentRoleResource(skill.path, path),
+    );
+    const {
+      source: _source,
+      instructions: _instructions,
+      ...descriptor
+    } = skill;
+    return {
+      ...descriptor,
+      role: normalizedRole,
+      entryPath,
+      instructions: [
+        `Skill capsule: $${skill.invocationName} / ${normalizedRole}`,
+        `Role entry: ${entryPath}`,
+        "This skill-author-provided role entry is self-contained. The shared SKILL.md body and other role entries are intentionally omitted.",
+        entry.content,
+      ].join("\n\n"),
+      resources,
+    };
   }
 
   resources(nameOrId: string): readonly string[] {
@@ -308,16 +351,20 @@ export class SkillRegistry {
     const query = options.query?.trim().toLocaleLowerCase() ?? "";
     const offset = parseListCursor(options.cursor);
     const limit = listLimit(options.limit);
-    const matches = this.loadedSkills.filter((skill) =>
-      !query || skillSearchText(skill).includes(query)
+    const matches = this.loadedSkills.filter(
+      (skill) => !query || skillSearchText(skill).includes(query),
     );
     if (offset > matches.length) {
       throw new Error("skill_list cursor is out of range");
     }
     const page = matches.slice(offset, offset + limit);
     const skills = page.map(
-      ({ source: _source, resources: _resources, instructions: _instructions, ...skill }) =>
-        skill,
+      ({
+        source: _source,
+        resources: _resources,
+        instructions: _instructions,
+        ...skill
+      }) => skill,
     );
     const nextOffset = offset + page.length;
     return {
@@ -368,13 +415,11 @@ export class SkillRegistry {
       .sort(
         (left, right) =>
           skillCatalogPriority(left.skill.scope) -
-            skillCatalogPriority(right.skill.scope) ||
-          left.index - right.index,
+            skillCatalogPriority(right.skill.scope) || left.index - right.index,
       )
       .map(({ skill }) => skill);
     const lines = prioritized.map(
-      (skill) =>
-        `- $${skill.invocationName}: ${skill.description}`,
+      (skill) => `- $${skill.invocationName}: ${skill.description}`,
     );
     const warningLines =
       this.warnings.length === 0
@@ -469,7 +514,9 @@ export function createSkillListTool(registry: SkillRegistry): Tool {
       additionalProperties: false,
     },
     execute(arguments_) {
-      return Promise.resolve(registry.list(parseSkillListArguments(arguments_)));
+      return Promise.resolve(
+        registry.list(parseSkillListArguments(arguments_)),
+      );
     },
   });
 }
@@ -478,7 +525,7 @@ export function createSkillReadTool(registry: SkillRegistry): Tool {
   return defineTool({
     name: "skill_read",
     description:
-      "Load the full instructions and resource inventory for one available skill. Use this before following an implicitly matched skill; explicitly requested skills are also loaded through this tool (only a required-read directive is injected). After reading, read every bundled resource listed in the result with capability_resource_read (resources under references/, agents/, scripts/ and assets/ are collected recursively; use the exact absolute paths returned by skill_read).",
+      "Load the full instructions and resource inventory for one available skill. For a focused subagent role, prefer skill_capsule when the descriptor lists that role. Otherwise use this before following a matched skill and read every returned resource with capability_resource_read.",
     mutability: "read",
     parameters: {
       type: "object",
@@ -500,11 +547,51 @@ export function createSkillReadTool(registry: SkillRegistry): Tool {
   });
 }
 
+export function createSkillCapsuleTool(registry: SkillRegistry): Tool {
+  return defineTool({
+    name: "skill_capsule",
+    description:
+      "Load a compact, skill-authored role entry from agents/<role>.md without injecting the shared SKILL.md body or other roles. Use only roles listed by skill_list or skill_read.",
+    mutability: "read",
+    parameters: {
+      type: "object",
+      properties: {
+        skill: {
+          type: "string",
+          minLength: 1,
+          description: "Exact skill invocation name or opaque id.",
+        },
+        role: {
+          type: "string",
+          pattern: "^[a-z0-9][a-z0-9_-]{0,63}$",
+          description: "Role entry name exposed by the skill descriptor.",
+        },
+      },
+      required: ["skill", "role"],
+      additionalProperties: false,
+    },
+    async execute(arguments_, context) {
+      if (
+        !arguments_ ||
+        typeof arguments_ !== "object" ||
+        Array.isArray(arguments_)
+      ) {
+        throw new Error("skill_capsule arguments must be an object");
+      }
+      const values = arguments_ as Record<string, unknown>;
+      if (typeof values.skill !== "string" || !values.skill.trim()) {
+        throw new Error("skill must be a non-empty string");
+      }
+      if (typeof values.role !== "string") {
+        throw new Error("role must be a string");
+      }
+      return registry.capsule(values.skill, values.role, context.signal);
+    },
+  });
+}
+
 export function validateSkillName(name: string): void {
-  if (
-    name.length > 64 ||
-    !SKILL_NAME_PATTERN.test(name)
-  ) {
+  if (name.length > 64 || !SKILL_NAME_PATTERN.test(name)) {
     throw new Error(
       "Skill name must be 1-64 lowercase letters, digits, and single hyphens",
     );
@@ -541,7 +628,14 @@ export function validateSkillRegistrySnapshot(
       typeof skill.hash !== "string" ||
       typeof skill.source !== "string" ||
       !Array.isArray(skill.resources) ||
-      !skill.resources.every((resource) => typeof resource === "string")
+      !skill.resources.every((resource) => typeof resource === "string") ||
+      (skill.roles !== undefined &&
+        (!Array.isArray(skill.roles) ||
+          !skill.roles.every(
+            (role) =>
+              typeof role === "string" &&
+              /^[a-z0-9][a-z0-9_-]{0,63}$/.test(role),
+          )))
     ) {
       throw new Error("Skill registry snapshot contains an invalid skill");
     }
@@ -577,14 +671,18 @@ async function discoverSource(
     root = await realpath(resolve(source.root));
   } catch (error) {
     if (isNodeError(error) && error.code === "ENOENT") return [];
-    warnings.push(`${source.root} could not be scanned: ${errorMessage(error)}`);
+    warnings.push(
+      `${source.root} could not be scanned: ${errorMessage(error)}`,
+    );
     return [];
   }
   let entries;
   try {
     entries = await readdir(root, { withFileTypes: true });
   } catch (error) {
-    warnings.push(`${source.root} could not be scanned: ${errorMessage(error)}`);
+    warnings.push(
+      `${source.root} could not be scanned: ${errorMessage(error)}`,
+    );
     return [];
   }
 
@@ -596,7 +694,10 @@ async function discoverSource(
     const candidate = join(root, entry.name);
     try {
       const skillRoot = await realpath(candidate);
-      if (!isWithin(root, skillRoot) || !(await stat(skillRoot)).isDirectory()) {
+      if (
+        !isWithin(root, skillRoot) ||
+        !(await stat(skillRoot)).isDirectory()
+      ) {
         warnings.push(`${candidate} resolves outside its skill source`);
         continue;
       }
@@ -638,6 +739,7 @@ async function discoverSource(
         source: sourceText,
         resources: await collectResources(skillRoot, warnings),
       };
+      descriptor.roles = [...skillRoleEntries(descriptor).keys()];
       skills.push({
         ...descriptor,
         instructions: renderSkillInstructions(descriptor, parsed.body),
@@ -693,8 +795,7 @@ function parseFrontmatter(source: string): Map<string, string> {
       const continuation: string[] = [];
       while (
         index + 1 < lines.length &&
-        (/^\s/.test(lines[index + 1] ?? "") ||
-          (lines[index + 1] ?? "") === "")
+        (/^\s/.test(lines[index + 1] ?? "") || (lines[index + 1] ?? "") === "")
       ) {
         index += 1;
         continuation.push((lines[index] ?? "").replace(/^\s{1,2}/, ""));
@@ -720,10 +821,7 @@ function unquoteYamlScalar(value: string): string {
   return value;
 }
 
-function renderSkillInstructions(
-  skill: SkillDescriptor,
-  body: string,
-): string {
+function renderSkillInstructions(skill: SkillDescriptor, body: string): string {
   const resources =
     "resources" in skill && Array.isArray(skill.resources)
       ? skill.resources
@@ -738,9 +836,35 @@ function renderSkillInstructions(
   ].join("\n\n");
 }
 
-function renderRequiredSkillReadInstructions(
-  skill: SkillReadResult,
-): string {
+function normalizeSkillRole(role: string): string {
+  const normalized = role.trim().toLowerCase();
+  if (!/^[a-z0-9][a-z0-9_-]{0,63}$/.test(normalized)) {
+    throw new Error(
+      "Skill role must be 1-64 lowercase letters, digits, underscores, or hyphens",
+    );
+  }
+  return normalized;
+}
+
+function skillRoleEntries(
+  skill: Pick<SkillSnapshotEntry, "path" | "resources">,
+): Map<string, string> {
+  const entries = new Map<string, string>();
+  for (const resource of skill.resources) {
+    const parts = relative(dirname(skill.path), resource).split(sep);
+    if (parts.length !== 2 || parts[0] !== "agents") continue;
+    const match = /^([a-z0-9][a-z0-9_-]{0,63})\.md$/i.exec(parts[1] ?? "");
+    if (!match?.[1]) continue;
+    entries.set(match[1].toLowerCase(), resource);
+  }
+  return entries;
+}
+
+function isAgentRoleResource(skillPath: string, resource: string): boolean {
+  return relative(dirname(skillPath), resource).split(sep)[0] === "agents";
+}
+
+function renderRequiredSkillReadInstructions(skill: SkillReadResult): string {
   const resources =
     skill.resources.length > 0
       ? skill.resources.map((path) => `- ${path}`).join("\n")
@@ -890,9 +1014,11 @@ function skillCatalogPriority(scope: SkillScope): number {
 }
 
 function joinedLength(lines: readonly string[], addition: string): number {
-  return lines.reduce((total, line) => total + line.length, 0) +
+  return (
+    lines.reduce((total, line) => total + line.length, 0) +
     lines.length +
-    addition.length;
+    addition.length
+  );
 }
 
 function appendWholeLineWithinBudget(

@@ -461,10 +461,18 @@ function reduceAgentEvent(
       return {
         ...state,
         isThinking: true,
+        ...(event.discardPartialOutput
+          ? {
+              streamingText: "",
+              streamingSources: undefined,
+              streamingCitations: undefined,
+            }
+          : {}),
         modelRetry: {
           retryAttempt: event.retryAttempt,
           maxRetries: event.maxRetries,
           reason: event.reason,
+          ...(event.discardPartialOutput ? { discardPartialOutput: true } : {}),
         },
       };
     case "model.output_text.delta":

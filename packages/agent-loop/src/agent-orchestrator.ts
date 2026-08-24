@@ -26,7 +26,6 @@ import {
   optionalAgentIds,
   stringArgument,
   taskNameArgument,
-  toolsForChild,
   waitTimeoutArgument,
 } from "./collaboration-contract.js";
 import {
@@ -34,6 +33,7 @@ import {
   cloneSnapshot,
   ensureModelTranscript,
   modelTranscriptId,
+  modelRetryProgress,
   normalizedTokenUsage,
   serializeTranscriptValue,
   summarize,
@@ -43,6 +43,7 @@ import {
 } from "./orchestration-transcript.js";
 import { ToolExecutionError } from "./tool-error.js";
 import { CollaborationToolFactory } from "./orchestrator-tools.js";
+import { createChildAgent } from "./orchestrator-context.js";
 import { AgentTaskRegistry } from "./agent-task-registry.js";
 import { AgentTaskState } from "./agent-task-state.js";
 import {
@@ -62,7 +63,6 @@ import {
 
 import {
   agentThreadId,
-  collaborationStatus,
   isTerminal,
   uniqueAgentRecords,
 } from "./orchestrator-records.js";
@@ -207,6 +207,9 @@ export class AgentOrchestrator {
           contextTokens: record.contextTokens,
         }),
         ...(record.contextHistory && { contextHistory: record.contextHistory }),
+        ...(record.fullOutput === undefined
+          ? {}
+          : { fullOutput: record.fullOutput }),
         ...(record.checkpointStep === undefined
           ? {}
           : { checkpointStep: record.checkpointStep }),
@@ -839,25 +842,21 @@ export class AgentOrchestrator {
       contextTokens: record.contextTokens,
     });
     const signal = combineSignals(this.rootSignal, record.controller.signal);
-    const childAgent: Agent = {
+    const leaf =
+      profile.leaf === true ||
+      agentDepth(record.snapshot.agentPath) >= this.maxDepth;
+    const childAgent = createChildAgent({
+      rootAgent,
+      profile,
       name: record.snapshot.name,
-      instructions: [
-        rootAgent.instructions,
-        "SUBAGENT ROLE",
-        profile.instructions,
-        `AGENT IDENTITY\nYou are ${record.snapshot.agentPath ?? record.snapshot.name}. Your stable thread ID is ${agentThreadId(record)}.`,
-        delegationInstructions([...this.profiles.values()], this.maxConcurrent),
-        "Work only on the delegated task. Do not ask the user questions. You may delegate bounded subtasks and exchange messages when that materially helps. Return a concise result with concrete evidence for your parent agent.",
-      ].join("\n\n"),
-      model: profile.model ?? rootAgent.model,
-      provider: profile.provider ?? rootAgent.provider,
-      tools: toolsForChild(
-        rootAgent.tools ?? [],
-        profile,
-        this.collaborationTools(agentThreadId(record)),
-      ),
-      maxSteps: profile.maxSteps ?? rootAgent.maxSteps,
-    };
+      agentIdentity: record.snapshot.agentPath ?? record.snapshot.name,
+      agentThreadId: agentThreadId(record),
+      leaf,
+      instructionCapsule: childOptions?.instructionCapsule,
+      profiles: [...this.profiles.values()],
+      maxConcurrent: this.maxConcurrent,
+      collaborationTools: this.collaborationTools(agentThreadId(record)),
+    });
     const delegatedCheckpoint = childOptions?.onCheckpoint;
     const controller = new OrchestrationRunController(
       this,
@@ -943,10 +942,11 @@ export class AgentOrchestrator {
       return;
     }
     if (event.type === "model.retrying") {
-      this.taskState().patchRecord(record, "progress", {
-        phase: "thinking",
-        latestActivity: `Retrying model connection (${event.retryAttempt}/${event.maxRetries})`,
-      });
+      this.taskState().patchRecord(
+        record,
+        "progress",
+        modelRetryProgress(record.snapshot, event),
+      );
       return;
     }
     if (event.type === "model.output_text.delta") {
@@ -1120,6 +1120,8 @@ export class AgentOrchestrator {
         this.retryFromOrThrow(caller, target),
       resolveCurrentAgentRecords: (caller, ids) =>
         this.taskRegistry().resolveCurrentAgentRecords(caller, ids),
+      readAgentResultOrThrow: (caller, target) =>
+        this.taskRegistry().readAgentResultOrThrow(caller, target),
       currentDirectChildRecords: (caller) =>
         this.taskRegistry().currentDirectChildRecords(caller),
       waitRecords: (caller, ids) =>

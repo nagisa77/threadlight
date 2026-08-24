@@ -168,6 +168,9 @@ export class AppServerState {
                 ...message,
               })),
             }),
+        ...(runtimeAgent.fullOutput === undefined
+          ? {}
+          : { fullOutput: runtimeAgent.fullOutput }),
         ...(runtimeAgent.checkpointStep === undefined
           ? {}
           : { checkpointStep: runtimeAgent.checkpointStep }),
@@ -267,10 +270,14 @@ export class AppServerState {
     } else if (event.type === "model.retrying") {
       if (activeTurn) {
         activeTurn.isThinking = true;
+        if (event.discardPartialOutput) {
+          activeTurn.streamingText = "";
+        }
         activeTurn.modelRetry = {
           retryAttempt: event.retryAttempt,
           maxRetries: event.maxRetries,
           reason: event.reason,
+          ...(event.discardPartialOutput ? { discardPartialOutput: true } : {}),
         };
       }
     } else if (event.type === "model.output_text.delta") {

@@ -118,6 +118,60 @@ describe("Skill Registry", () => {
     ).rejects.toThrow("already exists");
   });
 
+  it("discovers role entry points and loads a focused skill capsule", async () => {
+    const root = temporaryDirectory("threadlight-skill-capsule-");
+    const skills = join(root, "skills");
+    writeSkill(
+      skills,
+      "harness",
+      "Coordinate a large implementation workflow.",
+      "SHARED_MAIN_INSTRUCTIONS_THAT_A_LEAF_SHOULD_NOT_RECEIVE",
+    );
+    const skillRoot = join(skills, "harness");
+    mkdirSync(join(skillRoot, "agents"), { recursive: true });
+    mkdirSync(join(skillRoot, "references"), { recursive: true });
+    writeFileSync(
+      join(skillRoot, "agents", "explorer.md"),
+      "EXPLORE_ONLY: inspect evidence and return a concise finding.",
+    );
+    writeFileSync(
+      join(skillRoot, "agents", "reviewer.md"),
+      "REVIEW_ONLY: challenge the proposed result.",
+    );
+    writeFileSync(
+      join(skillRoot, "references", "contract.md"),
+      "Shared contract",
+    );
+
+    const registry = await SkillRegistry.discover({
+      sources: [{ scope: "repo", root: skills }],
+    });
+    expect(registry.descriptors()[0]).toMatchObject({
+      invocationName: "harness",
+      roles: ["explorer", "reviewer"],
+    });
+
+    const capsule = await registry.capsule("harness", "explorer");
+    expect(capsule.instructions).toContain("EXPLORE_ONLY");
+    expect(capsule.instructions).not.toContain("SHARED_MAIN_INSTRUCTIONS");
+    expect(capsule.instructions).not.toContain("REVIEW_ONLY");
+    expect(capsule.resources).toEqual([
+      realpathSync(join(skillRoot, "references", "contract.md")),
+    ]);
+    await expect(registry.capsule("harness", "writer")).rejects.toThrow(
+      "available roles: explorer, reviewer",
+    );
+
+    const runtime = await createSkillPluginThreadRuntime({
+      workspaceRoot: root,
+      builtinSkillRoots: [],
+      repoSkillRoots: [skills],
+      userSkillRoots: [],
+      pluginRoots: [],
+    });
+    expect(runtime.tools.map(({ name }) => name)).toContain("skill_capsule");
+  });
+
   it("keeps catalog entries whole, prioritizes plugin skills, and pages omitted skills", async () => {
     const root = temporaryDirectory("threadlight-skill-catalog-");
     const userSkills = join(root, "user-skills");
@@ -150,9 +204,7 @@ describe("Skill Registry", () => {
     });
 
     const catalog = registry.catalogPrompt();
-    expect(catalog).toContain(
-      "$gmail:gmail: Search and read Gmail messages.",
-    );
+    expect(catalog).toContain("$gmail:gmail: Search and read Gmail messages.");
     expect(catalog).not.toMatch(/detail deta$/);
     expect(registry.read("gmail").instructions).toContain("GMAIL_WORKFLOW");
     expect(registry.list({ query: "verbose", limit: 2 })).toMatchObject({
@@ -173,12 +225,7 @@ describe("Skill Registry", () => {
   it("rejects ambiguous short skill names with actionable invocation names", async () => {
     const root = temporaryDirectory("threadlight-skill-alias-");
     const sharedSkills = join(root, "shared-skills");
-    writeSkill(
-      sharedSkills,
-      "gmail",
-      "Work with mail.",
-      "MAIL_WORKFLOW",
-    );
+    writeSkill(sharedSkills, "gmail", "Work with mail.", "MAIL_WORKFLOW");
     const registry = await SkillRegistry.discover({
       sources: [
         { scope: "plugin", root: sharedSkills, namespace: "gmail" },
@@ -321,9 +368,7 @@ describe("Skill Registry", () => {
     );
     expect(requests[1]?.toolResults).toEqual([]);
     expect(requests[2]?.toolResults?.[0]?.name).toBe("skill_read");
-    expect(requests[2]?.toolResults?.[0]?.output).toContain(
-      "REVIEW_WORKFLOW",
-    );
+    expect(requests[2]?.toolResults?.[0]?.output).toContain("REVIEW_WORKFLOW");
     const completed = messages.filter(
       (message) =>
         "method" in message &&
@@ -449,9 +494,7 @@ describe("Skill Registry", () => {
       "Call `skill_create`",
     );
     expect(
-      registry
-        .descriptors()
-        .find((skill) => skill.name === "skill-creator")
+      registry.descriptors().find((skill) => skill.name === "skill-creator")
         ?.description,
     ).toContain("dedicated reusable agent, teacher, coach, or expert");
   });
@@ -930,6 +973,7 @@ function result<Result>(
   const message = messages.find(
     (candidate) => "id" in candidate && candidate.id === id,
   );
-  if (!message || !("result" in message)) throw new Error(`Missing result ${id}`);
+  if (!message || !("result" in message))
+    throw new Error(`Missing result ${id}`);
   return message.result as Result;
 }

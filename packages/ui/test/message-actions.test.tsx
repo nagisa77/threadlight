@@ -1,7 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MessageActions, writeClipboardText } from "../src/app.js";
+import {
+  formatTokenUsage,
+  MessageActions,
+  writeClipboardText,
+} from "../src/app.js";
 
 describe("message actions", () => {
   afterEach(() => {
@@ -15,6 +19,24 @@ describe("message actions", () => {
 
     expect(html).toContain('aria-label="复制文字"');
     expect(html).not.toContain("重写提问");
+  });
+
+  it("shows completed turn token usage after copy and bookmark", () => {
+    const html = renderToStaticMarkup(
+      <MessageActions
+        role="assistant"
+        text="最终答案"
+        tokenUsage={282_728}
+        onToggleBookmark={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("message-token-usage");
+    expect(html).toContain("28.3万 Token");
+    expect(html.indexOf("message-token-usage")).toBeGreaterThan(
+      html.indexOf("message-action bookmark"),
+    );
+    expect(formatTokenUsage(1_250, "en")).toBe("1.3K");
   });
 
   it("lets users copy and rewrite their questions", () => {

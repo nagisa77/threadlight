@@ -1,4 +1,9 @@
-import type { AgentTaskSnapshot, RunResult, TokenUsage } from "./types.js";
+import type {
+  AgentEvent,
+  AgentTaskSnapshot,
+  RunResult,
+  TokenUsage,
+} from "./types.js";
 
 const MAX_TRANSCRIPT_FIELD = 20_000;
 
@@ -60,6 +65,28 @@ export function updateTranscript(
   ) => AgentTaskSnapshot["transcript"][number],
 ): AgentTaskSnapshot["transcript"] {
   return transcript.map((entry) => (entry.id === id ? update(entry) : entry));
+}
+
+function clearModelTranscriptText(
+  transcript: AgentTaskSnapshot["transcript"],
+  step: number,
+): AgentTaskSnapshot["transcript"] {
+  return updateTranscript(transcript, modelTranscriptId(step), (entry) =>
+    entry.kind === "model" ? { ...entry, text: "" } : entry,
+  );
+}
+
+export function modelRetryProgress(
+  snapshot: AgentTaskSnapshot,
+  event: Extract<AgentEvent, { type: "model.retrying" }>,
+): Partial<AgentTaskSnapshot> {
+  return {
+    phase: "thinking",
+    latestActivity: `Retrying model connection (${event.retryAttempt}/${event.maxRetries})`,
+    transcript: event.discardPartialOutput
+      ? clearModelTranscriptText(snapshot.transcript, event.step)
+      : snapshot.transcript,
+  };
 }
 
 export function serializeTranscriptValue(value: unknown): string {

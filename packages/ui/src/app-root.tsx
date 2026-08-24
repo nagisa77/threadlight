@@ -150,6 +150,7 @@ export {
   ComputerPermissionCard,
   ComputerShareStatus,
   ConversationChangesButton,
+  formatTokenUsage,
   MessageActions,
   TurnStatusPill,
   currentPlanStep,

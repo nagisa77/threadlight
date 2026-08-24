@@ -6,12 +6,22 @@ describe("sessionReducer model progress", () => {
     let state = sessionReducer(initialSessionState, {
       type: "agent.event",
       event: {
+        type: "model.output_text.delta",
+        runId: "run-1",
+        step: 1,
+        delta: "Partial answer",
+      },
+    });
+    state = sessionReducer(state, {
+      type: "agent.event",
+      event: {
         type: "model.retrying",
         runId: "run-1",
         step: 1,
         retryAttempt: 1,
         maxRetries: 1,
         reason: "connection_lost",
+        discardPartialOutput: true,
       },
     });
 
@@ -21,7 +31,9 @@ describe("sessionReducer model progress", () => {
         retryAttempt: 1,
         maxRetries: 1,
         reason: "connection_lost",
+        discardPartialOutput: true,
       },
+      streamingText: "",
     });
 
     state = sessionReducer(state, {

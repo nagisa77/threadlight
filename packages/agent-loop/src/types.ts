@@ -156,6 +156,8 @@ export interface ModelRetryProgress {
   retryAttempt: number;
   maxRetries: number;
   reason: "connection_lost";
+  /** The provider abandoned the current attempt after emitting text. */
+  discardPartialOutput?: boolean;
 }
 
 export type ModelStreamEvent =
@@ -365,6 +367,13 @@ export interface SubagentProfile {
   model?: string;
   provider?: string;
   maxSteps?: number;
+  /**
+   * A leaf profile cannot delegate further. Leaf runs receive a compact,
+   * role-only instruction capsule and no collaboration tools.
+   */
+  leaf?: boolean;
+  /** Optional skill role entry (for example `agents/explorer.md`). */
+  skillRole?: string;
 }
 
 export type AgentTaskStatus =
@@ -497,6 +506,8 @@ export interface AgentRuntimeTaskSnapshot {
   contextHistory?: readonly ModelConversationMessage[];
   checkpointStep?: number;
   checkpointPhase?: AgentRunCheckpoint["phase"];
+  /** Exact child result, persisted separately from the display-safe tree. */
+  fullOutput?: string;
 }
 
 export interface AgentRuntimeThreadLifecycleSnapshot {
@@ -525,6 +536,8 @@ export interface ResumableAgentThread {
   history: readonly ModelConversationMessage[];
   modelState?: unknown;
   contextTokens?: number;
+  /** Exact latest result for explicit read_agent_result requests. */
+  fullOutput?: string;
 }
 
 export type AgentLifecycleErrorCode =
@@ -548,16 +561,17 @@ export interface AgentOrchestratorOptions extends RunOptions {
   onRuntimeCheckpoint?: (
     checkpoint: AgentRuntimeSnapshot,
   ) => void | Promise<void>;
-  createChildRunOptions?: (
-    context: ChildAgentRunContext,
-  ) => Pick<
+  createChildRunOptions?: (context: ChildAgentRunContext) => Pick<
     RunOptions,
     | "beforeModelRequest"
     | "controller"
     | "toolScopeId"
     | "history"
     | "onCheckpoint"
-  >;
+  > & {
+    /** Essential host/project/turn rules retained by a leaf run. */
+    instructionCapsule?: string;
+  };
 }
 
 export function defineAgent(agent: Agent): Agent {

@@ -26,6 +26,7 @@ export function MessageActions({
   role,
   text,
   copyText,
+  tokenUsage,
   onRewrite,
   bookmarked = false,
   onToggleBookmark,
@@ -33,11 +34,13 @@ export function MessageActions({
   role: "user" | "assistant";
   text: string;
   copyText?(text: string): Promise<void>;
+  /** Total provider-confirmed usage for this completed turn. */
+  tokenUsage?: number;
   onRewrite?(): void;
   bookmarked?: boolean;
   onToggleBookmark?(): void;
 }) {
-  const { t } = useI18n();
+  const { language, t } = useI18n();
   const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
@@ -118,8 +121,24 @@ export function MessageActions({
           />
         </button>
       )}
+      {tokenUsage !== undefined && tokenUsage > 0 && (
+        <span
+          className="message-token-usage"
+          aria-label={`${new Intl.NumberFormat(language).format(tokenUsage)} ${t("tokens")}`}
+          title={`${new Intl.NumberFormat(language).format(tokenUsage)} ${t("tokens")}`}
+        >
+          {formatTokenUsage(tokenUsage, language)} {t("tokens")}
+        </span>
+      )}
     </div>
   );
+}
+
+export function formatTokenUsage(value: number, language: string): string {
+  return new Intl.NumberFormat(language, {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
 }
 
 export async function writeClipboardText(

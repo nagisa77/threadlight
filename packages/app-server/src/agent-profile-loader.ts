@@ -13,6 +13,8 @@ const PROFILE_KEYS = new Set([
   "model",
   "provider",
   "max_steps",
+  "leaf",
+  "skill_role",
 ]);
 
 export const BUILTIN_SUBAGENT_PROFILES: readonly SubagentProfile[] = [
@@ -23,6 +25,8 @@ export const BUILTIN_SUBAGENT_PROFILES: readonly SubagentProfile[] = [
     instructions:
       "Investigate the delegated question, use concrete evidence, identify risks or missing information, and return a concise result without modifying workspace or external state.",
     toolAccess: "read-only",
+    leaf: true,
+    skillRole: "default",
   },
   {
     name: "worker",
@@ -37,6 +41,8 @@ export const BUILTIN_SUBAGENT_PROFILES: readonly SubagentProfile[] = [
       "request_plan_input",
       "project_memory",
     ],
+    leaf: true,
+    skillRole: "worker",
   },
   {
     name: "explorer",
@@ -45,6 +51,8 @@ export const BUILTIN_SUBAGENT_PROFILES: readonly SubagentProfile[] = [
     instructions:
       "Search broadly enough to answer the delegated question, cite concrete files and symbols, and do not modify workspace or external state.",
     toolAccess: "read-only",
+    leaf: true,
+    skillRole: "explorer",
   },
 ];
 
@@ -62,6 +70,8 @@ interface ProfileOverride {
   model?: string;
   provider?: string;
   maxSteps?: number;
+  leaf?: boolean;
+  skillRole?: string;
 }
 
 /**
@@ -165,6 +175,8 @@ async function readProfile(path: string): Promise<ProfileOverride> {
     ...optionalProfileString(value, "model", path),
     ...optionalProfileString(value, "provider", path),
     ...optionalMaxSteps(value.max_steps, path),
+    ...optionalBoolean(value.leaf, "leaf", path),
+    ...optionalProfileString(value, "skill_role", path),
   };
 }
 
@@ -196,11 +208,25 @@ function validateProfileName(name: string, source: string): void {
 
 function optionalProfileString(
   value: Record<string, unknown>,
-  key: "description" | "instructions" | "model" | "provider",
+  key: "description" | "instructions" | "model" | "provider" | "skill_role",
   path: string,
 ): Partial<ProfileOverride> {
   if (value[key] === undefined) return {};
-  return { [key]: requireString(value[key], key, path) };
+  return key === "skill_role"
+    ? { skillRole: requireString(value[key], key, path) }
+    : { [key]: requireString(value[key], key, path) };
+}
+
+function optionalBoolean(
+  value: unknown,
+  key: string,
+  path: string,
+): Pick<ProfileOverride, "leaf"> | Record<string, never> {
+  if (value === undefined) return {};
+  if (typeof value !== "boolean") {
+    throw new Error(`Invalid agent profile ${path}: ${key} must be a boolean`);
+  }
+  return { leaf: value };
 }
 
 function optionalToolAccess(

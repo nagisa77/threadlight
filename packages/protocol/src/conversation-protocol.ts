@@ -450,6 +450,8 @@ export interface ModelRetryData {
   retryAttempt: number;
   maxRetries: number;
   reason: "connection_lost";
+  /** Clear text streamed by the abandoned model attempt before retrying. */
+  discardPartialOutput?: boolean;
 }
 
 export type CapabilityKind = "skill" | "tool";

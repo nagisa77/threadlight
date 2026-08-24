@@ -32,7 +32,7 @@ export interface OpenAICompatibleChatProviderOptions {
   defaultModel: string;
   provider: string;
   stateProvider?: string;
-  /** One adapter-local replay is safe before any visible output or tool call. */
+  /** Adapter-local stream replays after transient disconnects. */
   maxStreamRetries?: number;
   streamRetryDelayMs?: number;
   client?: OpenAI;
@@ -211,8 +211,6 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       } catch (error) {
         const canRetry =
           retryAttempt < this.maxStreamRetries &&
-          text.length === 0 &&
-          pendingCalls.size === 0 &&
           !request.signal?.aborted &&
           isTransientStreamError(error);
         if (!canRetry) throw error;
@@ -223,6 +221,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
           retryAttempt,
           maxRetries: this.maxStreamRetries,
           reason: "connection_lost",
+          ...(text.length > 0 ? { discardPartialOutput: true } : {}),
         });
         await waitForRetry(this.streamRetryDelayMs, request.signal);
         continue;

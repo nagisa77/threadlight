@@ -1,4 +1,5 @@
 import { normalizedTaskName } from "./collaboration-contract.js";
+import { agentResultPayload } from "./orchestrator-context.js";
 import {
   agentThreadId,
   uniqueAgentRecords,
@@ -107,6 +108,24 @@ export class AgentTaskRegistry {
       return record;
     });
     return uniqueAgentRecords(records);
+  }
+
+  readAgentResultOrThrow(callerThreadId: string, reference: string): unknown {
+    const target = this.lifecycleTarget(
+      callerThreadId,
+      reference,
+      "result read",
+    );
+    this.assertThreadOpen(target, reference, "result read");
+    const record = target.records.at(-1);
+    const snapshot = record?.snapshot ?? target.resumable?.latestTask;
+    if (!snapshot) {
+      throw lifecycleError("agent_not_attached", reference, "result read");
+    }
+    return agentResultPayload(
+      snapshot,
+      record?.fullOutput ?? target.resumable?.fullOutput,
+    );
   }
 
   waitRecords(

@@ -155,6 +155,9 @@ export class AgentLoop {
             retryAttempt: event.retryAttempt,
             maxRetries: event.maxRetries,
             reason: event.reason,
+            ...(event.discardPartialOutput
+              ? { discardPartialOutput: true }
+              : {}),
           });
         },
       });

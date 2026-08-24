@@ -33,6 +33,17 @@ describe("AgentOrchestrator", () => {
           if (childTurns === 1) {
             options?.onEvent?.({
               type: "output_text.delta",
+              delta: "Abandoned partial output.",
+            });
+            options?.onEvent?.({
+              type: "retry",
+              retryAttempt: 1,
+              maxRetries: 1,
+              reason: "connection_lost",
+              discardPartialOutput: true,
+            });
+            options?.onEvent?.({
+              type: "output_text.delta",
               delta: "Inspecting the entry point.",
             });
             return {
@@ -73,6 +84,7 @@ describe("AgentOrchestrator", () => {
         return { text: "Inspection complete.", toolCalls: [] };
       },
     };
+    const treeEvents: AgentTreeEvent[] = [];
     const orchestrator = new AgentOrchestrator(new AgentLoop(provider), {
       profiles: [
         {
@@ -82,6 +94,7 @@ describe("AgentOrchestrator", () => {
           toolAccess: "read-only",
         },
       ],
+      onAgentTreeEvent: (event) => treeEvents.push(event),
     });
 
     await orchestrator.run(
@@ -113,6 +126,18 @@ describe("AgentOrchestrator", () => {
         text: "The entry point is ready.",
       }),
     ]);
+    expect(
+      treeEvents.some(({ tree }) =>
+        tree.agents.some(
+          (candidate) =>
+            candidate.parentId === orchestrator.snapshot.rootId &&
+            candidate.latestActivity === "Retrying model connection (1/1)" &&
+            candidate.transcript.some(
+              (entry) => entry.kind === "model" && entry.text === "",
+            ),
+        ),
+      ),
+    ).toBe(true);
   });
 
   it("runs scripted subagents concurrently, isolates model state, and makes the parent collect results", async () => {

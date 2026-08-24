@@ -379,6 +379,12 @@ export const ConversationMessageItem = memo(function ConversationMessageItem({
           role={message.role}
           text={message.text}
           copyText={canCopyText ? onCopyText : undefined}
+          tokenUsage={
+            message.role === "assistant"
+              ? (message.diagnostics?.metrics?.total.usage.totalTokens ??
+                message.diagnostics?.usage.totalTokens)
+              : undefined
+          }
           onRewrite={
             message.role === "user"
               ? () => onRewriteQuestion(message.text)

@@ -54,10 +54,143 @@ describe("OpenAICompatibleChatProvider", () => {
     expect(turn.text).toBe("Recovered");
   });
 
-  it("does not replay a stream after visible output has started", async () => {
+  it("retries after partial text and tells consumers to discard it", async () => {
     const create = vi
       .fn()
-      .mockResolvedValue(
+      .mockResolvedValueOnce(
+        chunksThenThrows(
+          [{ choices: [{ delta: { content: "Partial answer" } }] }],
+          new TypeError("terminated"),
+        ),
+      )
+      .mockResolvedValueOnce(
+        chunks([{ choices: [{ delta: { content: "Recovered answer" } }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      streamRetryDelayMs: 0,
+      client,
+    });
+
+    const events: unknown[] = [];
+    const turn = await provider.generate(
+      {
+        instructions: "Respond",
+        input: "Build a snake game",
+        tools: [],
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([
+      { type: "output_text.delta", delta: "Partial answer" },
+      {
+        type: "retry",
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+        discardPartialOutput: true,
+      },
+      { type: "output_text.delta", delta: "Recovered answer" },
+    ]);
+    expect(turn.text).toBe("Recovered answer");
+  });
+
+  it("retries after receiving a partial tool call", async () => {
+    const partialToolCall = {
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call-1",
+                function: { name: "exec_command", arguments: '{"cmd":' },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const completeToolCall = {
+      choices: [
+        {
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                id: "call-2",
+                function: {
+                  name: "exec_command",
+                  arguments: '{"cmd":"npm test"}',
+                },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(
+        chunksThenThrows([partialToolCall], new TypeError("terminated")),
+      )
+      .mockResolvedValueOnce(chunks([completeToolCall]));
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      streamRetryDelayMs: 0,
+      client,
+    });
+    const events: unknown[] = [];
+
+    const turn = await provider.generate(
+      {
+        instructions: "Use tools",
+        input: "Run the tests",
+        tools: [
+          {
+            name: "exec_command",
+            description: "Run a command",
+            parameters: { type: "object" },
+          },
+        ],
+      },
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([
+      {
+        type: "retry",
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+      },
+    ]);
+    expect(turn.toolCalls).toEqual([
+      {
+        id: "call-2",
+        name: "exec_command",
+        arguments: { cmd: "npm test" },
+      },
+    ]);
+  });
+
+  it("stops after the retry budget is exhausted", async () => {
+    const create = vi
+      .fn()
+      .mockImplementation(async () =>
         chunksThenThrows(
           [{ choices: [{ delta: { content: "Partial answer" } }] }],
           new TypeError("terminated"),
@@ -73,15 +206,27 @@ describe("OpenAICompatibleChatProvider", () => {
       streamRetryDelayMs: 0,
       client,
     });
+    const events: unknown[] = [];
 
     await expect(
-      provider.generate({
-        instructions: "Respond",
-        input: "Build a snake game",
-        tools: [],
-      }),
+      provider.generate(
+        { instructions: "Respond", input: "Build", tools: [] },
+        { onEvent: (event) => events.push(event) },
+      ),
     ).rejects.toThrow("terminated");
-    expect(create).toHaveBeenCalledTimes(1);
+
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(events).toEqual([
+      { type: "output_text.delta", delta: "Partial answer" },
+      {
+        type: "retry",
+        retryAttempt: 1,
+        maxRetries: 1,
+        reason: "connection_lost",
+        discardPartialOutput: true,
+      },
+      { type: "output_text.delta", delta: "Partial answer" },
+    ]);
   });
 
   it("streams text and preserves reasoning plus tool linkage across turns", async () => {

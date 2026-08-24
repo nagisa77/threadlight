@@ -39,10 +39,15 @@ describe("AppServer", () => {
     const provider: ModelProvider = {
       async generate(_request, options) {
         options?.onEvent?.({
+          type: "output_text.delta",
+          delta: "Partial answer",
+        });
+        options?.onEvent?.({
           type: "retry",
           retryAttempt: 1,
           maxRetries: 1,
           reason: "connection_lost",
+          discardPartialOutput: true,
         });
         retryStarted.resolve();
         await finishRetry.promise;
@@ -98,8 +103,11 @@ describe("AppServer", () => {
             retryAttempt: 1,
             maxRetries: 1,
             reason: "connection_lost",
+            discardPartialOutput: true,
           },
+          streamingText: "",
         },
+        event: { discardPartialOutput: true },
       },
     });
 

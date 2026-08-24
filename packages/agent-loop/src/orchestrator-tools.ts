@@ -3,6 +3,7 @@ import {
   CLOSE_AGENT_TOOL,
   DEFAULT_AGENT_WAIT_TIMEOUT_MS,
   MAX_AGENT_WAIT_TIMEOUT_MS,
+  READ_AGENT_RESULT_TOOL,
   FOLLOWUP_TASK_TOOL,
   FOLLOW_UP_AGENT_TOOL,
   INTERRUPT_AGENT_TOOL,
@@ -59,6 +60,7 @@ export interface CollaborationToolHost {
     caller: string,
     ids: readonly string[],
   ): AgentTaskRecord[];
+  readAgentResultOrThrow(caller: string, target: string): unknown;
   currentDirectChildRecords(caller: string): AgentTaskRecord[];
   waitRecords(
     caller: string,
@@ -79,6 +81,8 @@ export interface CollaborationToolHost {
 }
 
 export class CollaborationToolFactory {
+  private readonly deliveredRevisions = new Map<string, number>();
+
   constructor(private readonly host: CollaborationToolHost) {}
 
   tools(callerThreadId: string): Tool[] {
@@ -88,6 +92,7 @@ export class CollaborationToolFactory {
       this.followupTaskTool(callerThreadId),
       this.followUpTool(callerThreadId),
       this.retryTool(callerThreadId),
+      this.readResultTool(callerThreadId),
       this.checkTool(callerThreadId),
       this.waitTool(callerThreadId),
       this.steerTool(callerThreadId),
@@ -253,7 +258,34 @@ export class CollaborationToolFactory {
         const records = requested
           ? this.host.resolveCurrentAgentRecords(callerThreadId, requested)
           : this.host.currentDirectChildRecords(callerThreadId);
-        return collaborationStatus(records);
+        return this.incrementalStatus(callerThreadId, records);
+      },
+    };
+  }
+
+  private readResultTool(callerThreadId: string): Tool {
+    return {
+      name: READ_AGENT_RESULT_TOOL,
+      description:
+        "Read one agent's exact result on demand. check_agents and wait_for_agents return only incremental summaries.",
+      parameters: {
+        type: "object",
+        properties: {
+          target: {
+            type: "string",
+            minLength: 1,
+            description:
+              "Agent task ID, stable thread ID, caller-relative task name, or canonical path",
+          },
+        },
+        required: ["target"],
+        additionalProperties: false,
+      },
+      mutability: "read",
+      execute: async (arguments_) => {
+        const values = objectArguments(arguments_);
+        const target = stringArgument(values.target, "target");
+        return this.host.readAgentResultOrThrow(callerThreadId, target);
       },
     };
   }
@@ -317,7 +349,7 @@ export class CollaborationToolFactory {
         }
         this.host.scheduleRuntimeCheckpoint();
         await this.host.flushRuntimeCheckpoints();
-        const status = collaborationStatus(records);
+        const status = this.incrementalStatus(callerThreadId, records);
         return {
           wakeReason,
           timedOut: wakeReason === "timeout",
@@ -327,6 +359,23 @@ export class CollaborationToolFactory {
         };
       },
     };
+  }
+
+  private incrementalStatus(
+    callerThreadId: string,
+    records: readonly AgentTaskRecord[],
+  ) {
+    const changed = records.filter((record) => {
+      const key = `${callerThreadId}\0${record.snapshot.id}`;
+      return this.deliveredRevisions.get(key) !== record.revision;
+    });
+    for (const record of changed) {
+      this.deliveredRevisions.set(
+        `${callerThreadId}\0${record.snapshot.id}`,
+        record.revision,
+      );
+    }
+    return collaborationStatus(records, changed);
   }
 
   private steerTool(callerThreadId: string): Tool {

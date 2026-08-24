@@ -59,6 +59,7 @@ export {
   skillCapabilitySources,
 } from "./capability-registry.js";
 export {
+  createSkillCapsuleTool,
   createSkillListTool,
   createSkillReadTool,
   SkillRegistry,
@@ -139,6 +140,7 @@ export type {
 } from "./prompt-composer.js";
 export type {
   DiscoverSkillsOptions,
+  SkillCapsuleResult,
   SkillDescriptor,
   SkillListOptions,
   SkillListResult,

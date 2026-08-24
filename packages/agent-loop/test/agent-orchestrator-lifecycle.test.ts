@@ -387,7 +387,8 @@ describe("AgentOrchestrator lifecycle", () => {
             timedOut: boolean;
             activeAgentIds: string[];
             terminalAgentIds: string[];
-            agents: Array<{ id: string; status: string; output?: string }>;
+            unchangedAgentIds: string[];
+            agents: Array<{ id: string; status: string; summary?: string }>;
           };
           expect(partial.wakeReason).toBe("agent_updated");
           expect(partial.timedOut).toBe(false);
@@ -397,10 +398,10 @@ describe("AgentOrchestrator lifecycle", () => {
             expect.objectContaining({
               id: fastAgentId,
               status: "completed",
-              output: "Fast result",
+              summary: "Fast result",
             }),
-            expect.objectContaining({ id: stuckAgentId, status: "running" }),
           ]);
+          expect(partial.unchangedAgentIds).toEqual([stuckAgentId]);
           return {
             text: "Taking a bounded snapshot of the stuck check.",
             toolCalls: [
@@ -417,6 +418,7 @@ describe("AgentOrchestrator lifecycle", () => {
             wakeReason: string;
             timedOut: boolean;
             activeAgentIds: string[];
+            unchangedAgentIds: string[];
             agents: Array<{ id: string; status: string }>;
           };
           expect(timedOut).toMatchObject({
@@ -424,9 +426,8 @@ describe("AgentOrchestrator lifecycle", () => {
             timedOut: true,
             activeAgentIds: [stuckAgentId],
           });
-          expect(timedOut.agents).toEqual([
-            expect.objectContaining({ id: stuckAgentId, status: "running" }),
-          ]);
+          expect(timedOut.agents).toEqual([]);
+          expect(timedOut.unchangedAgentIds).toEqual([stuckAgentId]);
           return {
             text: "Checking the same threads after timeout.",
             toolCalls: [
@@ -439,8 +440,19 @@ describe("AgentOrchestrator lifecycle", () => {
           };
         }
         if (rootTurns === 6) {
-          expect(request.toolResults?.[0]?.output).toContain('"running"');
-          expect(request.toolResults?.[0]?.output).toContain('"completed"');
+          const unchanged = JSON.parse(request.toolResults![0]!.output) as {
+            agents: unknown[];
+            unchangedAgentIds: string[];
+            activeAgentIds: string[];
+            terminalAgentIds: string[];
+          };
+          expect(unchanged.agents).toEqual([]);
+          expect(unchanged.unchangedAgentIds).toEqual([
+            fastAgentId,
+            stuckAgentId,
+          ]);
+          expect(unchanged.activeAgentIds).toEqual([stuckAgentId]);
+          expect(unchanged.terminalAgentIds).toEqual([fastAgentId]);
           return {
             text: "Interrupting the stuck check.",
             toolCalls: [

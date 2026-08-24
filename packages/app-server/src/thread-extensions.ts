@@ -2,10 +2,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 
-import {
-  ToolExecutionError,
-  type Tool,
-} from "@threadlight/agent-loop";
+import { ToolExecutionError, type Tool } from "@threadlight/agent-loop";
 import {
   createMcpCapabilityTools,
   type ConversationMcpRuntime,
@@ -33,6 +30,7 @@ import {
 } from "./plugin-registry.js";
 import { createSkillCreateTool } from "./skill-creator.js";
 import {
+  createSkillCapsuleTool,
   createSkillListTool,
   createSkillReadTool,
   SkillRegistry,
@@ -76,10 +74,7 @@ export interface ConnectorConnectionManager {
     clientId: string,
     clientSecret: string,
   ): Promise<unknown>;
-  disconnectConnector(
-    connectorId: string,
-    version: string,
-  ): Promise<unknown>;
+  disconnectConnector(connectorId: string, version: string): Promise<unknown>;
   connectorRedirectUrl(connectorId: string): string;
 }
 
@@ -122,9 +117,7 @@ export interface SkillPluginThreadRuntime {
     capabilityId: string,
     signal: AbortSignal,
   ): Promise<ConnectorStatusData>;
-  disconnectConnector(
-    capabilityId: string,
-  ): Promise<ConnectorStatusData>;
+  disconnectConnector(capabilityId: string): Promise<ConnectorStatusData>;
   refreshCapabilities(): Promise<void>;
   snapshot: SkillPluginRuntimeSnapshot;
 }
@@ -134,9 +127,7 @@ export async function createSkillPluginThreadRuntime(
   restoredSnapshot?: unknown,
 ): Promise<SkillPluginThreadRuntime> {
   const workspaceRoot = resolve(options.workspaceRoot);
-  const projectStateRoot = resolve(
-    options.projectStateRoot ?? workspaceRoot,
-  );
+  const projectStateRoot = resolve(options.projectStateRoot ?? workspaceRoot);
   const userHome = resolve(options.userHome ?? homedir());
   let registry: SkillRegistry | undefined;
   let plugins: PluginRegistry;
@@ -147,15 +138,13 @@ export async function createSkillPluginThreadRuntime(
     plugins = await PluginRegistry.fromSnapshot(restoredSnapshot.plugins);
   } else {
     plugins = await PluginRegistry.discover({
-      roots:
-        options.pluginRoots ??
-        [
-          defaultBuiltinPluginRoot(),
-          join(workspaceRoot, ".agents", "plugins"),
-          join(projectStateRoot, ".threadlight", "plugins"),
-          join(userHome, ".agents", "plugins"),
-          join(userHome, ".threadlight", "plugins"),
-        ],
+      roots: options.pluginRoots ?? [
+        defaultBuiltinPluginRoot(),
+        join(workspaceRoot, ".agents", "plugins"),
+        join(projectStateRoot, ".threadlight", "plugins"),
+        join(userHome, ".agents", "plugins"),
+        join(userHome, ".threadlight", "plugins"),
+      ],
     });
   }
 
@@ -163,14 +152,18 @@ export async function createSkillPluginThreadRuntime(
     ...(options.builtinSkillRoots ?? [defaultBuiltinSkillRoot()]).map(
       (root) => ({ scope: "builtin" as const, root }),
     ),
-    ...(options.repoSkillRoots ?? [
-      join(workspaceRoot, ".agents", "skills"),
-      join(workspaceRoot, ".codex", "skills"),
-    ]).map((root) => ({ scope: "repo" as const, root })),
-    ...(options.userSkillRoots ?? [
-      join(userHome, ".agents", "skills"),
-      join(userHome, ".codex", "skills"),
-    ]).map((root) => ({ scope: "user" as const, root })),
+    ...(
+      options.repoSkillRoots ?? [
+        join(workspaceRoot, ".agents", "skills"),
+        join(workspaceRoot, ".codex", "skills"),
+      ]
+    ).map((root) => ({ scope: "repo" as const, root })),
+    ...(
+      options.userSkillRoots ?? [
+        join(userHome, ".agents", "skills"),
+        join(userHome, ".codex", "skills"),
+      ]
+    ).map((root) => ({ scope: "user" as const, root })),
     ...plugins.skillSources(),
   ];
   if (!registry) {
@@ -257,6 +250,7 @@ export async function createSkillPluginThreadRuntime(
     tools: [
       createSkillListTool(registry),
       createSkillReadTool(registry),
+      createSkillCapsuleTool(registry),
       createSkillCreateTool({
         project: join(workspaceRoot, ".agents", "skills"),
         user: join(userHome, ".agents", "skills"),
@@ -279,11 +273,7 @@ export async function createSkillPluginThreadRuntime(
       return connectors.status(capabilityId);
     },
     configureConnector(capabilityId, clientId, clientSecret) {
-      return connectors.configure(
-        capabilityId,
-        clientId,
-        clientSecret,
-      );
+      return connectors.configure(capabilityId, clientId, clientSecret);
     },
     authorizeConnector(capabilityId, signal) {
       return connectors.authorize(capabilityId, signal);
@@ -336,16 +326,13 @@ function pluginMcpCapabilitySources(
         description: server.description,
         source: plugin.name,
         icon:
-          server.presentation?.icon ??
-          plugin.presentation?.icon ??
-          "plugin",
+          server.presentation?.icon ?? plugin.presentation?.icon ?? "plugin",
         visibility:
           server.presentation?.visibility ??
           plugin.presentation?.visibility ??
           "search",
         keywords:
-          server.presentation?.keywords ??
-          plugin.presentation?.keywords,
+          server.presentation?.keywords ?? plugin.presentation?.keywords,
         status: configured ? "ready" : "needs_configuration",
       },
       async resolve(signal, activation = "explicit") {
@@ -400,8 +387,7 @@ function applyPluginErrorGuidance(
       try {
         return await tool.execute(arguments_, context);
       } catch (error) {
-        const original =
-          error instanceof Error ? error.message : String(error);
+        const original = error instanceof Error ? error.message : String(error);
         const match = guidance.find(({ includes }) =>
           original.includes(includes),
         );
@@ -458,10 +444,7 @@ function linkPluginSkillConnectors(
             ...skillResolution.promptBlocks,
             ...connectorResolution.promptBlocks,
           ],
-          tools: [
-            ...skillResolution.tools,
-            ...connectorResolution.tools,
-          ],
+          tools: [...skillResolution.tools, ...connectorResolution.tools],
           resources: [
             ...(skillResolution.resources ?? []),
             ...(connectorResolution.resources ?? []),
@@ -533,9 +516,8 @@ class PluginConnectorController {
       configured: connection.configured,
       authorized: connection.authorized,
       redirectUrl:
-        this.options.connections?.connectorRedirectUrl(
-          connector.server.id,
-        ) ?? "",
+        this.options.connections?.connectorRedirectUrl(connector.server.id) ??
+        "",
     };
   }
 
@@ -587,16 +569,12 @@ class PluginConnectorController {
     return this.status(capabilityId);
   }
 
-  async disconnect(
-    capabilityId: string,
-  ): Promise<ConnectorStatusData> {
+  async disconnect(capabilityId: string): Promise<ConnectorStatusData> {
     const connector = this.require(capabilityId);
     await this.options.mcpRuntime?.disconnect(
       pluginServerSpec(connector.server),
     );
-    await this.requireConnections(
-      connector.server.name,
-    ).disconnectConnector(
+    await this.requireConnections(connector.server.name).disconnectConnector(
       connector.server.id,
       connector.server.version,
     );
@@ -615,10 +593,7 @@ class PluginConnectorController {
     if (!this.options.connections) {
       return { configured: false, authorized: false };
     }
-    return this.options.connections.connectorStatus(
-      server.id,
-      server.version,
-    );
+    return this.options.connections.connectorStatus(server.id, server.version);
   }
 
   private require(capabilityId: string) {
@@ -658,13 +633,10 @@ function pluginServerSpec(
               : {}),
             ...(server.oauth.clientSecretRequired !== undefined
               ? {
-                  clientSecretRequired:
-                    server.oauth.clientSecretRequired,
+                  clientSecretRequired: server.oauth.clientSecretRequired,
                 }
               : {}),
-            ...(server.oauth.scopes
-              ? { scopes: server.oauth.scopes }
-              : {}),
+            ...(server.oauth.scopes ? { scopes: server.oauth.scopes } : {}),
           },
         }
       : {}),
@@ -730,11 +702,7 @@ function mcpCapabilitySources(
               content: instructions,
             },
           ],
-          tools: createMcpCapabilityTools(
-            runtime!,
-            capability.id,
-            connection,
-          ),
+          tools: createMcpCapabilityTools(runtime!, capability.id, connection),
           resources: [],
         };
       },
