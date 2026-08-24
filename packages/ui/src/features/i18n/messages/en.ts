@@ -269,6 +269,8 @@ export const en: Messages = {
   contextCompactionCurrentTokens: "about {tokens} tokens",
   modelConnectionRetrying:
     "Model connection interrupted. Retrying automatically ({attempt}/{maxRetries})…",
+  modelEmptyResponseRetrying:
+    "The model returned an empty response. Retrying automatically ({attempt}/{maxRetries})…",
   add: "Add",
   addAttachment: "Add images or files",
   addAttachmentDescription: "Choose images, documents, or other local files",
@@ -851,7 +853,7 @@ export const en: Messages = {
   step: "Step",
   providerConnectionTest: "Provider connection test",
   providerConnectionTestDescription:
-    "Test the current unsaved model, endpoint, and key without changing settings.",
+    "Verify authentication, text generation, and tool calling with the current unsaved configuration.",
   testingConnection: "Testing…",
   testConnection: "Test connection",
   firstRunEyebrow: "First-time setup",
@@ -919,9 +921,13 @@ export const en: Messages = {
   providerDiagnosticInvalidUrl: "Base URL is invalid",
   providerDiagnosticUnauthorized: "Authentication failed; check the API key",
   providerDiagnosticEndpointNotFound:
-    "The provider models endpoint was not found",
+    "The provider generation endpoint was not found",
   providerDiagnosticModelNotFound:
     "Connected, but the selected model was not found",
+  providerDiagnosticEmptyResponse:
+    "The model accepted generation but returned an empty response",
+  providerDiagnosticToolCallUnsupported:
+    "Text works, but the model failed Threadlight's tool-calling probe",
   providerDiagnosticRateLimited: "Provider rate limit reached; try again later",
   providerDiagnosticTimeout: "Connection timed out",
   providerDiagnosticNetwork: "Network or DNS connection failed",

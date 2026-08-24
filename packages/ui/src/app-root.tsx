@@ -205,6 +205,7 @@ import { useAttachmentController } from "./features/composer/attachment-controll
 import { useCapabilityController } from "./features/composer/capability-controller.js";
 import { useComposerRuntime } from "./features/composer/runtime-controller.js";
 import { useVoiceInputController } from "./features/composer/voice-input-controller.js";
+import { useActiveModelSelection } from "./model-selection-controller.js";
 import {
   completeFirstRun,
   useNavigationController,
@@ -722,12 +723,17 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
   const selectedAccessMode = newTaskDraft
     ? draftAccessMode
     : (currentConversation?.accessMode ?? "approval");
-  const selectedProvider = newTaskDraft
-    ? (draftModel?.provider ?? state.provider)
-    : state.provider;
-  const selectedModel = newTaskDraft
-    ? (draftModel?.model ?? state.model)
-    : state.model;
+  const { selectedProvider, selectedModel, setConversationModel } =
+    useActiveModelSelection({
+      settings: runtimeSettings,
+      storage: productivityStorage,
+      newTaskDraft,
+      draftModel,
+      fallbackProvider: state.provider,
+      fallbackModel: state.model,
+      threadId: state.threadId,
+      updateThreadModel: setThreadModel,
+    });
   // Prefer the persisted sidebar title, then the first user message.
   const headerTitle =
     currentConversation?.title && currentConversation.title !== t("task")
@@ -973,6 +979,7 @@ function ThreadlightAppContent(app: ThreadlightAppProps & AppShellState) {
     selectedAccessMode,
     selectedProvider,
     selectedModel,
+    setConversationModel,
     headerTitle,
     draftStatus,
     runFirstDemoTask,

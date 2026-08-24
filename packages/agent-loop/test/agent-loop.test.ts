@@ -140,8 +140,11 @@ describe("AgentLoop", () => {
     expect(result.contextTokens).toBe(35);
   });
 
-  it("defaults the agent step limit to 5000", async () => {
+  it("caps consecutive empty turns before checking completion requirements", async () => {
     let requests = 0;
+    const validateCompletion = vi.fn(
+      () => "Before finishing, you must load the explicitly requested skills.",
+    );
     const provider: ModelProvider = {
       async generate() {
         requests += 1;
@@ -153,9 +156,13 @@ describe("AgentLoop", () => {
       new AgentLoop(provider).run(
         defineAgent({ name: "default-step-limit", instructions: "Continue" }),
         "Run until the default step limit",
+        { controller: { validateCompletion } },
       ),
-    ).rejects.toThrow("Agent exceeded maxSteps (5000)");
-    expect(requests).toBe(5_000);
+    ).rejects.toThrow(
+      "Model provider returned no visible content or tool calls after 3 attempts",
+    );
+    expect(requests).toBe(3);
+    expect(validateCompletion).not.toHaveBeenCalled();
   });
 
   it("forwards provider-neutral retry progress from a scripted provider", async () => {

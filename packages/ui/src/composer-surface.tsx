@@ -45,7 +45,6 @@ export function ComposerSurface({ model }: { model: AppViewModel }) {
     app: { client, voiceInput, executionPolicy, projects },
     navigation: { setView, runtimeSettings, switchingProject },
     sessionApi: {
-      setThreadModel,
       injectQueuedTurn,
       reorderQueuedTurn,
       cancelQueuedTurn,
@@ -379,7 +378,7 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
   const {
     app: { voiceInput, executionPolicy, projects },
     navigation: { runtimeSettings, switchingProject },
-    sessionApi: { setThreadModel, interrupt },
+    sessionApi: { interrupt },
     state,
     taskSession: {
       newTaskDraft,
@@ -412,6 +411,7 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
     selectedAccessMode,
     selectedProvider,
     selectedModel,
+    setConversationModel,
   } = model;
   const currentDevelopmentMode: TaskDevelopmentMode = newTaskDraft
     ? developmentMode
@@ -512,13 +512,7 @@ function ComposerToolbar({ model }: { model: AppViewModel }) {
           t={t}
           onSelect={(selection) => {
             if (newTaskDraft) setDraftModel(selection);
-            else if (state.threadId) {
-              setThreadModel(
-                state.threadId,
-                selection.provider,
-                selection.model,
-              );
-            }
+            else if (state.threadId) setConversationModel(selection);
           }}
         />
         {voiceInput && !state.isRunning && (

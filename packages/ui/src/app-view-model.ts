@@ -45,6 +45,7 @@ export interface AppViewModel {
   selectedAccessMode: ConversationAccessMode;
   selectedProvider?: string;
   selectedModel?: string;
+  setConversationModel(selection: { provider: string; model: string }): void;
   headerTitle: string;
   draftStatus?: DraftPersistenceStatus;
   runFirstDemoTask(accessMode: ConversationAccessMode): Promise<void>;

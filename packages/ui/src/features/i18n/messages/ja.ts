@@ -266,6 +266,8 @@ export const ja: Messages = {
   contextCompactionCurrentTokens: "約 {tokens} tokens",
   modelConnectionRetrying:
     "モデル接続が中断しました。自動で再試行しています（{attempt}/{maxRetries}）…",
+  modelEmptyResponseRetrying:
+    "モデルが空の応答を返しました。自動で再試行しています（{attempt}/{maxRetries}）…",
   add: "追加",
   addAttachment: "画像またはファイルを追加",
   addAttachmentDescription: "画像、文書、その他のローカルファイルを選択",
@@ -841,7 +843,7 @@ export const ja: Messages = {
   step: "ステップ",
   providerConnectionTest: "Provider 接続テスト",
   providerConnectionTestDescription:
-    "未保存のモデル、接続先、キーを設定を変更せずにテストします。",
+    "未保存の設定で認証、テキスト生成、ツール呼び出しを検証します。",
   testingConnection: "テスト中…",
   testConnection: "接続をテスト",
   firstRunEyebrow: "初回セットアップ",
@@ -910,9 +912,13 @@ export const ja: Messages = {
   providerDiagnosticUnauthorized:
     "認証に失敗しました。API Key を確認してください",
   providerDiagnosticEndpointNotFound:
-    "Provider のモデル一覧エンドポイントが見つかりません",
+    "Provider の生成エンドポイントが見つかりません",
   providerDiagnosticModelNotFound:
     "接続しましたが、選択したモデルが見つかりません",
+  providerDiagnosticEmptyResponse:
+    "モデルは生成要求を受理しましたが、空の応答を返しました",
+  providerDiagnosticToolCallUnsupported:
+    "テキスト生成は成功しましたが、Threadlight のツール呼び出しテストに失敗しました",
   providerDiagnosticRateLimited: "レート制限中です。後でもう一度お試しください",
   providerDiagnosticTimeout: "接続がタイムアウトしました",
   providerDiagnosticNetwork: "ネットワークまたは DNS 接続に失敗しました",

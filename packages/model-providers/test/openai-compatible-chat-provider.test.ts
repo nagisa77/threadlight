@@ -102,6 +102,88 @@ describe("OpenAICompatibleChatProvider", () => {
     expect(turn.text).toBe("Recovered answer");
   });
 
+  it("replays successful responses that contain no visible content or tool calls", async () => {
+    const empty = {
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    };
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce(chunks([empty]))
+      .mockResolvedValueOnce(chunks([empty]))
+      .mockResolvedValueOnce(
+        chunks([{ choices: [{ delta: { content: "Recovered" } }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      streamRetryDelayMs: 0,
+      client,
+    });
+    const events: unknown[] = [];
+
+    const turn = await provider.generate(
+      { instructions: "Respond", input: "Hello", tools: [] },
+      { onEvent: (event) => events.push(event) },
+    );
+
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(events).toEqual([
+      {
+        type: "retry",
+        retryAttempt: 1,
+        maxRetries: 2,
+        reason: "empty_response",
+      },
+      {
+        type: "retry",
+        retryAttempt: 2,
+        maxRetries: 2,
+        reason: "empty_response",
+      },
+      { type: "output_text.delta", delta: "Recovered" },
+    ]);
+    expect(turn.text).toBe("Recovered");
+  });
+
+  it("fails clearly after three successful-but-empty responses", async () => {
+    const create = vi
+      .fn()
+      .mockImplementation(async () =>
+        chunks([{ choices: [{ delta: {}, finish_reason: "stop" }] }]),
+      );
+    const client = {
+      chat: { completions: { create } },
+    } as unknown as OpenAI;
+    const provider = new OpenAICompatibleChatProvider({
+      provider: "custom",
+      baseURL: "https://openrouter.test/api/v1",
+      defaultModel: "stealth/ox-alpha",
+      streamRetryDelayMs: 0,
+      client,
+    });
+
+    await expect(
+      provider.generate({
+        instructions: "Use tools",
+        input: "Check the weather",
+        tools: [
+          {
+            name: "get_weather",
+            description: "Get weather",
+            parameters: { type: "object" },
+          },
+        ],
+      }),
+    ).rejects.toThrow(
+      "custom returned no visible content or tool calls after 3 attempts (finish reason: stop)",
+    );
+    expect(create).toHaveBeenCalledTimes(3);
+  });
+
   it("retries after receiving a partial tool call", async () => {
     const partialToolCall = {
       choices: [
@@ -235,7 +317,16 @@ describe("OpenAICompatibleChatProvider", () => {
       .mockResolvedValueOnce(
         chunks([
           {
-            choices: [{ delta: { reasoning_content: "reasoning" } }],
+            choices: [
+              {
+                delta: {
+                  reasoning: "reasoning",
+                  reasoning_details: [
+                    { type: "reasoning.text", text: "reasoning" },
+                  ],
+                },
+              },
+            ],
           },
           {
             choices: [
@@ -329,6 +420,7 @@ describe("OpenAICompatibleChatProvider", () => {
         role: "assistant",
         content: null,
         reasoning_content: "reasoning",
+        reasoning_details: [{ type: "reasoning.text", text: "reasoning" }],
         tool_calls: [
           {
             id: "call-1",
@@ -800,18 +892,11 @@ describe("OpenAICompatibleChatProvider", () => {
     expect(deltas).toEqual([]);
   });
 
-  it("omits empty assistant messages when restoring or recording chat state", async () => {
+  it("omits empty assistant messages when restoring chat state", async () => {
     const create = vi
       .fn()
       .mockResolvedValueOnce(
         chunks([{ choices: [{ delta: { content: "Recovered" } }] }]),
-      )
-      .mockResolvedValueOnce(
-        chunks([
-          {
-            choices: [{ delta: { reasoning_content: "internal only" } }],
-          },
-        ]),
       );
     const client = {
       chat: { completions: { create } },
@@ -841,26 +926,11 @@ describe("OpenAICompatibleChatProvider", () => {
       },
       tools: [],
     });
-    const empty = await provider.generate({
-      instructions: "Respond",
-      input: "Install globally",
-      tools: [],
-    });
-
     expect(create.mock.calls[0]?.[0].messages).toEqual([
       { role: "system", content: "Updated instructions" },
       { role: "user", content: "Install globally" },
       { role: "user", content: "Try again" },
     ]);
-    expect(empty).toMatchObject({ text: "", toolCalls: [] });
-    expect(empty.state).toEqual({
-      protocol: "openai-compatible-chat",
-      provider: "deepseek",
-      messages: [
-        { role: "system", content: "Respond" },
-        { role: "user", content: "Install globally" },
-      ],
-    });
   });
 
   it("drops complete old chat turns before persistence when state exceeds the limit", () => {

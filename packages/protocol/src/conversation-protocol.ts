@@ -451,7 +451,7 @@ export interface ActiveTurnData {
 export interface ModelRetryData {
   retryAttempt: number;
   maxRetries: number;
-  reason: "connection_lost";
+  reason: "connection_lost" | "empty_response";
   /** Clear text streamed by the abandoned model attempt before retrying. */
   discardPartialOutput?: boolean;
 }

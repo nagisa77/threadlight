@@ -526,10 +526,15 @@ export function ModelRetryStatus({ retry }: { retry: ModelRetryData }) {
     <div className="model-retry-row" role="status" aria-busy="true">
       <RefreshCw className="spin" size={14} aria-hidden="true" />
       <span>
-        {t("modelConnectionRetrying", {
-          attempt: retry.retryAttempt,
-          maxRetries: retry.maxRetries,
-        })}
+        {t(
+          retry.reason === "empty_response"
+            ? "modelEmptyResponseRetrying"
+            : "modelConnectionRetrying",
+          {
+            attempt: retry.retryAttempt,
+            maxRetries: retry.maxRetries,
+          },
+        )}
       </span>
     </div>
   );

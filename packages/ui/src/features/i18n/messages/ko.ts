@@ -262,6 +262,8 @@ export const ko: Messages = {
   contextCompactionCurrentTokens: "약 {tokens} tokens",
   modelConnectionRetrying:
     "모델 연결이 중단되었습니다. 자동으로 다시 시도 중입니다({attempt}/{maxRetries})…",
+  modelEmptyResponseRetrying:
+    "모델이 빈 응답을 반환했습니다. 자동으로 다시 시도 중입니다({attempt}/{maxRetries})…",
   add: "추가",
   addAttachment: "이미지 또는 파일 추가",
   addAttachmentDescription: "이미지, 문서 또는 기타 로컬 파일 선택",
@@ -834,7 +836,7 @@ export const ko: Messages = {
   step: "단계",
   providerConnectionTest: "Provider 연결 테스트",
   providerConnectionTestDescription:
-    "저장하지 않은 모델, 엔드포인트, 키로 설정 변경 없이 테스트합니다.",
+    "저장하지 않은 현재 설정으로 인증, 텍스트 생성 및 도구 호출을 검증합니다.",
   testingConnection: "테스트 중…",
   testConnection: "연결 테스트",
   firstRunEyebrow: "최초 설정",
@@ -902,8 +904,12 @@ export const ko: Messages = {
   providerDiagnosticInvalidUrl: "Base URL이 올바르지 않습니다",
   providerDiagnosticUnauthorized: "인증 실패: API Key를 확인하세요",
   providerDiagnosticEndpointNotFound:
-    "Provider 모델 목록 엔드포인트를 찾지 못했습니다",
+    "Provider 생성 엔드포인트를 찾지 못했습니다",
   providerDiagnosticModelNotFound: "연결됐지만 선택한 모델을 찾지 못했습니다",
+  providerDiagnosticEmptyResponse:
+    "모델이 생성 요청을 수락했지만 빈 응답을 반환했습니다",
+  providerDiagnosticToolCallUnsupported:
+    "텍스트 생성은 성공했지만 Threadlight 도구 호출 테스트에 실패했습니다",
   providerDiagnosticRateLimited: "요청 제한 중입니다. 나중에 다시 시도하세요",
   providerDiagnosticTimeout: "연결 시간이 초과되었습니다",
   providerDiagnosticNetwork: "네트워크 또는 DNS 연결에 실패했습니다",

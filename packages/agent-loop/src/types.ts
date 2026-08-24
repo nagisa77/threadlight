@@ -159,7 +159,7 @@ export interface ModelTurn {
 export interface ModelRetryProgress {
   retryAttempt: number;
   maxRetries: number;
-  reason: "connection_lost";
+  reason: "connection_lost" | "empty_response";
   /** The provider abandoned the current attempt after emitting text. */
   discardPartialOutput?: boolean;
 }

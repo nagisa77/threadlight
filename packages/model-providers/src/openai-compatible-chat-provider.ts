@@ -36,6 +36,8 @@ export interface OpenAICompatibleChatProviderOptions {
   stateProvider?: string;
   /** Adapter-local stream replays after transient disconnects. */
   maxStreamRetries?: number;
+  /** Adapter-local replays when a successful response has no usable payload. */
+  maxEmptyResponseRetries?: number;
   streamRetryDelayMs?: number;
   client?: OpenAI;
 }
@@ -51,6 +53,7 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
   private readonly provider: string;
   private readonly stateProvider: string;
   private readonly maxStreamRetries: number;
+  private readonly maxEmptyResponseRetries: number;
   private readonly streamRetryDelayMs: number;
 
   constructor(options: OpenAICompatibleChatProviderOptions) {
@@ -64,6 +67,11 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
     this.provider = options.provider;
     this.stateProvider = options.stateProvider ?? options.provider;
     this.maxStreamRetries = boundedInteger(options.maxStreamRetries ?? 1, 0, 3);
+    this.maxEmptyResponseRetries = boundedInteger(
+      options.maxEmptyResponseRetries ?? 2,
+      0,
+      3,
+    );
     this.streamRetryDelayMs = boundedInteger(
       options.streamRetryDelayMs ?? 500,
       0,
@@ -155,11 +163,14 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
         stream_options: { include_usage: true },
       };
 
-    let retryAttempt = 0;
+    let streamRetryAttempt = 0;
+    let emptyResponseRetryAttempt = 0;
     while (true) {
       const pendingCalls = new Map<number, PendingToolCall>();
       let text = "";
       let reasoningContent = "";
+      const reasoningDetails: unknown[] = [];
+      let finishReason: string | undefined;
       let usage: Partial<TokenUsage> | undefined;
       const textStream = createToolAwareTextStream(
         request.tools.length > 0,
@@ -182,7 +193,11 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
             };
           }
 
-          const delta = chunk.choices[0]?.delta;
+          const choice = chunk.choices[0];
+          if (typeof choice?.finish_reason === "string") {
+            finishReason = choice.finish_reason;
+          }
+          const delta = choice?.delta;
           if (!delta) continue;
 
           if (delta.content) {
@@ -190,11 +205,14 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
             textStream.push(delta.content);
           }
 
-          const reasoningDelta = (delta as Record<string, unknown>)[
-            "reasoning_content"
-          ];
+          const rawDelta = delta as Record<string, unknown>;
+          const reasoningDelta =
+            rawDelta.reasoning_content ?? rawDelta.reasoning;
           if (typeof reasoningDelta === "string") {
             reasoningContent += reasoningDelta;
+          }
+          if (Array.isArray(rawDelta.reasoning_details)) {
+            reasoningDetails.push(...rawDelta.reasoning_details);
           }
 
           for (const toolCall of delta.tool_calls ?? []) {
@@ -213,15 +231,15 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
         }
       } catch (error) {
         const canRetry =
-          retryAttempt < this.maxStreamRetries &&
+          streamRetryAttempt < this.maxStreamRetries &&
           !request.signal?.aborted &&
           isTransientStreamError(error);
         if (!canRetry) throw error;
 
-        retryAttempt += 1;
+        streamRetryAttempt += 1;
         options.onEvent?.({
           type: "retry",
-          retryAttempt,
+          retryAttempt: streamRetryAttempt,
           maxRetries: this.maxStreamRetries,
           reason: "connection_lost",
           ...(text.length > 0 ? { discardPartialOutput: true } : {}),
@@ -256,11 +274,30 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
       } else {
         textStream.finish(false);
       }
+      if (!text.trim() && toolCalls.length === 0) {
+        if (emptyResponseRetryAttempt < this.maxEmptyResponseRetries) {
+          emptyResponseRetryAttempt += 1;
+          options.onEvent?.({
+            type: "retry",
+            retryAttempt: emptyResponseRetryAttempt,
+            maxRetries: this.maxEmptyResponseRetries,
+            reason: "empty_response",
+          });
+          await waitForRetry(this.streamRetryDelayMs, request.signal);
+          continue;
+        }
+        throw new Error(
+          `${this.provider} returned no visible content or tool calls after ${emptyResponseRetryAttempt + 1} attempts${finishReason ? ` (finish reason: ${finishReason})` : ""}. The selected model may not support this provider's tool-calling protocol.`,
+        );
+      }
       const assistantMessage: ChatMessage = recovered
         ? {
             ...assistantHistoryMessage(text, toolCalls),
             ...(reasoningContent
               ? { reasoning_content: reasoningContent }
+              : {}),
+            ...(reasoningDetails.length > 0
+              ? { reasoning_details: reasoningDetails }
               : {}),
           }
         : {
@@ -268,6 +305,9 @@ export class OpenAICompatibleChatProvider implements ModelProvider {
             content: text || null,
             ...(reasoningContent
               ? { reasoning_content: reasoningContent }
+              : {}),
+            ...(reasoningDetails.length > 0
+              ? { reasoning_details: reasoningDetails }
               : {}),
             ...(toolCalls.length > 0
               ? {

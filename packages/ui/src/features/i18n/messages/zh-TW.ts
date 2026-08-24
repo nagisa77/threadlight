@@ -240,6 +240,8 @@ export const zhTW: Messages = {
   contextCompactionCurrentTokens: "約 {tokens} tokens",
   modelConnectionRetrying:
     "模型連線中斷，正在自動重試（{attempt}/{maxRetries}）…",
+  modelEmptyResponseRetrying:
+    "模型傳回空回應，正在自動重試（{attempt}/{maxRetries}）…",
   add: "新增",
   addAttachment: "新增圖片或檔案",
   addAttachmentDescription: "選擇圖片、文件或其他本機檔案",
@@ -779,7 +781,7 @@ export const zhTW: Messages = {
   step: "步驟",
   providerConnectionTest: "Provider 連線測試",
   providerConnectionTestDescription:
-    "使用目前未儲存的模型、位址和金鑰測試連線，不會寫入設定。",
+    "使用目前未儲存的設定驗證認證、文字生成與工具呼叫，不會寫入設定。",
   testingConnection: "正在測試…",
   testConnection: "測試連線",
   firstRunEyebrow: "首次設定",
@@ -842,8 +844,11 @@ export const zhTW: Messages = {
   providerDiagnosticMissingKey: "缺少此 Provider 的 API Key",
   providerDiagnosticInvalidUrl: "Base URL 無效",
   providerDiagnosticUnauthorized: "驗證失敗，請檢查 API Key",
-  providerDiagnosticEndpointNotFound: "找不到 Provider 的模型清單介面",
+  providerDiagnosticEndpointNotFound: "找不到 Provider 的生成介面",
   providerDiagnosticModelNotFound: "連線成功，但找不到所選模型",
+  providerDiagnosticEmptyResponse: "模型接受了生成要求，但傳回空回應",
+  providerDiagnosticToolCallUnsupported:
+    "文字生成正常，但模型未通過 Threadlight 工具呼叫測試",
   providerDiagnosticRateLimited: "Provider 正在限流，請稍後重試",
   providerDiagnosticTimeout: "連線逾時",
   providerDiagnosticNetwork: "網路或 DNS 連線失敗",

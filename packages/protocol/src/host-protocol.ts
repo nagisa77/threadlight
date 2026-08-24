@@ -175,6 +175,8 @@ export type HostProviderDiagnosticCode =
   | "unauthorized"
   | "endpoint_not_found"
   | "model_not_found"
+  | "empty_response"
+  | "tool_call_unsupported"
   | "rate_limited"
   | "timeout"
   | "network"

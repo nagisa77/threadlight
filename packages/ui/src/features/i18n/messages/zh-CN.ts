@@ -234,6 +234,8 @@ export const zh = {
   contextCompactionCurrentTokens: "约 {tokens} tokens",
   modelConnectionRetrying:
     "模型连接中断，正在自动重试（{attempt}/{maxRetries}）…",
+  modelEmptyResponseRetrying:
+    "模型返回了空响应，正在自动重试（{attempt}/{maxRetries}）…",
   add: "添加",
   addAttachment: "添加图片或文件",
   addAttachmentDescription: "从本地选择图片、文档或其他文件",
@@ -770,7 +772,7 @@ export const zh = {
   step: "步骤",
   providerConnectionTest: "Provider 连接测试",
   providerConnectionTestDescription:
-    "使用当前未保存的模型、地址和密钥测试连接，不会写入设置。",
+    "使用当前未保存的配置验证认证、文本生成和工具调用，不会写入设置。",
   testingConnection: "正在测试…",
   testConnection: "测试连接",
   firstRunEyebrow: "首次设置",
@@ -834,8 +836,11 @@ export const zh = {
   providerDiagnosticMissingKey: "缺少此 Provider 的 API Key",
   providerDiagnosticInvalidUrl: "Base URL 无效",
   providerDiagnosticUnauthorized: "认证失败，请检查 API Key",
-  providerDiagnosticEndpointNotFound: "未找到 Provider 的模型列表接口",
+  providerDiagnosticEndpointNotFound: "未找到 Provider 的生成接口",
   providerDiagnosticModelNotFound: "连接成功，但未找到所选模型",
+  providerDiagnosticEmptyResponse: "模型接受了生成请求，但返回了空响应",
+  providerDiagnosticToolCallUnsupported:
+    "文本生成正常，但模型未通过 Threadlight 工具调用测试",
   providerDiagnosticRateLimited: "Provider 正在限流，请稍后重试",
   providerDiagnosticTimeout: "连接超时",
   providerDiagnosticNetwork: "网络或 DNS 连接失败",

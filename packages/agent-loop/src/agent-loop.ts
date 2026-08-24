@@ -16,6 +16,7 @@ import type {
 const EMPTY_RESPONSE_RETRY_INSTRUCTION =
   "Your previous response contained neither visible content nor a tool call. Continue by returning a non-empty response or calling an available tool.";
 const MAX_CONSECUTIVE_COMPLETION_REJECTIONS = 3;
+const MAX_CONSECUTIVE_EMPTY_RESPONSES = 3;
 
 export class AgentLoop {
   constructor(private readonly provider: ModelProvider) {}
@@ -69,6 +70,7 @@ export class AgentLoop {
     let toolResults: ToolResult[] = [];
     let continuationInput: string | undefined;
     let consecutiveCompletionRejections = 0;
+    let consecutiveEmptyResponses = 0;
 
     for (let step = 1; step <= maxSteps; step += 1) {
       options.signal?.throwIfAborted();
@@ -187,6 +189,7 @@ export class AgentLoop {
         : undefined;
       if (additionalInput) {
         consecutiveCompletionRejections = 0;
+        consecutiveEmptyResponses = 0;
         continuationInput = mergeAdditionalInput(
           continuationInput,
           additionalInput,
@@ -198,6 +201,26 @@ export class AgentLoop {
       }
 
       if (turn.toolCalls.length === 0) {
+        const controlledOutput = options.controller?.resolveCompletionOutput
+          ? await options.controller.resolveCompletionOutput(
+              turn,
+              controllerContext,
+            )
+          : undefined;
+        const output = controlledOutput ?? turn.text;
+        if (!output.trim()) {
+          consecutiveEmptyResponses += 1;
+          if (consecutiveEmptyResponses >= MAX_CONSECUTIVE_EMPTY_RESPONSES) {
+            throw new Error(
+              `Model provider returned no visible content or tool calls after ${MAX_CONSECUTIVE_EMPTY_RESPONSES} attempts.`,
+            );
+          }
+          consecutiveCompletionRejections = 0;
+          continuationInput = EMPTY_RESPONSE_RETRY_INSTRUCTION;
+          toolResults = [];
+          continue;
+        }
+        consecutiveEmptyResponses = 0;
         const completionError = options.controller?.validateCompletion
           ? await options.controller.validateCompletion(turn, controllerContext)
           : undefined;
@@ -216,18 +239,6 @@ export class AgentLoop {
           continue;
         }
         consecutiveCompletionRejections = 0;
-        const controlledOutput = options.controller?.resolveCompletionOutput
-          ? await options.controller.resolveCompletionOutput(
-              turn,
-              controllerContext,
-            )
-          : undefined;
-        const output = controlledOutput ?? turn.text;
-        if (!output.trim()) {
-          continuationInput = EMPTY_RESPONSE_RETRY_INSTRUCTION;
-          toolResults = [];
-          continue;
-        }
         emit({ type: "message.completed", runId, text: output });
         const durationMs = statistics.elapsedSince(startedAt);
         emit({ type: "run.completed", runId, steps: step, durationMs });
@@ -243,6 +254,7 @@ export class AgentLoop {
       }
 
       consecutiveCompletionRejections = 0;
+      consecutiveEmptyResponses = 0;
       toolResults = [];
       for (const [index, call] of turn.toolCalls.entries()) {
         options.signal?.throwIfAborted();

@@ -152,6 +152,8 @@ export type ProviderDiagnosticCode =
   | "unauthorized"
   | "endpoint_not_found"
   | "model_not_found"
+  | "empty_response"
+  | "tool_call_unsupported"
   | "rate_limited"
   | "timeout"
   | "network"
@@ -1136,6 +1138,10 @@ function providerDiagnosticMessage(
       return t("providerDiagnosticEndpointNotFound");
     case "model_not_found":
       return t("providerDiagnosticModelNotFound");
+    case "empty_response":
+      return t("providerDiagnosticEmptyResponse");
+    case "tool_call_unsupported":
+      return t("providerDiagnosticToolCallUnsupported");
     case "rate_limited":
       return t("providerDiagnosticRateLimited");
     case "timeout":
