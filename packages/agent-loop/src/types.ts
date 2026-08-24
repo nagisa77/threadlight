@@ -264,6 +264,8 @@ export interface RunOptions {
   /** Monotonic clock used for duration measurements. */
   now?: () => number;
   onEvent?: (event: AgentEvent) => void;
+  /** Include complete provider-neutral history in every durable checkpoint. */
+  checkpointHistory?: boolean;
   /**
    * Persists opaque provider state at safe model/tool boundaries.
    *
@@ -276,7 +278,11 @@ export interface RunOptions {
 export interface AgentRunCheckpoint {
   step: number;
   phase:
-    "context_compacted" | "model_completed" | "tool_started" | "tool_completed";
+    | "context_compacted"
+    | "model_started"
+    | "model_completed"
+    | "tool_started"
+    | "tool_completed";
   modelState?: unknown;
   /** Last provider-reported context size for the next preflight check. */
   contextTokens?: number;

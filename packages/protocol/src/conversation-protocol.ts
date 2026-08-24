@@ -418,6 +418,7 @@ export interface AgentThreadData {
     step: number;
     phase:
       | "context_compacted"
+      | "model_started"
       | "model_completed"
       | "tool_started"
       | "tool_completed";
@@ -553,6 +554,8 @@ export type ContextCompactionProgressData = Omit<
 
 export interface ConversationMessageData {
   id: string;
+  /** Stable turn identity shared by the user, interrupted, and final messages. */
+  turnId?: string;
   role: "user" | "assistant";
   text: string;
   attachments?: readonly AttachmentData[];
@@ -750,7 +753,7 @@ export interface ThreadlightMethodMap {
     params: {
       threadId: string;
       input: string;
-      /** Resume the immediately preceding user-interrupted turn. */
+      /** Resume the immediately preceding user-interrupted turn with its original turn identity and configuration. */
       continuation?: boolean;
       mode?: TurnMode;
       accessMode?: ConversationAccessMode;

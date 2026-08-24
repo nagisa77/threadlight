@@ -8,12 +8,18 @@ import {
 import { basename, dirname, join } from "node:path";
 
 import type {
+  AttachmentData,
   AgentTaskData,
   ConversationAccessMode,
   ConversationMessageData,
+  MessageCapabilityData,
   QueuedTurnData,
+  TurnMode,
 } from "@threadlight/protocol";
-import type { ModelConversationMessage } from "@threadlight/agent-loop";
+import type {
+  AgentRunCheckpoint,
+  ModelConversationMessage,
+} from "@threadlight/agent-loop";
 
 import {
   validatePromptSnapshot,
@@ -37,7 +43,11 @@ export interface StoredAgentThread {
   fullOutput?: string;
   checkpointStep?: number;
   checkpointPhase?:
-    "context_compacted" | "model_completed" | "tool_started" | "tool_completed";
+    | "context_compacted"
+    | "model_started"
+    | "model_completed"
+    | "tool_started"
+    | "tool_completed";
   interruption?: {
     previousStatus: "queued" | "running";
     interruptedAt: string;
@@ -54,6 +64,22 @@ export interface StoredAgentRun {
   createdAt: string;
   updatedAt: string;
   agents: readonly StoredAgentThread[];
+}
+
+/** Durable identity, configuration, and safe model boundary for one resumable turn. */
+export interface StoredResumableTurn {
+  version: 1;
+  turnId: string;
+  assistantMessageId: string;
+  input: string;
+  mode: TurnMode;
+  accessMode: ConversationAccessMode;
+  attachments: readonly AttachmentData[];
+  capabilityRefs: readonly string[];
+  capabilities: readonly MessageCapabilityData[];
+  provider?: string;
+  model?: string;
+  checkpoint?: AgentRunCheckpoint;
 }
 
 /** Host-owned rolling summary; the durable user-visible transcript stays intact. */
@@ -85,6 +111,7 @@ export interface StoredConversation {
   messages: readonly ConversationMessageData[];
   queuedTurns?: readonly QueuedTurnData[];
   modelState?: unknown;
+  resumableTurn?: StoredResumableTurn;
   contextCompaction?: StoredContextCompaction;
   agentSnapshot?: StoredAgentSnapshot;
   agentRuns?: readonly StoredAgentRun[];
@@ -221,6 +248,8 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     (conversation.queuedTurns === undefined ||
       (Array.isArray(conversation.queuedTurns) &&
         conversation.queuedTurns.every(isQueuedTurn))) &&
+    (conversation.resumableTurn === undefined ||
+      isStoredResumableTurn(conversation.resumableTurn)) &&
     (conversation.contextCompaction === undefined ||
       isStoredContextCompaction(conversation.contextCompaction)) &&
     (conversation.agentSnapshot === undefined ||
@@ -228,6 +257,45 @@ function isStoredConversation(value: unknown): value is StoredConversation {
     (conversation.agentRuns === undefined ||
       (Array.isArray(conversation.agentRuns) &&
         conversation.agentRuns.every(isStoredAgentRun)))
+  );
+}
+
+function isStoredResumableTurn(value: unknown): value is StoredResumableTurn {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const turn = value as Record<string, unknown>;
+  return (
+    turn.version === 1 &&
+    typeof turn.turnId === "string" &&
+    typeof turn.assistantMessageId === "string" &&
+    typeof turn.input === "string" &&
+    (turn.mode === "default" || turn.mode === "plan") &&
+    (turn.accessMode === "approval" || turn.accessMode === "full") &&
+    Array.isArray(turn.attachments) &&
+    turn.attachments.every(isAttachment) &&
+    Array.isArray(turn.capabilityRefs) &&
+    turn.capabilityRefs.every((ref) => typeof ref === "string") &&
+    Array.isArray(turn.capabilities) &&
+    turn.capabilities.every(isMessageCapability) &&
+    (turn.provider === undefined || typeof turn.provider === "string") &&
+    (turn.model === undefined || typeof turn.model === "string") &&
+    (turn.checkpoint === undefined || isAgentRunCheckpoint(turn.checkpoint))
+  );
+}
+
+function isAgentRunCheckpoint(value: unknown): value is AgentRunCheckpoint {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const checkpoint = value as Record<string, unknown>;
+  return (
+    Number.isInteger(checkpoint.step) &&
+    Number(checkpoint.step) > 0 &&
+    (checkpoint.phase === "context_compacted" ||
+      checkpoint.phase === "model_started" ||
+      checkpoint.phase === "model_completed" ||
+      checkpoint.phase === "tool_started" ||
+      checkpoint.phase === "tool_completed") &&
+    Array.isArray(checkpoint.contextHistory) &&
+    checkpoint.contextHistory.every(isModelConversationMessage) &&
+    isTokenUsage(checkpoint.usage)
   );
 }
 
@@ -293,6 +361,7 @@ function isStoredAgentThread(value: unknown): value is StoredAgentThread {
         Number(thread.checkpointStep) >= 0)) &&
     (thread.checkpointPhase === undefined ||
       thread.checkpointPhase === "context_compacted" ||
+      thread.checkpointPhase === "model_started" ||
       thread.checkpointPhase === "model_completed" ||
       thread.checkpointPhase === "tool_started" ||
       thread.checkpointPhase === "tool_completed") &&
@@ -386,6 +455,7 @@ function isConversationMessage(value: unknown): boolean {
   const message = value as Record<string, unknown>;
   return (
     typeof message.id === "string" &&
+    (message.turnId === undefined || typeof message.turnId === "string") &&
     (message.role === "user" || message.role === "assistant") &&
     typeof message.text === "string" &&
     (message.attachments === undefined ||

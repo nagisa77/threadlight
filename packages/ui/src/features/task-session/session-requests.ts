@@ -88,20 +88,12 @@ export async function requestTurnStart(
 
 export async function requestTurnContinuation(
   client: {
-    continueTurn(
-      threadId: string,
-      accessMode: ConversationAccessMode,
-      provider?: string,
-      model?: string,
-    ): Promise<unknown>;
+    continueTurn(threadId: string): Promise<unknown>;
   },
   threadId: string,
-  accessMode: ConversationAccessMode = "approval",
-  provider?: string,
-  model?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   try {
-    await client.continueTurn(threadId, accessMode, provider, model);
+    await client.continueTurn(threadId);
     return { ok: true };
   } catch (error) {
     return {

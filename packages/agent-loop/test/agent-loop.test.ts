@@ -4,6 +4,7 @@ import { AgentLoop } from "../src/agent-loop.js";
 import { defineAgent, defineTool } from "../src/types.js";
 import type {
   AgentEvent,
+  AgentRunCheckpoint,
   BeforeModelRequestContext,
   ModelProvider,
   ModelRequest,
@@ -35,10 +36,7 @@ class ScriptedProvider implements ModelProvider {
 describe("AgentLoop", () => {
   it("prepares every model request and can replace opaque tool linkage with visible history", async () => {
     const requests: ModelRequest[] = [];
-    const checkpoints: Array<{
-      phase: string;
-      contextHistory?: readonly { role: string; text: string }[];
-    }> = [];
+    const checkpoints: AgentRunCheckpoint[] = [];
     const beforeModelRequest = vi.fn(
       async (context: BeforeModelRequestContext) => {
         if (context.step !== 2) return;
@@ -97,6 +95,7 @@ describe("AgentLoop", () => {
       "Start",
       {
         beforeModelRequest,
+        checkpointHistory: true,
         onCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
       },
     );
@@ -129,6 +128,22 @@ describe("AgentLoop", () => {
         phase: "context_compacted",
         modelState: undefined,
         contextHistory: expect.any(Array),
+      }),
+    );
+    expect(checkpoints).toContainEqual(
+      expect.objectContaining({
+        phase: "tool_completed",
+        contextHistory: expect.arrayContaining([
+          expect.objectContaining({
+            role: "user",
+            toolResults: [
+              expect.objectContaining({
+                callId: "call-read",
+                output: "file contents",
+              }),
+            ],
+          }),
+        ]),
       }),
     );
     expect(result.usage).toEqual({

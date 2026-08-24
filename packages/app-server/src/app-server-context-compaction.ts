@@ -95,18 +95,23 @@ export async function completeManualContextCompaction({
     compaction.durationMs,
   );
   const assistantMessage: ConversationMessageData = {
-    id: randomUUID(),
+    id:
+      thread.conversation.resumableTurn?.turnId === turnId
+        ? thread.conversation.resumableTurn.assistantMessageId
+        : randomUUID(),
+    turnId,
     role: "assistant",
     text: "",
     ...(compaction.receipt ? { contextCompaction: compaction.receipt } : {}),
     diagnostics: turnDiagnostics,
   };
-  await state.mutateConversation(thread, (conversation) =>
-    state.updateConversation(conversation, [
+  await state.mutateConversation(thread, (conversation) => {
+    const { resumableTurn: _resumableTurn, ...completed } = conversation;
+    return state.updateConversation(completed, [
       ...conversation.messages,
       assistantMessage,
-    ]),
-  );
+    ]);
+  });
   await cleanup();
   thread.revision += 1;
   state.notify("turn/completed", {

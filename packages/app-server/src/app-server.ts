@@ -6,6 +6,7 @@ import type {
   Agent,
   AgentEvent,
   AgentLoop,
+  AgentRunCheckpoint,
   AgentRuntimeSnapshot,
   AgentTreeEvent,
   AgentTreeSnapshot,
@@ -45,7 +46,6 @@ import type {
   MessageCapabilityData,
   ModelRetryData,
   ProcessSnapshotData,
-  QueuedTurnData,
   SendMessage,
   SuggestionLanguage,
   ThreadlightNotificationMap,
@@ -62,6 +62,7 @@ import {
   type StoredAgentRun,
   type StoredAgentThread,
   type StoredConversation,
+  type StoredResumableTurn,
 } from "./conversation-store.js";
 import {
   DEFAULT_SUGGESTION_REFRESH_INTERVAL_MS,
@@ -134,6 +135,12 @@ import {
   findConversationActivity,
 } from "./conversation-display.js";
 import type { ThreadState } from "./thread-state.js";
+import { consumeInjectedInput } from "./injected-input.js";
+import {
+  continuationHistory,
+  upsertTurnAssistantMessage,
+  withoutResumableTurn,
+} from "./turn-continuation-context.js";
 export type { ThreadState } from "./thread-state.js";
 
 export interface ProcessController {
@@ -402,7 +409,8 @@ export class AppServer {
     const thread = await this.requireThread(threadId, runtimeError);
     if (
       !thread.activeTurn &&
-      (thread.conversation.queuedTurns?.length ?? 0) > 0
+      (thread.conversation.queuedTurns?.length ?? 0) > 0 &&
+      !thread.conversation.messages.at(-1)?.interrupted
     ) {
       setTimeout(() => {
         void this.turnQueue().startNextQueuedTurn(threadId, thread!);
@@ -416,7 +424,9 @@ export class AppServer {
       queuedTurns: thread.conversation.queuedTurns ?? [],
       revision: thread.revision,
       ...(activeTurn ? { activeTurn: activeTurnForDisplay(activeTurn) } : {}),
-      ...(thread.conversation.messages.at(-1)?.interrupted
+      ...(thread.conversation.messages.at(-1)?.interrupted &&
+      thread.conversation.resumableTurn?.turnId ===
+        thread.conversation.messages.at(-1)?.turnId
         ? { continuationAvailable: true as const }
         : {}),
       ...(thread.conversation.provider
@@ -573,7 +583,14 @@ export class AppServer {
     provider?: string,
     model?: string,
     currentInputPersisted = true,
+    continuation?: StoredResumableTurn,
   ): Promise<void> {
+    const taskInput = continuation?.input ?? input;
+    const assistantMessageId =
+      continuation?.assistantMessageId ??
+      (thread.conversation.resumableTurn?.turnId === turnId
+        ? thread.conversation.resumableTurn.assistantMessageId
+        : randomUUID());
     this.state().notify("turn/started", {
       threadId,
       turnId,
@@ -587,6 +604,7 @@ export class AppServer {
     );
     let runId: string | undefined;
     let cleanedUp = false;
+    let turnInterrupted = false;
     const cleanup = async () => {
       if (cleanedUp) return;
       cleanedUp = true;
@@ -627,7 +645,7 @@ export class AppServer {
       );
       let attachmentToolInstalled = attachments.length > 0;
       const explicitSkillRefs = thread.runtime?.explicitSkillRefsForInput
-        ? await thread.runtime.explicitSkillRefsForInput(input)
+        ? await thread.runtime.explicitSkillRefsForInput(taskInput)
         : [];
       const capabilityRefsForTurn = [...capabilityRefs, ...explicitSkillRefs];
       const capabilityRuntime = thread.runtime?.resolveCapabilities
@@ -693,13 +711,13 @@ export class AppServer {
             : undefined,
           sourceCitationController,
           new ProjectMemoryReminderController(),
-          new ResearchCoverageRunController(input),
+          new ResearchCoverageRunController(taskInput),
           attachmentRuntime.controller,
         ]),
       );
       const turnPromptBlocks = uniquePromptBlocks([
         ...promptBlocksFromSnapshot(thread.promptSnapshot),
-        ...((await thread.runtime?.promptBlocksForTurn?.(input)) ?? []),
+        ...((await thread.runtime?.promptBlocksForTurn?.(taskInput)) ?? []),
         ...capabilityRuntime.promptBlocks,
         ...(mode === "plan"
           ? [
@@ -735,13 +753,25 @@ export class AppServer {
       });
       const runOptions = {
         toolScopeId: threadId,
-        modelState: thread.conversation.modelState,
-        history: runtimeContextCompaction.history,
+        modelState: continuation ? undefined : thread.conversation.modelState,
+        history:
+          continuationHistory(
+            continuation?.checkpoint,
+            thread.conversation.messages.at(-1),
+          ) ?? runtimeContextCompaction.history,
         beforeModelRequest: runtimeContextCompaction.beforeModelRequest,
         controller: runController,
         signal: controller.signal,
+        checkpointHistory: true,
+        onCheckpoint: (checkpoint: AgentRunCheckpoint) =>
+          this.state().persistResumableTurnCheckpoint(
+            thread,
+            turnId,
+            checkpoint,
+          ),
         takeAdditionalInput: async () => {
-          const injected = await this.consumeInjectedInput(
+          const injected = await consumeInjectedInput(
+            this.state(),
             threadId,
             turnId,
             thread,
@@ -845,7 +875,8 @@ export class AppServer {
       }
 
       const assistantMessage: ConversationMessageData = {
-        id: randomUUID(),
+        id: assistantMessageId,
+        turnId,
         role: "assistant",
         text: sourcedOutput.text,
         ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
@@ -870,8 +901,8 @@ export class AppServer {
       await this.state().mutateConversation(thread, (conversation) =>
         this.state().finalizeAgentRun(
           this.state().updateConversation(
-            conversation,
-            [...conversation.messages, assistantMessage],
+            withoutResumableTurn(conversation),
+            upsertTurnAssistantMessage(conversation.messages, assistantMessage),
             { modelState: persistedModelState },
           ),
           turnId,
@@ -908,6 +939,7 @@ export class AppServer {
       const interrupted =
         controller.signal.reason instanceof Error &&
         controller.signal.reason.message === TURN_INTERRUPTED_BY_CLIENT_MESSAGE;
+      turnInterrupted = interrupted;
       const turnDiagnostics = diagnostics.complete(
         "failed",
         this.now(),
@@ -915,7 +947,8 @@ export class AppServer {
         thread.activeTurn?.agentTree,
       );
       const assistantMessage: ConversationMessageData = {
-        id: randomUUID(),
+        id: assistantMessageId,
+        turnId,
         role: "assistant",
         text: interrupted
           ? (thread.activeTurn?.streamingText ?? "")
@@ -931,12 +964,15 @@ export class AppServer {
       try {
         await this.state().mutateConversation(thread, (conversation) =>
           this.state().finalizeAgentRun(
-            this.state().updateConversation(conversation, [
-              ...conversation.messages,
-              assistantMessage,
-            ]),
+            this.state().updateConversation(
+              interrupted ? conversation : withoutResumableTurn(conversation),
+              upsertTurnAssistantMessage(
+                conversation.messages,
+                assistantMessage,
+              ),
+            ),
             turnId,
-            "failed",
+            interrupted ? "interrupted" : "failed",
           ),
         );
       } catch (persistenceError) {
@@ -957,91 +993,10 @@ export class AppServer {
     } finally {
       await cleanup();
       if (thread.activeTurn?.id === turnId) thread.activeTurn = undefined;
-      await this.turnQueue().startNextQueuedTurn(threadId, thread);
-    }
-  }
-
-  private async consumeInjectedInput(
-    threadId: string,
-    turnId: string,
-    thread: ThreadState,
-  ): Promise<QueuedTurnData | undefined> {
-    if (
-      thread.activeTurn?.id !== turnId ||
-      thread.injectedInputPendingModelResponse
-    ) {
-      return;
-    }
-    let consumed: QueuedTurnData | undefined;
-    let message: ConversationMessageData | undefined;
-    let precedingAssistantMessage: ConversationMessageData | undefined;
-    const pendingAssistantOutput = thread.pendingAssistantOutput;
-    const finalizedPendingOutput = thread.activeTurn?.sourceCitations?.finalize(
-      pendingAssistantOutput?.text ?? "",
-    );
-    await this.state().mutateConversation(thread, (conversation) => {
-      consumed = (conversation.queuedTurns ?? []).find(
-        ({ delivery }) => delivery === "inject",
-      );
-      if (!consumed) return conversation;
-      message = {
-        id: randomUUID(),
-        role: "user",
-        text: consumed.input,
-        followUpDelivery: "inject",
-        ...(consumed.attachments?.length
-          ? { attachments: consumed.attachments }
-          : {}),
-      };
-      if (pendingAssistantOutput || thread.progress.length > 0) {
-        precedingAssistantMessage = {
-          id: randomUUID(),
-          role: "assistant",
-          text:
-            finalizedPendingOutput?.text ?? pendingAssistantOutput?.text ?? "",
-          ...(thread.progress.length > 0 ? { progress: thread.progress } : {}),
-          ...(finalizedPendingOutput?.sources.length
-            ? {
-                sources: finalizedPendingOutput.sources,
-                citations: finalizedPendingOutput.citations,
-              }
-            : {}),
-        };
-      }
-      return this.state().updateConversation(
-        {
-          ...conversation,
-          queuedTurns: (conversation.queuedTurns ?? []).filter(
-            ({ id }) => id !== consumed?.id,
-          ),
-        },
-        [
-          ...conversation.messages,
-          ...(precedingAssistantMessage ? [precedingAssistantMessage] : []),
-          message,
-        ],
-      );
-    });
-    if (!consumed || !message) return;
-    thread.injectedInputPendingModelResponse = true;
-    if (
-      precedingAssistantMessage &&
-      thread.pendingAssistantOutput === pendingAssistantOutput
-    ) {
-      thread.pendingAssistantOutput = undefined;
-      thread.progress = [];
-      if (thread.activeTurn?.id === turnId) {
-        thread.activeTurn.streamingText = "";
+      if (!turnInterrupted) {
+        await this.turnQueue().startNextQueuedTurn(threadId, thread);
       }
     }
-    this.state().notifyQueueUpdated(threadId, thread);
-    this.state().notify("turn/follow-up/consumed", {
-      threadId,
-      itemId: consumed.id,
-      message,
-      ...(precedingAssistantMessage ? { precedingAssistantMessage } : {}),
-    });
-    return consumed;
   }
 
   private requestConversationTitle(

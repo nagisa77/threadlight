@@ -21,9 +21,9 @@ export function useTurnContinuationActions(
 ) {
   const continueTurn = useCallback(
     async (
-      accessMode: ConversationAccessMode = "approval",
-      provider?: string,
-      model?: string,
+      _accessMode: ConversationAccessMode = "approval",
+      _provider?: string,
+      _model?: string,
     ) => {
       if (!state.threadId || state.isRunning || !canContinueSession(state)) {
         return false;
@@ -33,13 +33,7 @@ export function useTurnContinuationActions(
       updateSession(threadId, {
         type: "continuation.started",
       });
-      const started = await requestTurnContinuation(
-        client,
-        threadId,
-        accessMode,
-        provider,
-        model,
-      );
+      const started = await requestTurnContinuation(client, threadId);
       if (!started.ok) {
         updateSession(threadId, {
           type: "continuation.rejected",

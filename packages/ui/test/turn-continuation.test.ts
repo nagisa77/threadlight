@@ -28,13 +28,10 @@ describe("turn continuation", () => {
         },
       },
       "thread-1",
-      "full",
-      "openai",
-      "gpt-5.6",
     );
 
     expect(started).toEqual({ ok: true });
-    expect(calls).toEqual([["thread-1", "full", "openai", "gpt-5.6"]]);
+    expect(calls).toEqual([["thread-1"]]);
   });
 
   it("keeps interruption and continuation control messages out of the transcript", () => {
@@ -53,6 +50,7 @@ describe("turn continuation", () => {
       revision: 2,
       message: {
         id: "assistant-interrupted",
+        turnId: "turn-1",
         role: "assistant",
         text: "Turn interrupted by client",
         error: true,
@@ -101,6 +99,49 @@ describe("turn continuation", () => {
     expect(continuing.isRunning).toBe(true);
     expect(continuing.continuationAvailable).toBe(false);
     expect(continuing.messages).toEqual(interrupted.messages);
+
+    const resumed = sessionReducer(continuing, {
+      type: "turn.started",
+      activeTurn: {
+        turnId: "turn-1",
+        revision: 3,
+        mode: "default",
+        isThinking: true,
+        streamingText: "",
+        metrics: {
+          startedAt: "2026-08-24T08:00:00.000Z",
+          usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+          modelDurationMs: 100,
+          completedModelSteps: 1,
+          streamedBytes: 0,
+          totalTtftMs: 20,
+          ttftSamples: 1,
+        },
+        progress: interrupted.messages[1]?.progress ?? [],
+      },
+    });
+    expect(resumed.messages).toHaveLength(1);
+    expect(resumed.progress).toEqual(interrupted.messages[1]?.progress);
+
+    const completed = sessionReducer(resumed, {
+      type: "turn.completed",
+      id: "fallback-completed-id",
+      output: "Recovery finished",
+      message: {
+        id: "assistant-interrupted",
+        turnId: "turn-1",
+        role: "assistant",
+        text: "Recovery finished",
+        progress: interrupted.messages[1]?.progress,
+      },
+    });
+    expect(completed.messages).toHaveLength(2);
+    expect(completed.messages[1]).toMatchObject({
+      id: "assistant-interrupted",
+      turnId: "turn-1",
+      text: "Recovery finished",
+    });
+    expect(completed.messages[1]).not.toHaveProperty("interrupted");
   });
 
   it("does not append an empty interrupted control record", () => {

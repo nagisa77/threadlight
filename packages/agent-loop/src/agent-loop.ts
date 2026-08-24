@@ -66,6 +66,7 @@ export class AgentLoop {
   ): Promise<RunResult> {
     const tools = agent.tools ?? [];
     const maxSteps = agent.maxSteps ?? 5_000;
+    const checkpointHistory = options.checkpointHistory === true;
     const modelSession = new ModelSession(options);
     let toolResults: ToolResult[] = [];
     let continuationInput: string | undefined;
@@ -130,6 +131,18 @@ export class AgentLoop {
         );
       }
 
+      if (options.onCheckpoint) {
+        await options.onCheckpoint(
+          modelSession.checkpoint(
+            step,
+            "model_started",
+            statistics.snapshot(),
+            [],
+            checkpointHistory,
+          ),
+        );
+      }
+
       emit({ type: "model.started", runId, step });
 
       const modelStartedAt = statistics.now();
@@ -181,7 +194,13 @@ export class AgentLoop {
       modelSession.completeTurn(turn);
       statistics.addUsage(turn.usage);
       await options.onCheckpoint?.(
-        modelSession.checkpoint(step, "model_completed", statistics.snapshot()),
+        modelSession.checkpoint(
+          step,
+          "model_completed",
+          statistics.snapshot(),
+          [],
+          checkpointHistory,
+        ),
       );
 
       const additionalInput = options.takeAdditionalInput
@@ -271,6 +290,8 @@ export class AgentLoop {
               step,
               "tool_started",
               statistics.snapshot(),
+              toolResults,
+              checkpointHistory,
             ),
           }),
         );
@@ -279,6 +300,8 @@ export class AgentLoop {
             step,
             "tool_completed",
             statistics.snapshot(),
+            toolResults,
+            checkpointHistory,
           ),
         );
         const additionalInput = options.takeAdditionalInput

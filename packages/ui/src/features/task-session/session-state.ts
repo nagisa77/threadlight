@@ -26,6 +26,14 @@ export function hydrateActiveTurn(
     streamingText: activeTurn.streamingText,
     streamingSources: activeTurn.sources,
     streamingCitations: activeTurn.citations,
+    messages: state.messages.filter(
+      (message) =>
+        !(
+          message.interrupted &&
+          message.turnId !== undefined &&
+          message.turnId === activeTurn.turnId
+        ),
+    ),
   };
 }
 
@@ -69,9 +77,11 @@ export function completeSessionTurn(
     streamingSources: undefined,
     streamingCitations: undefined,
     messages: state.messages.some(
-      ({ id: existing }) => existing === message?.id,
+      ({ id: existing }) => existing === assistantMessage.id,
     )
-      ? state.messages
+      ? state.messages.map((existing) =>
+          existing.id === assistantMessage.id ? assistantMessage : existing,
+        )
       : [...state.messages, assistantMessage],
   };
 }

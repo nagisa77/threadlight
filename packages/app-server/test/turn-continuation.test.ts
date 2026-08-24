@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   AgentLoop,
   defineAgent,
+  defineTool,
   type ModelProvider,
   type ModelRequest,
 } from "@threadlight/agent-loop";
@@ -25,15 +26,17 @@ describe("turn continuation", () => {
       async generate(request) {
         requests.push(request);
         if (requests.length === 1) {
-          firstStarted.resolve();
-          await new Promise<never>((_resolve, reject) => {
-            const abort = () =>
-              reject(
-                request.signal?.reason ?? new Error("Scripted interruption"),
-              );
-            request.signal?.addEventListener("abort", abort, { once: true });
-            if (request.signal?.aborted) abort();
-          });
+          return {
+            text: "Inspecting the current implementation",
+            toolCalls: [
+              {
+                id: "call-inspect",
+                name: "inspect_workspace",
+                arguments: { path: "packages/app-server" },
+              },
+            ],
+            state: { providerCall: "call-inspect" },
+          };
         }
         return {
           text: "Continued without repeating completed work",
@@ -41,19 +44,42 @@ describe("turn continuation", () => {
         };
       },
     };
+    const agent = defineAgent({
+      name: "worker",
+      instructions: "Complete the task",
+      tools: [
+        defineTool({
+          name: "inspect_workspace",
+          description: "Inspect the workspace",
+          parameters: { type: "object" },
+          async execute(_arguments, context) {
+            firstStarted.resolve();
+            await new Promise<never>((_resolve, reject) => {
+              const abort = () =>
+                reject(
+                  context.signal.reason ?? new Error("Scripted interruption"),
+                );
+              context.signal.addEventListener("abort", abort, { once: true });
+              if (context.signal.aborted) abort();
+            });
+          },
+        }),
+      ],
+    });
+    const send = (message: JsonRpcOutgoing) => {
+      messages.push(message);
+      if ("method" in message && message.method === "turn/failed") {
+        interrupted.resolve();
+      }
+      if ("method" in message && message.method === "turn/completed") {
+        continued.resolve();
+      }
+    };
     const server = new AppServer({
       loop: new AgentLoop(provider),
-      agent: defineAgent({ name: "worker", instructions: "Complete the task" }),
+      agent,
       conversationStore,
-      send(message) {
-        messages.push(message);
-        if ("method" in message && message.method === "turn/failed") {
-          interrupted.resolve();
-        }
-        if ("method" in message && message.method === "turn/completed") {
-          continued.resolve();
-        }
-      },
+      send,
     });
 
     await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
@@ -66,8 +92,18 @@ describe("turn continuation", () => {
       jsonrpc: "2.0",
       id: 3,
       method: "turn/start",
-      params: { threadId, input: "Implement resumable interrupted tasks" },
+      params: {
+        threadId,
+        input: "Implement resumable interrupted tasks",
+        accessMode: "full",
+        provider: "openai",
+        model: "gpt-5.6",
+      },
     });
+    const originalTurnId = (
+      messages.find((message) => "id" in message && message.id === 3)
+        ?.result as { turnId: string }
+    ).turnId;
     await firstStarted.promise;
     await server.receive({
       jsonrpc: "2.0",
@@ -82,6 +118,7 @@ describe("turn continuation", () => {
       -1,
     );
     expect(interruption).toMatchObject({
+      turnId: originalTurnId,
       role: "assistant",
       text: "",
       interrupted: true,
@@ -104,11 +141,29 @@ describe("turn continuation", () => {
             role: "user",
             text: "Implement resumable interrupted tasks",
           }),
+          expect.objectContaining({
+            role: "assistant",
+            turnId: originalTurnId,
+            interrupted: true,
+          }),
         ],
       },
     });
 
-    await server.receive({
+    await server.dispose();
+    const resumedServer = new AppServer({
+      loop: new AgentLoop(provider),
+      agent,
+      conversationStore,
+      send,
+    });
+    await resumedServer.receive({
+      jsonrpc: "2.0",
+      id: 50,
+      method: "initialize",
+    });
+
+    await resumedServer.receive({
       jsonrpc: "2.0",
       id: 6,
       method: "turn/start",
@@ -120,6 +175,34 @@ describe("turn continuation", () => {
       "Implement resumable interrupted tasks",
       CONTINUE_INTERRUPTED_TURN_INPUT,
     ]);
+    expect(requests[1]).toMatchObject({
+      provider: "openai",
+      model: "gpt-5.6",
+      state: undefined,
+      history: [
+        { role: "user", text: "Implement resumable interrupted tasks" },
+        {
+          role: "assistant",
+          text: "Inspecting the current implementation",
+          toolCalls: [
+            expect.objectContaining({
+              id: "call-inspect",
+              name: "inspect_workspace",
+            }),
+          ],
+        },
+        {
+          role: "user",
+          toolResults: [
+            expect.objectContaining({
+              callId: "call-inspect",
+              name: "inspect_workspace",
+              isError: true,
+            }),
+          ],
+        },
+      ],
+    });
     const stored = (await conversationStore.load(threadId))?.messages ?? [];
     expect(stored).not.toEqual(
       expect.arrayContaining([
@@ -127,13 +210,19 @@ describe("turn continuation", () => {
       ]),
     );
     expect(stored.at(-1)).toMatchObject({
+      id: interruption?.id,
+      turnId: originalTurnId,
       role: "assistant",
       text: "Continued without repeating completed work",
     });
+    expect(stored).toHaveLength(2);
+    expect(
+      (await conversationStore.load(threadId))?.resumableTurn,
+    ).toBeUndefined();
     expect(
       messages.find((message) => "id" in message && message.id === 6),
-    ).toMatchObject({ result: { turnId: expect.any(String) } });
-    await server.dispose();
+    ).toMatchObject({ result: { turnId: originalTurnId } });
+    await resumedServer.dispose();
   });
 
   it("keeps interrupted model and tool progress while hiding control text", () => {

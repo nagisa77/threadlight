@@ -98,12 +98,14 @@ export class ModelSession {
     step: number,
     phase: Exclude<AgentRunCheckpoint["phase"], "context_compacted">,
     usage: TokenUsage,
+    pendingToolResults: readonly ToolResult[] = [],
+    includeHistory = false,
   ): AgentRunCheckpoint {
     return {
       step,
       phase,
       modelState: this.state,
-      ...this.resumableContext(),
+      ...this.resumableContext(pendingToolResults, includeHistory),
       usage,
     };
   }
@@ -151,12 +153,28 @@ export class ModelSession {
   private resumableContext(): Pick<
     AgentRunCheckpoint,
     "contextTokens" | "contextHistory"
-  > {
+  >;
+  private resumableContext(
+    pendingToolResults: readonly ToolResult[],
+    includeHistory?: boolean,
+  ): Pick<AgentRunCheckpoint, "contextTokens" | "contextHistory">;
+  private resumableContext(
+    pendingToolResults: readonly ToolResult[] = [],
+    includeHistory = false,
+  ): Pick<AgentRunCheckpoint, "contextTokens" | "contextHistory"> {
     return {
       ...(this.previousModelUsage?.totalTokens === undefined
         ? {}
         : { contextTokens: this.previousModelUsage.totalTokens }),
-      ...(this.historyReplaced ? { contextHistory: [...this.history] } : {}),
+      ...(includeHistory || this.historyReplaced
+        ? {
+            contextHistory: appendPendingContext(
+              this.history,
+              undefined,
+              pendingToolResults,
+            ),
+          }
+        : {}),
     };
   }
 }

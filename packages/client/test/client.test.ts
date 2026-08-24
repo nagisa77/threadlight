@@ -312,12 +312,7 @@ describe("ThreadlightClient", () => {
     const transport = new ScriptedTransport();
     const client = new ThreadlightClient(transport);
 
-    const started = client.continueTurn(
-      "thread-1",
-      "full",
-      "openai",
-      "gpt-5.6",
-    );
+    const started = client.continueTurn("thread-1");
 
     expect(transport.sent[0]).toMatchObject({
       method: "turn/start",
@@ -325,9 +320,6 @@ describe("ThreadlightClient", () => {
         threadId: "thread-1",
         input: "",
         continuation: true,
-        accessMode: "full",
-        provider: "openai",
-        model: "gpt-5.6",
       },
     });
     transport.emit({

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Buffer } from "node:buffer";
 import { realpathSync, statSync } from "node:fs";
 import { resolve, sep } from "node:path";
 
@@ -57,6 +58,7 @@ import {
   type StoredAgentRun,
   type StoredAgentThread,
   type StoredConversation,
+  type StoredResumableTurn,
 } from "./conversation-store.js";
 import {
   DEFAULT_SUGGESTION_REFRESH_INTERVAL_MS,
@@ -165,6 +167,7 @@ export interface AppServerTurnQueueHost {
     provider?: string,
     model?: string,
     currentInputPersisted?: boolean,
+    continuation?: StoredResumableTurn,
   ): Promise<void>;
 }
 
@@ -217,20 +220,44 @@ export class AppServerTurnQueue {
         input.trim() ||
         attachments.length > 0 ||
         capabilityRefs.length > 0 ||
-        mode !== "default"
+        modeValue !== undefined ||
+        accessModeValue !== undefined ||
+        providerValue !== undefined ||
+        modelValue !== undefined
       ) {
         throw new RpcError(
           -32602,
-          "A continuation cannot include input, attachments, capabilities, or a turn mode",
+          "A continuation inherits its input, attachments, capabilities, turn mode, access mode, provider, and model",
         );
       }
       const latest = thread.conversation.messages.at(-1);
-      if (latest?.role !== "assistant" || latest.interrupted !== true) {
+      const resumableTurn = thread.conversation.resumableTurn;
+      if (
+        latest?.role !== "assistant" ||
+        latest.interrupted !== true ||
+        !resumableTurn ||
+        latest.turnId !== resumableTurn.turnId
+      ) {
         throw new RpcError(
           -32004,
           "Thread does not have an interrupted turn to continue",
         );
       }
+      return this.beginTurn(
+        threadId,
+        CONTINUE_INTERRUPTED_TURN_INPUT,
+        resumableTurn.mode,
+        resumableTurn.accessMode,
+        resumableTurn.attachments,
+        resumableTurn.capabilityRefs,
+        resumableTurn.capabilities,
+        thread,
+        resumableTurn.provider,
+        resumableTurn.model,
+        undefined,
+        false,
+        resumableTurn,
+      );
     }
     const availableCapabilities = capabilitiesWithCompact(
       thread.runtime?.capabilities,
@@ -262,7 +289,7 @@ export class AppServerTurnQueue {
       provider,
       model,
       undefined,
-      !continuation,
+      true,
     );
   }
 
@@ -279,12 +306,17 @@ export class AppServerTurnQueue {
     model?: string,
     queuedItem?: QueuedTurnData,
     persistInput = true,
+    continuation?: StoredResumableTurn,
   ): Promise<{ turnId: string }> {
     if (thread.activeTurn) {
       throw new RpcError(-32003, "Thread already has an active turn");
     }
-    const turnId = randomUUID();
+    const turnId = continuation?.turnId ?? randomUUID();
+    const assistantMessageId = continuation?.assistantMessageId ?? randomUUID();
     const controller = new AbortController();
+    const interruptedMessage = continuation
+      ? thread.conversation.messages.at(-1)
+      : undefined;
     thread.accessMode = accessMode;
     thread.revision += 1;
     thread.activeTurn = {
@@ -292,23 +324,31 @@ export class AppServerTurnQueue {
       mode,
       isThinking: true,
       streamingText: "",
-      metrics: {
-        startedAt: this.host.now().toISOString(),
-        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-        modelDurationMs: 0,
-        completedModelSteps: 0,
-        streamedBytes: 0,
-        totalTtftMs: 0,
-        ttftSamples: 0,
-      },
+      metrics: resumedTurnMetrics(interruptedMessage, this.host.now()),
       controller,
     };
-    thread.progress = [];
+    thread.progress = interruptedMessage?.progress ?? [];
     thread.injectedInputPendingModelResponse = false;
-    thread.plan = mode === "plan" ? { source: "user", items: [] } : undefined;
+    thread.plan =
+      interruptedMessage?.plan ??
+      (mode === "plan" ? { source: "user", items: [] } : undefined);
+    const resumableTurn: StoredResumableTurn = continuation ?? {
+      version: 1,
+      turnId,
+      assistantMessageId,
+      input,
+      mode,
+      accessMode,
+      attachments,
+      capabilityRefs,
+      capabilities,
+      ...(provider ? { provider } : {}),
+      ...(model ? { model } : {}),
+    };
     const userMessage: ConversationMessageData | undefined = persistInput
       ? {
           id: randomUUID(),
+          turnId,
           role: "user",
           text: input,
           ...(mode === "plan" ? { mode } : {}),
@@ -326,6 +366,7 @@ export class AppServerTurnQueue {
             accessMode,
             ...(provider ? { provider } : {}),
             ...(model ? { model } : {}),
+            resumableTurn,
             ...(queuedItem
               ? {
                   queuedTurns: (conversation.queuedTurns ?? []).filter(
@@ -373,6 +414,7 @@ export class AppServerTurnQueue {
         provider,
         model,
         persistInput,
+        continuation,
       );
     });
 
@@ -684,4 +726,35 @@ export class AppServerTurnQueue {
       thread.conversation = conversation;
     }
   }
+}
+
+function resumedTurnMetrics(
+  interruptedMessage: ConversationMessageData | undefined,
+  now: Date,
+): NonNullable<ThreadState["activeTurn"]>["metrics"] {
+  const diagnostics = interruptedMessage?.diagnostics;
+  const modelSteps =
+    diagnostics?.metrics?.total.modelSteps ?? diagnostics?.modelSteps ?? [];
+  const usage = diagnostics?.metrics?.total.usage ??
+    diagnostics?.usage ?? {
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+    };
+  const ttftSamples = modelSteps.filter(({ ttftMs }) => ttftMs !== undefined);
+  return {
+    startedAt: diagnostics?.startedAt ?? now.toISOString(),
+    usage: { ...usage },
+    modelDurationMs: modelSteps.reduce(
+      (duration, step) => duration + step.durationMs,
+      0,
+    ),
+    completedModelSteps: modelSteps.length,
+    streamedBytes: Buffer.byteLength(interruptedMessage?.text ?? "", "utf8"),
+    totalTtftMs: ttftSamples.reduce(
+      (duration, step) => duration + (step.ttftMs ?? 0),
+      0,
+    ),
+    ttftSamples: ttftSamples.length,
+  };
 }

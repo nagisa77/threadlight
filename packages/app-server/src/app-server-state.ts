@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import type {
   AgentEvent,
+  AgentRunCheckpoint,
   AgentRuntimeSnapshot,
   AgentTreeEvent,
   AgentTreeSnapshot,
@@ -185,7 +186,11 @@ export class AppServerState {
         checkpoint.closedAgentThreads ?? [],
       );
       const existing = agentRuns.find((run) => run.turnId === turnId);
-      if (existing && existing.status !== "active") {
+      if (
+        existing &&
+        existing.status !== "active" &&
+        existing.status !== "interrupted"
+      ) {
         if (agentRuns === conversation.agentRuns) return conversation;
         return {
           ...conversation,
@@ -213,10 +218,57 @@ export class AppServerState {
     });
   }
 
+  async persistResumableTurnCheckpoint(
+    thread: ThreadState,
+    turnId: string,
+    checkpoint: AgentRunCheckpoint,
+  ): Promise<void> {
+    const persistedCheckpoint: AgentRunCheckpoint = {
+      ...checkpoint,
+      ...(checkpoint.modelState === undefined
+        ? {}
+        : {
+            modelState: this.host.modelStatePersistence.prepare(
+              checkpoint.modelState,
+            ),
+          }),
+      ...(checkpoint.contextHistory
+        ? {
+            contextHistory: checkpoint.contextHistory.map((message) => ({
+              ...message,
+              ...(message.toolCalls
+                ? { toolCalls: message.toolCalls.map((call) => ({ ...call })) }
+                : {}),
+              ...(message.toolResults
+                ? {
+                    toolResults: message.toolResults.map((result) => ({
+                      ...result,
+                    })),
+                  }
+                : {}),
+            })),
+          }
+        : {}),
+      usage: { ...checkpoint.usage },
+    };
+    await this.mutateConversation(thread, (conversation) =>
+      conversation.resumableTurn?.turnId === turnId
+        ? {
+            ...conversation,
+            updatedAt: this.host.now().toISOString(),
+            resumableTurn: {
+              ...conversation.resumableTurn,
+              checkpoint: persistedCheckpoint,
+            },
+          }
+        : conversation,
+    );
+  }
+
   finalizeAgentRun(
     conversation: StoredConversation,
     turnId: string,
-    status: "completed" | "failed",
+    status: "completed" | "failed" | "interrupted",
   ): StoredConversation {
     const runs = conversation.agentRuns ?? [];
     if (!runs.some((run) => run.turnId === turnId)) return conversation;

@@ -57,6 +57,7 @@ export type ConversationProgress = ConversationProgressData;
 
 export interface ConversationMessage {
   id: string;
+  turnId?: string;
   role: "user" | "assistant";
   text: string;
   attachments?: readonly AttachmentData[];
