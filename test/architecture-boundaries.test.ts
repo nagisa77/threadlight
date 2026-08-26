@@ -55,6 +55,20 @@ describe("runtime architecture boundaries", () => {
     expect(appServer).not.toMatch(/function parseSuggestedQuestions\(/);
   });
 
+  it("composes turn capabilities through the runtime module profile", () => {
+    const appServer = source("../packages/app-server/src/app-server.ts");
+    const modules = source(
+      "../packages/app-server/src/turn-runtime-modules.ts",
+    );
+
+    expect(appServer).toContain("composeTurnRuntime(this.turnRuntimeModules");
+    expect(appServer).not.toMatch(
+      /new (PlanExecutionController|TurnCapabilityController|SkillReadRequirementController|SourceCitationRunController|ProjectMemoryReminderController|ResearchCoverageRunController)\b/,
+    );
+    expect(modules).toContain("export interface TurnRuntimeModule");
+    expect(modules).toContain("defaultTurnRuntimeModules");
+  });
+
   it("enforces the workspace dependency direction", () => {
     expect(workspaceDependencies("protocol")).toEqual([]);
     expect(workspaceDependencies("project-memory")).toEqual([]);

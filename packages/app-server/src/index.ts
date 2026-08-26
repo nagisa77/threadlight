@@ -86,6 +86,14 @@ export {
   defaultBuiltinSkillRoot,
   validateSkillPluginRuntimeSnapshot,
 } from "./thread-extensions.js";
+export {
+  composeTurnRuntime,
+  defaultTurnRuntimeModules,
+  TURN_CAPABILITY_SERVICE,
+  TURN_CITATION_SERVICE,
+  TURN_PLAN_SERVICE,
+  TurnRuntimeServiceKey,
+} from "./turn-runtime-modules.js";
 
 export type {
   CapabilityActivation,
@@ -171,6 +179,17 @@ export type {
   SkillPluginRuntimeSnapshot,
   SkillPluginThreadRuntime,
 } from "./thread-extensions.js";
+export type {
+  TurnCapabilityService,
+  TurnCitationService,
+  TurnPlanService,
+  TurnRuntimeComposition,
+  TurnRuntimeModule,
+  TurnRuntimeModuleContext,
+  TurnRuntimeModuleDisposer,
+  TurnRuntimeOutput,
+  TurnRuntimeRegistrar,
+} from "./turn-runtime-modules.js";
 export type {
   LoadWorkspaceContextOptions,
   WorkspaceContext,

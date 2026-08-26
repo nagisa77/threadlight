@@ -16,11 +16,6 @@ import type {
 } from "@threadlight/agent-loop";
 import { AgentOrchestrator } from "@threadlight/agent-loop";
 import {
-  createRequestPlanInputTool,
-  PlanExecutionController,
-  USER_SELECTED_PLAN_INSTRUCTIONS,
-} from "@threadlight/builtin-tools";
-import {
   projectAgentProgress,
   projectAgentPlan,
   projectMessagesProcess,
@@ -72,7 +67,6 @@ import {
 } from "./suggestion-store.js";
 import {
   composePrompt,
-  promptBlocksFromSnapshot,
   validatePromptSnapshot,
   type PromptBlock,
   type PromptSnapshot,
@@ -82,26 +76,12 @@ import type {
   CapabilityResource,
   SkillReadRequirement,
 } from "./capability-registry.js";
-import { CapabilityResourceController } from "./capability-resource-controller.js";
-import {
-  createAttachmentRuntime,
-  type AttachmentProvider,
-} from "./attachment-runtime.js";
+import type { AttachmentProvider } from "./attachment-runtime.js";
 import { ModelStatePersistence } from "./model-state-persistence.js";
-import {
-  composeRunControllers,
-  ProjectMemoryReminderController,
-  ResearchCoverageRunController,
-  UserActionRunController,
-} from "./run-controllers.js";
-import { TurnCapabilityController } from "./turn-capability-controller.js";
-import { SkillReadRequirementController } from "./skill-read-requirement-controller.js";
-import {
-  ExecutionPolicyRunController,
-  type ExecutionApprovalRequest,
-  type ExecutionApprovalRequester,
+import type {
+  ExecutionApprovalRequest,
+  ExecutionApprovalRequester,
 } from "./execution-policy-controller.js";
-import { SourceCitationRunController } from "./source-citations.js";
 import {
   conversationTitleFrom,
   conversationTitleTranscript,
@@ -141,6 +121,15 @@ import {
   upsertTurnAssistantMessage,
   withoutResumableTurn,
 } from "./turn-continuation-context.js";
+import {
+  composeTurnRuntime,
+  defaultTurnRuntimeModules,
+  TURN_CAPABILITY_SERVICE,
+  TURN_CITATION_SERVICE,
+  TURN_PLAN_SERVICE,
+  type TurnRuntimeComposition,
+  type TurnRuntimeModule,
+} from "./turn-runtime-modules.js";
 export type { ThreadState } from "./thread-state.js";
 
 export interface ProcessController {
@@ -171,6 +160,8 @@ interface SharedAppServerOptions {
   productTelemetry?: Pick<ProductTelemetry, "reportOnce">;
   /** Rolling-summary policy; omitted values use the Pi-compatible defaults. */
   contextCompaction?: ContextCompactionOptions;
+  /** Ordered per-turn capability modules; defaults to the first-party profile. */
+  turnRuntimeModules?: readonly TurnRuntimeModule[];
   multiAgent?: {
     profiles: readonly SubagentProfile[];
     maxConcurrent?: number;
@@ -263,6 +254,7 @@ export class AppServer {
   private readonly generateConversationTitles: boolean;
   private readonly productTelemetry?: Pick<ProductTelemetry, "reportOnce">;
   private readonly contextCompactor: ContextCompactor;
+  private readonly turnRuntimeModules: readonly TurnRuntimeModule[];
   private readonly multiAgent?: SharedAppServerOptions["multiAgent"];
   private readonly rpc: RpcMethodRouter<ThreadlightMethod>;
   private readonly threads = new Map<string, ThreadState>();
@@ -305,6 +297,8 @@ export class AppServer {
       this.loop,
       options.contextCompaction,
     );
+    this.turnRuntimeModules =
+      options.turnRuntimeModules ?? defaultTurnRuntimeModules();
     this.multiAgent = options.multiAgent;
     this.rpc = new RpcMethodRouter<ThreadlightMethod>({
       initialize: (params) => {
@@ -605,10 +599,15 @@ export class AppServer {
     let runId: string | undefined;
     let cleanedUp = false;
     let turnInterrupted = false;
+    let activeTurnRuntime: TurnRuntimeComposition | undefined;
     const cleanup = async () => {
       if (cleanedUp) return;
       cleanedUp = true;
-      await this.state().cleanupTurn({ threadId, turnId, runId });
+      try {
+        await activeTurnRuntime?.dispose();
+      } finally {
+        await this.state().cleanupTurn({ threadId, turnId, runId });
+      }
     };
 
     try {
@@ -630,107 +629,39 @@ export class AppServer {
         return;
       }
 
-      const planController = new PlanExecutionController({
-        requirePlan: mode === "plan",
-      });
-      const attachmentRuntime = createAttachmentRuntime(
-        this.attachmentProvider,
+      const turnRuntime = await composeTurnRuntime(this.turnRuntimeModules, {
+        threadId,
+        mode,
+        accessMode,
+        taskInput,
         input,
-        provider
-          ? attachments.map((attachment) => ({
-              ...attachment,
-              provider,
-            }))
-          : attachments,
-      );
-      let attachmentToolInstalled = attachments.length > 0;
-      const explicitSkillRefs = thread.runtime?.explicitSkillRefsForInput
-        ? await thread.runtime.explicitSkillRefsForInput(taskInput)
-        : [];
-      const capabilityRefsForTurn = [...capabilityRefs, ...explicitSkillRefs];
-      const capabilityRuntime = thread.runtime?.resolveCapabilities
-        ? await thread.runtime.resolveCapabilities(
-            capabilityRefsForTurn,
-            controller.signal,
-            "explicit",
-          )
-        : {
-            promptBlocks: [],
-            tools: [],
-            resources: [],
-            skillReads: [],
-          };
-      const capabilityResources = new CapabilityResourceController(
-        capabilityRuntime.resources ?? [],
-      );
-      const turnTools: Tool[] = [
-        ...appendTurnTools(thread.agent.tools, [
-          ...(mode === "plan" ? [createRequestPlanInputTool()] : []),
-          ...(attachmentToolInstalled ? [attachmentRuntime.tool] : []),
-          ...capabilityRuntime.tools,
-          ...(capabilityResources.hasResources()
-            ? [capabilityResources.tool()]
-            : []),
-        ]),
-      ];
-      const capabilityController =
-        thread.runtime?.resolveCapabilities &&
-        (thread.runtime.capabilities?.length ?? 0) > 0
-          ? new TurnCapabilityController({
-              capabilities: thread.runtime.capabilities ?? [],
-              initialRefs: capabilityRefsForTurn,
-              resolve: thread.runtime.resolveCapabilities.bind(thread.runtime),
-              addTools: (tools) => appendToolsInPlace(turnTools, tools),
-              addResources: (resources) => {
-                if (capabilityResources.add(resources)) {
-                  appendToolsInPlace(turnTools, [capabilityResources.tool()]);
-                }
-              },
-            })
-          : undefined;
-      appendToolsInPlace(turnTools, capabilityController?.tools() ?? []);
-      const sourceCitationController = new SourceCitationRunController();
-      if (thread.activeTurn?.id === turnId) {
+        ...(provider ? { provider } : {}),
+        attachments,
+        capabilityRefs,
+        signal: controller.signal,
+        agentTools: thread.agent.tools ?? [],
+        promptSnapshot: thread.promptSnapshot,
+        ...(thread.runtime ? { threadRuntime: thread.runtime } : {}),
+        ...(this.attachmentProvider
+          ? { attachmentProvider: this.attachmentProvider }
+          : {}),
+        approval: {
+          enabled: this.approvals.enabled,
+          requester: this.approvals.requester,
+        },
+      });
+      activeTurnRuntime = turnRuntime;
+      const planController = turnRuntime.service(TURN_PLAN_SERVICE)?.controller;
+      const capabilityController = turnRuntime.service(
+        TURN_CAPABILITY_SERVICE,
+      )?.controller;
+      const sourceCitationController = turnRuntime.service(
+        TURN_CITATION_SERVICE,
+      )?.controller;
+      if (thread.activeTurn?.id === turnId && sourceCitationController) {
         thread.activeTurn.sourceCitations = sourceCitationController;
       }
-      const runController = new UserActionRunController(
-        composeRunControllers([
-          this.approvals.enabled && accessMode !== "full"
-            ? new ExecutionPolicyRunController(
-                threadId,
-                this.approvals.requester,
-                controller.signal,
-              )
-            : undefined,
-          planController,
-          capabilityController,
-          (capabilityRuntime.skillReads ?? []).length > 0
-            ? new SkillReadRequirementController(
-                capabilityRuntime.skillReads ?? [],
-              )
-            : undefined,
-          sourceCitationController,
-          new ProjectMemoryReminderController(),
-          new ResearchCoverageRunController(taskInput),
-          attachmentRuntime.controller,
-        ]),
-      );
-      const turnPromptBlocks = uniquePromptBlocks([
-        ...promptBlocksFromSnapshot(thread.promptSnapshot),
-        ...((await thread.runtime?.promptBlocksForTurn?.(taskInput)) ?? []),
-        ...capabilityRuntime.promptBlocks,
-        ...(mode === "plan"
-          ? [
-              {
-                id: "turn.plan-mode",
-                version: 1,
-                authority: "turn" as const,
-                source: "app-server",
-                content: USER_SELECTED_PLAN_INSTRUCTIONS,
-              },
-            ]
-          : []),
-      ]);
+      const turnPromptBlocks = turnRuntime.promptBlocks;
       const turnPrompt = composePrompt(turnPromptBlocks);
       const leafInstructionCapsule = composePrompt(
         turnPromptBlocks.filter(({ authority }) =>
@@ -742,7 +673,7 @@ export class AppServer {
         ...(provider ? { provider } : {}),
         ...(model ? { model } : {}),
         instructions: turnPrompt.instructions,
-        tools: turnTools,
+        tools: turnRuntime.tools,
       };
       const runtimeContextCompaction = createRuntimeContextCompaction({
         compactor: this.contextCompactor,
@@ -760,7 +691,7 @@ export class AppServer {
             thread.conversation.messages.at(-1),
           ) ?? runtimeContextCompaction.history,
         beforeModelRequest: runtimeContextCompaction.beforeModelRequest,
-        controller: runController,
+        controller: turnRuntime.controller,
         signal: controller.signal,
         checkpointHistory: true,
         onCheckpoint: (checkpoint: AgentRunCheckpoint) =>
@@ -777,19 +708,9 @@ export class AppServer {
             thread,
           );
           if (!injected) return;
-          const injectedAttachments = provider
-            ? (injected.attachments ?? []).map((attachment) => ({
-                ...attachment,
-                provider,
-              }))
-            : (injected.attachments ?? []);
-          if (injectedAttachments.length > 0 && !attachmentToolInstalled) {
-            appendToolsInPlace(turnTools, [attachmentRuntime.tool]);
-            attachmentToolInstalled = true;
-          }
-          return attachmentRuntime.addInput(
+          return turnRuntime.processInput(
             injected.input,
-            injectedAttachments,
+            injected.attachments ?? [],
           );
         },
         onEvent: (event: AgentEvent) => {
@@ -821,17 +742,7 @@ export class AppServer {
                   this.contextCompactor.createBeforeModelRequest({
                     initialContextTokens: contextTokens,
                   }),
-                controller: new UserActionRunController(
-                  composeRunControllers([
-                    this.approvals.enabled && accessMode !== "full"
-                      ? new ExecutionPolicyRunController(
-                          threadId,
-                          this.approvals.requester,
-                          controller.signal,
-                        )
-                      : undefined,
-                  ]),
-                ),
+                controller: turnRuntime.createChildController(),
               }),
               onAgentTreeEvent: (event) =>
                 this.state().forwardAgentTree(threadId, turnId, thread, event),
@@ -847,13 +758,13 @@ export class AppServer {
         thread.activeTurn.orchestrator = orchestrator;
       }
       const result = orchestrator
-        ? await orchestrator.run(turnAgent, attachmentRuntime.input)
-        : await this.loop.run(turnAgent, attachmentRuntime.input, runOptions);
+        ? await orchestrator.run(turnAgent, turnRuntime.input)
+        : await this.loop.run(turnAgent, turnRuntime.input, runOptions);
       const contextCompaction = runtimeContextCompaction.outcome();
       const persistedModelState = this.modelStatePersistence.prepare(
         result.modelState,
       );
-      const sourcedOutput = sourceCitationController.finalize(result.output);
+      const sourcedOutput = await turnRuntime.finalizeOutput(result.output);
       const turnDiagnostics = diagnostics.complete(
         "completed",
         this.now(),
@@ -1144,10 +1055,7 @@ import {
   projectStoredAgentThread,
   interruptActiveAgentRuns,
   visibleAgentTree,
-  appendTurnTools,
-  appendToolsInPlace,
   mergeMessageCapabilities,
-  uniquePromptBlocks,
   attachRuntimeTools,
   promptBlocksForAgent,
   restoreStoredPrompt,

@@ -3,11 +3,16 @@ import {
   defineAgent,
   defineTool,
   type ModelProvider,
+  type ModelRequest,
 } from "@threadlight/agent-loop";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppServer } from "../src/app-server.js";
 import type { JsonRpcOutgoing } from "../src/protocol.js";
+import {
+  defaultTurnRuntimeModules,
+  type TurnRuntimeModule,
+} from "../src/turn-runtime-modules.js";
 
 describe("thread runtimes", () => {
   it("runs scripted turns concurrently while preserving each thread state", async () => {
@@ -166,6 +171,77 @@ describe("thread runtimes", () => {
     await server.dispose();
     expect(disposers[1]).toHaveBeenCalledOnce();
   });
+
+  it("loads a custom turn module without changing AppServer wiring", async () => {
+    const requests: ModelRequest[] = [];
+    const provider: ModelProvider = {
+      async generate(request) {
+        requests.push(request);
+        return { text: "module-ready", toolCalls: [] };
+      },
+    };
+    const dispose = vi.fn();
+    const customModule: TurnRuntimeModule = {
+      id: "test.custom-turn-module",
+      setup(_context, registrar) {
+        registrar.addPromptBlocks([
+          {
+            id: "turn.custom-module",
+            version: 1,
+            authority: "turn",
+            source: "test",
+            content: "Custom module prompt.",
+          },
+        ]);
+        registrar.addTools([
+          defineTool({
+            name: "custom_module_tool",
+            description: "A tool contributed by a custom turn module",
+            parameters: { type: "object", properties: {} },
+            async execute() {
+              return "ok";
+            },
+          }),
+        ]);
+        registrar.addController({
+          beforeModel() {
+            return { instructions: "Custom controller instruction." };
+          },
+        });
+        return dispose;
+      },
+    };
+    const messages: JsonRpcOutgoing[] = [];
+    const server = new AppServer({
+      loop: new AgentLoop(provider),
+      agent: defineAgent({ name: "test", instructions: "Base instruction." }),
+      turnRuntimeModules: [...defaultTurnRuntimeModules(), customModule],
+      send: (message) => messages.push(message),
+    });
+
+    await server.receive({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    await server.receive({ jsonrpc: "2.0", id: 2, method: "thread/start" });
+    const threadId = result<{ threadId: string }>(messages, 2).threadId;
+    const completed = notification(messages, threadId);
+    await server.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "turn/start",
+      params: { threadId, input: "Run the module" },
+    });
+    await completed;
+
+    expect(requests[0]?.instructions).toContain("Custom module prompt.");
+    expect(requests[0]?.instructions).toContain(
+      "Custom controller instruction.",
+    );
+    expect(requests[0]?.tools.map(({ name }) => name)).toContain(
+      "custom_module_tool",
+    );
+    expect(completedOutput(messages, threadId)).toBe("module-ready");
+    expect(dispose).toHaveBeenCalledOnce();
+    await server.dispose();
+  });
 });
 
 function result<Result>(
@@ -175,7 +251,8 @@ function result<Result>(
   const message = messages.find(
     (candidate) => "id" in candidate && candidate.id === id,
   );
-  if (!message || !("result" in message)) throw new Error(`Missing result ${id}`);
+  if (!message || !("result" in message))
+    throw new Error(`Missing result ${id}`);
   return message.result as Result;
 }
 
